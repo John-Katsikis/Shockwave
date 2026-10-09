@@ -1,13 +1,25 @@
 #pragma once
 
+#include <shockwave/Assets.h>
 #include <shockwave/Camera.h>
+#include <shockwave/Components.h>
+#include <shockwave/Hierarchy.h>
 #include <shockwave/Input.h>
 #include <shockwave/Jobs.h>
 #include <shockwave/Mesh.h>
 #include <shockwave/Renderer.h>
+#include <shockwave/SceneFile.h>
+#include <shockwave/Schedule.h>
+#include <shockwave/Systems.h>
 #include <shockwave/Window.h>
+#include <shockwave/World.h>
 
+#include <filesystem>
 #include <memory>
+#include <string>
+#include <unordered_map>
+
+struct ImFont;
 
 namespace shockwave {
 
@@ -51,6 +63,9 @@ struct EngineConfig {
     bool showFpsInTitle = true;
     bool quitOnEscape = true;
     bool gui = false;           // Dear ImGui on top of the scene; see Game::onGui
+    // The UI theme, looked for in the working folder, then next to the executable. Saved
+    // changes to it apply straight away. Empty, or missing, uses the built-in theme.
+    std::string guiTheme = "themes/default.swtheme";
 };
 
 class Engine {
@@ -65,21 +80,33 @@ public:
     Window& window() { return *m_window; }
     Renderer& renderer() { return *m_renderer; }
     Input& input() { return *m_input; }
+    Assets& assets() { return *m_assets; }
 
     double fps() const { return m_fps; }
+    double tickRate() const { return m_config.tickRate; }
     bool guiEnabled() const { return m_config.gui; }
 
 private:
     void initGui();
     void shutdownGui();
+    void loadGuiTheme(bool reload);
+    void pollGuiTheme(double frameDt);
 
     EngineConfig m_config;
     std::unique_ptr<JobSystem> m_jobs;
     std::unique_ptr<Window> m_window;
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<Input> m_input;
+    std::unique_ptr<Assets> m_assets;
     bool m_running = false;
     double m_fps = 0.0;
+
+    // UI theme hot reload
+    std::string m_themePath;
+    std::filesystem::file_time_type m_themeTime{};
+    double m_themePollTimer = 0.0;
+    float m_dpiScale = 1.0f;
+    std::unordered_map<std::string, ImFont*> m_fonts;
 };
 
 } // namespace shockwave

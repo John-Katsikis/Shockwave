@@ -6,8 +6,9 @@
 #include <exception>
 
 // Shockwave Editor.
-//   editor [scene.swscene] [--uncapped] [--frames N]
+//   editor [scene.swscene] [--uncapped] [--play] [--theme file.swtheme] [--assets folder] [--frames N] [--select N]
 // With no scene it opens scenes/main.swscene, creating it from the sample scene on first run.
+// Images in assets/ (or --assets) are imported into the asset browser and watched for changes.
 int main(int argc, char** argv) {
     shockwave::EngineConfig config;
     config.window.title = "Shockwave Editor";
@@ -22,6 +23,12 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--uncapped") == 0) {
             config.window.vsync = false;
+        } else if (i + 1 < argc && std::strcmp(argv[i], "--theme") == 0) {
+            config.guiTheme = argv[++i];
+        } else if (i + 1 < argc && std::strcmp(argv[i], "--assets") == 0) {
+            options.assetFolder = argv[++i];
+        } else if (std::strcmp(argv[i], "--play") == 0) {
+            options.playOnStart = true;
         } else if (i + 1 < argc && std::strcmp(argv[i], "--frames") == 0) {
             config.maxFrames = std::atoi(argv[++i]);
         } else if (i + 1 < argc && std::strcmp(argv[i], "--select") == 0) {

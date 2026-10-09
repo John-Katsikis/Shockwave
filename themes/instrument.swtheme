@@ -1,0 +1,26 @@
+# Cyan engineering panel palette, inspired by the requested example.
+# Geometry and density are inherited from the shared tools design system.
+# ./build/bin/editor --theme themes/instrument.swtheme
+[palette]
+background = #0d0f14
+surface = #121c26
+frame = #1a1f29
+frame_hover = #223346
+frame_active = #004c73
+border = #00ccff80
+button = #142433
+button_hover = #005f85
+button_active = #006e86
+on_accent = #071018
+header = #1a334d
+header_hover = #224666
+accent = #00ccff
+accent_hover = #33ddff
+accent_active = #00e6ff
+selection = #00ccff38
+text = #edf5ff
+text_disabled = #8399ad
+warning = #ffd166
+error = #ff6b6b
+scrollbar = #30475b
+scrollbar_hover = #46708c

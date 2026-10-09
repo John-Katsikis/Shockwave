@@ -1,0 +1,76 @@
+# Shockwave UI theme: dense engineering tools with square controls and crisp borders.
+#
+# Edit and save while the editor is running: the UI restyles straight away.
+# Run the editor from the project folder so it picks up this file (it falls back to a
+# copy next to the executable). Make your own by copying this file and passing
+# --theme path/to/yours.swtheme, or set EngineConfig::guiTheme in your game.
+#
+# Colors are sRGB hex, #rrggbb or #rrggbbaa (aa = opacity). Sizes are pixels at 100%
+# display scale; HiDPI screens scale them for you. A pair like "12 8" is x then y;
+# a single number sets both. Leave a key out to keep the built-in value (shockwave/Gui.h).
+# A '#' followed by a space starts a comment.
+
+[palette]
+background      = #111113   # windows and panels
+surface         = #18181b   # menu bar, title bars, tab bars, popups
+frame           = #18181b   # buttons, text fields, sliders, checkboxes
+frame_hover     = #222226
+frame_active    = #27272a
+border          = #3f3f46   # 1px lines around panels and controls
+header          = #1d1d21   # collapsing headers, selected rows
+header_hover    = #26262b
+text            = #ededef
+text_disabled   = #71717a
+
+# The accent marks what's active: the current tool, the open tab, ticked checkboxes, sliders.
+# Electric indigo. Try #3b82f6 for electric blue or #ea580c for burnt orange (see ember.swtheme).
+accent          = #6366f1
+accent_hover    = #818cf8
+accent_active   = #4f46e5
+selection       = #6366f138   # selected text; the accent at about 22% opacity
+
+scrollbar       = #27272a
+scrollbar_hover = #3f3f46
+
+# All custom tool colors are replaceable here, including overlays and errors.
+button          = #18181b
+button_hover    = #26262b
+button_active   = #4f46e5
+on_accent       = #ffffff
+warning         = #fbbf24
+error           = #f87171
+
+# Geometry is fixed by the tools design system. Legacy keys are accepted on load,
+# but corners stay square and borders stay 1 logical pixel (scaled on HiDPI).
+[shape]
+window_rounding    = 0
+child_rounding     = 0
+frame_rounding     = 0
+popup_rounding     = 0
+tab_rounding       = 0
+grab_rounding      = 0
+scrollbar_rounding = 0
+
+window_border      = 1
+frame_border       = 1
+popup_border       = 1
+tab_border         = 1
+docking_separator  = 1
+
+[spacing]
+window_padding     = 8 8
+frame_padding      = 8 4
+item_spacing       = 6 4
+item_inner_spacing = 4 4
+cell_padding       = 6 4
+indent_spacing     = 16
+scrollbar_size     = 10
+grab_min_size      = 10
+
+[text]
+font_size = 15
+font      = fonts/Roboto-Medium.ttf   # any .ttf or .otf
+
+# [colors]
+# Any single ImGui color by its name overrides everything above, for example:
+# PlotLines = #22c55e

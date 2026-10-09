@@ -29,9 +29,9 @@ struct TextureHandle {
 // Public face of the renderer. Vulkan stays behind this interface so games never
 // include Vulkan headers, which keeps a later Metal/MoltenVK port contained.
 //
-// Threading: createMesh, createTexture and drawMesh may be called from any thread,
-// including job system workers. Draws go into per-thread lists, so recording them
-// doesn't contend. setClearColor and setCamera belong to the thread running
+// Threading: createMesh, createTexture, updateTexture and drawMesh may be called from
+// any thread, including job system workers. Draws go into per-thread lists, so
+// recording them doesn't contend. setClearColor and setCamera belong to the thread running
 // Game::onRender, and setCamera must come before that frame's drawMesh calls.
 class Renderer {
 public:
@@ -47,6 +47,14 @@ public:
     // RGBA8 pixels, rows top to bottom. Mipmaps are generated on the GPU. Every texture
     // lives in one bindless table, so any draw can use any texture at no extra cost.
     TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
+    // Replaces a texture's pixels (and size, if it changed) for hot reload. Everything
+    // using the handle shows the new image from the next frame. Any thread.
+    void updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
+                       bool srgb = true);
+    // An ImTextureID for showing a texture in the GUI (an asset browser thumbnail, say);
+    // 0 when the GUI is off. Main thread. Valid for the current frame: ask every frame,
+    // since a reload hands out a new one.
+    uint64_t guiTexture(TextureHandle texture);
 
     // Per-frame commands, called from Game::onRender.
     void setClearColor(const Color& color);

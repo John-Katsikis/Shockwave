@@ -18,6 +18,7 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_window = std::make_unique<Window>(m_config.window);
     m_renderer = std::make_unique<Renderer>(*m_window, *m_jobs, m_config.window.vsync);
     m_input = std::make_unique<Input>(*m_window);
+    m_assets = std::make_unique<Assets>();
     if (m_config.gui) initGui();
     std::printf("Shockwave: rendering with Vulkan on %s, %u worker threads\n",
                 m_renderer->gpuName(), m_jobs->workerCount());
@@ -49,19 +50,70 @@ void Engine::initGui() {
         io.IniFilename = nullptr;
     }
 
-    float dpiScale = SDL_GetWindowDisplayScale(m_window->handle());
-    if (dpiScale <= 0.0f) dpiScale = 1.0f;
-    gui::applyTheme(dpiScale);
-
-    const std::string fontPath = std::string(SDL_GetBasePath()) + "fonts/Roboto-Medium.ttf";
-    if (SDL_GetPathInfo(fontPath.c_str(), nullptr)) {
-        io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 15.0f);
-    } else {
-        io.Fonts->AddFontDefault();
-    }
+    m_dpiScale = SDL_GetWindowDisplayScale(m_window->handle());
+    if (m_dpiScale <= 0.0f) m_dpiScale = 1.0f;
+    loadGuiTheme(false);
 
     ImGui_ImplSDL3_InitForVulkan(m_window->handle());
     m_renderer->initGui();
+}
+
+namespace {
+
+// A path as given if it exists from the working folder, else next to the executable.
+std::string findFile(const std::string& path) {
+    if (path.empty()) return {};
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) return path;
+    const std::string beside = std::string(SDL_GetBasePath()) + path;
+    if (std::filesystem::exists(beside, ec)) return beside;
+    return {};
+}
+
+} // namespace
+
+// Loads the theme file over the built-in theme and applies it, along with its font.
+// On a reload, a broken file leaves the current look alone and says what's wrong.
+void Engine::loadGuiTheme(bool reload) {
+    gui::Theme theme;
+    if (!reload) m_themePath = findFile(m_config.guiTheme);
+    if (!m_themePath.empty()) {
+        std::string error;
+        std::error_code ec;
+        m_themeTime = std::filesystem::last_write_time(m_themePath, ec);
+        if (!gui::loadTheme(m_themePath, theme, error)) {
+            std::fprintf(stderr, "Shockwave: UI theme not applied: %s\n", error.c_str());
+            if (reload) return;
+            theme = gui::Theme();
+        } else if (reload) {
+            std::printf("Shockwave: reloaded UI theme %s\n", m_themePath.c_str());
+        }
+    } else if (!m_config.guiTheme.empty()) {
+        std::fprintf(stderr, "Shockwave: %s not found, using the built-in UI theme\n", m_config.guiTheme.c_str());
+    }
+
+    // Fonts load once per file; ImGui 1.92 renders any size from one font on demand.
+    ImGuiIO& io = ImGui::GetIO();
+    const std::string fontPath = findFile(theme.font);
+    if (!fontPath.empty()) {
+        ImFont*& font = m_fonts[fontPath];
+        if (!font) font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), theme.fontSize);
+        if (font) io.FontDefault = font;
+    } else if (io.Fonts->Fonts.empty()) {
+        io.Fonts->AddFontDefault();
+    }
+    gui::applyTheme(theme, m_dpiScale);
+}
+
+// Checks the theme file twice a second and reapplies it when it changes.
+void Engine::pollGuiTheme(double frameDt) {
+    if (m_themePath.empty()) return;
+    m_themePollTimer += frameDt;
+    if (m_themePollTimer < 0.5) return;
+    m_themePollTimer = 0.0;
+    std::error_code ec;
+    const auto time = std::filesystem::last_write_time(m_themePath, ec);
+    if (!ec && time != m_themeTime) loadGuiTheme(true);
 }
 
 void Engine::shutdownGui() {
@@ -122,6 +174,7 @@ void Engine::run(Game& game) {
 
         if (m_renderer->beginFrame()) {
             if (m_config.gui) {
+                pollGuiTheme(frameTime);
                 m_renderer->newGuiFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();

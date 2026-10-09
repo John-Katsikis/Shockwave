@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace shockwave {
@@ -162,6 +163,15 @@ struct Renderer::Impl {
     bool guiEnabled = false;
     VkFormat guiColorFormat = VK_FORMAT_UNDEFINED;
     VkDescriptorSet guiSceneTexture = VK_NULL_HANDLE;
+    std::unordered_map<uint32_t, VkDescriptorSet> guiTextures;   // texture id -> ImTextureID, main thread
+
+    // Reloaded textures, uploaded by any thread and swapped in at the start of a frame.
+    struct TextureSwap {
+        uint32_t id;
+        vk::Image image;
+    };
+    std::mutex textureSwapMutex;
+    std::vector<TextureSwap> textureSwaps;
 
     uint32_t frameIndex = 0;
     uint32_t imageIndex = 0;
@@ -204,6 +214,7 @@ struct Renderer::Impl {
         }
         const uint32_t textureCount = std::min(textureReserved.load(), context->maxBindlessTextures());
         for (uint32_t i = 0; i < textureCount; ++i) destroyImage(textures[i]);
+        for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);
         vkDestroyCommandPool(device, uploadPool, nullptr);
         destroyImage(sceneColor);
         destroyImage(sceneDepth);
@@ -320,7 +331,7 @@ struct Renderer::Impl {
         info.Device = context->device();
         info.QueueFamily = context->graphicsQueueFamily();
         info.Queue = context->graphicsQueue();
-        info.DescriptorPoolSize = 256;   // the backend owns its pool: one set per GUI texture
+        info.DescriptorPoolSize = 1024;   // the backend owns its pool: one set per GUI texture
         info.MinImageCount = 2;
         // ImGui rotates its vertex buffers per frame; it needs at least one per frame in flight.
         info.ImageCount = std::max(kFramesInFlight, swapchain->imageCount());
@@ -340,6 +351,8 @@ struct Renderer::Impl {
         vkDeviceWaitIdle(context->device());
         if (guiSceneTexture) ImGui_ImplVulkan_RemoveTexture(guiSceneTexture);
         guiSceneTexture = VK_NULL_HANDLE;
+        for (auto& [id, set] : guiTextures) ImGui_ImplVulkan_RemoveTexture(set);
+        guiTextures.clear();
         ImGui_ImplVulkan_Shutdown();
         guiEnabled = false;
         if (viewportSize.width) needsSceneResize = true;   // back to window-sized output
@@ -641,7 +654,83 @@ struct Renderer::Impl {
         }
         const uint32_t id = textureReserved.fetch_add(1);
         if (id >= context->maxBindlessTextures()) throw std::runtime_error("Out of bindless texture slots");
+        textures[id] = uploadTexture(width, height, rgba, srgb);
+        writeTextureDescriptor(id);
+        return TextureHandle{id};
+    }
 
+    void updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
+                       bool srgb) {
+        if (width == 0 || height == 0 || rgba.size() < size_t(width) * height * 4) {
+            throw std::runtime_error("updateTexture: pixel data is smaller than width x height x 4");
+        }
+        if (texture.id == 0 || texture.id >= std::min(textureReserved.load(), context->maxBindlessTextures())) {
+            throw std::runtime_error("updateTexture: not a texture made with createTexture");
+        }
+        vk::Image image = uploadTexture(width, height, rgba, srgb);
+        std::lock_guard lock(textureSwapMutex);
+        textureSwaps.push_back({texture.id, image});
+    }
+
+    // Frames in flight may still be sampling the old images, so wait for the GPU to
+    // finish them before swapping. Reloads are rare (a file changed), so a short stall is fine.
+    void applyTextureSwaps() {
+        std::vector<TextureSwap> swaps;
+        {
+            std::lock_guard lock(textureSwapMutex);
+            swaps.swap(textureSwaps);
+        }
+        if (swaps.empty()) return;
+        if (frameNumber > 0) {
+            VkSemaphoreWaitInfo waitInfo{};
+            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            waitInfo.semaphoreCount = 1;
+            waitInfo.pSemaphores = &frameTimeline;
+            waitInfo.pValues = &frameNumber;
+            vk::check(vkWaitSemaphores(context->device(), &waitInfo, UINT64_MAX), "vkWaitSemaphores");
+        }
+        for (TextureSwap& swap : swaps) {
+            destroyImage(textures[swap.id]);
+            textures[swap.id] = swap.image;
+            writeTextureDescriptor(swap.id);
+            // The GUI's copy points at the old view: make a new one next time it's asked for.
+            if (auto it = guiTextures.find(swap.id); it != guiTextures.end()) {
+                ImGui_ImplVulkan_RemoveTexture(it->second);
+                guiTextures.erase(it);
+            }
+        }
+    }
+
+    uint64_t guiTexture(TextureHandle texture) {
+        if (!guiEnabled || texture.id >= std::min(textureReserved.load(), context->maxBindlessTextures())) return 0;
+        if (auto it = guiTextures.find(texture.id); it != guiTextures.end()) {
+            return reinterpret_cast<uint64_t>(it->second);
+        }
+        const VkImageView view = textures[texture.id].view;
+        if (!view) return 0;   // still being created on another thread
+        const VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        guiTextures[texture.id] = set;
+        return reinterpret_cast<uint64_t>(set);
+    }
+
+    void writeTextureDescriptor(uint32_t id) {
+        std::lock_guard lock(descriptorMutex);
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageView = textures[id].view;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = bindlessSet;
+        write.dstBinding = 0;
+        write.dstArrayElement = id;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
+    }
+
+    // Uploads RGBA8 pixels into a new sampled image with a full mip chain.
+    vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
         const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
         const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
         vk::Image image = createImage({width, height}, format,
@@ -704,24 +793,7 @@ struct Renderer::Impl {
                             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, mipLevels - 1, 1);
         });
         vmaDestroyBuffer(context->allocator(), staging.buffer, staging.allocation);
-
-        textures[id] = image;
-        {
-            std::lock_guard lock(descriptorMutex);
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageView = image.view;
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            VkWriteDescriptorSet write{};
-            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = bindlessSet;
-            write.dstBinding = 0;
-            write.dstArrayElement = id;
-            write.descriptorCount = 1;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-            write.pImageInfo = &imageInfo;
-            vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
-        }
-        return TextureHandle{id};
+        return image;
     }
 
     // ---- Per-frame --------------------------------------------------------------------
@@ -790,6 +862,7 @@ struct Renderer::Impl {
             waitInfo.pValues = &waitValue;
             vk::check(vkWaitSemaphores(device, &waitInfo, UINT64_MAX), "vkWaitSemaphores");
         }
+        applyTextureSwaps();
 
         VkResult acquire = vkAcquireNextImageKHR(device, swapchain->handle(), UINT64_MAX,
                                                  f.imageAcquired, VK_NULL_HANDLE, &imageIndex);
@@ -1037,6 +1110,13 @@ MeshHandle Renderer::createMesh(std::span<const Vertex> vertices, std::span<cons
 TextureHandle Renderer::createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
     return m_impl->createTexture(width, height, rgba, srgb);
 }
+
+void Renderer::updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
+                             bool srgb) {
+    m_impl->updateTexture(texture, width, height, rgba, srgb);
+}
+
+uint64_t Renderer::guiTexture(TextureHandle texture) { return m_impl->guiTexture(texture); }
 void Renderer::setClearColor(const Color& color) { m_impl->clearColor = color; }
 void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;

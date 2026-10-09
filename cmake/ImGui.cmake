@@ -43,3 +43,7 @@ set(SHOCKWAVE_IMGUI_BACKENDS
 
 # The UI font, copied next to the executables (build/bin/fonts).
 file(COPY ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf DESTINATION ${CMAKE_BINARY_DIR}/bin/fonts)
+
+# UI themes, copied next to the executables as a fallback. The engine prefers
+# themes/ in the working folder, so run from the project root to edit them live.
+file(COPY ${CMAKE_SOURCE_DIR}/themes DESTINATION ${CMAKE_BINARY_DIR}/bin)

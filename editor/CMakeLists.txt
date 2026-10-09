@@ -1,6 +1,7 @@
 # Shockwave Editor: scene editing on top of the engine, with a Dear ImGui interface.
 add_executable(editor
     src/main.cpp
+    src/AssetBrowser.cpp
     src/Editor.cpp
     src/Scene.cpp
 )

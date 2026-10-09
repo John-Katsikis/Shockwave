@@ -59,10 +59,17 @@ FetchContent_Declare(
     GIT_TAG 1.0.1
     GIT_SHALLOW TRUE
 )
+# stb_image: decodes PNG, JPEG and friends for texture import. One header.
+FetchContent_Declare(
+    stb_image
+    URL https://raw.githubusercontent.com/nothings/stb/2c980bb59875b0d32144a71867fbdebb2f77cd20/stb_image.h
+    URL_HASH SHA256=594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3
+    DOWNLOAD_NO_EXTRACT TRUE
+)
 FetchContent_MakeAvailable(VulkanHeaders)
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
 set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator glm)
+FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator glm stb_image)
 
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
@@ -70,3 +77,7 @@ include(cmake/ImGui.cmake)
 add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(editor)
+
+# Unit tests that need no GPU or window: ctest --test-dir build
+enable_testing()
+add_subdirectory(tests)

@@ -1,0 +1,16 @@
+# Shockwave UI theme: the default dark look with a burnt orange accent.
+# Only what differs from the built-in theme is listed; everything else stays as in
+# default.swtheme. Try it with: ./build/bin/editor --theme themes/ember.swtheme
+
+[palette]
+background    = #121214
+surface       = #19191c
+accent        = #ea580c
+accent_hover  = #fb923c
+accent_active = #fb923c
+selection     = #ea580c38
+
+button_active = #c2410c
+on_accent = #121214
+warning = #fbbf24
+error = #f87171
