@@ -1,0 +1,64 @@
+# Shockwave scene
+shockwave_scene 1
+sky_color 0.32 0.42 0.58
+camera 4 2.8 5.5 0.63 -0.33
+
+entity "Floor"
+  mesh floor
+  texture grid
+  position 0 0 0
+  rotation 0 0 0
+  scale 40 1 40
+  tint 1 1 1 1
+  visible 1
+end
+
+entity "Crate"
+  mesh cube
+  texture panel
+  position 0 0.5 0
+  rotation 0 20 0
+  scale 1 1 1
+  tint 1 0.62 0.25 1
+  visible 1
+end
+
+entity "Ball"
+  mesh sphere
+  texture checker
+  position 2.2 0.75 0.4
+  rotation 0 0 0
+  scale 1.5 1.5 1.5
+  tint 0.35 0.65 1 1
+  visible 1
+end
+
+entity "Pillar"
+  mesh cube
+  texture panel
+  position -2.5 1.5 -1.5
+  rotation 0 0 0
+  scale 1 3 1
+  tint 0.85 0.85 0.9 1
+  visible 1
+end
+
+entity "Ramp"
+  mesh cube
+  texture checker
+  position -0.5 0.4 2.6
+  rotation 12 -15 0
+  scale 3 0.2 1.6
+  tint 0.5 0.9 0.55 1
+  visible 1
+end
+
+entity "Small crate"
+  mesh cube
+  texture panel
+  position 0.9 0.3 -1.4
+  rotation 0 -35 0
+  scale 0.6 0.6 0.6
+  tint 0.95 0.35 0.4 1
+  visible 1
+end
