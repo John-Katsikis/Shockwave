@@ -1,4 +1,4 @@
-#include "Scene.h"
+#include "SceneTemplates.h"
 
 #include <Engine/Components.h>
 

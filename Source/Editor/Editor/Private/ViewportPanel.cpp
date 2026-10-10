@@ -2,6 +2,7 @@
 // controls, picking, the transform gizmo, camera and light icons, shading views,
 // screenshots and drops from the Content panel.
 #include "Editor.h"
+
 #include <UI/Gui.h>
 
 #include <glm/gtc/constants.hpp>

@@ -1,6 +1,7 @@
 // The frame around the panels: menu bar, toolbar, status bar, dock layout, and the
 // smaller windows (preferences, project settings, stats, controls, about, prompts).
 #include "Editor.h"
+
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 

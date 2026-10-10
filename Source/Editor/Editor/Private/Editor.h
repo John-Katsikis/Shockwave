@@ -1,7 +1,8 @@
 #pragma once
 
 #include "Preferences.h"
-#include "Scene.h"
+#include "SceneTemplates.h"
+
 #include <Assets/AssetFolder.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>

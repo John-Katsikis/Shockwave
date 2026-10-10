@@ -1,6 +1,7 @@
 // The Console panel: everything the editor reports, with warnings and errors called out,
 // filters per level, search and copy. The newest message also shows in the status bar.
 #include "Editor.h"
+
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>

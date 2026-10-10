@@ -2,6 +2,7 @@
 // built-in assets, as tiles you can drag onto the viewport, the hierarchy or the
 // inspector. Files saved into Content/ by any program are imported straight away.
 #include "Editor.h"
+
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>

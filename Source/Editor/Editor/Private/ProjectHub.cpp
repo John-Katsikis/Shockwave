@@ -1,6 +1,7 @@
 // The project hub: what the editor shows with no project open. Recent projects, a new
 // project form, and a way to open any project (or the bundled sample).
 #include "Editor.h"
+
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>

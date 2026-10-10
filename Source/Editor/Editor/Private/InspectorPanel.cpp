@@ -2,6 +2,7 @@
 // the fields each component declared (see shockwave/Components.h), so a game's own
 // components show up here as soon as they're registered.
 #include "Editor.h"
+
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 

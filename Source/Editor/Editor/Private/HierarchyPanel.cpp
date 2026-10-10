@@ -1,6 +1,7 @@
 // The Hierarchy panel: the scene's entities as a tree. Click, Ctrl+click and Shift+click
 // select; drag rows onto each other to attach them; F2 or the context menu renames.
 #include "Editor.h"
+
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
