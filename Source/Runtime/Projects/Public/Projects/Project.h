@@ -9,10 +9,11 @@ namespace shockwave {
 // working directory.
 //
 //   MyGame/
-//     shockwave.swproject   name, game module, startup scene, runtime settings
-//     assets/               images and models; scenes name them relative to here
-//     scenes/               .swscene files
-//     .shockwave/           per-user editor state (camera, autosaves); not versioned
+//     MyGame.swproject      name, game module, startup scene, runtime settings
+//     Content/              images and models; scenes name them relative to here
+//     Scenes/               .swscene files
+//     Source/               the game module's C++ (optional)
+//     Saved/                per-user editor state, autosaves, screenshots; not versioned
 struct Project {
     std::filesystem::path file, root, startupScene, assetFolder, sceneFolder, theme;
     std::string name, gameModule;
@@ -20,8 +21,8 @@ struct Project {
     int width = 1280, height = 720;
     bool vsync = true;
 
-    std::filesystem::path statePath() const { return root / ".shockwave"; }
-    // Project-relative with forward slashes ("scenes/main.swscene"); paths outside the
+    std::filesystem::path statePath() const { return root / "Saved"; }
+    // Project-relative with forward slashes ("Scenes/main.swscene"); paths outside the
     // project come back absolute.
     std::string relative(const std::filesystem::path& path) const;
 };
@@ -31,12 +32,13 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
 bool saveProject(const Project& project, std::string& error);
 
 // The manifest a path belongs to: the path itself if it's a .swproject, the one in it
-// if it's a folder (shockwave.swproject first), or else the nearest one in a folder
+// if it's a folder (the first by name if there are several), or else the nearest one in a folder
 // above, so a scene file finds its project.
 std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path& path);
 
-// Lays out a new project in folder (created if needed): shockwave.swproject, assets/,
-// scenes/ and a .gitignore for .shockwave/. The startup scene is scenes/main.swscene;
+// Lays out a new project in folder (created if needed): <Name>.swproject (the name
+// without spaces or punctuation), Content/, Scenes/ and a .gitignore for Saved/. The
+// startup scene is Scenes/main.swscene;
 // writing it is up to the caller, since loadProject wants it to exist. Refuses a folder
 // that already holds a project.
 bool createProject(const std::filesystem::path& folder, const std::string& name, const std::string& gameModule,

@@ -138,7 +138,7 @@ private:
         for (const fs::path& scene : scenes) {
             const std::string shown = m_project.relative(scene);
             const size_t before = problems.size();
-            // Problems name the file as the project does ("scenes/main.swscene:12: ...").
+            // Problems name the file as the project does ("Scenes/main.swscene:12: ...").
             auto report = [&](std::string problem) {
                 if (problem.rfind(scene.string(), 0) == 0) problem.replace(0, scene.string().size(), shown);
                 problems.push_back(std::move(problem));
@@ -206,15 +206,15 @@ private:
         std::ostringstream out;
         shockwave::writeSceneSchema(out, engine().assets());
         out << "\n## Project manifest\n\n"
-            << "`shockwave.swproject` sits at the project root; paths are relative to it and quoted.\n\n"
+            << "`<Name>.swproject` sits at the project root; paths are relative to it and quoted.\n\n"
             << "```text\n"
             << "shockwave_project 1\n"
             << "name \"My Game\"\n"
             << "game_module \"" << m_project.gameModule << "\"      # must match the compiled gameplay library\n"
-            << "startup_scene \"scenes/main.swscene\"   # must exist\n"
-            << "assets \"assets\"                       # optional, default assets\n"
-            << "scenes \"scenes\"                       # optional, default scenes\n"
-            << "theme \"themes/default.swtheme\"        # optional\n"
+            << "startup_scene \"Scenes/main.swscene\"   # must exist\n"
+            << "assets \"Content\"                      # optional, default Content\n"
+            << "scenes \"Scenes\"                       # optional, default Scenes\n"
+            << "theme \"Config/Editor.swtheme\"         # optional editor theme for this project\n"
             << "tick_rate 60                           # simulation updates per second\n"
             << "window_size 1280 720\n"
             << "vsync true\n"
@@ -307,7 +307,8 @@ int main(int argc, char** argv) {
                                                : !tool.scene.empty() ? tool.scene
                                                                      : std::filesystem::current_path();
             const auto found = shockwave::findProjectFile(near);
-            manifest = found ? *found : "shockwave.swproject";
+            // Nothing around: the project whose game module this player was built with.
+            manifest = found ? *found : std::filesystem::path(SHOCKWAVE_GAME_PROJECT);
         }
         shockwave::Project project;
         std::string error;

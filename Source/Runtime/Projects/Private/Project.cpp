@@ -1,4 +1,5 @@
 #include <Projects/Project.h>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -64,9 +65,8 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
     if (in.bad()) return fail("error reading project");
     if (!versionSeen || result.name.empty() || result.gameModule.empty() || result.startupScene.empty())
         return fail("project requires version, name, game_module and startup_scene");
-    if (result.assetFolder.empty()) result.assetFolder = result.root / "assets";
-    if (result.sceneFolder.empty()) result.sceneFolder = result.root / "scenes";
-    if (result.theme.empty()) result.theme = result.root / "themes/default.swtheme";
+    if (result.assetFolder.empty()) result.assetFolder = result.root / "Content";
+    if (result.sceneFolder.empty()) result.sceneFolder = result.root / "Scenes";
     if (!std::filesystem::is_regular_file(result.startupScene, ec)) return fail("startup scene does not exist: " + result.startupScene.string());
     project = std::move(result);
     return true;
@@ -90,7 +90,7 @@ bool saveProject(const Project& project, std::string& error) {
         << "game_module " << std::quoted(project.gameModule) << "\n"
         << "startup_scene " << quotedPath(project.startupScene) << "\n"
         << "assets " << quotedPath(project.assetFolder) << "\n";
-    if (!project.sceneFolder.empty() && project.sceneFolder != project.root / "scenes")
+    if (!project.sceneFolder.empty() && project.sceneFolder != project.root / "Scenes")
         out << "scenes " << quotedPath(project.sceneFolder) << "\n";
     if (!project.theme.empty()) out << "theme " << quotedPath(project.theme) << "\n";
     out << "tick_rate " << project.tickRate << "\n"
@@ -118,7 +118,6 @@ std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path
     namespace fs = std::filesystem;
     std::error_code ec;
     auto inFolder = [&](const fs::path& folder) -> std::optional<fs::path> {
-        if (fs::is_regular_file(folder / "shockwave.swproject", ec)) return folder / "shockwave.swproject";
         std::optional<fs::path> found;
         for (const auto& entry : fs::directory_iterator(folder, ec)) {
             if (entry.path().extension() == ".swproject" && entry.is_regular_file(ec) && (!found || entry.path() < *found))
@@ -158,19 +157,22 @@ bool createProject(const std::filesystem::path& folder, const std::string& name,
     }
     Project result;
     result.root = root;
-    result.file = root / "shockwave.swproject";
+    std::string fileName;
+    for (const char c : name)
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') fileName += c;
+    result.file = root / ((fileName.empty() ? std::string("Game") : fileName) + ".swproject");
     result.name = name;
     result.gameModule = gameModule;
-    result.startupScene = root / "scenes" / "main.swscene";
-    result.assetFolder = root / "assets";
-    result.sceneFolder = root / "scenes";
+    result.startupScene = root / "Scenes" / "main.swscene";
+    result.assetFolder = root / "Content";
+    result.sceneFolder = root / "Scenes";
     for (const fs::path& dir : {root, result.assetFolder, result.sceneFolder}) {
         fs::create_directories(dir, ec);
         if (ec) { error = "can't create " + dir.string() + ": " + ec.message(); return false; }
     }
     if (!fs::exists(root / ".gitignore", ec)) {
         std::ofstream ignore(root / ".gitignore");
-        ignore << "# Per-user editor state: camera positions, autosaves\n.shockwave/\n";
+        ignore << "# Per-user editor state, autosaves and screenshots\nSaved/\n";
     }
     if (!saveProject(result, error)) return false;
     project = std::move(result);

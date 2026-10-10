@@ -12,7 +12,7 @@ namespace shockwave {
 class JobSystem;
 class Renderer;
 
-// Keeps a folder of source files (assets/ in a project) imported into Assets. Each file
+// Keeps a folder of source files (Content/ in a project) imported into Assets. Each file
 // is named by its path inside the folder with forward slashes ("textures/bricks.png"),
 // which is how scene files refer to it. Saving a file in any program re-imports it, and
 // everything using it updates on the next frame.

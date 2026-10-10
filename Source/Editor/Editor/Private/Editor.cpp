@@ -307,7 +307,7 @@ bool Editor::createNewProject(const fs::path& folder, const std::string& name) {
     return openProject(project.file);
 }
 
-// .shockwave/editor.swstate: which scene was open and where the camera was in each scene.
+// Saved/editor.swstate: which scene was open and where the camera was in each scene.
 // Per user, so it stays out of version control.
 void Editor::loadEditorState() {
     m_sceneCameras.clear();

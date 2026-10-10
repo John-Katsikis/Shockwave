@@ -96,7 +96,7 @@ void characters(JobSystem& jobs) {
 }
 void models(JobSystem& jobs,const std::filesystem::path& root) {
     Assets assets;auto asset=std::make_shared<ModelAsset>();std::string error;
-    check(loadModel(root/"assets/models/material-demo.glb",asset->data,error),error.c_str());if (asset->data.meshes.empty()) return;
+    check(loadModel(root/"Games/Sample/Content/models/material-demo.glb",asset->data,error),error.c_str());if (asset->data.meshes.empty()) return;
     auto handle=assets.addModel("model",asset);
     World w;floor(w);auto e=box(w,{0,3,0});w.add<ModelRenderer>(e,{handle});w.get<Collider>(e)->shape=Collider::Shape::ConvexModel;
     PhysicsWorld p(w,jobs,&assets);ticks(p,180);check(p.diagnostics().empty() && near(w.get<Transform>(e)->position.y,0,.1f),"imported convex hull rests on floor");

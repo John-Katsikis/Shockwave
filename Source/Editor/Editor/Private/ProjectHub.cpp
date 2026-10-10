@@ -17,13 +17,13 @@ namespace gui = shockwave::gui;
 
 namespace {
 
-// The sample project at the root of the engine's source tree (shockwave.swproject).
-// Looked for where you run from, above the build, then in the tree the editor was built from.
+// The sample project in the engine's source tree (Games/Sample). Looked for where you
+// run from, above the build, then in the tree the editor was built from.
 std::optional<fs::path> findSampleProject() {
     const fs::path exe = SDL_GetBasePath();
     for (const fs::path& base : {fs::current_path(), exe / ".." / "..", fs::path(SHOCKWAVE_SOURCE_DIR)}) {
         std::error_code ec;
-        const fs::path file = base / "shockwave.swproject";
+        const fs::path file = base / "Games" / "Sample" / "Sample.swproject";
         if (fs::is_regular_file(file, ec)) return fs::weakly_canonical(file, ec);
     }
     return std::nullopt;

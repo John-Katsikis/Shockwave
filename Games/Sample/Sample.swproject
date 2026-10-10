@@ -2,9 +2,8 @@
 shockwave_project 1
 name "Shockwave Sample"
 game_module "sample"
-startup_scene "scenes/main.swscene"
-assets "assets"
-theme "themes/default.swtheme"
+startup_scene "Scenes/main.swscene"
+assets "Content"
 tick_rate 60
 window_size 1280 720
 vsync true

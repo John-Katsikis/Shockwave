@@ -435,7 +435,7 @@ void Editor::drawPreferencesWindow() {
     changed |= ImGui::Checkbox("Reopen the last project at startup", &m_prefs.reopenLastProject);
     changed |= ImGui::SliderInt("Autosave every", &m_prefs.autosaveMinutes, 0, 30,
                                 m_prefs.autosaveMinutes == 0 ? "off" : "%d min");
-    ImGui::SetItemTooltip("Unsaved changes are kept in the project's .shockwave folder and offered back if the editor stops");
+    ImGui::SetItemTooltip("Unsaved changes are kept in the project's Saved folder and offered back if the editor stops");
 
     ImGui::SeparatorText("Appearance");
     const std::vector<std::string> themes = findThemes();

@@ -1,6 +1,6 @@
 // The Content panel: the project's assets (by folder) and scenes, and the engine's
 // built-in assets, as tiles you can drag onto the viewport, the hierarchy or the
-// inspector. Files saved into assets/ by any program are imported straight away.
+// inspector. Files saved into Content/ by any program are imported straight away.
 #include "Editor.h"
 
 #include <UI/Gui.h>

@@ -9,7 +9,7 @@
 // Shockwave Editor.
 //   editor [project folder | project.swproject | scene.swscene] [options]
 //
-// With nothing given it opens the project in the working folder (shockwave.swproject),
+// With nothing given it opens the project in the working folder (or a folder above it),
 // else the last project, else the project hub. A scene opens inside its project.
 //
 // Options:
@@ -64,8 +64,8 @@ int main(int argc, char** argv) {
             else throw std::runtime_error("Unknown option: " + arg);
         }
         std::error_code ec;
-        if (options.path.empty() && std::filesystem::is_regular_file("shockwave.swproject", ec)) {
-            options.path = "shockwave.swproject";
+        if (options.path.empty()) {
+            if (const auto found = shockwave::findProjectFile(std::filesystem::current_path(ec))) options.path = found->string();
         }
 
         std::string error;

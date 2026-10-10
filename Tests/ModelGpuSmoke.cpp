@@ -21,7 +21,7 @@ public:
     void onStart() override {
         for (const auto& file:fs::directory_iterator(m_source/"Tests/fixtures/models"))
             if (file.path().extension()!=".py") fs::copy_file(file.path(),temp.root/file.path().filename());
-        fs::copy_file(m_source/"assets/models/material-demo.glb",temp.root/"demo.glb");
+        fs::copy_file(m_source/"Games/Sample/Content/models/material-demo.glb",temp.root/"demo.glb");
         folder=std::make_unique<AssetFolder>(engine().renderer(),engine().assets(),engine().jobs());
         for (const auto& change:folder->open(temp.root)) require(change.what!=AssetFolder::Change::What::Failed,change.error.c_str());
         const auto h=engine().assets().findModel("parts.gltf");

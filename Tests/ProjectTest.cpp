@@ -78,7 +78,7 @@ void manifests() {
     std::string error;
     check(loadProject(file, p, error), "Quoted paths, comments and settings load");
     check(p.name == "Test # Game" && p.tickRate == 120 && !p.vsync && p.width == 800, "Manifest settings retained");
-    check(p.startupScene == root / "scenes with spaces/main.swscene" && p.assetFolder == root / "assets", "Paths resolve against manifest from another working directory");
+    check(p.startupScene == root / "scenes with spaces/main.swscene" && p.assetFolder == root / "Content", "Paths resolve against manifest from another working directory");
     const auto original = p.name;
     for (const auto& invalid : {valid + "tick_rate 30\n", valid + "unknown 1\n", std::string("shockwave_project 1\nname Test\ngame_module test\nstartup_scene \"scenes with spaces/main.swscene\"\nwindow_size 1 1\n"),
                                 std::string("shockwave_project 99\n"), std::string("shockwave_project 1\nname \"Missing scene\"\n"),
@@ -96,17 +96,17 @@ void created() {
     Project p;
     std::string error;
     check(createProject(root / "My Game", "My Game", "test", p, error), "New project is laid out");
-    check(p.file == root / "My Game/shockwave.swproject" && fs::is_directory(p.assetFolder) && fs::is_directory(p.sceneFolder) &&
+    check(p.file == root / "My Game/MyGame.swproject" && fs::is_directory(p.assetFolder) && fs::is_directory(p.sceneFolder) &&
           fs::exists(root / "My Game/.gitignore"), "Manifest, folders and .gitignore exist");
     check(!createProject(root / "My Game", "Again", "test", p, error), "One project per folder");
     { std::ofstream scene(p.startupScene); scene << "shockwave_scene 2\n"; }
     Project loaded;
     check(loadProject(p.file, loaded, error), "Created manifest loads once its scene exists");
-    check(loaded.name == "My Game" && loaded.gameModule == "test" && loaded.sceneFolder == root / "My Game/scenes", "Created settings retained");
+    check(loaded.name == "My Game" && loaded.gameModule == "test" && loaded.sceneFolder == root / "My Game/Scenes", "Created settings retained");
     loaded.tickRate = 90;
     loaded.startupScene = loaded.sceneFolder / "main.swscene";
     check(saveProject(loaded, error) && loadProject(p.file, loaded, error) && loaded.tickRate == 90, "Save round-trips");
-    check(loaded.relative(loaded.sceneFolder / "a.swscene") == "scenes/a.swscene", "Project-relative paths");
+    check(loaded.relative(loaded.sceneFolder / "a.swscene") == "Scenes/a.swscene", "Project-relative paths");
     const auto found = findProjectFile(root / "My Game/scenes/deep/x.swscene");
     check(found && *found == p.file, "A scene finds the project above it");
     check(findProjectFile(root / "My Game") == p.file, "A folder finds its manifest");

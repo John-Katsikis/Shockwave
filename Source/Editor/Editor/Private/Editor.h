@@ -52,7 +52,7 @@ struct EditorOptions {
 //
 // Everything belongs to a project (shockwave/Project.h): with none open, the editor shows
 // the project hub. Per-user settings live in Preferences; per-user, per-project state
-// (camera positions, autosaves) in the project's .shockwave folder.
+// (camera positions, autosaves) in the project's Saved folder.
 //
 // The scene is an engine World, the same thing a game runs. Play starts a GameSession:
 // the project's compiled gameplay and Jolt physics run on it each tick, and Stop puts
@@ -231,7 +231,7 @@ private:
     std::map<std::string, EditorCamera> m_sceneCameras;   // project-relative scene path -> view
     std::string m_lastScene;                             // project-relative, reopened next time
     std::vector<std::filesystem::path> m_scenes;         // .swscene files in the project
-    std::vector<std::string> m_assetFolders;             // folders inside assets/, forward slashes
+    std::vector<std::string> m_assetFolders;             // folders inside Content/, forward slashes
     double m_sceneScanTimer = 0.0;
 
     shockwave::World m_world;

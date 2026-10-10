@@ -7,7 +7,7 @@
 
 namespace editor {
 
-// Where the editor's camera was in a scene, kept per user in the project's .shockwave
+// Where the editor's camera was in a scene, kept per user in the project's Saved
 // folder (not in the scene file, so moving the view doesn't change what's committed).
 struct EditorCamera {
     glm::vec3 position{6.0f, 4.0f, 8.0f};

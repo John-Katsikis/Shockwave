@@ -552,7 +552,7 @@ void Editor::saveViewportScreenshot() {
     const std::time_t now = std::time(nullptr);
     std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
     namespace fs = std::filesystem;
-    const fs::path folder = (m_hasProject ? m_project.root : fs::current_path()) / "screenshots";
+    const fs::path folder = (m_hasProject ? m_project.root : fs::current_path()) / "Saved" / "Screenshots";
     std::error_code ec;
     fs::create_directories(folder, ec);
     m_screenshotPath = folder / (scene + "-" + stamp + ".png");
