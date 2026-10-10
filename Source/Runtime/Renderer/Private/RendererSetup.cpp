@@ -62,6 +62,7 @@ Renderer::Impl::~Impl() {
         vmaDestroyBuffer(allocator, f.drawBuffer.buffer, f.drawBuffer.allocation);
         vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
         vkDestroySemaphore(device, f.imageAcquired, nullptr);
+        vkDestroyQueryPool(device, f.timestamps, nullptr);
         vkDestroyCommandPool(device, f.pool, nullptr);
     }
     swapchain.reset();

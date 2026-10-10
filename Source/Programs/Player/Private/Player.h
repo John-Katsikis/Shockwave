@@ -1,7 +1,7 @@
 #pragma once
 
 // The player: runs a project like the shipped game, or one of the command-line tools
-// (--check, --schema, --input-schema, --devices, --screenshot) that people, CI and AI agents use to verify it.
+// (--check, --schema, --input-schema, --devices, --screenshot, --benchmark) that people, CI and AI agents use to verify it.
 
 #include <Assets/AssetFolder.h>
 #include <Engine/Engine.h>
@@ -30,6 +30,8 @@ struct Tool {
     int screenshotFrame = 30;   // --frames with --screenshot
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     bool printFrame = false;   // --print-frame: the render graph, at exit
+    double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
+    fs::path benchmarkJson;   // --json with --benchmark
 };
 
 // Tools that need no project or window. Both return the process exit code.
@@ -52,6 +54,9 @@ public:
 private:
     // Asks for frame N, then reports and quits once the renderer has written it.
     void takeScreenshot();
+    // --benchmark: warms up, measures, prints the frame statistics and quits.
+    void benchmark(double dt);
+    void reportBenchmark();
 
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);
@@ -63,6 +68,8 @@ private:
     int m_exitCode = 0;
     int m_frame = 0;
     bool m_screenshotRequested = false;
+    double m_benchmarkTime = 0;
+    bool m_benchmarkMeasuring = false;
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;

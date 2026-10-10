@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
         else if (!options.prefs.theme.empty())
             config.guiTheme = options.prefs.theme;
         config.window.vsync = options.prefs.vsync && !uncapped;
-        if (uncapped) options.prefs.vsync = false;
+        if (uncapped) options.prefs.vsync = false, options.prefs.frameLimit = 0;
 
         shockwave::Engine engine(config);
         editor::Editor editor(std::move(options));

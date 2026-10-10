@@ -63,11 +63,15 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (!(row >> result.width >> result.height) || result.width < 320 || result.height < 240 ||
                     result.width > 16384 || result.height > 16384)
                     return fail("invalid window_size (minimum 320 x 240)");
-            } else if (key == "vsync") {
+            } else if (key == "vsync" || key == "low_latency") {
                 std::string value;
                 row >> value;
-                if (value != "true" && value != "false") return fail("vsync must be true or false");
-                result.vsync = value == "true";
+                if (value != "true" && value != "false") return fail(key + " must be true or false");
+                (key == "vsync" ? result.vsync : result.lowLatency) = value == "true";
+            } else if (key == "frame_limit") {
+                if (!(row >> result.frameLimit) || !std::isfinite(result.frameLimit) || result.frameLimit < 0 ||
+                    (result.frameLimit > 0 && result.frameLimit < 10) || result.frameLimit > 1000)
+                    return fail("frame_limit must be 0 (no limit) or between 10 and 1000");
             } else
                 return fail("unknown key '" + key + "'");
         }
@@ -113,6 +117,8 @@ bool saveProject(const Project& project, std::string& error) {
     out << "tick_rate " << project.tickRate << "\n"
         << "window_size " << project.width << " " << project.height << "\n"
         << "vsync " << (project.vsync ? "true" : "false") << "\n";
+    if (project.frameLimit > 0) out << "frame_limit " << project.frameLimit << "\n";
+    if (project.lowLatency) out << "low_latency true\n";
     const fs::path temp = project.file.string() + ".tmp";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);

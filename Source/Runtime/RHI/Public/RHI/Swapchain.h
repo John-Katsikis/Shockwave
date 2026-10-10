@@ -24,6 +24,10 @@ public:
     // Takes effect at the next recreate.
     void setVsync(bool vsync) { m_vsync = vsync; }
     bool vsync() const { return m_vsync; }
+    // With vsync, show the newest finished frame at each refresh instead of queueing them
+    // (FIFO latest ready), where supported. Takes effect at the next recreate.
+    void setLowLatency(bool lowLatency) { m_lowLatency = lowLatency; }
+    VkPresentModeKHR presentMode() const { return m_swapchain.present_mode; }
 
     VkSwapchainKHR handle() const { return m_swapchain.swapchain; }
     VkExtent2D extent() const { return m_swapchain.extent; }
@@ -38,6 +42,7 @@ private:
 
     const Context& m_context;
     bool m_vsync;
+    bool m_lowLatency = false;
     vkb::Swapchain m_swapchain;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;

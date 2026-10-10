@@ -35,7 +35,7 @@ module sees only the headers of modules it depends on, directly or through them.
 
 | Module | What it holds | Depends on | Unreal counterpart |
 |---|---|---|---|
-| Core | job system, logging | GLM | Core |
+| Core | job system, logging, frame pacing, profiling macros (Tracy) | GLM | Core |
 | Platform | window and OS events (SDL3) | Core | ApplicationCore |
 | Input | keyboard, mouse, gamepads and joysticks behind named actions; `.swinput` bindings | Platform | InputCore, Enhanced Input |
 | RHI | Vulkan device, swapchain, pipelines, render graph | Platform | RHI, VulkanRHI |

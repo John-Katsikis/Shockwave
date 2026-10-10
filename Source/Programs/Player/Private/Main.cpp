@@ -30,6 +30,9 @@ int main(int argc, char** argv) {
         float audioVolume = 1;
         Tool tool;
         std::pair<int, int> size{0, 0};
+        double fpsOverride = -1;   // --fps
+        bool lowLatency = false;   // --low-latency
+        int vsyncOverride = -1;   // --vsync on|off
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
@@ -86,20 +89,44 @@ int main(int argc, char** argv) {
                     h < 16)
                     throw std::runtime_error("--size takes WIDTHxHEIGHT, like 1280x720");
                 size = {w, h};
+            } else if (arg == "--fps" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                double fps = -1;
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), fps);
+                if (ec != std::errc{} || end != value.data() + value.size() || fps < 0 || (fps > 0 && fps < 10) ||
+                    fps > 1000)
+                    throw std::runtime_error("--fps takes 0 (no limit) or a frame rate from 10 to 1000");
+                fpsOverride = fps;
+            } else if (arg == "--low-latency") {
+                lowLatency = true;
+            } else if (arg == "--vsync" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (value != "on" && value != "off") throw std::runtime_error("--vsync takes on or off");
+                vsyncOverride = value == "on" ? 1 : 0;
+            } else if (arg == "--benchmark") {
+                tool.benchmarkSeconds = 10;
+                if (i + 1 < argc && argv[i + 1][0] != '-') {
+                    const std::string value = argv[++i];
+                    const auto [end, ec] =
+                        std::from_chars(value.data(), value.data() + value.size(), tool.benchmarkSeconds);
+                    if (ec != std::errc{} || end != value.data() + value.size() || tool.benchmarkSeconds <= 0)
+                        throw std::runtime_error("--benchmark takes a number of seconds");
+                }
+            } else if (arg == "--json" && i + 1 < argc) {
+                tool.benchmarkJson = argv[++i];
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
             } else if (arg == "--help") {
-                std::puts(
-                    "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
-                    "       [--size WxH] [--view lit|unlit|normals|lighting] [--print-frame]\n"
-                    "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
-                    "                                    play N frames (default 30), save the last, quit\n"
-                    "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
-                    "player --schema file.md             write the scene format reference (- for stdout)\n"
-                    "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
-                    "player --audio-volume 0..1          master playback volume (default 1)\n"
-                    "player --devices [seconds]          list controllers; then print each input pressed\n"
-                    "                                    as binding text, for that many seconds");
+                std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
+                          "       [--size WxH] [--view lit|unlit|normals|lighting] [--print-frame]\n"
+                          "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
+                          "                                    play N frames (default 30), save the last, quit\n"
+                          "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
+                          "player --schema file.md             write the scene format reference (- for stdout)\n"
+                          "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                          "player --audio-volume 0..1          master playback volume (default 1)\n"
+                          "player --devices [seconds]          list controllers; then print each input pressed\n"
+                          "                                    as binding text, for that many seconds");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-') {
                 if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")
@@ -126,6 +153,9 @@ int main(int argc, char** argv) {
         shockwave::EngineConfig config;
         config.window = {project.name, project.width, project.height, project.vsync};
         config.tickRate = project.tickRate;
+        config.frameLimit = fpsOverride >= 0 ? fpsOverride : project.frameLimit;
+        config.lowLatency = lowLatency || project.lowLatency;
+        if (vsyncOverride >= 0) config.window.vsync = vsyncOverride == 1;
         config.maxFrames = frames;
         if (size.first) config.window.width = size.first, config.window.height = size.second;
         if (!tool.screenshot.empty()) {
@@ -134,6 +164,12 @@ int main(int argc, char** argv) {
             config.maxFrames = tool.screenshotFrame + 120;
             config.window.hidden = true;
             config.window.vsync = false;
+        }
+        if (tool.benchmarkSeconds > 0) {
+            // Measured in a hidden window, uncapped unless asked: --fps, --vsync on or the
+            // project's frame_limit say how it should be paced.
+            config.window.hidden = true;
+            if (vsyncOverride < 0) config.window.vsync = false;
         }
         if (tool.mode != Tool::Mode::Play) {
             config.window.hidden = true;

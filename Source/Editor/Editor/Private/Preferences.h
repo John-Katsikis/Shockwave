@@ -17,6 +17,8 @@ struct Preferences {
 
     std::string theme;   // a .swtheme path; empty uses the project's theme
     bool vsync = true;
+    float frameLimit = 0.0f;   // the editor's own frame cap, fps; 0 = none
+    bool lowLatency = false;
     float renderScale = 1.0f;
     float masterVolume = 1.0f;
 

@@ -29,6 +29,14 @@ void Renderer::Impl::createFrames() {
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
         f.frameData = static_cast<uint8_t*>(info.pMappedData);
         f.frameAddress = bufferAddress(f.frameBuffer.buffer);
+
+        if (context->timestampPeriod() > 0.0f) {
+            VkQueryPoolCreateInfo queryInfo{};
+            queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            queryInfo.queryCount = vk::RenderGraph::kMaxTimedPasses + 1;
+            vk::check(vkCreateQueryPool(device, &queryInfo, nullptr, &f.timestamps), "vkCreateQueryPool");
+        }
     }
 
     VkSemaphoreTypeCreateInfo timelineInfo{};

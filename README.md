@@ -44,7 +44,7 @@ Shockwave/
   cmake/                build helpers (engine modules, shader compilation, Dear ImGui)
   Source/
     Runtime/            the engine, one static library per module
-      Core/               job system, logging
+      Core/               job system, logging, frame pacing, profiling
       Platform/           window
       Input/              keyboard, mouse, gamepads, joysticks and action mapping
       RHI/                Vulkan backend: device, swapchain, pipelines, render graph
@@ -393,6 +393,20 @@ the bindings live in the project's `Config/Input.swinput` and reload when it cha
 
 A gamepad also flies the editor camera while the viewport has focus: left stick moves, right
 stick looks, triggers go up and down.
+
+### Frame pacing and profiling
+
+A precise frame limiter, a low-latency mode, present timing where the driver supports it,
+and frame statistics that track the 1% and 0.1% lows, not just the average. Set them in
+Preferences or Project settings (`frame_limit` and `low_latency` in the `.swproject`), watch
+them in **Window > Stats**, or measure from the command line:
+
+```sh
+./build/bin/player --benchmark 10 --json bench.json
+```
+
+Build with `-DSHOCKWAVE_PROFILE=ON` to profile every thread with Tracy. See
+[Frame pacing](docs/FramePacing.md).
 
 ### Audio
 

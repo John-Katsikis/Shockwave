@@ -20,6 +20,8 @@ struct Project {
     double tickRate = 60;
     int width = 1280, height = 720;
     bool vsync = true;
+    double frameLimit = 0;   // frames per second, 0 = no cap beyond vsync
+    bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)
 
     std::filesystem::path statePath() const { return root / "Saved"; }
     // Project-relative with forward slashes ("Scenes/main.swscene"); paths outside the

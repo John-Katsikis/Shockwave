@@ -117,6 +117,20 @@ FetchContent_MakeAvailable(JoltPhysics)
 
 include(cmake/AudioCodecs.cmake)
 
+# Tracy CPU profiler (Core/Profile.h). Off by default: with it off, nothing is fetched
+# and the profiling macros compile away. On-demand mode records only while the Tracy
+# profiler is connected, so a profiling build left running doesn't grow its memory.
+option(SHOCKWAVE_PROFILE "Build with the Tracy profiler" OFF)
+if(SHOCKWAVE_PROFILE)
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.11.1
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(tracy)
+endif()
+
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
 

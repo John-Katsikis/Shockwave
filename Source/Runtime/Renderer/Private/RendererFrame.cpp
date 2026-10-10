@@ -1,5 +1,7 @@
 #include "RendererImpl.h"
 
+#include <Core/Profile.h>
+
 namespace shockwave {
 
 void Renderer::Impl::drawMesh(
@@ -84,10 +86,13 @@ bool Renderer::Impl::beginFrame() {
         waitInfo.semaphoreCount = 1;
         waitInfo.pSemaphores = &frameTimeline;
         waitInfo.pValues = &waitValue;
+        SW_PROFILE_SCOPE("Wait for GPU (frames in flight)");
         vk::check(vkWaitSemaphores(device, &waitInfo, UINT64_MAX), "vkWaitSemaphores");
     }
+    readTimestamps(f);   // the GPU is done with this slot's last frame
     applyTextureSwaps();
 
+    SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
         vkAcquireNextImageKHR(device, swapchain->handle(), UINT64_MAX, f.imageAcquired, VK_NULL_HANDLE, &imageIndex);
     if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -96,6 +101,64 @@ bool Renderer::Impl::beginFrame() {
     }
     if (acquire != VK_SUBOPTIMAL_KHR) vk::check(acquire, "vkAcquireNextImageKHR");
     return true;
+}
+
+void Renderer::Impl::readTimestamps(Frame& f) {
+    if (f.timedPasses.empty()) return;
+    std::array<uint64_t, vk::RenderGraph::kMaxTimedPasses + 1> ticks{};
+    const uint32_t count = static_cast<uint32_t>(f.timedPasses.size()) + 1;
+    const VkResult result = vkGetQueryPoolResults(
+        context->device(), f.timestamps, 0, count, sizeof(uint64_t) * count, ticks.data(), sizeof(uint64_t),
+        VK_QUERY_RESULT_64_BIT);
+    if (result != VK_SUCCESS) return;
+    const double msPerTick = static_cast<double>(context->timestampPeriod()) * 1e-6;
+    passTimings.resize(f.timedPasses.size());
+    for (size_t i = 0; i < f.timedPasses.size(); ++i) {
+        passTimings[i].name = f.timedPasses[i];
+        passTimings[i].gpuMs = static_cast<float>(static_cast<double>(ticks[i + 1] - ticks[i]) * msPerTick);
+    }
+    gpuFrameMs = static_cast<float>(static_cast<double>(ticks[count - 1] - ticks[0]) * msPerTick);
+    f.timedPasses.clear();
+}
+
+float Renderer::Impl::waitForPresent() {
+    if (frameNumber == 0) return 0.0f;
+    SW_PROFILE_SCOPE("Wait for present (low latency)");
+    VkDevice device = context->device();
+    const uint64_t timeoutNs = 100'000'000;   // never stall a frame on a lost present
+    bool presented = false;
+    if (presentedSwapchain == swapchain->handle() && !needsResize) {
+        if (context->presentWait() == vk::Context::PresentWait::Version2) {
+            VkPresentWait2InfoKHR info{};
+            info.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR;
+            info.presentId = frameNumber;
+            info.timeout = timeoutNs;
+            presented = vkWaitForPresent2KHR(device, presentedSwapchain, &info) == VK_SUCCESS;
+        } else if (context->presentWait() == vk::Context::PresentWait::Version1) {
+            presented = vkWaitForPresentKHR(device, presentedSwapchain, frameNumber, timeoutNs) == VK_SUCCESS;
+        }
+    }
+    if (context->presentWait() == vk::Context::PresentWait::None) {
+        // No present wait: the next best thing is the GPU having finished the frame.
+        VkSemaphoreWaitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        waitInfo.semaphoreCount = 1;
+        waitInfo.pSemaphores = &frameTimeline;
+        waitInfo.pValues = &frameNumber;
+        vkWaitSemaphores(device, &waitInfo, timeoutNs);
+        return 0.0f;
+    }
+    if (!presented) {
+        lastPresentTicks = 0;
+        return 0.0f;
+    }
+    const uint64_t now = SDL_GetPerformanceCounter();
+    const float interval = lastPresentTicks ? static_cast<float>(
+                                                  static_cast<double>(now - lastPresentTicks) * 1000.0 /
+                                                  static_cast<double>(SDL_GetPerformanceFrequency()))
+                                            : 0.0f;
+    lastPresentTicks = now;
+    return interval;
 }
 
 void Renderer::Impl::setSceneViewport(VkCommandBuffer cmd) {
@@ -189,7 +252,9 @@ void Renderer::Impl::endFrame() {
 
     writeFrameData(f);
     buildGraph(cmd, f, image);
+    graph.setTimestampPool(f.timestamps);
     graph.execute(cmd);
+    f.timedPasses = graph.timedPasses();
     frameGraphText = graph.description();
 
     vk::check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
@@ -234,6 +299,12 @@ void Renderer::Impl::endFrame() {
     present.swapchainCount = 1;
     present.pSwapchains = &sc;
     present.pImageIndices = &imageIndex;
+    // Present id N for frame N, so present wait can tell when it reached the screen.
+    const uint64_t presentId = frameNumber;
+    VkPresentIdKHR presentId1{VK_STRUCTURE_TYPE_PRESENT_ID_KHR, nullptr, 1, &presentId};
+    VkPresentId2KHR presentId2{VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR, nullptr, 1, &presentId};
+    if (context->presentWait() == vk::Context::PresentWait::Version2) present.pNext = &presentId2;
+    if (context->presentWait() == vk::Context::PresentWait::Version1) present.pNext = &presentId1;
 
     VkResult result;
     {
@@ -241,6 +312,7 @@ void Renderer::Impl::endFrame() {
         vk::check(vkQueueSubmit2(context->graphicsQueue(), 1, &submit, VK_NULL_HANDLE), "vkQueueSubmit2");
         result = vkQueuePresentKHR(context->graphicsQueue(), &present);
     }
+    presentedSwapchain = sc;
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         needsResize = true;
     } else {

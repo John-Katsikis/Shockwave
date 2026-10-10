@@ -2,9 +2,9 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
-#include <Audio/Audio.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
+#include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/SceneFile.h>
@@ -97,6 +97,79 @@ void Player::onFrame(double dt) {
     m_session->frame(dt);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();
+    if (m_tool.benchmarkSeconds > 0) benchmark(dt);
+}
+
+void Player::benchmark(double dt) {
+    constexpr double kWarmUp = 1.0;   // shader caches, first uploads, clocks ramping up
+    m_benchmarkTime += dt;
+    if (!m_benchmarkMeasuring && m_benchmarkTime >= kWarmUp) {
+        engine().frameStats().clear();
+        m_benchmarkMeasuring = true;
+        m_benchmarkTime = 0;
+    }
+    if (m_benchmarkMeasuring && m_benchmarkTime >= m_tool.benchmarkSeconds) {
+        reportBenchmark();
+        engine().quit();
+    }
+}
+
+void Player::reportBenchmark() {
+    const shockwave::FrameSummary s = engine().frameStats().summary();
+    shockwave::Renderer& renderer = engine().renderer();
+    std::printf(
+        "benchmark: %s, %zu frames over %.1f s\n"
+        "gpu:          %s\n"
+        "presentation: %s; %s\n"
+        "frame limit:  %s; low latency %s\n"
+        "average:      %.1f fps (%.3f ms)\n"
+        "1%% low:       %.1f fps\n"
+        "0.1%% low:     %.1f fps\n"
+        "worst frame:  %.3f ms\n"
+        "jitter:       %.3f ms\n"
+        "cpu:          %.3f ms\n"
+        "gpu time:     %.3f ms\n",
+        m_project.relative(m_project.startupScene).c_str(), s.frames, m_tool.benchmarkSeconds, renderer.gpuName(),
+        renderer.presentModeName(), renderer.presentTiming(),
+        engine().frameLimit() > 0 ? (std::to_string(static_cast<int>(engine().frameLimit())) + " fps").c_str() : "none",
+        engine().lowLatency() ? "on" : "off", s.averageFps, s.averageMs, s.low1Fps, s.low01Fps, s.maxMs, s.jitterMs,
+        s.cpuMs, s.gpuMs);
+    for (const auto& pass : renderer.passTimings())
+        std::printf("  pass %-24s %.3f ms\n", pass.name.c_str(), static_cast<double>(pass.gpuMs));
+    if (m_tool.benchmarkJson.empty()) return;
+    std::ofstream json(m_tool.benchmarkJson, std::ios::trunc);
+    auto escape = [](const std::string& text) {
+        std::string out;
+        for (char c : text) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        return out;
+    };
+    json << "{\n  \"scene\": \"" << escape(m_project.relative(m_project.startupScene)) << "\",\n"
+         << "  \"gpu\": \"" << escape(renderer.gpuName()) << "\",\n"
+         << "  \"present_mode\": \"" << escape(renderer.presentModeName()) << "\",\n"
+         << "  \"present_timing\": \"" << escape(renderer.presentTiming()) << "\",\n"
+         << "  \"frame_limit\": " << engine().frameLimit() << ",\n"
+         << "  \"low_latency\": " << (engine().lowLatency() ? "true" : "false") << ",\n"
+         << "  \"seconds\": " << m_tool.benchmarkSeconds << ",\n"
+         << "  \"frames\": " << s.frames << ",\n"
+         << "  \"average_fps\": " << s.averageFps << ",\n"
+         << "  \"average_ms\": " << s.averageMs << ",\n"
+         << "  \"low_1_percent_fps\": " << s.low1Fps << ",\n"
+         << "  \"low_0_1_percent_fps\": " << s.low01Fps << ",\n"
+         << "  \"worst_ms\": " << s.maxMs << ",\n"
+         << "  \"jitter_ms\": " << s.jitterMs << ",\n"
+         << "  \"cpu_ms\": " << s.cpuMs << ",\n"
+         << "  \"gpu_ms\": " << s.gpuMs << ",\n"
+         << "  \"passes\": [";
+    const auto& passes = renderer.passTimings();
+    for (size_t i = 0; i < passes.size(); ++i) {
+        json << (i ? ", " : "") << "{\"name\": \"" << escape(passes[i].name) << "\", \"gpu_ms\": " << passes[i].gpuMs
+             << "}";
+    }
+    json << "]\n}\n";
+    std::printf("Wrote %s\n", m_tool.benchmarkJson.string().c_str());
 }
 
 void Player::onRender(shockwave::Renderer& renderer, double alpha) {

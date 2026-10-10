@@ -157,6 +157,27 @@ public:
     void setVsync(bool vsync);
     bool vsync() const;
 
+    // ---- Frame pacing and GPU timing ----
+    // With vsync, show the newest finished frame at each refresh rather than queueing
+    // frames (FIFO latest ready, where the driver has it).
+    void setLowLatency(bool lowLatency);
+    // Blocks until the last presented frame has reached the screen (Vulkan present wait),
+    // or, without present wait, until the GPU has finished it. The engine's low-latency
+    // mode calls this before reading input, so input is as fresh as possible when the
+    // frame is shown. Returns the time between the last two frames reaching the screen,
+    // in milliseconds, or 0 when that's unknown.
+    float waitForPresent();
+    const char* presentTiming() const;   // how presentation is timed: "present wait 2", ...
+    const char* presentModeName() const;   // "FIFO", "mailbox", ...
+    struct PassTiming {
+        std::string name;
+        float gpuMs = 0;
+    };
+    // The GPU time of each render graph pass in the latest frame the GPU has finished, and
+    // their total. Empty and 0 when the GPU has no timestamp support.
+    const std::vector<PassTiming>& passTimings() const;
+    float gpuFrameMs() const;
+
     float aspectRatio() const;   // of the scene's output (window or viewport), independent of render scale
     const char* gpuName() const;
     uint32_t drawCount() const;   // draws submitted last frame

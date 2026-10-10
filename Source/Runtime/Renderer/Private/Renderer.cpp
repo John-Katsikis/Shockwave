@@ -74,6 +74,25 @@ void Renderer::setVsync(bool vsync) {
     }
 }
 bool Renderer::vsync() const { return m_impl->swapchain->vsync(); }
+void Renderer::setLowLatency(bool lowLatency) {
+    m_impl->swapchain->setLowLatency(lowLatency);
+    // Only the vsync present mode depends on it.
+    if (m_impl->swapchain->vsync() && m_impl->context->fifoLatestReady()) m_impl->needsResize = true;
+}
+float Renderer::waitForPresent() { return m_impl->waitForPresent(); }
+const char* Renderer::presentTiming() const { return m_impl->context->presentTimingName(); }
+const char* Renderer::presentModeName() const {
+    switch (m_impl->swapchain->presentMode()) {
+    case VK_PRESENT_MODE_FIFO_KHR: return "FIFO (vsync)";
+    case VK_PRESENT_MODE_FIFO_LATEST_READY_KHR: return "FIFO latest ready (vsync, low latency)";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO relaxed";
+    case VK_PRESENT_MODE_MAILBOX_KHR: return "mailbox (uncapped, no tearing)";
+    case VK_PRESENT_MODE_IMMEDIATE_KHR: return "immediate (uncapped, may tear)";
+    default: return "other";
+    }
+}
+const std::vector<Renderer::PassTiming>& Renderer::passTimings() const { return m_impl->passTimings; }
+float Renderer::gpuFrameMs() const { return m_impl->gpuFrameMs; }
 float Renderer::aspectRatio() const {
     const VkExtent2D e = m_impl->outputExtent();
     return e.height ? static_cast<float>(e.width) / static_cast<float>(e.height) : 1.0f;

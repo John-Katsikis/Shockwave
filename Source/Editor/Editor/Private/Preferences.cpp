@@ -1,8 +1,8 @@
 #include "Preferences.h"
 
 #include <algorithm>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -85,6 +85,10 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             loaded.theme = value;
         else if (key == "vsync")
             loaded.vsync = parseBool(value);
+        else if (key == "frame_limit")
+            number(loaded.frameLimit);
+        else if (key == "low_latency")
+            loaded.lowLatency = parseBool(value);
         else if (key == "master_volume")
             number(loaded.masterVolume);
         else if (key == "render_scale")
@@ -132,6 +136,8 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
     out << "\n# Appearance and output\n"
         << "theme = " << prefs.theme << "\n"
         << "vsync = " << flag(prefs.vsync) << "\n"
+        << "frame_limit = " << prefs.frameLimit << "\n"
+        << "low_latency = " << flag(prefs.lowLatency) << "\n"
         << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
         << "\n# Viewport\n"

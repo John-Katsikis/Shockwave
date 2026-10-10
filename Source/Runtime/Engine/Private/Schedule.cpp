@@ -1,5 +1,7 @@
 #include <Engine/Schedule.h>
 
+#include <Core/Profile.h>
+
 #include <algorithm>
 
 namespace shockwave {
@@ -42,6 +44,12 @@ void Schedule::build() const {
     m_built = true;
 }
 
+// One profiler zone per system, named after it.
+static void runSystem(const auto& system, const SystemContext& ctx) {
+    SW_PROFILE_SCOPE_DYNAMIC(system.name.data(), system.name.size());
+    system.fn(ctx);
+}
+
 void Schedule::run(World& world, JobSystem& jobs, double dt) {
     if (!m_built) build();
     if (m_commands.size() != jobs.threadCount()) m_commands.resize(jobs.threadCount());
@@ -49,12 +57,12 @@ void Schedule::run(World& world, JobSystem& jobs, double dt) {
     SystemContext ctx{world, jobs, static_cast<float>(dt), &m_commands};
     for (const std::vector<size_t>& stage : m_stages) {
         if (stage.size() == 1) {
-            m_systems[stage[0]].fn(ctx);   // nothing to run beside it
+            runSystem(m_systems[stage[0]], ctx);   // nothing to run beside it
             continue;
         }
         JobCounter counter;
         for (size_t i : stage) {
-            jobs.run([this, i, &ctx] { m_systems[i].fn(ctx); }, &counter);
+            jobs.run([this, i, &ctx] { runSystem(m_systems[i], ctx); }, &counter);
         }
         jobs.wait(counter);
     }

@@ -30,7 +30,17 @@ public:
     float maxAnisotropy() const { return m_maxAnisotropy; }
     uint32_t maxBindlessTextures() const { return m_maxBindlessTextures; }
 
+    // Frame pacing support, all optional (see enablePresentTiming).
+    enum class PresentWait { None, Version1, Version2 };
+    PresentWait presentWait() const { return m_presentWait; }
+    bool fifoLatestReady() const { return m_fifoLatestReady; }   // VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+    const char* presentTimingName() const;
+    // Nanoseconds per GPU timestamp tick; 0 when the graphics queue has no timestamps.
+    float timestampPeriod() const { return m_timestampPeriod; }
+
 private:
+    void enablePresentTiming(vkb::PhysicalDevice& physical, bool surfaceCaps2);
+
     vkb::Instance m_instance;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
     vkb::Device m_device;
@@ -39,6 +49,9 @@ private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     float m_maxAnisotropy = 1.0f;
     uint32_t m_maxBindlessTextures = 0;
+    PresentWait m_presentWait = PresentWait::None;
+    bool m_fifoLatestReady = false;
+    float m_timestampPeriod = 0.0f;
 };
 
 }   // namespace shockwave::vk

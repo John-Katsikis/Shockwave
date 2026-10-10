@@ -1,5 +1,7 @@
 #include <RHI/RenderGraph.h>
 
+#include <Core/Profile.h>
+
 namespace shockwave::vk {
 
 namespace {
@@ -89,6 +91,11 @@ void RenderGraph::addPass(std::string name, std::vector<Use> uses, std::function
 
 void RenderGraph::execute(VkCommandBuffer cmd) {
     m_description.clear();
+    m_timedPasses.clear();
+    if (m_queryPool) {
+        vkCmdResetQueryPool(cmd, m_queryPool, 0, kMaxTimedPasses + 1);
+        vkCmdWriteTimestamp2(cmd, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, m_queryPool, 0);
+    }
     int number = 1;
     std::vector<VkImageMemoryBarrier2> barriers;
     for (Pass& pass : m_passes) {
@@ -134,7 +141,16 @@ void RenderGraph::execute(VkCommandBuffer cmd) {
             dep.pImageMemoryBarriers = barriers.data();
             vkCmdPipelineBarrier2(cmd, &dep);
         }
-        if (pass.record) pass.record(cmd);
+        if (pass.record) {
+            SW_PROFILE_SCOPE_DYNAMIC(pass.name.c_str(), pass.name.size());
+            pass.record(cmd);
+            if (m_queryPool && m_timedPasses.size() < kMaxTimedPasses) {
+                m_timedPasses.push_back(pass.name);
+                vkCmdWriteTimestamp2(
+                    cmd, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, m_queryPool,
+                    static_cast<uint32_t>(m_timedPasses.size()));
+            }
+        }
         m_description += std::to_string(number++) + ". " + pass.name + ": " + uses + synced + "\n";
     }
 }

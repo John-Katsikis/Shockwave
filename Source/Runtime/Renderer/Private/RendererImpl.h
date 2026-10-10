@@ -170,6 +170,8 @@ struct Renderer::Impl {
         vk::Buffer frameBuffer;   // lights and camera, persistently mapped
         uint8_t* frameData = nullptr;
         VkDeviceAddress frameAddress = 0;
+        VkQueryPool timestamps = VK_NULL_HANDLE;   // GPU timers for this frame's passes
+        std::vector<std::string> timedPasses;   // what they timed, in order; empty: nothing to read
     };
 
     Window& window;
@@ -185,6 +187,13 @@ struct Renderer::Impl {
     // Before reusing a frame slot the CPU waits for value N - kFramesInFlight.
     VkSemaphore frameTimeline = VK_NULL_HANDLE;
     uint64_t frameNumber = 0;
+
+    // Frame pacing: frame N is presented with present id N, so present wait can tell when
+    // it reached the screen.
+    VkSwapchainKHR presentedSwapchain = VK_NULL_HANDLE;   // the swapchain frameNumber went to
+    uint64_t lastPresentTicks = 0;   // SDL performance counter when the last wait returned
+    std::vector<PassTiming> passTimings;
+    float gpuFrameMs = 0;
 
     // Bindless texture table: one descriptor set, bound once per frame.
     VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
@@ -369,6 +378,8 @@ struct Renderer::Impl {
     void recreateSwapchain();
 
     bool beginFrame();
+    void readTimestamps(Frame& f);
+    float waitForPresent();
 
     void setSceneViewport(VkCommandBuffer cmd);
 
