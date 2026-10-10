@@ -1,5 +1,7 @@
 #include <GameFramework/PlaySession.h>
 
+#include <Core/Log.h>
+
 #include <Engine/Engine.h>
 #include <Engine/Systems.h>
 #include <Physics/Physics.h>
@@ -20,9 +22,9 @@ PlaySession::~PlaySession() {
     try {
         stop();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "Play cleanup: %s\n", e.what());
+        SW_LOG(LogGame, Error, "Play cleanup: {}", e.what());
     } catch (...) {
-        std::fprintf(stderr, "Play cleanup failed\n");
+        SW_LOG(LogGame, Error, "Play cleanup failed");
     }
 }
 

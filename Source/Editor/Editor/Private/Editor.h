@@ -4,6 +4,7 @@
 #include "SceneTemplates.h"
 
 #include <Assets/AssetFolder.h>
+#include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
@@ -22,6 +23,8 @@
 #include <vector>
 
 namespace editor {
+
+SW_LOG_CATEGORY(LogEditor);
 
 // Drag and drop payloads between panels. Meshes and textures travel by asset name.
 inline constexpr const char* kEntityPayload = "SW_ENTITY";
@@ -64,6 +67,7 @@ struct EditorOptions {
 class Editor : public shockwave::Game {
 public:
     explicit Editor(EditorOptions options);
+    ~Editor() override { disconnectConsole(); }
 
     void onStart() override;
     void onUpdate(double dt) override;
@@ -225,6 +229,9 @@ private:
     void warn(const std::string& message);
     void error(const std::string& message);
     void addLog(LogLevel level, const std::string& message);
+    void connectConsole();
+    void disconnectConsole();
+    void drainConsole();   // main thread, once per frame
     void logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& changes);
 
     void savePreferences();
@@ -308,6 +315,9 @@ private:
     size_t m_frameTimeIndex = 0;
 
     std::vector<LogEntry> m_log;
+    std::mutex m_pendingLogMutex;
+    std::vector<LogEntry> m_pendingLog;   // from any thread, moved into m_log each frame
+    int m_logSink = 0;
     bool m_logScrollToBottom = false;
     bool m_logShowInfo = true, m_logShowWarnings = true, m_logShowErrors = true;
     std::string m_logFilter;

@@ -1,5 +1,7 @@
 #include <RHI/Context.h>
 
+#include <Core/Log.h>
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -10,13 +12,16 @@ namespace shockwave::vk {
 
 namespace {
 
+SW_LOG_CATEGORY(LogVulkan);
+
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
-    const char* level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)     ? "ERROR"
-                        : (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? "WARNING"
-                                                                                       : "INFO";
-    std::fprintf(stderr, "[vulkan %s] %s\n", level, data->pMessage);
+    const shockwave::LogLevel level =
+        (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)     ? shockwave::LogLevel::Error
+        : (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? shockwave::LogLevel::Warning
+                                                                       : shockwave::LogLevel::Info;
+    shockwave::logMessage(LogVulkan, level, data->pMessage);
     return VK_FALSE;
 }
 

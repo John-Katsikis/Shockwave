@@ -1,5 +1,7 @@
 #include <Engine/Engine.h>
 
+#include <Core/Log.h>
+
 #include <UI/Gui.h>
 
 #include <imgui_impl_sdl3.h>
@@ -22,8 +24,9 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_input = std::make_unique<Input>(*m_window);
     m_assets = std::make_unique<Assets>();
     if (m_config.gui) initGui();
-    std::printf(
-        "Shockwave: rendering with Vulkan on %s, %u worker threads\n", m_renderer->gpuName(), m_jobs->workerCount());
+    SW_LOG(
+        LogEngine, Info, "rendering with Vulkan on {}, {} worker threads", m_renderer->gpuName(),
+        m_jobs->workerCount());
 }
 
 Engine::~Engine() {
@@ -84,14 +87,14 @@ void Engine::loadGuiTheme(bool reload) {
         std::error_code ec;
         m_themeTime = std::filesystem::last_write_time(m_themePath, ec);
         if (!gui::loadTheme(m_themePath, theme, error)) {
-            std::fprintf(stderr, "Shockwave: UI theme not applied: %s\n", error.c_str());
+            SW_LOG(LogEngine, Warning, "UI theme not applied: {}", error);
             if (reload) return;
             theme = gui::Theme();
         } else if (reload) {
-            std::printf("Shockwave: reloaded UI theme %s\n", m_themePath.c_str());
+            SW_LOG(LogEngine, Info, "reloaded UI theme {}", m_themePath);
         }
     } else if (!m_config.guiTheme.empty()) {
-        std::fprintf(stderr, "Shockwave: %s not found, using the built-in UI theme\n", m_config.guiTheme.c_str());
+        SW_LOG(LogEngine, Warning, "{} not found, using the built-in UI theme", m_config.guiTheme);
     }
 
     // Fonts load once per file; ImGui 1.92 renders any size from one font on demand.

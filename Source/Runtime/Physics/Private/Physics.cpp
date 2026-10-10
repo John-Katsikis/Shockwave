@@ -1,5 +1,7 @@
 #include <Physics/Physics.h>
 
+#include <Core/Log.h>
+
 #include <Assets/Assets.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
@@ -52,12 +54,12 @@ bool finite(const glm::vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y
 bool near(const glm::vec3& a, const glm::vec3& b) { return glm::length(a - b) < 1e-5f; }
 bool near(const glm::quat& a, const glm::quat& b) { return std::abs(glm::dot(a, b)) > 1.0f - 1e-6f; }
 void trace(const char* format, ...) {
+    char text[1024];
     va_list args;
     va_start(args, format);
-    std::fputs("Jolt: ", stderr);
-    std::vfprintf(stderr, format, args);
-    std::fputc('\n', stderr);
+    std::vsnprintf(text, sizeof(text), format, args);
     va_end(args);
+    logMessage(LogPhysics, LogLevel::Verbose, text);
 }
 struct Runtime {
     Runtime() {
@@ -65,7 +67,8 @@ struct Runtime {
         JPH::Trace = trace;
 #ifdef JPH_ENABLE_ASSERTS
         JPH::AssertFailed = [](const char* expression, const char* message, const char* file, JPH::uint line) {
-            std::fprintf(stderr, "Jolt assertion: %s (%s) at %s:%u\n", expression, message ? message : "", file, line);
+            SW_LOG(
+                LogPhysics, Error, "Jolt assertion: {} ({}) at {}:{}", expression, message ? message : "", file, line);
             return true;
         };
 #endif

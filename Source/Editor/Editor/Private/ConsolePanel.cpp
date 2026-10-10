@@ -2,6 +2,7 @@
 // filters per level, search and copy. The newest message also shows in the status bar.
 #include "Editor.h"
 
+#include <Core/Log.h>
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -37,19 +38,52 @@ void Editor::warn(const std::string& message) { addLog(LogLevel::Warning, messag
 void Editor::error(const std::string& message) { addLog(LogLevel::Error, message); }
 
 void Editor::addLog(LogLevel level, const std::string& message) {
-    const char* prefix = level == LogLevel::Error ? "error: " : level == LogLevel::Warning ? "warning: " : "";
-    std::printf("Editor: %s%s\n", prefix, message.c_str());
-    m_log.push_back({clockTime(), level, message});
-    if (level == LogLevel::Warning) ++m_warningCount;
-    if (level == LogLevel::Error) ++m_errorCount;
+    const shockwave::LogLevel engineLevel = level == LogLevel::Error     ? shockwave::LogLevel::Error
+                                            : level == LogLevel::Warning ? shockwave::LogLevel::Warning
+                                                                         : shockwave::LogLevel::Info;
+    shockwave::logMessage(LogEditor, engineLevel, message);
+}
+
+// Everything logged anywhere (engine, game code, worker threads) reaches the Console:
+// the sink queues it, and the main thread moves it into the list each frame.
+void Editor::connectConsole() {
+    m_logSink = shockwave::addLogSink(
+        [this](const shockwave::LogCategory& category, shockwave::LogLevel level, std::string_view message) {
+            if (level < shockwave::LogLevel::Info) return;
+            const LogLevel shown = level == shockwave::LogLevel::Error     ? LogLevel::Error
+                                   : level == shockwave::LogLevel::Warning ? LogLevel::Warning
+                                                                           : LogLevel::Info;
+            std::string text = &category == &LogEditor ? std::string(message)
+                                                       : std::string(category.name) + ": " + std::string(message);
+            std::lock_guard lock(m_pendingLogMutex);
+            m_pendingLog.push_back({clockTime(), shown, std::move(text)});
+        });
+}
+
+void Editor::disconnectConsole() {
+    if (m_logSink) shockwave::removeLogSink(m_logSink);
+    m_logSink = 0;
+}
+
+void Editor::drainConsole() {
+    std::vector<LogEntry> pending;
+    {
+        std::lock_guard lock(m_pendingLogMutex);
+        pending.swap(m_pendingLog);
+    }
+    for (LogEntry& entry : pending) {
+        if (entry.level == LogLevel::Warning) ++m_warningCount;
+        if (entry.level == LogLevel::Error) ++m_errorCount;
+        m_log.push_back(std::move(entry));
+        m_logScrollToBottom = true;
+    }
     constexpr size_t kMaxLines = 2000;
-    if (m_log.size() > kMaxLines) {
+    while (m_log.size() > kMaxLines) {
         const LogEntry& dropped = m_log.front();
         if (dropped.level == LogLevel::Warning) --m_warningCount;
         if (dropped.level == LogLevel::Error) --m_errorCount;
         m_log.erase(m_log.begin());
     }
-    m_logScrollToBottom = true;
 }
 
 void Editor::logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& changes) {

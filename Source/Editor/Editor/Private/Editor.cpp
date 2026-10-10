@@ -31,6 +31,7 @@ Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m
 // ---- Startup and shutdown -----------------------------------------------------------------
 
 void Editor::onStart() {
+    connectConsole();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;   // dragging in the viewport is for the scene
     // The dock layout is per user, next to the preferences, not in whatever folder the
@@ -85,6 +86,7 @@ void Editor::onShutdown() {
         saveEditorState();
     }
     savePreferences();
+    disconnectConsole();
 }
 
 bool Editor::onQuitRequested() {
@@ -109,6 +111,7 @@ void Editor::savePreferences() {
 // ---- Per frame ----------------------------------------------------------------------------
 
 void Editor::onGui() {
+    drainConsole();
     ImGuizmo::BeginFrame();
     const float dt = ImGui::GetIO().DeltaTime;
     m_frameTimes[m_frameTimeIndex] = dt * 1000.0f;

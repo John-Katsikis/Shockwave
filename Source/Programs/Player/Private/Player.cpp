@@ -2,6 +2,8 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
+#include <Core/Log.h>
+
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Engine/Engine.h>
@@ -63,12 +65,12 @@ void Player::onStart() {
         throw std::runtime_error(
             "Physics setup failed for entity " + std::to_string(problem.entity.index) + ": " + problem.message);
     }
-    std::printf(
-        "Jolt physics: %u bodies, %u characters\n", m_session->physics()->bodyCount(),
+    SW_LOG(
+        shockwave::LogPhysics, Info, "{} bodies, {} characters", m_session->physics()->bodyCount(),
         m_session->physics()->characterCount());
-    std::printf(
-        "Player project: %s; module: %s; startup scene: %s\n", m_project.name.c_str(), m_project.gameModule.c_str(),
-        m_project.startupScene.string().c_str());
+    SW_LOG(
+        shockwave::LogEngine, Info, "project {}; module {}; startup scene {}", m_project.name, m_project.gameModule,
+        m_project.relative(m_project.startupScene));
 }
 
 void Player::onUpdate(double dt) {
@@ -97,7 +99,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
 void Player::onShutdown() {
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
     if (m_session) {
-        std::printf("Player simulation ticks: %llu\n", static_cast<unsigned long long>(m_session->ticks()));
+        SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());
         m_session->stop();
     }
     if (m_instance) m_instance->shutdown();

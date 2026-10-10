@@ -2,6 +2,8 @@
 // the Crate one during Play, so you can see gameplay code running in the editor.
 
 #include <Engine/Components.h>
+
+#include <Core/Log.h>
 #include <GameFramework/GameModule.h>
 
 #include <cmath>
@@ -47,10 +49,10 @@ public:
             if (name.value == "Crate" && ctx.world.has<MeshRenderer>(e) && !ctx.world.has<ColorPulse>(e))
                 ctx.world.add<ColorPulse>(e);
         });
-        std::printf("Sample gameplay started (%zu entities)\n", ctx.world.entityCount());
+        SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", ctx.world.entityCount());
     }
 
-    void endPlay(GameContext&) override { std::puts("Sample gameplay stopped"); }
+    void endPlay(GameContext&) override { SW_LOG(LogGame, Info, "Sample gameplay stopped"); }
 };
 
 }   // namespace
