@@ -1,9 +1,10 @@
 #include <Projects/Project.h>
-#include <GameFramework/Gameplay.h>
+#include <GameFramework/PlaySession.h>
 #include <Engine/Components.h>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <stdexcept>
 
 using namespace shockwave;
@@ -13,24 +14,30 @@ void check(bool value, const char* message) {
     if (!value) { std::fprintf(stderr, "FAIL: %s\n", message); ++failures; }
 }
 struct Counters { int created = 0, started = 0, stopped = 0, frames = 0; bool failStart = false, failStop = false; };
-class TestGameplay : public Gameplay {
+class TestGameMode : public GameMode {
 public:
-    explicit TestGameplay(Counters& counts) : c(counts) { ++c.created; }
-    void configureSystems(GameplayContext&, Schedule& s) override {
+    explicit TestGameMode(Counters& counts) : c(counts) { ++c.created; }
+    void configureSystems(GameContext&, Schedule& s) override {
         s.each<Transform>("Move", [](const SystemContext& ctx, Transform& t) { t.position.x += ctx.dt; });
     }
-    void onStart(GameplayContext& ctx) override {
+    void beginPlay(GameContext& ctx) override {
         ++c.started;
         const auto extra = ctx.world.create();
         ctx.world.add<Name>(extra, {"Runtime only"});
         if (c.failStart) throw std::runtime_error("start failed");
     }
-    void onFrame(GameplayContext&, double) override { ++c.frames; }
-    void onStop(GameplayContext&) override {
+    void frame(GameContext&, double) override { ++c.frames; }
+    void endPlay(GameContext&) override {
         ++c.stopped;
         if (c.failStop) throw std::runtime_error("stop failed");
     }
 private: Counters& c;
+};
+// A GameInstance that makes GameModes with a lambda, for tests.
+struct TestInstance final : GameInstance {
+    std::function<std::unique_ptr<GameMode>()> make;
+    explicit TestInstance(std::function<std::unique_ptr<GameMode>()> f) : make(std::move(f)) {}
+    std::unique_ptr<GameMode> createGameMode(const World&) override { return make(); }
 };
 void sessions() {
     World world;
@@ -38,8 +45,9 @@ void sessions() {
     const Entity e = world.create();
     world.add<Transform>(e, {{3, 2, 1}});
     Counters c;
-    GameSession session(world, jobs, [&] { return std::make_unique<TestGameplay>(c); });
-    check(session.state() == GameSession::State::Editing, "Session starts in editing state");
+    TestInstance instance([&] { return std::make_unique<TestGameMode>(c); });
+    PlaySession session(world, jobs, instance);
+    check(session.state() == PlaySession::State::Editing, "Session starts in editing state");
     session.update(1); session.frame(1); session.stop();
     check(c.created == 0 && world.entityCount() == 1, "Inactive callbacks do nothing");
     session.start(); session.start();
@@ -63,7 +71,7 @@ void sessions() {
     try { session.stop(); check(false, "Failed cleanup throws"); } catch (const std::runtime_error&) {}
     check(!session.active() && world.entityCount() == 1, "Cleanup failure still restores authored state");
     c.failStop = false;
-    { GameSession scoped(world, jobs, [&] { return std::make_unique<TestGameplay>(c); }); scoped.start(); }
+    { PlaySession scoped(world, jobs, instance); scoped.start(); }
     check(world.entityCount() == 1 && c.stopped == 5, "Destructor cleans up an active session");
 }
 void manifests() {

@@ -526,7 +526,7 @@ void Editor::drawProjectSettingsWindow() {
         }
         gui::propertyLabel("Player VSync");
         ImGui::Checkbox("##vsync", &m_projectEdit.vsync);
-        gui::propertyLabel("Gameplay module");
+        gui::propertyLabel("Game module");
         ImGui::BeginDisabled();
         std::string module = m_projectEdit.gameModule;
         ImGui::InputText("##module", &module);

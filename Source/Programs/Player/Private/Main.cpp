@@ -1,7 +1,8 @@
 #include <Engine/Engine.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
-#include <GameFramework/Gameplay.h>
+#include <GameFramework/GameModule.h>
+#include <GameFramework/PlaySession.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
 #include <Engine/SceneFile.h>
@@ -41,6 +42,8 @@ public:
         if (module.registerTypes) module.registerTypes();
         shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
         if (module.createAssets) module.createAssets(engine());
+        m_instance = shockwave::makeGameInstance(&module);
+        m_instance->init(&engine());
         m_assets = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
         std::vector<std::string> importProblems;
         for (const auto& change : m_assets->open(m_project.assetFolder)) {
@@ -67,7 +70,7 @@ public:
             throw std::runtime_error(error);
         if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
         shockwave::FlyCamera::bindDefaultControls(engine().input());
-        m_session = std::make_unique<shockwave::GameSession>(m_world, engine().jobs(), module.create, &engine());
+        m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
         m_session->start();
         if (!m_session->physics()->diagnostics().empty()) {
             const auto& problem=m_session->physics()->diagnostics().front();
@@ -95,9 +98,11 @@ public:
     }
     void onShutdown() override {
         if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
-        if (!m_session) return;
-        std::printf("Player simulation ticks: %llu\n", static_cast<unsigned long long>(m_session->ticks()));
-        m_session->stop();
+        if (m_session) {
+            std::printf("Player simulation ticks: %llu\n", static_cast<unsigned long long>(m_session->ticks()));
+            m_session->stop();
+        }
+        if (m_instance) m_instance->shutdown();
     }
 private:
     // Asks for frame N, then reports and quits once the renderer has written it.
@@ -134,7 +139,6 @@ private:
                 scenes.push_back(m_project.startupScene);
             std::sort(scenes.begin(), scenes.end());
         }
-        const auto& module = shockwave::projectGameModule();
         for (const fs::path& scene : scenes) {
             const std::string shown = m_project.relative(scene);
             const size_t before = problems.size();
@@ -184,7 +188,7 @@ private:
 
             // Start the game on it, as Play does, to catch physics setup problems.
             try {
-                shockwave::GameSession session(world, engine().jobs(), module.create, &engine());
+                shockwave::PlaySession session(world, engine().jobs(), *m_instance, &engine());
                 session.start();
                 for (const auto& diagnostic : session.physics()->diagnostics()) {
                     const shockwave::Name* name = world.get<shockwave::Name>(diagnostic.entity);
@@ -241,7 +245,8 @@ private:
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
-    std::unique_ptr<shockwave::GameSession> m_session;
+    std::unique_ptr<shockwave::GameInstance> m_instance;
+    std::unique_ptr<shockwave::PlaySession> m_session;
 };
 }
 int main(int argc, char** argv) {

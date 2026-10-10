@@ -1,5 +1,6 @@
 #pragma once
 #include <Engine/PhysicsComponents.h>
+#include <Engine/Subsystem.h>
 #include <Engine/World.h>
 #include <glm/glm.hpp>
 #include <memory>
@@ -26,14 +27,15 @@ struct RayHit {
 struct PhysicsConfig {
     uint32_t maxBodies = 16384, maxBodyPairs = 65536, maxContactConstraints = 16384;
 };
-// Owns runtime physics state separately from the copyable ECS. One per Play session.
+// Owns runtime physics state separately from the copyable ECS. One per Play session,
+// as a subsystem of it (PlaySession::subsystems()).
 // synchronize/step belong to the main thread between gameplay schedule runs.
 // Queries and impulses can be called by gameplay workers between steps; never
 // mutate the world concurrently with synchronize/step. No Jolt headers in game code.
-class PhysicsWorld {
+class PhysicsWorld final : public Subsystem {
 public:
     PhysicsWorld(World& world, JobSystem& jobs, const Assets* assets = nullptr, PhysicsConfig config = {});
-    ~PhysicsWorld();
+    ~PhysicsWorld() override;
     PhysicsWorld(const PhysicsWorld&) = delete;
     PhysicsWorld& operator=(const PhysicsWorld&) = delete;
     void synchronize(); // creates/removes/rebuilds bodies; safe before first tick

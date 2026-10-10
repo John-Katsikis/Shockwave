@@ -58,8 +58,9 @@ void Editor::onStart() {
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module && module->createAssets) module->createAssets(engine());
     m_assetFolder = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
-    const auto factory = module ? module->create : shockwave::GameplayFactory([] { return std::make_unique<shockwave::Gameplay>(); });
-    m_session = std::make_unique<shockwave::GameSession>(m_world, engine().jobs(), factory, &engine());
+    m_gameInstance = shockwave::makeGameInstance(module);
+    m_gameInstance->init(&engine());
+    m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_gameInstance, &engine());
     shockwave::FlyCamera::bindDefaultControls(engine().input());
     applyViewPreferences();
 
@@ -85,6 +86,8 @@ void Editor::onStart() {
 
 void Editor::onShutdown() {
     stop();
+    m_session.reset();
+    if (m_gameInstance) m_gameInstance->shutdown();
     if (m_hasProject) {
         rememberCamera();
         saveEditorState();

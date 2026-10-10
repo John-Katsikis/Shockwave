@@ -5,7 +5,8 @@
 
 #include <Assets/AssetFolder.h>
 #include <Engine/Engine.h>
-#include <GameFramework/Gameplay.h>
+#include <GameFramework/GameModule.h>
+#include <GameFramework/PlaySession.h>
 #include <Projects/Project.h>
 
 #include <imgui.h>
@@ -54,7 +55,7 @@ struct EditorOptions {
 // the project hub. Per-user settings live in Preferences; per-user, per-project state
 // (camera positions, autosaves) in the project's Saved folder.
 //
-// The scene is an engine World, the same thing a game runs. Play starts a GameSession:
+// The scene is an engine World, the same thing a game runs. Play starts a PlaySession:
 // the project's compiled gameplay and Jolt physics run on it each tick, and Stop puts
 // back the scene as authored.
 //
@@ -76,7 +77,7 @@ private:
     // Something that would throw away unsaved changes, waiting on the user's answer.
     enum class PendingAction { None, NewBasicScene, NewEmptyScene, OpenSceneDialog, OpenScene, OpenProject,
                                CloseProject, Quit };
-    using PlayState = shockwave::GameSession::State;
+    using PlayState = shockwave::PlaySession::State;
     enum class LogLevel { Info, Warning, Error };
     struct LogEntry {
         std::string time;   // HH:MM:SS
@@ -253,7 +254,8 @@ private:
 
     // Play: the project's gameplay and physics on the live world; Stop restores the
     // authored scene. Recreated per project.
-    std::unique_ptr<shockwave::GameSession> m_session;
+    std::unique_ptr<shockwave::GameInstance> m_gameInstance;   // for the editor's whole run
+    std::unique_ptr<shockwave::PlaySession> m_session;
     bool m_gameModuleMatches = true;   // the project names the module this editor was built with
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's
     bool m_viewBeforePlay = false;

@@ -1,5 +1,6 @@
 #include <Physics/Physics.h>
-#include <GameFramework/Gameplay.h>
+#include <GameFramework/PlaySession.h>
+#include <functional>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
 #include <Assets/Assets.h>
@@ -105,14 +106,27 @@ void models(JobSystem& jobs,const std::filesystem::path& root) {
     const auto ray=p.raycast({1.3f,3,0},{0,-1,0},4);check(ray && ray->entity==e && near(ray->point.y,1) && ray->normal.y>.9f,"mirrored imported mesh winding preserved");
     auto replacement=std::make_shared<ModelAsset>(*asset);assets.addModel("model",replacement);p.step(1.0/60);check(p.bodyCount()==2 && p.diagnostics().empty(),"model reload rebuilds collision geometry");
 }
-struct Lifecycle final:Gameplay {
-    int& steps;explicit Lifecycle(int& s):steps(s) {}
-    void onPhysicsStep(GameplayContext& ctx,double) override { check(ctx.physics!=nullptr,"physics exposed to gameplay callback");++steps; }
+struct Lifecycle final : GameMode {
+    int& steps;
+    explicit Lifecycle(int& s) : steps(s) {}
+    void fixedUpdate(GameContext& ctx, double) override {
+        check(ctx.subsystem<PhysicsWorld>() == &ctx.physics(), "physics is a session subsystem");
+        ++steps;
+    }
 };
+// A GameInstance that makes GameModes with a lambda, for tests.
+struct TestInstance final : GameInstance {
+    std::function<std::unique_ptr<GameMode>()> make;
+    explicit TestInstance(std::function<std::unique_ptr<GameMode>()> f) : make(std::move(f)) {}
+    std::unique_ptr<GameMode> createGameMode(const World&) override { return make(); }
+};
+
 void sessionsAndFiles(JobSystem& jobs) {
     World w;floor(w);const auto body=box(w,{0,4,0});int steps=0;
-    GameSession session(w,jobs,[&] { return std::make_unique<Lifecycle>(steps); });session.start();auto* physics=session.physics();
-    for (int i=0;i<30;++i) session.update(1.0/60);check(w.get<Transform>(body)->position.y<4 && steps==30,"GameSession advances physics");
+    TestInstance instance([&] { return std::make_unique<Lifecycle>(steps); });
+    PlaySession session(w, jobs, instance);
+    session.start();auto* physics=session.physics();
+    for (int i=0;i<30;++i) session.update(1.0/60);check(w.get<Transform>(body)->position.y<4 && steps==30,"PlaySession advances physics");
     session.pause();const float height=w.get<Transform>(body)->position.y;session.update(1.0/60);check(w.get<Transform>(body)->position.y==height,"paused physics freezes");
     session.start();check(session.physics()==physics,"resume keeps physics state");session.update(1.0/60);session.stop();
     check(!session.physics() && w.get<Transform>(body)->position.y==4 && w.get<RigidBody>(body)->linearVelocity.y==0,"stop restores authored transforms and velocities");
