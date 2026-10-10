@@ -1,5 +1,5 @@
-// The player's tools: --check validates a project and its scenes, --schema writes the
-// scene format reference.
+// The player's tools: --check validates a project, its scenes and its input bindings;
+// --schema writes the scene format reference.
 #include "Player.h"
 
 #include <Assets/AssetFolder.h>
@@ -9,8 +9,12 @@
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <Input/Input.h>
+#include <Input/InputBinding.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
+
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <charconv>
@@ -97,6 +101,30 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    // Input bindings: optional, but a broken file means broken controls.
+    const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
+    if (fs::exists(inputFile)) {
+        const std::string shown = m_project.relative(inputFile);
+        shockwave::InputBindings bindings;
+        std::string error;
+        if (!shockwave::loadInputBindings(inputFile, bindings, error)) {
+            if (error.rfind(inputFile.string(), 0) == 0) error.replace(0, inputFile.string().size(), shown);
+            problems.push_back(error);
+        } else {
+            const size_t before = problems.size();
+            for (size_t i = 0; i < bindings.binds.size(); ++i) {
+                for (size_t j = 0; j < i; ++j) {
+                    if (bindings.binds[j] == bindings.binds[i]) {
+                        problems.push_back(
+                            shown + ": " + bindings.binds[i].first + " is bound to '" +
+                            shockwave::formatBinding(bindings.binds[i].second) + "' twice");
+                        break;
+                    }
+                }
+            }
+            if (problems.size() == before) std::printf("ok %s (%zu bindings)\n", shown.c_str(), bindings.binds.size());
+        }
+    }
     for (const std::string& problem : problems) std::printf("%s\n", problem.c_str());
     std::printf(
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
@@ -133,6 +161,71 @@ int Player::schema() {
     }
     std::printf("Wrote %s\n", m_tool.schemaOut.string().c_str());
     return 0;
+}
+
+int writeInputSchema(const fs::path& out) {
+    const std::string text = shockwave::inputReference();
+    if (out == "-") {
+        std::fputs(text.c_str(), stdout);
+        return 0;
+    }
+    std::ofstream file(out, std::ios::binary | std::ios::trunc);
+    if (!(file << text)) {
+        std::fprintf(stderr, "Player: can't write %s\n", out.string().c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", out.string().c_str());
+    return 0;
+}
+
+int listDevices(double seconds) {
+    if (!SDL_Init(SDL_INIT_EVENTS)) {
+        std::fprintf(stderr, "Player: SDL_Init failed: %s\n", SDL_GetError());
+        return 1;
+    }
+    int code = 0;
+    {
+        shockwave::Input input;
+        // Let the devices already plugged in arrive.
+        auto pump = [&](double forSeconds) {
+            const Uint64 end = SDL_GetTicks() + static_cast<Uint64>(forSeconds * 1000.0);
+            do {
+                input.beginFrame();
+                SDL_Event event;
+                while (SDL_PollEvent(&event)) input.handleEvent(event);
+                input.update(0.01);
+                if (const auto& pressed = input.lastPressed(); pressed && seconds > 0.0)
+                    std::printf("pressed: %s\n", shockwave::formatBinding(*pressed).c_str()), std::fflush(stdout);
+                SDL_Delay(10);
+            } while (SDL_GetTicks() < end);
+        };
+        pump(0.3);
+        const auto& devices = input.devices();
+        std::printf("%zu controller%s\n", devices.size(), devices.size() == 1 ? "" : "s");
+        for (const shockwave::InputDevice& d : devices) {
+            static const char* types[] = {"unknown", "Xbox", "PS5", "PS4", "PS3", "Switch", "Steam", "other"};
+            if (d.kind == shockwave::InputDevice::Kind::Gamepad) {
+                std::printf(
+                    "gamepad \"%s\": %s layout, player %d%s%s%s%s\n", d.name.c_str(), types[static_cast<int>(d.type)],
+                    d.player, d.hasRumble ? ", rumble" : "", d.hasTriggerRumble ? ", trigger rumble" : "",
+                    d.hasLight ? ", light" : "", d.hasGyro ? ", gyro" : "");
+            } else {
+                std::printf(
+                    "joystick \"%s\": %zu axes, %zu buttons, %zu hats%s\n", d.name.c_str(), d.axes.size(),
+                    d.buttons.size(), d.hats.size(), d.hasRumble ? ", rumble" : "");
+            }
+            std::printf("  axes:");
+            for (float a : d.axes) std::printf(" %.2f", static_cast<double>(a));
+            std::printf("\n");
+        }
+        if (seconds > 0.0) {
+            std::printf("Press buttons or move axes for %g seconds...\n", seconds);
+            std::fflush(stdout);
+            pump(seconds);
+        }
+    }
+    SDL_Quit();
+    return code;
 }
 
 }   // namespace player

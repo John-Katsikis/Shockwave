@@ -168,6 +168,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Content", nullptr, &m_showContent);
             ImGui::MenuItem("Console", nullptr, &m_showConsole);
             ImGui::MenuItem("Stats", nullptr, &m_showStats);
+            ImGui::MenuItem("Input", nullptr, &m_showInput);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
             ImGui::EndMenu();
@@ -595,6 +596,7 @@ void Editor::drawControlsWindow() {
         {"Right mouse (hold)", "Fly: look around"},
         {"W A S D, E / Q", "Fly: move, up and down (while holding right mouse)"},
         {"Shift", "Fly faster"},
+        {"Gamepad sticks", "Fly: left stick moves, right stick looks, triggers up and down (viewport focused)"},
         {"Mouse wheel", "Dolly; while flying, change speed"},
         {"Middle mouse drag", "Pan"},
         {"Left click", "Select; Ctrl adds or removes, Shift adds"},

@@ -37,7 +37,7 @@ module sees only the headers of modules it depends on, directly or through them.
 |---|---|---|---|
 | Core | job system, logging | GLM | Core |
 | Platform | window and OS events (SDL3) | Core | ApplicationCore |
-| Input | keyboard and mouse actions | Platform | InputCore |
+| Input | keyboard, mouse, gamepads and joysticks behind named actions; `.swinput` bindings | Platform | InputCore, Enhanced Input |
 | RHI | Vulkan device, swapchain, pipelines, render graph | Platform | RHI, VulkanRHI |
 | Renderer | meshes, textures, lights, the frame | Core, Platform; RHI privately | Renderer |
 | Assets | asset registry, image decode, model import, hot reload | Renderer | AssetRegistry |

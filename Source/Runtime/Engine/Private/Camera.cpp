@@ -30,28 +30,47 @@ void FlyCamera::bindDefaultControls(Input& input) {
     input.bindAction("camera_down", Key::LeftCtrl);
     input.bindAction("camera_fast", Key::LeftShift);
     input.bindAction("camera_look", MouseButton::Right);
+
+    using R = InputBinding::Range;
+    input.bindAction("camera_forward", GamepadAxis::LeftY, R::Positive);
+    input.bindAction("camera_back", GamepadAxis::LeftY, R::Negative);
+    input.bindAction("camera_left", GamepadAxis::LeftX, R::Negative);
+    input.bindAction("camera_right", GamepadAxis::LeftX, R::Positive);
+    input.bindAction("camera_up", GamepadAxis::RightTrigger, R::Positive);
+    input.bindAction("camera_down", GamepadAxis::LeftTrigger, R::Positive);
+    input.bindAction("camera_fast", GamepadButton::LeftStick);
+    input.bindAction("camera_turn_left", GamepadAxis::RightX, R::Negative);
+    input.bindAction("camera_turn_right", GamepadAxis::RightX, R::Positive);
+    input.bindAction("camera_turn_up", GamepadAxis::RightY, R::Positive);
+    input.bindAction("camera_turn_down", GamepadAxis::RightY, R::Negative);
 }
 
-void FlyCamera::update(Input& input, double frameDt) {
-    const bool looking = input.isActionDown("camera_look");
+void FlyCamera::update(Input& input, double frameDt, uint8_t sources) {
+    const float dt = static_cast<float>(frameDt);
+    const bool looking = (sources & KeyboardMouse) && input.isActionDown("camera_look", sources);
     input.setMouseCaptured(looking);
     if (looking) {
         const glm::vec2 delta = input.mouseDelta();
         yaw -= delta.x * lookSensitivity;
         pitch -= delta.y * lookSensitivity;
-        pitch = std::clamp(pitch, glm::radians(-89.0f), glm::radians(89.0f));
     }
+    // Sticks turn at a rate rather than by a distance.
+    yaw -= input.axis("camera_turn_left", "camera_turn_right", sources) * turnSpeed * dt;
+    pitch += input.axis("camera_turn_down", "camera_turn_up", sources) * turnSpeed * dt;
+    pitch = std::clamp(pitch, glm::radians(-89.0f), glm::radians(89.0f));
 
-    glm::vec3 move = forward() * input.axis("camera_back", "camera_forward") +
-                     right() * input.axis("camera_left", "camera_right") +
-                     glm::vec3(0.0f, 1.0f, 0.0f) * input.axis("camera_down", "camera_up");
-    if (glm::dot(move, move) > 0.0f) {
-        float speed = moveSpeed * (input.isActionDown("camera_fast") ? fastMultiplier : 1.0f);
-        position += glm::normalize(move) * speed * static_cast<float>(frameDt);
+    glm::vec3 move = forward() * input.axis("camera_back", "camera_forward", sources) +
+                     right() * input.axis("camera_left", "camera_right", sources) +
+                     glm::vec3(0.0f, 1.0f, 0.0f) * input.axis("camera_down", "camera_up", sources);
+    // Keys give full speed in any direction; a half-pushed stick gives half speed.
+    const float amount = std::min(1.0f, glm::length(move));
+    if (amount > 0.0f) {
+        float speed = moveSpeed * (input.isActionDown("camera_fast", sources) ? fastMultiplier : 1.0f);
+        position += glm::normalize(move) * amount * speed * dt;
     }
 
     // Scroll changes speed, like most editors.
-    if (input.scrollDelta() != 0.0f) {
+    if ((sources & KeyboardMouse) && input.scrollDelta() != 0.0f) {
         moveSpeed = std::clamp(moveSpeed * std::pow(1.2f, input.scrollDelta()), 0.5f, 500.0f);
     }
 }

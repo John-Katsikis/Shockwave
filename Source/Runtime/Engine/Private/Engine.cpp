@@ -1,7 +1,6 @@
 #include <Engine/Engine.h>
 
 #include <Core/Log.h>
-
 #include <UI/Gui.h>
 
 #include <imgui_impl_sdl3.h>
@@ -21,7 +20,7 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
     m_window = std::make_unique<Window>(m_config.window);
     m_renderer = std::make_unique<Renderer>(*m_window, *m_jobs, m_config.window.vsync);
-    m_input = std::make_unique<Input>(*m_window);
+    m_input = std::make_unique<Input>(m_window.get());
     m_assets = std::make_unique<Assets>();
     if (m_config.gui) initGui();
     SW_LOG(
@@ -180,6 +179,7 @@ void Engine::run(Application& app) {
         previous = now;
         if (frameTime > maxFrameTime) frameTime = maxFrameTime;
         accumulator += frameTime;
+        m_input->update(frameTime);   // controllers, rumble, and the bindings file
 
         // Read every frame: an editor switching projects can change the tick rate.
         const double dt = 1.0 / m_config.tickRate;

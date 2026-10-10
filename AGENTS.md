@@ -12,6 +12,9 @@ When writing or editing `.swscene` or `.swproject` files, follow `docs/SceneSche
 (regenerate it with `build/bin/player --schema docs/SceneSchema.md` after adding
 components or assets) and run `build/bin/player --check` until it reports no problems.
 To see a scene, render it with `build/bin/player --scene <file> --screenshot out.png`.
+Controls live in `Config/Input.swinput`; follow `docs/InputSchema.md` (regenerate with
+`build/bin/player --input-schema docs/InputSchema.md`), and use `player --devices` to see
+what controllers are plugged in and how their inputs are named.
 Every feature needs both an editor UI for people and a text/CLI path for tools: a field in
 the schema, a `--check` rule where mistakes are likely, and a way to verify it from the
 command line.

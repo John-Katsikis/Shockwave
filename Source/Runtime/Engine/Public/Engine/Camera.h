@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
+
 namespace shockwave {
 
 class Input;
@@ -12,7 +14,8 @@ class Input;
 glm::mat4 perspectiveReverseZ(float fovYRadians, float aspect, float nearPlane);
 
 // Free-flying camera, like an editor viewport. Hold the right mouse button to look around,
-// WASD to move, E/Q up and down, Shift to go faster.
+// WASD to move, E/Q up and down, Shift to go faster. On a gamepad: left stick moves, right
+// stick looks, triggers go up and down, clicking the left stick goes faster.
 class FlyCamera {
 public:
     glm::vec3 position{0.0f, 2.0f, 8.0f};
@@ -23,13 +26,16 @@ public:
     float moveSpeed = 8.0f;   // units per second
     float fastMultiplier = 4.0f;
     float lookSensitivity = 0.0025f;   // radians per pixel
+    float turnSpeed = 2.5f;   // radians per second with a stick pushed all the way
 
     // Binds the default actions (camera_forward, camera_back, camera_left, camera_right,
-    // camera_up, camera_down, camera_fast, camera_look). Rebind them to change controls.
+    // camera_up, camera_down, camera_fast, camera_look, and camera_turn_left/right/up/down
+    // for sticks). Rebind them, in code or Config/Input.swinput, to change controls.
     static void bindDefaultControls(Input& input);
 
     // Call once per rendered frame with the real frame time (Application::onFrame).
-    void update(Input& input, double frameDt);
+    // sources: InputSources to listen to, e.g. only Gamepads while the mouse is elsewhere.
+    void update(Input& input, double frameDt, uint8_t sources = 7);
 
     void lookAt(const glm::vec3& target);
     glm::vec3 forward() const;

@@ -44,7 +44,7 @@ Shockwave/
     Runtime/            the engine, one static library per module
       Core/               job system, logging
       Platform/           window
-      Input/              keyboard, mouse and action mapping
+      Input/              keyboard, mouse, gamepads, joysticks and action mapping
       RHI/                Vulkan backend: device, swapchain, pipelines, render graph
       Renderer/           renderer, built-in meshes; engine shaders (GLSL) in Shaders/
       Assets/             asset names, built-in assets, image and model import, the asset folder watcher
@@ -291,7 +291,7 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
    uncapped interpolated rendering (done)
 3. 3D basics: reverse-Z depth, back-face culling, fly camera, keyboard and mouse input with
    action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
-4. Gamepads, and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
+4. Gamepads, flight sticks and wheels (done), and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
 6. Render graph, tonemapping and lighting (done); shadows, upscaling, glTF assets in the
    asset browser, audio
@@ -375,3 +375,19 @@ Components are editable and saved in scenes; Stop restores the authored state.
 
 See [Physics](docs/Physics.md) for component setup, gameplay APIs, collision masks,
 threading rules, and the supported shape and parenting constraints.
+
+### Controllers
+
+PlayStation (DualSense, DualShock 4), Xbox, Switch and Steam pads work out of the box, with
+rumble, trigger rumble, light bar color and gyro. Flight sticks, throttles, wheels, pedals and
+button boxes work as joysticks, bound by part of their name. Game code reads named actions;
+the bindings live in the project's `Config/Input.swinput` and reload when it changes.
+
+- In the editor, **Window > Input** shows every controller live and edits the bindings:
+  **+ Listen** binds the next button or axis you press.
+- `player --devices 10` lists controllers, then prints each input you press for 10 seconds as
+  the line that binds it. `player --check` validates the bindings file.
+- [Input schema](docs/InputSchema.md) (`player --input-schema`) lists the format and every name.
+
+A gamepad also flies the editor camera while the viewport has focus: left stick moves, right
+stick looks, triggers go up and down.

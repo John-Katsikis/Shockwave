@@ -2,15 +2,15 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
-#include <Core/Log.h>
-
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
+#include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <Input/InputBinding.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
 
@@ -58,6 +58,9 @@ void Player::onStart() {
         throw std::runtime_error(error);
     if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
     shockwave::FlyCamera::bindDefaultControls(engine().input());
+    if (const auto bindings = shockwave::inputBindingsPath(m_project.root); std::filesystem::exists(bindings)) {
+        if (!engine().input().loadBindingsFile(bindings, error)) throw std::runtime_error(error);
+    }
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->start();
     if (!m_session->physics()->diagnostics().empty()) {

@@ -58,10 +58,12 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     if (!m_gameModuleMatches) {
         warn(
             "This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
-            std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its game module .cpp> to run it.");
+            std::string(built) +
+            "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its game module .cpp> to run it.");
     }
     engine().setTickRate(m_project.tickRate);
     applyProjectTheme();
+    loadProjectInput();
     logAssetChanges(
         m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
     loadEditorState();
@@ -99,6 +101,7 @@ void Editor::closeProject() {
     saveEditorState();
     log("Closed project " + m_project.name);
     m_hasProject = false;
+    engine().input().clearBindingsFile();
     m_world.clear();
     m_scenePath.clear();
     m_selection.clear();

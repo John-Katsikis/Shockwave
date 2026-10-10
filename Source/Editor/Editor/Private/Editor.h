@@ -52,6 +52,7 @@ struct EditorOptions {
 //   Inspector  the selected entity's components, generated from their registered fields
 //   Content    the project's assets and scenes, plus the engine's built-in assets
 //   Console    what the editor did, with warnings and errors called out
+//   Input      controllers plugged in, live, and the project's action bindings (Window > Input)
 //   Status bar scene, save state, play state, selection and frame time at a glance
 //
 // Everything belongs to a project (shockwave/Project.h): with none open, the editor shows
@@ -165,6 +166,11 @@ private:
     void drawContentItems();
     // ConsolePanel.cpp
     void drawConsole();
+    // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
+    void drawInputWindow();
+    void loadProjectInput();   // on project open and Revert
+    void applyInputEdit();   // m_inputEdit goes live, unsaved
+    void saveInputBindings();
 
     // ---- Selection (Editor.cpp) ----
     void select(shockwave::Entity e);   // replaces the selection; null clears it
@@ -310,6 +316,16 @@ private:
     bool m_showControls = false, m_showAbout = false, m_showDemo = false, m_showMetrics = false;
     bool m_resetLayout = false;
     bool m_focusConsole = false;
+
+    // Input window
+    bool m_showInput = false;
+    shockwave::InputBindings m_inputEdit;
+    uint32_t m_inputSeenVersion = 0;
+    bool m_inputDirty = false;
+    std::string m_inputListenAction;   // the action waiting for an input, empty when not listening
+    int m_inputListenFrames = 0;   // frames to ignore after starting, so the click isn't recorded
+    std::string m_inputNewAction, m_inputTyped, m_inputTypedError;
+    glm::vec3 m_padLight{0.0f, 0.9f, 1.0f};
 
     std::array<float, 240> m_frameTimes{};
     size_t m_frameTimeIndex = 0;

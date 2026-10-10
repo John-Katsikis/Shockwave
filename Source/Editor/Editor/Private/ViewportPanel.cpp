@@ -645,6 +645,9 @@ void Editor::updateCamera(bool hovered) {
         }
     } else {
         input.setMouseCaptured(false);
+        // A gamepad flies the editor camera whenever the viewport has focus or the mouse.
+        if ((hovered || ImGui::IsWindowFocused()) && !lookingThroughSceneCamera())
+            m_camera.update(input, io.DeltaTime, shockwave::Gamepads);
         if (hovered && io.MouseWheel != 0.0f) {
             m_camera.position += m_camera.forward() * io.MouseWheel * std::max(0.5f, m_camera.moveSpeed * 0.15f);
         }

@@ -26,3 +26,9 @@ target_link_libraries(physics_test PRIVATE Shockwave::GameFramework)
 add_test(NAME physics COMMAND physics_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(physics PROPERTIES TIMEOUT 60)
+
+add_executable(input_test InputTest.cpp)
+target_link_libraries(input_test PRIVATE Shockwave::Input)
+shockwave_warnings(input_test)
+add_test(NAME input COMMAND input_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(input PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy")

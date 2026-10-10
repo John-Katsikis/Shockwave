@@ -42,6 +42,17 @@ int main(int argc, char** argv) {
             } else if (arg == "--schema" && i + 1 < argc) {
                 tool.mode = Tool::Mode::Schema;
                 tool.schemaOut = argv[++i];
+            } else if (arg == "--input-schema" && i + 1 < argc) {
+                return player::writeInputSchema(argv[i + 1]);
+            } else if (arg == "--devices") {
+                double seconds = 0.0;
+                if (i + 1 < argc && argv[i + 1][0] != '-') {
+                    const std::string value = argv[i + 1];
+                    const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), seconds);
+                    if (ec != std::errc{} || end != value.data() + value.size() || seconds < 0.0)
+                        throw std::runtime_error("--devices takes a number of seconds to listen for");
+                }
+                return player::listDevices(seconds);
             } else if (arg == "--scene" && i + 1 < argc) {
                 tool.scene = std::filesystem::absolute(argv[++i]).lexically_normal();
             } else if (arg == "--screenshot" && i + 1 < argc) {
@@ -75,7 +86,10 @@ int main(int argc, char** argv) {
                           "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
                           "                                    play N frames (default 30), save the last, quit\n"
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
-                          "player --schema file.md             write the scene format reference (- for stdout)");
+                          "player --schema file.md             write the scene format reference (- for stdout)\n"
+                          "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                          "player --devices [seconds]          list controllers; then print each input pressed\n"
+                          "                                    as binding text, for that many seconds");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-') {
                 if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")

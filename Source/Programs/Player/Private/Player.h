@@ -1,7 +1,7 @@
 #pragma once
 
 // The player: runs a project like the shipped game, or one of the command-line tools
-// (--check, --schema, --screenshot) that people, CI and AI agents use to verify it.
+// (--check, --schema, --input-schema, --devices, --screenshot) that people, CI and AI agents use to verify it.
 
 #include <Assets/AssetFolder.h>
 #include <Engine/Engine.h>
@@ -31,6 +31,12 @@ struct Tool {
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     bool printFrame = false;   // --print-frame: the render graph, at exit
 };
+
+// Tools that need no project or window. Both return the process exit code.
+int writeInputSchema(const fs::path& out);   // docs/InputSchema.md; "-" for stdout
+// Lists connected controllers, then for `seconds` prints each input pressed as the
+// binding text that would bind it ("pad south", "joy \"G29\" axis 2 full").
+int listDevices(double seconds);
 
 class Player final : public shockwave::Application {
 public:
