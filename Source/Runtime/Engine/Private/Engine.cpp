@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace shockwave {
 
@@ -46,19 +47,29 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
             SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
         }
     }
-    if (!initialized && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-        throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
+    if (!initialized) initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+    // A hidden window needs no display: tools (player --check) still run on a headless
+    // machine, through SDL's offscreen driver.
+    if (!initialized && m_config.window.hidden && !SDL_getenv("SDL_VIDEO_DRIVER")) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
+        initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     }
+    if (!initialized) throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
     m_window = std::make_unique<Window>(m_config.window);
-    m_renderer = std::make_unique<Renderer>(*m_window, *m_jobs, m_config.window.vsync);
+    m_renderer = std::make_unique<Renderer>(
+        *m_window, *m_jobs,
+        RendererOptions{
+            .backend = m_config.renderer, .vsync = m_config.window.vsync, .swappable = m_config.swappableRenderer});
+    if (m_config.gui && !(m_renderer->backendFlags() & kRendererDrawsGui))
+        throw std::runtime_error("the " + m_config.renderer + " renderer can't draw the editor's interface");
     m_input = std::make_unique<Input>(m_window.get());
     m_assets = std::make_unique<Assets>();
     setFrameLimit(m_config.frameLimit);
     setLowLatency(m_config.lowLatency);
     if (m_config.gui) initGui();
     SW_LOG(
-        LogEngine, Info, "rendering with Vulkan on {}, {} worker threads", m_renderer->gpuName(),
+        LogEngine, Info, "rendering with {} on {}, {} worker threads", m_renderer->backendName(), m_renderer->gpuName(),
         m_jobs->workerCount());
 }
 
@@ -98,7 +109,10 @@ void Engine::initGui() {
     loadGuiTheme(false);
 
     ImGui_ImplSDL3_InitForVulkan(m_window->handle());
-    m_renderer->initGui();
+    m_renderer->initGui([this] {
+        ImGui_ImplSDL3_Shutdown();
+        ImGui_ImplSDL3_InitForVulkan(m_window->handle());
+    });
     if (m_config.guiViewports && !(io.BackendFlags & ImGuiBackendFlags_PlatformHasViewports)) {
         io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
         SW_LOG(
@@ -206,6 +220,46 @@ void Engine::updatePacingPeriod() {
     m_smoother.setPeriod(period);
 }
 
+void Engine::switchRenderer(const std::string& name) { m_pendingRenderer = name; }
+
+void Engine::setAutoReloadRenderer(bool autoReload) {
+    m_autoReloadRenderer = autoReload && m_config.swappableRenderer;
+    m_rendererWatcher.watch(m_autoReloadRenderer ? m_renderer->backendFile() : std::filesystem::path());
+}
+
+// Between frames: nothing is being recorded, and the GUI frame hasn't begun.
+bool Engine::applyRendererChange() {
+    if (m_autoReloadRenderer && m_rendererWatcher.poll(static_cast<double>(SDL_GetTicksNS()) * 1e-9) &&
+        m_pendingRenderer.empty()) {
+        SW_LOG(LogRender, Info, "{} was rebuilt: reloading it", m_rendererWatcher.file().filename().string());
+        m_pendingRenderer = m_renderer->backendName();
+    }
+    if (m_pendingRenderer.empty()) return false;
+    const std::string name = std::exchange(m_pendingRenderer, {});
+    const bool reload = name == m_renderer->backendName();
+    std::string error;
+    const Uint64 start = SDL_GetPerformanceCounter();
+    const bool ok = m_renderer->switchBackend(name, error);
+    const double ms = static_cast<double>(SDL_GetPerformanceCounter() - start) * 1000.0 /
+                      static_cast<double>(SDL_GetPerformanceFrequency());
+    ++m_rendererStatus.changes;
+    m_rendererStatus.ok = ok;
+    if (ok) {
+        char text[256];
+        std::snprintf(
+            text, sizeof(text), "%s the %s renderer in %.0f ms", reload ? "Reloaded" : "Switched to", name.c_str(), ms);
+        m_rendererStatus.message = text;
+        SW_LOG(LogRender, Info, "{}", m_rendererStatus.message);
+        m_frameStats.clear();   // the swap's stall isn't a frame
+    } else {
+        m_rendererStatus.message = (reload ? "Couldn't reload the renderer: " : "Couldn't switch renderers: ") + error;
+        SW_LOG(LogRender, Error, "{}", m_rendererStatus.message);
+    }
+    // A failed build isn't retried until it's rebuilt again.
+    if (m_autoReloadRenderer) m_rendererWatcher.watch(m_renderer->backendFile());
+    return true;
+}
+
 void Engine::run(Application& app) {
     // Fixed-timestep loop: simulation ticks at tickRate, rendering runs as fast as vsync allows.
     const double maxFrameTime = 0.25;   // avoid the "spiral of death" after a long stall
@@ -223,6 +277,9 @@ void Engine::run(Application& app) {
     app.onStart();
 
     while (m_running) {
+        // The swap's stall isn't counted as frame time.
+        if ((!m_pendingRenderer.empty() || m_autoReloadRenderer) && applyRendererChange())
+            previous = SDL_GetPerformanceCounter();
         // Pacing first, input right after: the less time between reading input and the
         // frame reaching the screen, the more responsive it feels.
         {

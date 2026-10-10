@@ -31,7 +31,9 @@ void Editor::play() {
     stopAudioPreview();
     if (!m_session || playState() == PlayState::Playing) return;
     if (!m_gameModuleMatches) {
-        warn("Play is off: this project's gameplay module isn't the one compiled into the editor");
+        warn(
+            "Play is off: this project's game module \"" + m_project.gameModule +
+            "\" isn't built. Build > Build and reload game code builds it.");
         return;
     }
     const bool resuming = playState() == PlayState::Paused;

@@ -2,7 +2,7 @@
 
 namespace shockwave {
 
-vk::Buffer Renderer::Impl::createBuffer(
+vk::Buffer VulkanRenderer::Impl::createBuffer(
     VkDeviceSize size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, VmaAllocationInfo* outInfo) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -20,14 +20,14 @@ vk::Buffer Renderer::Impl::createBuffer(
     return buffer;
 }
 
-VkDeviceAddress Renderer::Impl::bufferAddress(VkBuffer buffer) {
+VkDeviceAddress VulkanRenderer::Impl::bufferAddress(VkBuffer buffer) {
     VkBufferDeviceAddressInfo info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     info.buffer = buffer;
     return vkGetBufferDeviceAddress(context->device(), &info);
 }
 
-vk::Buffer Renderer::Impl::createStaging(const void* data, VkDeviceSize size) {
+vk::Buffer VulkanRenderer::Impl::createStaging(const void* data, VkDeviceSize size) {
     VmaAllocationInfo info{};
     vk::Buffer staging = createBuffer(
         size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -37,7 +37,7 @@ vk::Buffer Renderer::Impl::createStaging(const void* data, VkDeviceSize size) {
     return staging;
 }
 
-void Renderer::Impl::immediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
+void VulkanRenderer::Impl::immediateSubmit(const std::function<void(VkCommandBuffer)>& record) {
     std::lock_guard lock(queueMutex);
     VkDevice device = context->device();
 
@@ -75,7 +75,7 @@ void Renderer::Impl::immediateSubmit(const std::function<void(VkCommandBuffer)>&
     vkFreeCommandBuffers(device, uploadPool, 1, &cmd);
 }
 
-vk::Buffer Renderer::Impl::uploadBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage) {
+vk::Buffer VulkanRenderer::Impl::uploadBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage) {
     vk::Buffer staging = createStaging(data, size);
     vk::Buffer buffer = createBuffer(size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0);
     immediateSubmit([&](VkCommandBuffer cmd) {
@@ -86,20 +86,10 @@ vk::Buffer Renderer::Impl::uploadBuffer(const void* data, VkDeviceSize size, VkB
     return buffer;
 }
 
-uint32_t Renderer::Impl::reserveSlot(std::vector<uint32_t>& free, std::atomic<uint32_t>& reserved, uint32_t maximum) {
-    std::lock_guard lock(resourceMutex);
-    if (!free.empty()) {
-        const auto id = free.back();
-        free.pop_back();
-        return id;
-    }
-    if (reserved.load() >= maximum) throw std::runtime_error("GPU asset capacity exhausted");
-    return reserved.fetch_add(1);
-}
-
-MeshHandle Renderer::Impl::createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
-    if (vertices.empty() || indices.empty()) return {};
-    const uint32_t id = reserveSlot(freeMeshes, meshReserved, kMaxMeshes);
+void VulkanRenderer::Impl::createMesh(
+    MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
+    const uint32_t id = handle.id;
+    if (id >= kMaxMeshes || meshReady[id].load()) throw std::runtime_error("createMesh: mesh id is taken");
     Mesh& mesh = meshes[id];
     try {
         mesh.vertices = uploadBuffer(
@@ -120,19 +110,16 @@ MeshHandle Renderer::Impl::createMesh(std::span<const Vertex> vertices, std::spa
         mesh.bounds = glm::vec4(center, std::sqrt(radius2));
         mesh.vertexAddress = bufferAddress(mesh.vertices.buffer);
         meshReady[id].store(true, std::memory_order_release);
-        return {id};
     } catch (...) {
         if (mesh.vertices.buffer)
             vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
         if (mesh.indices.buffer) vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
         mesh = {};
-        std::lock_guard lock(resourceMutex);
-        freeMeshes.push_back(id);
         throw;
     }
 }
 
-void Renderer::Impl::destroyMesh(MeshHandle handle) {
+void VulkanRenderer::Impl::destroyMesh(MeshHandle handle) {
     if (handle.id >= kMaxMeshes || !meshReady[handle.id].load()) return;
     vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
     Mesh& mesh = meshes[handle.id];
@@ -140,14 +127,10 @@ void Renderer::Impl::destroyMesh(MeshHandle handle) {
     vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
     vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
     mesh = {};
-    std::lock_guard lock(resourceMutex);
-    freeMeshes.push_back(handle.id);
 }
 
-void Renderer::Impl::destroyTexture(TextureHandle handle) {
-    if (!handle.id || handle.id >= std::min(textureReserved.load(), context->maxBindlessTextures()) ||
-        !textures[handle.id].image)
-        return;
+void VulkanRenderer::Impl::destroyTexture(TextureHandle handle) {
+    if (!handle.id || !isTexture(handle.id)) return;
     vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
     if (auto it = guiTextures.find(handle.id); it != guiTextures.end()) {
         ImGui_ImplVulkan_RemoveTexture(it->second);
@@ -164,31 +147,24 @@ void Renderer::Impl::destroyTexture(TextureHandle handle) {
     textures[handle.id] = textures[0];
     writeTextureDescriptor(handle.id);
     textures[handle.id] = {};
-    std::lock_guard lock(resourceMutex);
-    freeTextures.push_back(handle.id);
 }
 
-TextureHandle Renderer::Impl::createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+void VulkanRenderer::Impl::createTexture(
+    TextureHandle handle, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
     if (!width || !height || rgba.size() < size_t(width) * height * 4)
         throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
-    const uint32_t id = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
-    try {
-        textures[id] = uploadTexture(width, height, rgba, srgb);
-        writeTextureDescriptor(id);
-        return {id};
-    } catch (...) {
-        std::lock_guard lock(resourceMutex);
-        freeTextures.push_back(id);
-        throw;
-    }
+    const uint32_t id = handle.id;
+    if (id >= textureCapacity() || textures[id].image) throw std::runtime_error("createTexture: texture id is taken");
+    textures[id] = uploadTexture(width, height, rgba, srgb);
+    writeTextureDescriptor(id);
 }
 
-void Renderer::Impl::updateTexture(
+void VulkanRenderer::Impl::updateTexture(
     TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
     if (width == 0 || height == 0 || rgba.size() < size_t(width) * height * 4) {
         throw std::runtime_error("updateTexture: pixel data is smaller than width x height x 4");
     }
-    if (texture.id == 0 || texture.id >= std::min(textureReserved.load(), context->maxBindlessTextures())) {
+    if (texture.id == 0 || texture.id >= textureCapacity()) {
         throw std::runtime_error("updateTexture: not a texture made with createTexture");
     }
     vk::Image image = uploadTexture(width, height, rgba, srgb);
@@ -196,7 +172,7 @@ void Renderer::Impl::updateTexture(
     textureSwaps.push_back({texture.id, image});
 }
 
-void Renderer::Impl::applyTextureSwaps() {
+void VulkanRenderer::Impl::applyTextureSwaps() {
     std::vector<TextureSwap> swaps;
     {
         std::lock_guard lock(textureSwapMutex);
@@ -223,8 +199,8 @@ void Renderer::Impl::applyTextureSwaps() {
     }
 }
 
-uint64_t Renderer::Impl::guiTexture(TextureHandle texture) {
-    if (!guiEnabled || texture.id >= std::min(textureReserved.load(), context->maxBindlessTextures())) return 0;
+uint64_t VulkanRenderer::Impl::guiTexture(TextureHandle texture) {
+    if (!guiEnabled || texture.id >= textureCapacity()) return 0;
     if (auto it = guiTextures.find(texture.id); it != guiTextures.end()) {
         return reinterpret_cast<uint64_t>(it->second);
     }
@@ -235,7 +211,7 @@ uint64_t Renderer::Impl::guiTexture(TextureHandle texture) {
     return reinterpret_cast<uint64_t>(set);
 }
 
-void Renderer::Impl::writeTextureDescriptor(uint32_t id) {
+void VulkanRenderer::Impl::writeTextureDescriptor(uint32_t id) {
     std::lock_guard lock(descriptorMutex);
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageView = textures[id].view;
@@ -251,7 +227,8 @@ void Renderer::Impl::writeTextureDescriptor(uint32_t id) {
     vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
 }
 
-vk::Image Renderer::Impl::uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+vk::Image
+VulkanRenderer::Impl::uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
     const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     vk::Image image = createImage(

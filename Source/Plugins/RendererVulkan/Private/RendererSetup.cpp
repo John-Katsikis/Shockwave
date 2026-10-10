@@ -2,7 +2,7 @@
 
 namespace shockwave {
 
-Renderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
+VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
     context = std::make_unique<vk::Context>(window.handle());
     swapchain = std::make_unique<vk::Swapchain>(*context, window.pixelWidth(), window.pixelHeight(), vsync);
     drawLists.resize(jobs.threadCount());
@@ -21,26 +21,25 @@ Renderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
     createPipelines();
 
     const uint8_t white[4] = {255, 255, 255, 255};
-    createTexture(1, 1, white, false);   // slot 0: the default texture
-    sceneSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
-    cascadeSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
-    localSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
+    createTexture({0}, 1, 1, white, false);   // slot 0: the default texture
+    sceneSlot = context->maxBindlessTextures() - 1;
+    cascadeSlot = context->maxBindlessTextures() - 2;
+    localSlot = context->maxBindlessTextures() - 3;
     createRenderTargets();
     createShadowMaps();
 }
 
-Renderer::Impl::~Impl() {
+VulkanRenderer::Impl::~Impl() {
     VkDevice device = context->device();
     VmaAllocator allocator = context->allocator();
     vkDeviceWaitIdle(device);
     if (guiEnabled) shutdownGui();
-    for (uint32_t i = 0; i < std::min(meshReserved.load(), kMaxMeshes); ++i) {
+    for (uint32_t i = 0; i < kMaxMeshes; ++i) {
         if (!meshReady[i].load()) continue;
         vmaDestroyBuffer(allocator, meshes[i].vertices.buffer, meshes[i].vertices.allocation);
         vmaDestroyBuffer(allocator, meshes[i].indices.buffer, meshes[i].indices.allocation);
     }
-    const uint32_t textureCount = std::min(textureReserved.load(), context->maxBindlessTextures());
-    for (uint32_t i = 0; i < textureCount; ++i) destroyImage(textures[i]);
+    for (uint32_t i = 0; i < textureCapacity(); ++i) destroyImage(textures[i]);
     for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);
     vkDestroyCommandPool(device, uploadPool, nullptr);
     destroyImage(sceneColor);
@@ -76,7 +75,7 @@ Renderer::Impl::~Impl() {
     context.reset();
 }
 
-void Renderer::Impl::checkBlitSupport() {
+void VulkanRenderer::Impl::checkBlitSupport() {
     VkFormatProperties props{};
     vkGetPhysicalDeviceFormatProperties(context->physicalDevice(), swapchain->format(), &props);
     if (!(props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
@@ -84,7 +83,7 @@ void Renderer::Impl::checkBlitSupport() {
     }
 }
 
-vk::Image Renderer::Impl::createImage(
+vk::Image VulkanRenderer::Impl::createImage(
     VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect, uint32_t mipLevels,
     bool dedicated) {
     vk::Image image;
@@ -119,13 +118,13 @@ vk::Image Renderer::Impl::createImage(
     return image;
 }
 
-void Renderer::Impl::destroyImage(vk::Image& image) {
+void VulkanRenderer::Impl::destroyImage(vk::Image& image) {
     if (image.view) vkDestroyImageView(context->device(), image.view, nullptr);
     if (image.image) vmaDestroyImage(context->allocator(), image.image, image.allocation);
     image = {};
 }
 
-void Renderer::Impl::createRenderTargets() {
+void VulkanRenderer::Impl::createRenderTargets() {
     const VkExtent2D out = outputExtent();
     const VkExtent2D extent{
         std::max(1u, static_cast<uint32_t>(std::lround(out.width * renderScale))),
@@ -162,13 +161,13 @@ void Renderer::Impl::createRenderTargets() {
     registerGuiSceneTexture();
 }
 
-void Renderer::Impl::registerGuiSceneTexture() {
+void VulkanRenderer::Impl::registerGuiSceneTexture() {
     if (!guiEnabled) return;
     if (guiSceneTexture) ImGui_ImplVulkan_RemoveTexture(guiSceneTexture);
     guiSceneTexture = ImGui_ImplVulkan_AddTexture(displayColor.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-void Renderer::Impl::recreateSceneTargets() {
+void VulkanRenderer::Impl::recreateSceneTargets() {
     vkDeviceWaitIdle(context->device());
     destroyImage(sceneColor);
     destroyImage(sceneDepth);

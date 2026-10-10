@@ -143,6 +143,8 @@ public:
     Entity clone(Entity e);
     void clear();
     size_t entityCount() const { return m_count; }
+    // A world with the same entities (same handles, same free list) and no components.
+    World withoutComponents() const;
 
     // Visits live entities in index order, which is creation order: indices are only
     // recycled once many are free, so lists of entities stay put while you edit.

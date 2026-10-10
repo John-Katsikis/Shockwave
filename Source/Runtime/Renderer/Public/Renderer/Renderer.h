@@ -1,107 +1,53 @@
 #pragma once
 
 #include <Renderer/Mesh.h>
+#include <Renderer/RenderTypes.h>
 
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace shockwave {
 
 class JobSystem;
 class Window;
 
-struct Color {
-    float r = 0.0f, g = 0.0f, b = 0.0f, a = 1.0f;
+struct RendererOptions {
+    std::string backend = "vulkan";   // a renderer plugin: "vulkan", "null"; see availableBackends()
+    bool vsync = true;
+    // Keep a CPU copy of every mesh and texture so the backend can be swapped or reloaded
+    // while running. The editor turns this on; it costs memory equal to the asset data.
+    bool swappable = false;
 };
 
-// Opaque handles to GPU resources.
-struct MeshHandle {
-    uint32_t id = UINT32_MAX;
-    bool valid() const { return id != UINT32_MAX; }
-};
-struct TextureHandle {
-    uint32_t id = 0;   // 0 is the built-in white texture, so "no texture" just works
-};
-
-// A reference grid on the ground plane (y = 0), drawn into the scene with depth testing,
-// for editors and debug views. Lines fade out towards fadeDistance from the camera.
-struct GridSettings {
-    bool enabled = false;
-    float cellSize = 1.0f;   // units between minor lines
-    int majorEvery = 10;   // a stronger line every this many cells
-    float fadeDistance = 150.0f;   // units
-    float opacity = 1.0f;
-};
-
-// Public face of the renderer. Vulkan stays behind this interface so games never
-// include Vulkan headers, which keeps a later Metal/MoltenVK port contained.
+// Public face of the renderer. The drawing itself is done by a backend plugin (Vulkan by
+// default; see RenderBackend.h), so games never include Vulkan headers, a Metal or
+// headless renderer can stand in, and the editor can swap or reload the backend while
+// it runs without anyone re-creating their meshes and textures.
 //
 // Threading: createMesh, createTexture, updateTexture and drawMesh may be called from
 // any thread, including job system workers. Draws go into per-thread lists, so
 // recording them doesn't contend. setClearColor and setCamera belong to the thread running
 // Application::onRender, and setCamera must come before that frame's drawMesh calls.
-struct DrawMaterial {
-    float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
-    bool doubleSided = false;
-    bool blend = false;
-    glm::vec2 uvScale{1.0f};   // repeats the texture across the surface (MeshRenderer::tiling)
-    float roughness = 0.6f;   // 0 mirror-smooth .. 1 fully matte
-    float metallic = 0.0f;
-    glm::vec3 emissive{0.0f};   // linear HDR color the surface emits
-    bool castShadows = true;   // blended (transparent) surfaces never cast
-};
-
-// A light for this frame, in world space. See the Light component for the meaning of
-// each value; spot angles here are cosines.
-struct LightDesc {
-    enum class Type : uint32_t { Directional, Point, Spot };
-    Type type = Type::Point;
-    glm::vec3 position{0.0f};
-    glm::vec3 direction{0.0f, 0.0f, -1.0f};   // where it shines (directional, spot)
-    glm::vec3 color{1.0f};   // already multiplied by intensity
-    float range = 10.0f;
-    float cosOuter = 0.0f, cosInner = 0.0f;   // spot cone, as cosines of the half-angles
-    // Shadows (see the Light component). The first shadow-casting directional light gets
-    // cascaded shadow maps; spot and point lights share an atlas, nearest first.
-    bool castShadows = false;
-    float shadowStrength = 1.0f;   // 0 no shadow .. 1 fully dark
-    float shadowSoftness = 0.3f;   // 0 sharp .. 1 very soft edges
-    float shadowBias = 1.0f;   // multiplies the automatic bias; raise if surfaces shadow themselves
-};
-
-// Scene-wide lighting and the HDR-to-display step. Kept until changed.
-struct LightingDesc {
-    enum class Tonemapper : uint32_t { ACES, AgX, Reinhard, None };
-    glm::vec3 skyAmbient{0.32f, 0.42f, 0.58f};   // ambient from above, already scaled
-    glm::vec3 groundAmbient{0.18f, 0.16f, 0.14f};   // ambient from below
-    float exposure = 0.0f;   // stops
-    Tonemapper tonemapper = Tonemapper::ACES;
-    float shadowDistance = 80.0f;   // meters from the camera the sun's shadows reach
-    uint32_t shadowCascades = 4;   // 1..4: more keeps nearby shadows sharp over long distances
-};
-
-// What the scene shows: the lit result, or a view for checking content. ShadowCascades
-// tints the sun's shadow cascades (red, green, blue, yellow nearest to farthest).
-enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades };
-
-// Shadow map resolution, filtering and how many lights can cast at once: a per-device
-// performance setting, unlike the scene's shadow distance.
-//            sun cascades   light tiles   lights (spot / point)   filter taps
-//   Low      1024           256           64 tiles in 2048         4
-//   Medium   2048           512           64 tiles in 4096         8
-//   High     2048           512           64 tiles in 4096         16
-//   Ultra    4096           1024          16 tiles in 4096         32
-// A spot light takes one tile, a point light six.
-enum class ShadowQuality : uint32_t { Off, Low, Medium, High, Ultra };
-
+//
+// Swapping: switchBackend and reloadBackend tear the backend down and start the new one
+// between frames, then replay every setting and resource. Handles stay valid. It needs
+// RendererOptions::swappable, which keeps a CPU copy of each mesh and texture.
 class Renderer {
 public:
-    Renderer(Window& window, JobSystem& jobs, bool vsync);
+    // Throws std::runtime_error when the backend can't be loaded or started.
+    Renderer(Window& window, JobSystem& jobs, const RendererOptions& options);
     ~Renderer();
+
+    using ShadowStats = shockwave::ShadowStats;
+    using PassTiming = shockwave::PassTiming;
+    static constexpr uint32_t kMaxLights = shockwave::kMaxLights;
 
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
@@ -139,7 +85,6 @@ public:
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no
     // lights at all, a default sun keeps unlit scenes readable.
-    static constexpr uint32_t kMaxLights = 256;
     void addLight(const LightDesc& light);
     void setLighting(const LightingDesc& lighting);
     void setDebugView(DebugView view);
@@ -149,12 +94,6 @@ public:
     // Main thread. Changing it rebuilds the shadow maps before the next frame.
     void setShadowQuality(ShadowQuality quality);
     ShadowQuality shadowQuality() const;
-    struct ShadowStats {
-        uint32_t cascades = 0;   // the sun's cascades drawn last frame (0: no sun shadow)
-        uint32_t shadowedLights = 0;   // spot and point lights that cast shadows
-        uint32_t skippedLights = 0;   // wanted to cast but the atlas was full
-        uint32_t casterDraws = 0;   // draws into all shadow maps, after culling
-    };
     ShadowStats shadowStats() const;
 
     // Saves the next finished frame, tonemapped, as a PNG at output resolution (the
@@ -199,10 +138,6 @@ public:
     float waitForPresent();
     const char* presentTiming() const;   // how presentation is timed: "present wait 2", ...
     const char* presentModeName() const;   // "FIFO", "mailbox", ...
-    struct PassTiming {
-        std::string name;
-        float gpuMs = 0;
-    };
     // The GPU time of each render graph pass in the latest frame the GPU has finished, and
     // their total. Empty and 0 when the GPU has no timestamp support.
     const std::vector<PassTiming>& passTimings() const;
@@ -218,16 +153,37 @@ public:
     void endFrame();
     void onResize();
     void waitIdle();
-    void initGui();   // after ImGui::CreateContext and the SDL3 backend
+    // After ImGui::CreateContext and the SDL3 backend. A renderer's GUI shutdown takes down
+    // every GUI platform window with it, the main one included, so after a swap
+    // restartPlatform is called to set the platform side up again before the new backend's
+    // GUI starts.
+    void initGui(std::function<void()> restartPlatform = {});
     void shutdownGui();
     void newGuiFrame();
     // Creates, moves and draws the windows of GUI panels dragged out of the main window.
     // After endFrame, on the main thread; nothing to do unless multi-viewports are on.
     void renderGuiWindows();
 
+    // ---- Backends ----
+    // The renderer plugins that can be loaded, built-in ones first.
+    static std::vector<std::string> availableBackends();
+    const std::string& backendName() const;
+    const char* backendDescription() const;
+    uint32_t backendFlags() const;   // kRendererDrawsGui, kRendererPresents (RenderBackend.h)
+    bool swappable() const;
+    // Replaces the backend with another plugin, between frames on the main thread. Every
+    // handle stays valid. On failure (missing plugin, it can't start) the current backend
+    // keeps running and error says why.
+    bool switchBackend(const std::string& name, std::string& error);
+    // Starts the current backend again from its library as it is on disk now: rebuild a
+    // renderer plugin (or its shaders), reload, and see the change without restarting.
+    bool reloadBackend(std::string& error);
+    // The current backend's library, to watch for rebuilds; empty when it's built in.
+    const std::filesystem::path& backendFile() const;
+
 private:
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    struct State;
+    std::unique_ptr<State> m;
 };
 
 }   // namespace shockwave

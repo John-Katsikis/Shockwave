@@ -234,7 +234,10 @@ struct ComponentInfo {
 
 namespace detail {
 void addComponentInfo(ComponentInfo info);
-}
+// Unregisters a component, if it's still registered under that id: game code that's
+// unloaded removes its types, unless a reloaded copy has registered them again.
+void removeComponentInfo(std::string_view name, uint32_t id);
+}   // namespace detail
 
 // Registers (or re-registers) T. Do it at startup on the main thread; the built-in
 // components above are registered already.

@@ -9,9 +9,10 @@ across all cores by default.
 ```
 Source/
   Runtime/     modules that ship with games
+  Plugins/     code loaded at runtime: the renderers (Vulkan, headless)
   Editor/      the editor (Shockwave's UnrealEd)
   Programs/    executables: Player (the game and its CLI tools), Sandbox
-Games/Sample/  the sample project: Sample.swproject, Content/, Scenes/, Source/
+Games/Sample/  the sample project: Sample.swproject, Content/, Scenes/, Source/ (its game module)
 Tests/         CTest suites and fixtures
 themes/        editor UI themes (.swtheme)
 docs/          guides; SceneSchema.md is generated
@@ -20,8 +21,10 @@ cmake/         dependency, shader and module helpers
 
 ## Modules
 
-Each folder in `Source/Runtime` is one module, built as its own static library
-(`Shockwave::<Module>`) by `shockwave_module()` in `cmake/ShockwaveModule.cmake`:
+Each folder in `Source/Runtime` is one module, built as its own library
+(`Shockwave::<Module>`) by `shockwave_module()` in `cmake/ShockwaveModule.cmake`. In
+modular builds (the default on Linux and macOS, `SHOCKWAVE_MODULAR`) each module is a
+shared library in `build/bin`; otherwise they're static and linked into each executable.
 
 ```
 Source/Runtime/Renderer/
@@ -35,11 +38,11 @@ module sees only the headers of modules it depends on, directly or through them.
 
 | Module | What it holds | Depends on | Unreal counterpart |
 |---|---|---|---|
-| Core | job system, logging, frame pacing, profiling macros (Tracy) | GLM | Core |
+| Core | job system, logging, frame pacing, profiling macros (Tracy), plugin loading | GLM | Core |
 | Platform | window and OS events (SDL3) | Core | ApplicationCore |
 | Input | keyboard, mouse, gamepads and joysticks behind named actions; `.swinput` bindings | Platform | InputCore, Enhanced Input |
-| RHI | Vulkan device, swapchain, pipelines, render graph | Platform | RHI, VulkanRHI |
-| Renderer | meshes, textures, lights, the frame | Core, Platform; RHI privately | Renderer |
+| RHI | Vulkan device, swapchain, pipelines, render graph (static, inside the Vulkan plugin) | Platform | RHI, VulkanRHI |
+| Renderer | meshes, textures, lights, the frame; forwards to a renderer plugin it can swap | Core, Platform | Renderer |
 | Assets | asset registry, image decode, model import, hot reload | Renderer | AssetRegistry |
 | UI | `shockwave::gui` controls, themes (Dear ImGui) | Core | Slate |
 | Projects | `.swproject` manifest | Core | Projects |
@@ -48,7 +51,20 @@ module sees only the headers of modules it depends on, directly or through them.
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
 | GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio | Engine's GameFramework |
 
-Vulkan never reaches game or editor code, because only the Renderer links RHI.
+Vulkan never reaches game or editor code: only the Vulkan renderer plugin links RHI.
+
+## Plugins
+
+Some code is loaded at runtime rather than linked in, so it can be swapped or rebuilt and
+reloaded while the editor runs ([Plugins](Plugins.md)):
+
+| Plugin | Built as | What it is |
+|---|---|---|
+| `renderer_vulkan` | `bin/plugins/renderer_vulkan.so` (`Source/Plugins/RendererVulkan`) | the renderer: forward PBR, shadows, render graph, Dear ImGui |
+| `renderer_null` | `bin/plugins/renderer_null.so` (`Source/Plugins/RendererNull`) | headless: draws nothing, for servers and tools |
+| `game_<id>` | `bin/modules/game_<id>.so` (a project's `Source/`) | a project's game module |
+
+`Renderer` is the stable face games use; a `RenderBackend` plugin does the drawing.
 
 ## Gameplay model
 
@@ -62,6 +78,7 @@ This mirrors Unreal's vocabulary, built on the ECS:
   components each system reads and writes. There's no per-entity virtual `Tick`.
 - **GameModule** is how a project's C++ plugs in, like Unreal's primary game module.
   It registers the game's components, creates its assets and makes its GameInstance.
+  It's a plugin the editor loads for the open project and reloads when it's rebuilt.
 - **GameInstance** lives for the whole run of the editor or player. It picks the
   GameMode for each scene.
 - **GameMode** sets the rules of one Play. It adds systems and gets `beginPlay`,
@@ -108,7 +125,11 @@ This mirrors Unreal's vocabulary, built on the ECS:
   rule if mistakes are likely.
 - **A new engine service:** a Subsystem in its own module.
 - **A new render pass:** add it to the frame graph in
-  `Source/Runtime/Renderer/Private/RendererFrame.cpp` and declare its image uses.
+  `Source/Plugins/RendererVulkan/Private/RendererFrame.cpp` and declare its image uses.
+  Build `renderer_vulkan` and use Build > Reload renderer to see it without restarting.
+- **A new renderer:** a plugin implementing `RenderBackend` (`Renderer/RenderBackend.h`);
+  `Source/Plugins/RendererNull` is the smallest example.
 - **A new editor panel:** a `*Panel.cpp` in `Source/Editor/Editor/Private`, built
   from the `shockwave::gui` controls (`docs/UI.md`).
-- **Game code:** goes in the project's `Source/`, next to its `.swproject`.
+- **Game code:** goes in the project's `Source/`, next to its `.swproject`, built by
+  `shockwave_game_module(<id> ...)` (see [Projects](Projects.md)).

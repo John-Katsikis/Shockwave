@@ -43,7 +43,8 @@ int listDevices(double seconds);
 
 class Player final : public shockwave::Application {
 public:
-    Player(shockwave::Project project, Tool tool) : m_project(std::move(project)), m_tool(std::move(tool)) {}
+    Player(shockwave::Project project, Tool tool, const shockwave::GameModule& module)
+        : m_project(std::move(project)), m_tool(std::move(tool)), m_module(module) {}
     int exitCode() const { return m_exitCode; }
 
     void onStart() override;
@@ -66,6 +67,7 @@ private:
 
     shockwave::Project m_project;
     Tool m_tool;
+    const shockwave::GameModule& m_module;
     int m_exitCode = 0;
     int m_frame = 0;
     bool m_screenshotRequested = false;

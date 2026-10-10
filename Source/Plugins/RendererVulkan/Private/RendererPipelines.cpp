@@ -2,7 +2,7 @@
 
 namespace shockwave {
 
-void Renderer::Impl::createFrames() {
+void VulkanRenderer::Impl::createFrames() {
     VkDevice device = context->device();
     for (Frame& f : frames) {
         VkCommandPoolCreateInfo poolInfo{};
@@ -49,7 +49,7 @@ void Renderer::Impl::createFrames() {
     vk::check(vkCreateSemaphore(device, &semInfo, nullptr, &frameTimeline), "vkCreateSemaphore");
 }
 
-void Renderer::Impl::ensureDrawCapacity(Frame& f, uint32_t count) {
+void VulkanRenderer::Impl::ensureDrawCapacity(Frame& f, uint32_t count) {
     if (count <= f.drawCapacity) return;
     uint32_t capacity = std::max<uint32_t>(f.drawCapacity, 4096);
     while (capacity < count) capacity *= 2;
@@ -65,7 +65,7 @@ void Renderer::Impl::ensureDrawCapacity(Frame& f, uint32_t count) {
     f.drawCapacity = capacity;
 }
 
-void Renderer::Impl::createRenderFinishedSemaphores() {
+void VulkanRenderer::Impl::createRenderFinishedSemaphores() {
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     renderFinished.resize(swapchain->imageCount());
@@ -74,12 +74,12 @@ void Renderer::Impl::createRenderFinishedSemaphores() {
     }
 }
 
-void Renderer::Impl::destroyRenderFinishedSemaphores() {
+void VulkanRenderer::Impl::destroyRenderFinishedSemaphores() {
     for (VkSemaphore s : renderFinished) vkDestroySemaphore(context->device(), s, nullptr);
     renderFinished.clear();
 }
 
-void Renderer::Impl::createBindless() {
+void VulkanRenderer::Impl::createBindless() {
     VkDevice device = context->device();
     const uint32_t capacity = context->maxBindlessTextures();
 
@@ -169,7 +169,7 @@ void Renderer::Impl::createBindless() {
     vk::check(vkAllocateDescriptorSets(device, &allocInfo, &bindlessSet), "vkAllocateDescriptorSets");
 }
 
-void Renderer::Impl::createPipelines() {
+void VulkanRenderer::Impl::createPipelines() {
     VkPushConstantRange range{};
     range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     range.size = sizeof(DrawPushConstants);

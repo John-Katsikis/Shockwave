@@ -47,8 +47,8 @@ Shockwave/
       Core/               job system, logging, frame pacing, profiling
       Platform/           window
       Input/              keyboard, mouse, gamepads, joysticks and action mapping
-      RHI/                Vulkan backend: device, swapchain, pipelines, render graph
-      Renderer/           renderer, built-in meshes; engine shaders (GLSL) in Shaders/
+      RHI/                Vulkan helpers: device, swapchain, pipelines, render graph
+      Renderer/           the Renderer games use, the RenderBackend interface, built-in meshes
       Assets/             asset names, built-in assets, image and model import, the asset folder watcher
       UI/                 Dear ImGui helpers and the theme loader
       Projects/           .swproject manifests
@@ -56,6 +56,9 @@ Shockwave/
                           scene files, camera, subsystems and the engine loop
       Physics/            Jolt physics (PhysicsWorld)
       GameFramework/      GameMode, GameInstance, GameModule, PlaySession
+    Plugins/            renderer plugins, loaded at runtime and hot-swappable (docs/Plugins.md)
+      RendererVulkan/     the Vulkan renderer; engine shaders (GLSL) in Shaders/
+      RendererNull/       a headless renderer for servers and tools
     Editor/Editor/      Shockwave Editor (Dear ImGui), built on the engine
     Programs/Player/    the standalone player and its command-line tools
     Programs/Sandbox/   a small test scene that uses the engine
@@ -63,7 +66,7 @@ Shockwave/
     Sample.swproject      the manifest
     Content/              source files the editor imports (images and Assimp models), watched for changes
     Scenes/               scene files (.swscene, plain text)
-    Source/               the sample's game module (SampleGame.cpp)
+    Source/               the sample's game module (SampleGame.cpp), hot reloaded by the editor
     Saved/                per-user editor state and screenshots, not in git
   Tests/                unit tests that need no GPU (ctest --test-dir build); fixtures/ holds test files
   themes/               UI themes (.swtheme, plain text)
@@ -71,8 +74,8 @@ Shockwave/
 
 Each folder in `Source/Runtime` is a module: `Public/<Module>/` is its API and `Private/`
 the rest. Code includes a module's headers by module name, such as
-`#include <Engine/Components.h>`. Each module builds as the static library
-`Shockwave<Module>` with the alias `Shockwave::<Module>` (`cmake/ShockwaveModule.cmake`),
+`#include <Engine/Components.h>`. Each module builds as the library
+`Shockwave<Module>` (shared, or static with `-DSHOCKWAVE_MODULAR=OFF`) with the alias `Shockwave::<Module>` (`cmake/ShockwaveModule.cmake`),
 and only uses the modules listed before it in `Source/Runtime/CMakeLists.txt`.
 [docs/Architecture.md](docs/Architecture.md) has the details. Format code with
 `clang-format -i`; includes go in groups: own header, local headers, Shockwave modules,
@@ -303,7 +306,7 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
 5. Scene: entities and components, with systems scheduled on the job system (done)
 6. Render graph, tonemapping, lighting and shadows (done); upscaling, glTF assets in the
    asset browser, audio
-7. Hot reload of game code and shaders
+7. Hot reload of game code, renderers and shaders (done); swappable renderer plugins (done)
 8. Editor (first version done): Dear ImGui docking UI, viewport rendered by the engine at
    panel size, hierarchy, inspector, move/rotate/scale gizmos, click to select, undo/redo,
    plain-text scenes, editing engine entities with a generated inspector, play mode,
@@ -341,6 +344,11 @@ behavior to the Crate during Play. Stop restores
 the authored scene. Project paths work from any working directory when the manifest
 path is supplied. See [the project guide](docs/Projects.md) for the manifest format,
 your own game module, the GameMode hooks, and current runtime limitations.
+
+Game code reloads while the editor runs: Build > Build and reload game code (Ctrl+Alt+B),
+or rebuild `game_<id>` from anywhere and the editor picks it up, keeping the scene and
+undo history. The renderer reloads the same way (Ctrl+Alt+R, or rebuild
+`renderer_vulkan`), so shader edits show up live. See [Plugins and hot reload](docs/Plugins.md).
 
 ### Rendering and lighting
 

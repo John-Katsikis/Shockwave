@@ -9,11 +9,35 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Every executable lands in build/bin, with compiled shaders next to it in build/bin/shaders.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Modular builds make every engine module a shared library and load renderers and game
+# code as plugins, so they can be swapped and hot reloaded (docs/Plugins.md). Off links
+# everything into each executable, as Windows builds do until modules export their
+# symbols there.
+if(WIN32)
+    set(modular_default OFF)
+else()
+    set(modular_default ON)
+endif()
+option(SHOCKWAVE_MODULAR "Engine modules as shared libraries; renderers and game code as reloadable plugins"
+       ${modular_default})
+if(SHOCKWAVE_MODULAR)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    # Executables find the engine's libraries next to themselves, so build/bin can move.
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
+
 include(FetchContent)
 
 # SDL3: windowing, input, audio, timing. Built from source so no system package is needed.
-set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC ON CACHE BOOL "" FORCE)
+# Shared in modular builds, so every module uses the one copy.
+if(SHOCKWAVE_MODULAR)
+    set(SDL_SHARED ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+else()
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+endif()
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     SDL3
@@ -67,6 +91,8 @@ FetchContent_Declare(
     DOWNLOAD_NO_EXTRACT TRUE
 )
 FetchContent_MakeAvailable(VulkanHeaders)
+# vk-bootstrap decides position independence itself; the Vulkan plugin is a shared library.
+set(VK_BOOTSTRAP_POSITION_INDEPENDENT_CODE ${SHOCKWAVE_MODULAR} CACHE BOOL "" FORCE)
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
 set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator glm stb_image)
@@ -128,7 +154,10 @@ if(SHOCKWAVE_PROFILE)
         GIT_TAG v0.11.1
         GIT_SHALLOW TRUE
     )
+    # One profiler shared by every module in modular builds.
+    set(BUILD_SHARED_LIBS ${SHOCKWAVE_MODULAR})
     FetchContent_MakeAvailable(tracy)
+    unset(BUILD_SHARED_LIBS)
 endif()
 
 include(cmake/Shaders.cmake)
@@ -136,8 +165,22 @@ include(cmake/ImGui.cmake)
 
 include(cmake/ShockwaveModule.cmake)
 
+# Runtime modules and plugins first: the game module links against them, and the
+# editor and player against all of it.
 add_subdirectory(Source)
-add_subdirectory(Games/Sample)
+# Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
+# Add your own game's folder here (a ;-separated list). The editor opens any project
+# whose module is built.
+set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample" CACHE STRING "Game module folders to build")
+# The project the player runs when it's given none.
+set(SHOCKWAVE_GAME_PROJECT "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample/Sample.swproject"
+    CACHE FILEPATH "The .swproject the player runs by default")
+foreach(game ${SHOCKWAVE_GAMES})
+    get_filename_component(game_name ${game} NAME)
+    add_subdirectory(${game} ${CMAKE_BINARY_DIR}/Games/${game_name})
+endforeach()
+add_subdirectory(Source/Editor)
+add_subdirectory(Source/Programs)
 
 enable_testing()
 add_subdirectory(Tests)

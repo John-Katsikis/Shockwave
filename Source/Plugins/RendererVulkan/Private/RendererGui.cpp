@@ -2,7 +2,7 @@
 
 namespace shockwave {
 
-void Renderer::Impl::initGui() {
+void VulkanRenderer::Impl::initGui() {
     guiColorFormat = swapchain->format();
 
     ImGui_ImplVulkan_InitInfo info{};
@@ -32,7 +32,7 @@ void Renderer::Impl::initGui() {
     registerGuiSceneTexture();
 }
 
-void Renderer::Impl::shutdownGui() {
+void VulkanRenderer::Impl::shutdownGui() {
     if (!guiEnabled) return;
     vkDeviceWaitIdle(context->device());
     if (guiSceneTexture) ImGui_ImplVulkan_RemoveTexture(guiSceneTexture);
@@ -44,7 +44,7 @@ void Renderer::Impl::shutdownGui() {
     if (viewportSize.width) needsSceneResize = true;   // back to window-sized output
 }
 
-void Renderer::Impl::renderGuiWindows() {
+void VulkanRenderer::Impl::renderGuiWindows() {
     if (!guiEnabled || !(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) return;
     // The backend creates swapchains (waiting for the device idle), submits and presents on
     // the graphics queue for each window.
@@ -53,7 +53,7 @@ void Renderer::Impl::renderGuiWindows() {
     ImGui::RenderPlatformWindowsDefault();
 }
 
-void Renderer::Impl::recordGui(VkCommandBuffer cmd, VkImageView target, bool clear) {
+void VulkanRenderer::Impl::recordGui(VkCommandBuffer cmd, VkImageView target, bool clear) {
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     color.imageView = target;

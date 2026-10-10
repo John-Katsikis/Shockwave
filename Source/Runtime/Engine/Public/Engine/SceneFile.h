@@ -39,6 +39,10 @@ struct SceneFileHooks {
     std::function<void(std::ostream&)> writeHeader;
     // Called for top-level keys the loader doesn't know, with the rest of the line.
     std::function<void(const std::string& key, std::istream& rest)> readHeader;
+    // Load into these entities instead of creating new ones: the nth block fills the nth
+    // live entity. A scene written from a world with the same entities comes back with
+    // the same handles (World::withoutComponents gives such a world).
+    const World* entities = nullptr;
 };
 
 bool saveScene(
@@ -50,6 +54,13 @@ bool saveScene(
 bool loadScene(
     World& world, const Assets& assets, const std::string& path, std::string& error, const SceneFileHooks& hooks = {},
     std::vector<std::string>* warnings = nullptr);
+
+// The same, to and from a stream: a scene held in memory (the editor keeps its undo
+// history as scene text while game code reloads). `path` only names the source in errors.
+void writeScene(std::ostream& out, const World& world, const Assets& assets, const SceneFileHooks& hooks = {});
+bool readScene(
+    World& world, const Assets& assets, std::istream& in, const std::string& path, std::string& error,
+    const SceneFileHooks& hooks = {}, std::vector<std::string>* warnings = nullptr);
 
 // Writes a Markdown reference for authoring scenes: the file layout, every registered
 // component with its fields, value syntax and defaults, and the asset names available.

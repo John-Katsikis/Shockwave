@@ -227,13 +227,7 @@ bool restIsEmpty(std::istream& in) {
 
 }   // namespace
 
-bool saveScene(
-    const World& world, const Assets& assets, const std::string& path, std::string& error,
-    const SceneFileHooks& hooks) {
-    std::error_code ec;
-    const std::filesystem::path parent = std::filesystem::path(path).parent_path();
-    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
-
+void writeScene(std::ostream& out, const World& world, const Assets& assets, const SceneFileHooks& hooks) {
     const uint32_t nameId = componentId<Name>();
     const std::vector<ComponentInfo>& components = registeredComponents();
     // Other entities are referred to by name when it's unique, so links survive blocks
@@ -257,6 +251,36 @@ bool saveScene(
         ++ordinal;
     });
 
+    out << std::setprecision(6);
+    out << "# Shockwave scene\n";
+    out << "shockwave_scene " << kFormatVersion << "\n";
+    if (hooks.writeHeader) hooks.writeHeader(out);
+
+    world.forEachEntity([&](Entity e) {
+        out << "\nentity";
+        if (const Name* name = world.get<Name>(e)) out << ' ' << std::quoted(name->value);
+        out << '\n';
+        for (const ComponentInfo& info : components) {
+            if (info.id == nameId) continue;   // already on the entity line
+            const void* data = info.getConst(world, e);
+            if (!data) continue;
+            out << "  " << info.name << '\n';
+            for (const Field& f : info.fields) {
+                out << "    " << f.name;
+                writeField(out, f, static_cast<const char*>(data) + f.offset, assets, world, refs);
+                out << '\n';
+            }
+        }
+        out << "end\n";
+    });
+}
+
+bool saveScene(
+    const World& world, const Assets& assets, const std::string& path, std::string& error,
+    const SceneFileHooks& hooks) {
+    std::error_code ec;
+    const std::filesystem::path parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
     // Write to a temporary file and rename, so a crash mid-save never eats the scene.
     const std::string temp = path + ".tmp";
     {
@@ -265,28 +289,7 @@ bool saveScene(
             error = "can't write " + temp;
             return false;
         }
-        out << std::setprecision(6);
-        out << "# Shockwave scene\n";
-        out << "shockwave_scene " << kFormatVersion << "\n";
-        if (hooks.writeHeader) hooks.writeHeader(out);
-
-        world.forEachEntity([&](Entity e) {
-            out << "\nentity";
-            if (const Name* name = world.get<Name>(e)) out << ' ' << std::quoted(name->value);
-            out << '\n';
-            for (const ComponentInfo& info : components) {
-                if (info.id == nameId) continue;   // already on the entity line
-                const void* data = info.getConst(world, e);
-                if (!data) continue;
-                out << "  " << info.name << '\n';
-                for (const Field& f : info.fields) {
-                    out << "    " << f.name;
-                    writeField(out, f, static_cast<const char*>(data) + f.offset, assets, world, refs);
-                    out << '\n';
-                }
-            }
-            out << "end\n";
-        });
+        writeScene(out, world, assets, hooks);
         if (!out) {
             error = "writing " + temp + " failed";
             return false;
@@ -308,8 +311,15 @@ bool loadScene(
         error = "can't open " + path;
         return false;
     }
+    return readScene(world, assets, in, path, error, hooks, warningsOut);
+}
 
-    World result;
+bool readScene(
+    World& world, const Assets& assets, std::istream& in, const std::string& path, std::string& error,
+    const SceneFileHooks& hooks, std::vector<std::string>* warningsOut) {
+    World result = hooks.entities ? hooks.entities->withoutComponents() : World{};
+    std::vector<Entity> existing;
+    if (hooks.entities) result.forEachEntity([&](Entity e) { existing.push_back(e); });
     std::vector<std::string> warnings;
     // Entity fields can point at blocks further down, so they're filled in at the end.
     struct EntityLink {
@@ -352,7 +362,8 @@ bool loadScene(
         if (version == 0) return fail("not a Shockwave scene");
 
         if (key == "entity" && !indented) {
-            current = result.create();
+            if (hooks.entities && created.size() >= existing.size()) return fail("more entities than expected");
+            current = hooks.entities ? existing[created.size()] : result.create();
             created.push_back(current);
             component = nullptr;
             skipping = false;

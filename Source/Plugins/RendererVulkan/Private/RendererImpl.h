@@ -2,9 +2,10 @@
 
 // Renderer's private state, shared by the Renderer*.cpp files. Not part of the module API.
 
+#include "VulkanRenderer.h"
+
 #include <Core/Jobs.h>
 #include <Platform/Window.h>
-#include <Renderer/Renderer.h>
 #include <RHI/Context.h>
 #include <RHI/Pipeline.h>
 #include <RHI/RenderGraph.h>
@@ -34,6 +35,7 @@ namespace detail {
 
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint32_t kMaxMeshes = 65536;
+constexpr uint32_t kInternalTextureSlots = 3;   // scene color and the two shadow atlases
 // The scene renders in HDR; tonemapping to the display happens at the end of the frame.
 constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
@@ -111,7 +113,7 @@ struct FrameData {
 static_assert(
     sizeof(FrameData) == 112 && offsetof(FrameData, shadowViews) == 96,
     "FrameData must match the shader's scalar layout");
-constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * Renderer::kMaxLights;
+constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * kMaxLights;
 constexpr VkDeviceSize kFrameDataSize = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
 
 // Must match the push constants in shaders/shadow.vert and shadow.frag.
@@ -219,7 +221,7 @@ inline std::string shaderPath(const char* name) {
 
 using namespace detail;
 
-struct Renderer::Impl {
+struct VulkanRenderer::Impl {
     struct Frame {
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
@@ -287,7 +289,7 @@ struct Renderer::Impl {
     VkPipelineLayout shadowLayout = VK_NULL_HANDLE;
     VkPipeline shadowPipeline = VK_NULL_HANDLE;
     std::vector<ShadowPass> cascadePasses, localPasses;   // this frame's
-    Renderer::ShadowStats shadowStats;
+    ShadowStats shadowStats;
 
     // Lighting for the frame being recorded.
     std::mutex lightMutex;
@@ -310,11 +312,10 @@ struct Renderer::Impl {
     // set (release), so readers on any thread need no lock.
     std::unique_ptr<Mesh[]> meshes = std::make_unique<Mesh[]>(kMaxMeshes);
     std::unique_ptr<std::atomic<bool>[]> meshReady = std::make_unique<std::atomic<bool>[]>(kMaxMeshes);
-    std::atomic<uint32_t> meshReserved{0};
-    std::mutex resourceMutex;
-    std::vector<uint32_t> freeMeshes, freeTextures;
+    // Indexed by the ids Renderer hands out (RenderBackend.h). Texture 0 is white; the
+    // renderer's own bindless slots (scene, shadow atlases) sit at the top of the table.
     std::unique_ptr<vk::Image[]> textures;
-    std::atomic<uint32_t> textureReserved{0};
+    uint32_t textureCapacity() const { return context->maxBindlessTextures() - kInternalTextureSlots; }
 
     std::mutex queueMutex;   // VkQueue access must be externally synchronized
     VkCommandPool uploadPool = VK_NULL_HANDLE;
@@ -424,11 +425,11 @@ struct Renderer::Impl {
 
     vk::Buffer uploadBuffer(const void* data, VkDeviceSize size, VkBufferUsageFlags usage);
 
-    uint32_t reserveSlot(std::vector<uint32_t>& free, std::atomic<uint32_t>& reserved, uint32_t maximum);
-    MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices);
+    void createMesh(MeshHandle id, std::span<const Vertex> vertices, std::span<const uint32_t> indices);
     void destroyMesh(MeshHandle handle);
     void destroyTexture(TextureHandle handle);
-    TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);
+    void createTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);
+    bool isTexture(uint32_t id) const { return id < textureCapacity() && textures[id].image; }
 
     void
     updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);

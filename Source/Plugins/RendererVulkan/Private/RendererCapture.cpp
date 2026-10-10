@@ -2,7 +2,7 @@
 
 namespace shockwave {
 
-void Renderer::Impl::recordScreenshotCopy(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::recordScreenshotCopy(VkCommandBuffer cmd) {
     screenshotExtent = displayColor.extent;
     VmaAllocationInfo info{};
     screenshotBuffer = createBuffer(
@@ -27,7 +27,7 @@ void Renderer::Impl::recordScreenshotCopy(VkCommandBuffer cmd) {
     vkCmdPipelineBarrier2(cmd, &dep);
 }
 
-void Renderer::Impl::finishScreenshot() {
+void VulkanRenderer::Impl::finishScreenshot() {
     screenshotRequested = false;
     if (!screenshotBuffer.buffer) {
         screenshotMessage = "the frame was skipped";

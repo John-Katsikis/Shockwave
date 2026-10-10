@@ -4,6 +4,7 @@
 #include <Assets/BuiltinAssets.h>
 #include <Core/FramePacing.h>
 #include <Core/Jobs.h>
+#include <Core/Plugin.h>
 #include <Engine/Camera.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
@@ -81,6 +82,11 @@ struct EngineConfig {
     // The UI theme, looked for in the working folder, then next to the executable. Saved
     // changes to it apply straight away. Empty, or missing, uses the built-in theme.
     std::string guiTheme = "themes/default.swtheme";
+    // The renderer plugin to start with ("vulkan", "null"; see Renderer::availableBackends).
+    std::string renderer = "vulkan";
+    // Let the renderer be swapped or reloaded while running (Engine::switchRenderer). Keeps
+    // a CPU copy of every mesh and texture. The editor turns it on.
+    bool swappableRenderer = false;
 };
 
 class Engine {
@@ -125,6 +131,22 @@ public:
     void setTickRate(double ticksPerSecond);
     bool guiEnabled() const { return m_config.gui; }
 
+    // ---- Renderer plugins (docs/Plugins.md) ----
+    // Swaps the renderer for another plugin at the start of the next frame, or reloads the
+    // current one from disk (after rebuilding it or its shaders). Needs
+    // EngineConfig::swappableRenderer. The outcome is logged and kept in rendererStatus().
+    void switchRenderer(const std::string& name);
+    void reloadRenderer() { switchRenderer(m_renderer->backendName()); }
+    // Reload the renderer by itself whenever its library is rebuilt.
+    void setAutoReloadRenderer(bool autoReload);
+    bool autoReloadRenderer() const { return m_autoReloadRenderer; }
+    struct RendererStatus {
+        uint64_t changes = 0;   // counts swaps and reloads, successful or not
+        bool ok = true;
+        std::string message;
+    };
+    const RendererStatus& rendererStatus() const { return m_rendererStatus; }
+
 private:
     void initGui();
     void shutdownGui();
@@ -145,6 +167,13 @@ private:
     FrameStats m_frameStats;
     bool m_lowLatency = false;
     void updatePacingPeriod();
+    bool applyRendererChange();   // true when the renderer changed (or failed to)
+
+    // Renderer swapping
+    std::string m_pendingRenderer;
+    bool m_autoReloadRenderer = false;
+    RebuildWatcher m_rendererWatcher;
+    RendererStatus m_rendererStatus;
 
     // UI theme hot reload
     std::string m_themePath;

@@ -8,6 +8,7 @@
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
 #include <Projects/Project.h>
 
@@ -15,11 +16,13 @@
 #include <ImGuizmo.h>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -45,7 +48,6 @@ struct EditorOptions {
     bool showPreferences = false;   // --preferences: open settings on startup
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
-    const shockwave::GameModule* gameModule = nullptr;   // the compiled gameplay Play runs
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
     bool playOnStart = false;   // press Play straight away (tests)
 };
@@ -67,8 +69,10 @@ struct EditorOptions {
 // (camera positions, autosaves) in the project's Saved folder.
 //
 // The scene is an engine World, the same thing a game runs. Play starts a PlaySession:
-// the project's compiled gameplay and Jolt physics run on it each tick, and Stop puts
-// back the scene as authored.
+// the project's gameplay and Jolt physics run on it each tick, and Stop puts back the
+// scene as authored. Gameplay is the project's game module, loaded as a plugin: rebuild
+// it and the editor reloads it in place, scene and undo history intact (EditorCode.cpp).
+// The renderer is a plugin too, and can be swapped or reloaded the same way.
 //
 // The UI runs on the main thread (ImGui is single-threaded); systems and drawing fan out
 // across the job system like any game.
@@ -216,6 +220,21 @@ private:
     void redo();
     void handleShortcuts();
 
+    // ---- Game code and plugins (EditorCode.cpp) ----
+    // Loads the project's game module (unloading another project's first). Without it the
+    // project still opens for editing, with Play off until the module is built.
+    void loadGameModule(const std::string& id);
+    void unloadGameModule();
+    // Reloads the game module from disk, keeping the scene, selection and undo history.
+    void reloadGameCode();
+    // Runs CMake on the editor's build folder for the module in the background, then
+    // reloads it if the build succeeded.
+    void buildGameCode();
+    bool canBuildGameCode() const;
+    void pollGameCode();   // once per frame: finished builds, rebuilt modules
+    void createGameInstance();
+    void drawBuildMenu();
+
     // ---- Play mode (Editor.cpp) ----
     void play();
     void pause();
@@ -259,6 +278,20 @@ private:
     Preferences& m_prefs;   // m_options.prefs
     bool m_prefsDirty = false;
 
+    // The project's game code. Declared before everything that can hold its types (the
+    // world, undo history, the GameInstance), so it's unloaded after them.
+    std::unique_ptr<shockwave::GameModuleLibrary> m_gameModule;
+    shockwave::RebuildWatcher m_gameModuleWatcher;
+    struct GameCodeBuild {
+        std::thread thread;
+        std::atomic<bool> running{false};
+        std::atomic<bool> finished{false};
+        int exitCode = 0;
+        std::string target;
+        double started = 0.0;
+    } m_build;
+    bool m_reloadGameCodeRequested = false;   // done between frames, not mid-GUI
+
     shockwave::Project m_project;
     bool m_hasProject = false;
     std::map<std::string, EditorCamera> m_sceneCameras;   // project-relative scene path -> view
@@ -288,7 +321,7 @@ private:
     // authored scene. Recreated per project.
     std::unique_ptr<shockwave::GameInstance> m_gameInstance;   // for the editor's whole run
     std::unique_ptr<shockwave::PlaySession> m_session;
-    bool m_gameModuleMatches = true;   // the project names the module this editor was built with
+    bool m_gameModuleMatches = false;   // the project's game module is loaded, so Play can run it
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's
     bool m_viewBeforePlay = false;
     std::filesystem::path m_screenshotPath;   // waiting for the renderer to write it
