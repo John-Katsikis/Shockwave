@@ -1,4 +1,5 @@
-# Shockwave UI theme: dense engineering tools with square controls and crisp borders.
+# Shockwave UI theme: a telemetry console. Obsidian void, matte slate panels, square
+# controls with crisp 1px borders, electric cyan for what's active, amber for secondary data.
 #
 # Edit and save while the editor is running: the UI restyles straight away.
 # Run the editor from the project folder so it picks up this file (it falls back to a
@@ -10,35 +11,41 @@
 # a single number sets both. Leave a key out to keep the built-in value (shockwave/Gui.h).
 # A '#' followed by a space starts a comment.
 
+# The GUI packs colors as 8-bit linear values for the sRGB swapchain, so near-black
+# tones snap to a few steps (sRGB 0, 13, 22, 28, 34, 38...). The dark colors below sit
+# on those steps so they show exactly as written and keep one cool slate hue.
 [palette]
-background      = #111113   # windows and panels
-surface         = #18181b   # menu bar, title bars, tab bars, popups
-frame           = #18181b   # buttons, text fields, sliders, checkboxes
-frame_hover     = #222226
-frame_active    = #27272a
-border          = #3f3f46   # 1px lines around panels and controls
-header          = #1d1d21   # collapsing headers, selected rows
-header_hover    = #26262b
-text            = #ededef
-text_disabled   = #71717a
+background      = #06080a   # windows: the obsidian void (shows as #000d0d, see below)
+panel           = #0d161c   # inner panels: lists, child regions, table rows
+surface         = #0d1616   # menu bar, title bars, tab bars, popups
+frame           = #0d1c22   # buttons, text fields, sliders, checkboxes
+frame_hover     = #16222a
+frame_active    = #0d3542
+border          = #223d49   # 1px lines around panels and controls
+header          = #0d1c26   # collapsing headers, selected rows
+header_hover    = #16323d
+text            = #d4dee6
+text_disabled   = #5c6875
 
-# The accent marks what's active: the current tool, the open tab, ticked checkboxes, sliders.
-# Electric indigo. Try #3b82f6 for electric blue or #ea580c for burnt orange (see ember.swtheme).
-accent          = #6366f1
-accent_hover    = #818cf8
-accent_active   = #4f46e5
-selection       = #6366f138   # selected text; the accent at about 22% opacity
+# The accent marks what's active: the focused panel, the current tool, the open tab,
+# ticked checkboxes, sliders and telemetry graph lines. Electric cyan.
+# Try #3b82f6 for electric blue or see ember.swtheme for burnt orange.
+accent          = #00e5ff
+accent_hover    = #6cf3ff
+accent_active   = #00b4cc
+secondary       = #ffb020   # amber: histograms and hovered graph values
+selection       = #00e5ff2e   # selected text; the accent at about 18% opacity
 
-scrollbar       = #27272a
-scrollbar_hover = #3f3f46
+scrollbar       = #162632
+scrollbar_hover = #263d49
 
 # All custom tool colors are replaceable here, including overlays and errors.
-button          = #18181b
-button_hover    = #26262b
-button_active   = #4f46e5
-on_accent       = #ffffff
-warning         = #fbbf24
-error           = #f87171
+button          = #0d1c22
+button_hover    = #16222a
+button_active   = #00b4cc
+on_accent       = #02090c   # text on accent fills: near-black on cyan
+warning         = #ffd23f
+error           = #ff3d5a
 
 # Geometry is fixed by the tools design system. Legacy keys are accepted on load,
 # but corners stay square and borders stay 1 logical pixel (scaled on HiDPI).
@@ -57,19 +64,20 @@ popup_border       = 1
 tab_border         = 1
 docking_separator  = 1
 
+# Dense: information first.
 [spacing]
-window_padding     = 8 8
-frame_padding      = 8 4
-item_spacing       = 6 4
-item_inner_spacing = 4 4
-cell_padding       = 6 4
-indent_spacing     = 16
-scrollbar_size     = 10
-grab_min_size      = 10
+window_padding     = 6 4
+frame_padding      = 6 3
+item_spacing       = 4 3
+item_inner_spacing = 3 3
+cell_padding       = 4 2
+indent_spacing     = 12
+scrollbar_size     = 8
+grab_min_size      = 4
 
 [text]
-font_size = 15
-font      = fonts/Roboto-Medium.ttf   # any .ttf or .otf
+font_size = 14
+font      = fonts/Cousine-Regular.ttf   # monospaced; fonts/Roboto-Medium.ttf is also shipped
 
 # [colors]
 # Any single ImGui color by its name overrides everything above, for example:

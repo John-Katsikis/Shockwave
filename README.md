@@ -38,23 +38,43 @@ no royalties. Linux first, with Windows and macOS (through MoltenVK) as later po
 ```
 Shockwave/
   CMakeLists.txt        top-level build; fetches dependencies
-  assets/               source files the editor imports (images and Assimp models), watched for changes
-  cmake/                build helpers (shader compilation, Dear ImGui)
-  engine/               the engine, built as a static library (shockwave)
-    include/shockwave/    public API games include (no Vulkan types in here)
-    shaders/              engine shaders (GLSL)
-    src/core/             job system, asset names, image import and the asset folder watcher
-    src/input/            keyboard, mouse and action mapping
-    src/render/           camera, built-in meshes
-    src/scene/            entities and components (World), parenting, system scheduler, scene files
-    src/ui/               Dear ImGui helpers and the theme loader
-    src/vulkan/           Vulkan backend: device, swapchain, pipelines, memory
-  editor/               Shockwave Editor (Dear ImGui), built on the engine
-  sandbox/              a small test scene that uses the engine
-  scenes/               scene files (.swscene, plain text)
-  tests/                unit tests that need no GPU (ctest --test-dir build)
+  .clang-format         code style
+  cmake/                build helpers (engine modules, shader compilation, Dear ImGui)
+  Source/
+    Runtime/            the engine, one static library per module
+      Core/               job system, logging
+      Platform/           window
+      Input/              keyboard, mouse and action mapping
+      RHI/                Vulkan backend: device, swapchain, pipelines, render graph
+      Renderer/           renderer, built-in meshes; engine shaders (GLSL) in Shaders/
+      Assets/             asset names, built-in assets, image and model import, the asset folder watcher
+      UI/                 Dear ImGui helpers and the theme loader
+      Projects/           .swproject manifests
+      Engine/             entities and components (World), parenting, system scheduler,
+                          scene files, camera, subsystems and the engine loop
+      Physics/            Jolt physics (PhysicsWorld)
+      GameFramework/      GameMode, GameInstance, GameModule, PlaySession
+    Editor/Editor/      Shockwave Editor (Dear ImGui), built on the engine
+    Programs/Player/    the standalone player and its command-line tools
+    Programs/Sandbox/   a small test scene that uses the engine
+  Games/Sample/         the sample project
+    Sample.swproject      the manifest
+    Content/              source files the editor imports (images and Assimp models), watched for changes
+    Scenes/               scene files (.swscene, plain text)
+    Source/               the sample's game module (SampleGame.cpp)
+    Saved/                per-user editor state and screenshots, not in git
+  Tests/                unit tests that need no GPU (ctest --test-dir build); fixtures/ holds test files
   themes/               UI themes (.swtheme, plain text)
 ```
+
+Each folder in `Source/Runtime` is a module: `Public/<Module>/` is its API and `Private/`
+the rest. Code includes a module's headers by module name, such as
+`#include <Engine/Components.h>`. Each module builds as the static library
+`Shockwave<Module>` with the alias `Shockwave::<Module>` (`cmake/ShockwaveModule.cmake`),
+and only uses the modules listed before it in `Source/Runtime/CMakeLists.txt`.
+[docs/Architecture.md](docs/Architecture.md) has the details. Format code with
+`clang-format -i`; includes go in groups: own header, local headers, Shockwave modules,
+third-party, standard library.
 
 ## Build and run
 
@@ -68,6 +88,11 @@ The window title shows frame rate, frame time, render resolution and draw count.
 The sandbox's 10,000 cubes are entities moved by the engine's Spin and Bob systems.
 
 Run the unit tests (entities, scheduling, parenting, scene files) with `ctest --test-dir build`.
+
+Engine and game code log with `SW_LOG(LogCategory, Level, "format {}", args)` from
+`Core/Log.h`. The engine logs under `LogEngine`, `LogRender`, `LogPhysics` and `LogGame`;
+a game adds its own with `SW_LOG_CATEGORY(LogMyGame)`. Messages go to standard error,
+and the editor shows them in its Console.
 
 ## Entities and components
 
@@ -92,7 +117,7 @@ schedule.each<shockwave::Transform, const Velocity>("Move",
     [](const shockwave::SystemContext& ctx, shockwave::Transform& t, const Velocity& v) {
         t.position += v.value * ctx.dt;
     });
-// each tick (Game::onUpdate):
+// each tick (Application::onUpdate):
 schedule.run(world, engine().jobs(), dt);
 ```
 
@@ -113,7 +138,7 @@ Built-in components: `Name`, `Transform`, `Parent`, `MeshRenderer`, `Environment
 color), `Spin` and `Bob`.
 
 An entity with a `Parent` moves, turns and scales with it: its `Transform` is relative to
-the parent's. `Hierarchy.h` has the helpers:
+the parent's. `Engine/Hierarchy.h` has the helpers:
 
 ```cpp
 shockwave::setParent(world, wheel, car);         // attach without the wheel jumping
@@ -138,14 +163,15 @@ debug overlay, `--frames 300` quits after 300 frames.
 ### Editor
 
 ```
-./build/bin/editor                       # from a project folder: opens its shockwave.swproject
-./build/bin/editor path/to/project       # a project folder or .swproject file
-./build/bin/editor path/to/level.swscene # a scene inside a project
+./build/bin/editor                                  # the project in or above the working folder
+./build/bin/editor Games/Sample                     # a project folder or .swproject file
+./build/bin/editor Games/Sample/Scenes/main.swscene # a scene inside a project
 ```
 
-With no project to open, the editor starts on the project hub: recent projects, Create
-project (writes `shockwave.swproject`, `assets/`, `scenes/`, a `.gitignore` and a starter
-scene) and Open the sample project.
+With no project given and none in or above the working folder, the editor reopens the
+last project, or else starts on the project hub: recent projects, Create project (writes
+`<Name>.swproject`, `Content/`, `Scenes/`, a `.gitignore` and a starter scene) and Open
+the sample project (`Games/Sample`).
 
 The editor is a docked workspace around a live viewport:
 
@@ -153,19 +179,21 @@ The editor is a docked workspace around a live viewport:
   Stop in the center, and the current mode (edit, simulation running, paused) on the right.
 - **Viewport toolbar**: Move, Rotate, Scale, World/Local and Snap (right-click for step
   sizes) on the left; Grid, Game/Editor camera and View options (fov, fly speed, render
-  scale, overlays) on the right. Toolbars sit above the scene, never on top of it.
+  scale, overlays, shading view, Save screenshot) on the right. Toolbars sit above the scene, never on top of it.
 - **Hierarchy**: search, entities as a tree with their kind on the right, multi-select,
   rename in place, drag to attach and detach, Ctrl+G to group.
 - **Inspector**: name and + Component at the top (searchable and grouped by Core,
   Rendering, Physics, Motion and Gameplay), then each component as a property grid.
   Reset and Remove live in each component's "..." menu. Physics diagnostics and imported
   materials show under their components.
-- **Content**: the project's `assets/` and `scenes/` folders plus the engine's built-in
+- **Content**: the project's `Content/` and `Scenes/` folders plus the engine's built-in
   meshes and textures. Search, import, new folder, drag meshes and models into the
   viewport, drop textures on objects. Files saved from other programs reload straight away.
-- **Console** with info, warning and error filters, and a status bar with the scene's
+- **Console** with info, warning and error filters (it shows everything logged with
+  `SW_LOG`, from the engine and the game), and a status bar with the scene's
   save state, selection count, entity count and frame time.
-- Window > Stats (frame graph, system schedule, Jolt physics counters), Edit >
+- Window > Stats (frame graph, render graph passes and barriers, light count, system
+  schedule, Jolt physics counters), Edit >
   Preferences and Project > Project settings.
 
 Every scene should have an entity with a **Camera** component. Play looks through the
@@ -175,15 +203,24 @@ module and Jolt physics on the scene; Stop restores it exactly, so nothing done 
 playing sticks (the colored frame around the viewport is the reminder). Play is disabled
 when the project's `game_module` isn't the one compiled into the editor.
 
+Lighting is part of the scene. **Create > Light** adds a directional sun, a point light
+or a spot light in front of the camera; each shows as a colored icon you can click, and
+the selected one draws its direction, range or cone. Rotate a light to aim it (it shines
+along its -Z). The **Environment** entity sets the sky and ground ambient, exposure in
+stops and the tonemapper (ACES, AgX, Reinhard or None), and **MeshRenderer** has
+roughness, metallic and emissive. View > Shading switches the viewport to Unlit, Normals
+or Lighting only, and View > Save screenshot writes the viewport (without icons or
+gizmos) to the project's `Saved/Screenshots/` folder. A scene with no lights gets a default sun.
+
 What gets saved where:
 
 - Scenes (`.swscene`) and the manifest are plain text and belong in git.
 - Per-user state (the open scene, the editor camera per scene, autosaves) goes in the
-  project's `.shockwave/` folder, which the generated `.gitignore` excludes. Unsaved
+  project's `Saved/` folder, which the generated `.gitignore` excludes. Unsaved
   changes are autosaved there; reopening offers to recover them.
 - Preferences (theme, autosave interval, camera speed, grid) go in
   `$XDG_CONFIG_HOME/shockwave/editor.swprefs` (usually `~/.config`), shared by all projects.
-- The dock layout goes in `~/.local/share/Shockwave/Shockwave Editor/`; Window > Reset
+- The dock layout goes in `editor-layout.ini` next to the preferences; Window > Reset
   layout restores the default.
 
 Editor controls (Help > Controls, or F1, lists them too):
@@ -201,9 +238,14 @@ Editor controls (Help > Controls, or F1, lists them too):
 - Ctrl+Z / Ctrl+Y undo and redo; Ctrl+N / Ctrl+O / Ctrl+S new, open, save
 - Ctrl+P plays and stops; Ctrl+Shift+P pauses; Ctrl+, opens Preferences
 
-Scenes are plain text, one property per line, so they diff and merge cleanly in git.
-A parent is saved as the position of its entity in the file (`entity 6` is the seventh
-`entity` block).
+Scenes are plain text, one property per line, so they diff and merge cleanly in git,
+and so people, scripts and AI can write them too. Links to other entities (a Parent)
+use the target's name, and options use their names (`shape "Convex model"`).
+[docs/SceneSchema.md](docs/SceneSchema.md) lists every component, field, default and
+asset name (`player --schema` regenerates it), and `player --check` validates a
+project's manifest and scenes (with no project given, the one around the working folder,
+else the sample), printing `file:line: problem` and exiting non-zero on
+any problem. See [Authoring with tools and AI](docs/Projects.md#authoring-with-tools-and-ai).
 Scene files from the first editor still open, and are saved in the new format.
 
 ### UI themes
@@ -213,7 +255,8 @@ theme in the style of Linear and Vercel, with graphite panels, 1px borders and a
 accent. It's plain `key = value` text with every setting commented. Save it while the
 editor is running and the UI restyles at once. `themes/ember.swtheme` is the same look
 with a burnt orange accent: `./build/bin/editor --theme themes/ember.swtheme`.
-Games pick their theme with `EngineConfig::guiTheme`.
+Games pick their theme with `EngineConfig::guiTheme`. Run from the repository root to
+edit `themes/` live; the build also copies them next to the executables.
 The editor runs with vsync on (an editor mostly sits idle); untick VSync in the Renderer
 panel or start it with `--uncapped` to render flat out.
 
@@ -250,7 +293,8 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
    action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
 4. Gamepads, and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
-6. Render graph, tonemapping and upscaling, lighting, glTF assets, audio
+6. Render graph, tonemapping and lighting (done); shadows, upscaling, glTF assets in the
+   asset browser, audio
 7. Hot reload of game code and shaders
 8. Editor (first version done): Dear ImGui docking UI, viewport rendered by the engine at
    panel size, hierarchy, inspector, move/rotate/scale gizmos, click to select, undo/redo,
@@ -267,29 +311,54 @@ the same structural style. Try `./build/bin/editor --theme themes/instrument.swt
 for the cyan engineering-panel palette, or `themes/ember.swtheme` for orange.
 
 New ImGui widgets inherit the global style automatically. Shared action, toolbar, and
-property-grid helpers are available in `shockwave/Gui.h`. Contributors and AI agents
+property-grid helpers are available in `UI/Gui.h`. Contributors and AI agents
 should follow [the UI guide](docs/UI.md) when adding options.
 
 ### Game projects and player
 
-`shockwave.swproject` defines the startup scene, project assets, simulation settings,
-and C++ gameplay module. The editor and standalone player share the same compiled
-gameplay code:
+A project's `.swproject` (the sample's is `Games/Sample/Sample.swproject`) defines the
+startup scene, content folder, simulation settings, and C++ game module. The editor and
+standalone player share the same compiled gameplay code:
 
 ```
-./build/bin/editor --project shockwave.swproject --play
-./build/bin/player --project shockwave.swproject
+./build/bin/editor Games/Sample --play
+./build/bin/player --project Games/Sample/Sample.swproject
+./build/bin/player                # no project around the working folder: runs Games/Sample
 ```
 
-The sample module adds a ColorPulse behavior to the Crate during Play. Stop restores
+Game code is a `GameMode` (the rules of one Play) picked by the project's
+`GameInstance` (lives for the whole run), on top of the entities and systems above.
+The sample's `GameMode` (`Games/Sample/Source/SampleGame.cpp`) adds a ColorPulse
+behavior to the Crate during Play. Stop restores
 the authored scene. Project paths work from any working directory when the manifest
 path is supplied. See [the project guide](docs/Projects.md) for the manifest format,
-your own game module, lifecycle hooks, and current runtime limitations.
+your own game module, the GameMode hooks, and current runtime limitations.
+
+### Rendering and lighting
+
+Each frame is a small render graph (`Source/Runtime/RHI/Public/RHI/RenderGraph.h`): passes declare
+which images they read and write and the graph places the synchronization2 barriers.
+The scene renders to an HDR target with forward PBR shading (GGX specular, Lambert
+diffuse, up to 256 directional, point and spot lights, hemisphere ambient), then a
+tonemap pass applies exposure and the chosen curve into an sRGB image at the window or
+viewport size. Shadows, bloom and upscaling are not done yet.
+
+The player can render without anyone looking, which is how tools and AI agents check
+how a scene looks:
+
+```sh
+./build/bin/player --scene Games/Sample/Scenes/main.swscene --screenshot shot.png --size 1280x720
+./build/bin/player --scene Games/Sample/Scenes/main.swscene --screenshot normals.png --view normals
+./build/bin/player --frames 5 --print-frame   # the render graph's passes and barriers
+```
+
+`--view` takes `lit`, `unlit`, `normals` or `lighting`; `--frames N` picks which frame is
+captured (default 30).
 
 ### Imported models and materials
 
-Drop glTF/GLB, FBX, OBJ and other Assimp models into the project assets folder,
-then place them from **Assets → Models**. Multipart meshes, source materials,
+Drop glTF/GLB, FBX, OBJ and other Assimp models into the project's `Content/` folder,
+then place them from the **Content** panel. Multipart meshes, source materials,
 embedded/external textures and dependency reloads are shared by editor and player.
 Modern `.blend` import uses an optional Blender executable to convert to GLB first.
 See [Assets](docs/Assets.md) for setup, supported rendering features and limitations.
@@ -301,7 +370,7 @@ triggers, raycasts, and an upright character controller at the project fixed tic
 Components are editable and saved in scenes; Stop restores the authored state.
 
 ```sh
-./build/bin/editor scenes/physics.swscene --play
+./build/bin/editor Games/Sample/Scenes/physics.swscene --play
 ```
 
 See [Physics](docs/Physics.md) for component setup, gameplay APIs, collision masks,

@@ -1,9 +1,10 @@
 # Jolt physics
 
 Shockwave builds Jolt 5.6.0 through CMake. Editor Play and the standalone player use
-one `PhysicsWorld` per game session, running on Shockwave's existing worker pool.
-The default fixed rate is 60 Hz. Each tick runs scheduled gameplay systems, physics,
-then `Gameplay::onPhysicsStep`. Rendering interpolates the resulting transforms.
+one `PhysicsWorld` per Play session, running on Shockwave's existing worker pool.
+`PhysicsWorld` is a subsystem (`Engine/Subsystem.h`) that the `PlaySession` adds when
+Play starts and destroys when it stops. The default fixed rate is 60 Hz. Each tick runs
+scheduled gameplay systems, physics, then `GameMode::fixedUpdate`. Rendering interpolates the resulting transforms.
 Pause freezes the simulation; Stop destroys its bodies and restores the authored ECS.
 
 ## Authoring
@@ -42,21 +43,22 @@ become velocity-based targets on the next tick.
 
 ## Gameplay
 
-Include `shockwave/Gameplay.h` and `shockwave/Physics.h`. `ctx.physics` is valid from
-`onStart` through `onStop`. The session synchronizes new bodies after `onStart`; call
-`ctx.physics->synchronize()` inside that hook if you need immediate queries or impulses.
+Include `GameFramework/GameMode.h` and `Physics/Physics.h`. `ctx.physics()` returns the
+session's `PhysicsWorld&` from `configureSystems` through `endPlay`. The session
+synchronizes new bodies after `beginPlay`; call `ctx.physics().synchronize()` inside
+that hook if you need immediate queries or impulses.
 Scheduled systems can move kinematic Transforms or set character intent before physics.
 
 ```cpp
-void onPhysicsStep(shockwave::GameplayContext& ctx, double dt) override {
-    for (const auto& event : ctx.physics->contacts()) {
+void fixedUpdate(shockwave::GameContext& ctx, double dt) override {
+    for (const auto& event : ctx.physics().contacts()) {
         if (event.sensor && event.type == shockwave::ContactEvent::Type::Begin) {
             // event.a is the sensor; event.b is the overlapping entity.
             // Activate a checkpoint, door, or other gameplay behavior here.
         }
     }
     // Direction is normalized by raycast; hit distance is in world units.
-    if (auto hit = ctx.physics->raycast({0, 5, 0}, {0, -1, 0}, 10)) {
+    if (auto hit = ctx.physics().raycast({0, 5, 0}, {0, -1, 0}, 10)) {
         // hit->entity, point, normal and distance identify the closest hit.
     }
     (void)dt;
@@ -95,13 +97,13 @@ animated player prefab and does not bind keyboard, gamepad, or camera automatica
 ## Demo and checks
 
 ```sh
-./build/bin/editor scenes/physics.swscene --play
+./build/bin/editor Games/Sample/Scenes/physics.swscene --play
 ctest --test-dir build --output-on-failure
 ```
 
 The demo contains falling boxes and spheres, a moving platform, a trigger, imported
-convex/triangle collision, and a character. To run it in the player, point a project
-manifest's startup scene at `scenes/physics.swscene`.
+convex/triangle collision, and a character. To run it in the player:
+`./build/bin/player --scene Games/Sample/Scenes/physics.swscene`.
 
 The CPU physics tests cover contacts, sleeping sensor overlaps, filtering, forces,
 kinematic targets, raycasts, characters/stairs, imported geometry and reload, parenting,

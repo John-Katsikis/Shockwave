@@ -1,0 +1,145 @@
+# Jolt demo. Open in the editor and press Play. Stop restores all authored positions.
+shockwave_scene 2
+editor_camera 7 5.5 10 0.6 -0.35
+
+entity "Environment"
+  Environment
+    sky_color 0.18 0.25 0.36 1
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 2
+end
+entity "Floor"
+  Transform
+    position 0 -0.25 0
+    scale 20 0.5 20
+  MeshRenderer
+    mesh cube
+    texture grid
+    tint 0.35 0.4 0.5 1
+  Collider
+    shape Box
+    half_extents 0.5 0.5 0.5
+end
+entity "Falling crate"
+  Transform
+    position -1.5 4 0
+    rotation 10 25 0
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.5 0.2 1
+  Collider
+    shape Box
+  RigidBody
+    motion Dynamic
+    mass 2
+    friction 0.6
+    restitution 0.15
+    continuous 1
+end
+entity "Falling ball"
+  Transform
+    position 0.3 6 0
+  MeshRenderer
+    mesh sphere
+    texture checker
+    tint 0.35 0.65 1 1
+  Collider
+    shape Sphere
+    radius 0.5
+  RigidBody
+    motion Dynamic
+    restitution 0.6
+end
+entity "Kinematic platform"
+  Transform
+    position -3 0.6 -2.5
+    scale 2 0.4 2
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.2 0.75 0.55 1
+  Collider
+    shape Box
+  RigidBody
+    motion Kinematic
+  Bob
+    amplitude 0.35
+    frequency 0.25
+end
+entity "Trigger volume"
+  Transform
+    position -1.5 1 0
+  Collider
+    shape Box
+    half_extents 1.1 1 1.1
+  RigidBody
+    motion Static
+    sensor 1
+end
+entity "Imported dynamic hull"
+  Transform
+    position 1.5 4.5 -2
+    rotation 0 20 0
+    scale 0.6 0.6 0.6
+  ModelRenderer
+    model models/material-demo.glb
+  Collider
+    shape "Convex model"
+  RigidBody
+    motion Dynamic
+    mass 3
+end
+entity "Imported static triangles"
+  Transform
+    position 3.2 0 1.5
+    rotation 0 -20 0
+    scale 0.6 0.6 0.6
+  ModelRenderer
+    model models/material-demo.glb
+  Collider
+    shape "Triangle model"
+end
+entity "Character"
+  Transform
+    position -3 2 2
+  CharacterController
+    radius 0.35
+    half_height 0.5
+    max_slope 45
+    step_height 0.3
+    jump_speed 5
+end
+entity "Character visual"
+  Transform
+    position 0 0.85 0
+    scale 0.7 1.7 0.7
+  Parent
+    entity "Character"
+  MeshRenderer
+    mesh sphere
+    texture white
+    tint 0.75 0.5 0.95 1
+end
+
+entity "Main Camera"
+  Transform
+    position 7 5.5 10
+    rotation -20 34 0
+    scale 1 1 1
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -55 40 0
+  Light
+    type Directional
+    color 1 0.96 0.9 1
+    intensity 2.6
+end

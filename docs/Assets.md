@@ -1,7 +1,7 @@
 # Model and texture assets
 
-Place source files under the project's `assets` directory. Names are paths relative
-to that directory, with forward slashes. The editor and standalone player import
+Place source files under the project's content folder (`Content/` unless the manifest's
+`assets` line says otherwise). Names are paths relative to that folder, with forward slashes. The editor and standalone player import
 the same assets before loading the scene. Image formats remain PNG, JPEG, TGA, BMP,
 PSD, GIF, HDR and PNM. Models use Assimp 6.0.5, built with its default importers,
 including glTF/GLB, FBX, OBJ/MTL, Collada, STL, PLY and the legacy Blender reader.
@@ -10,8 +10,8 @@ enabled. A reader being available does not guarantee every variant of that forma
 
 ## Editor workflow
 
-The Assets panel has a Models section. Drag a model into the viewport, double-click
-it, or use its placement menu. Placement creates an entity with `Transform` and
+Models show in the editor's Content panel with the project's other files. Drag a model
+into the viewport, double-click it, or use its placement menu. Placement creates an entity with `Transform` and
 `ModelRenderer`; its model reference, visibility and tint appear in the reflected
 inspector and support undo. Drop a different model onto the inspector's Model
 field to replace it. The imported material section shows source material settings.
@@ -22,7 +22,7 @@ repeated mesh instances, vertex colors, UV0 and generated normals when missing.
 The complete model is one scene entity; imported nodes aren't separate editable
 ECS entities. A parent on that entity places the entire model. Selection outlines
 use imported bounds; viewport selection tests the actual triangles. Negative scale
-preserves front-face orientation. `assets/models/material-demo.glb` is a small,
+preserves front-face orientation. `Games/Sample/Content/models/material-demo.glb` is a small,
 self-authored three-material model for trying the workflow.
 
 Scene files save model names rather than GPU IDs. `ModelRenderer` is registered
@@ -98,4 +98,4 @@ nested transforms, materials, triangle picking, failed dependency repair, stable
 asset references and scene serialization. The GPU smoke test covers actual uploads,
 repeated reloads, missing buffers/textures, MTL edits, last-good retention, resource
 recycling and rendering all three material parts. Fixtures are self-authored and
-can be regenerated with `python3 tests/fixtures/models/generate.py`.
+can be regenerated with `python3 Tests/fixtures/models/generate.py`.

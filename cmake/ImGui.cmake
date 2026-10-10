@@ -1,7 +1,7 @@
 # Dear ImGui (docking branch) for the editor and in-game debug UI, plus ImGuizmo for
 # the editor's transform gizmos. Neither ships a CMake build we can use, so the targets
-# are defined here. The SDL3 and Vulkan backends are compiled into the engine, which
-# owns the window and the GPU.
+# are defined here. The SDL3 backend is compiled into the Engine module (it owns the
+# window events) and the Vulkan backend into the Renderer (it owns the GPU).
 
 FetchContent_Declare(
     imgui
@@ -36,13 +36,9 @@ if(NOT MSVC)
     target_compile_options(imguizmo PRIVATE -w)
 endif()
 
-set(SHOCKWAVE_IMGUI_BACKENDS
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-)
-
-# The UI font, copied next to the executables (build/bin/fonts).
-file(COPY ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf DESTINATION ${CMAKE_BINARY_DIR}/bin/fonts)
+# The UI fonts (Cousine is the monospaced default), copied next to the executables (build/bin/fonts).
+file(COPY ${imgui_SOURCE_DIR}/misc/fonts/Cousine-Regular.ttf ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf
+     DESTINATION ${CMAKE_BINARY_DIR}/bin/fonts)
 
 # UI themes, copied next to the executables as a fallback. The engine prefers
 # themes/ in the working folder, so run from the project root to edit them live.

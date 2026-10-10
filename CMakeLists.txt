@@ -116,15 +116,10 @@ FetchContent_MakeAvailable(JoltPhysics)
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
 
-add_subdirectory(engine)
-# One compiled gameplay module is shared by editor Play and the standalone player.
-set(SHOCKWAVE_GAME_SOURCE "${CMAKE_SOURCE_DIR}/examples/game/Game.cpp" CACHE FILEPATH "C++ gameplay module source")
-add_library(shockwave_game STATIC ${SHOCKWAVE_GAME_SOURCE})
-target_link_libraries(shockwave_game PUBLIC shockwave)
-add_subdirectory(player)
-add_subdirectory(sandbox)
-add_subdirectory(editor)
+include(cmake/ShockwaveModule.cmake)
 
-# Unit tests that need no GPU or window: ctest --test-dir build
+add_subdirectory(Source)
+add_subdirectory(Games/Sample)
+
 enable_testing()
-add_subdirectory(tests)
+add_subdirectory(Tests)

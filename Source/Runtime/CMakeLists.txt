@@ -1,0 +1,12 @@
+# In dependency order: each module only uses the ones above it.
+add_subdirectory(Core)
+add_subdirectory(Platform)
+add_subdirectory(Input)
+add_subdirectory(RHI)
+add_subdirectory(Renderer)
+add_subdirectory(Assets)
+add_subdirectory(UI)
+add_subdirectory(Projects)
+add_subdirectory(Engine)
+add_subdirectory(Physics)
+add_subdirectory(GameFramework)

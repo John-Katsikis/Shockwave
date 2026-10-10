@@ -1,0 +1,221 @@
+#include "RendererImpl.h"
+
+namespace shockwave {
+
+void Renderer::Impl::createFrames() {
+    VkDevice device = context->device();
+    for (Frame& f : frames) {
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        poolInfo.queueFamilyIndex = context->graphicsQueueFamily();
+        vk::check(vkCreateCommandPool(device, &poolInfo, nullptr, &f.pool), "vkCreateCommandPool");
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = f.pool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+        vk::check(vkAllocateCommandBuffers(device, &allocInfo, &f.cmd), "vkAllocateCommandBuffers");
+
+        VkSemaphoreCreateInfo semInfo{};
+        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        vk::check(vkCreateSemaphore(device, &semInfo, nullptr, &f.imageAcquired), "vkCreateSemaphore");
+
+        ensureDrawCapacity(f, 4096);
+        VmaAllocationInfo info{};
+        f.frameBuffer = createBuffer(
+            kFrameDataSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
+        f.frameData = static_cast<uint8_t*>(info.pMappedData);
+        f.frameAddress = bufferAddress(f.frameBuffer.buffer);
+    }
+
+    VkSemaphoreTypeCreateInfo timelineInfo{};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineInfo.initialValue = 0;
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semInfo.pNext = &timelineInfo;
+    vk::check(vkCreateSemaphore(device, &semInfo, nullptr, &frameTimeline), "vkCreateSemaphore");
+}
+
+void Renderer::Impl::ensureDrawCapacity(Frame& f, uint32_t count) {
+    if (count <= f.drawCapacity) return;
+    uint32_t capacity = std::max<uint32_t>(f.drawCapacity, 4096);
+    while (capacity < count) capacity *= 2;
+
+    if (f.drawBuffer.buffer) vmaDestroyBuffer(context->allocator(), f.drawBuffer.buffer, f.drawBuffer.allocation);
+    VmaAllocationInfo info{};
+    // Host-written, GPU-read every frame: lands in BAR/ReBAR memory where the GPU has it.
+    f.drawBuffer = createBuffer(
+        capacity * sizeof(DrawData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
+    f.drawData = static_cast<DrawData*>(info.pMappedData);
+    f.drawAddress = bufferAddress(f.drawBuffer.buffer);
+    f.drawCapacity = capacity;
+}
+
+void Renderer::Impl::createRenderFinishedSemaphores() {
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    renderFinished.resize(swapchain->imageCount());
+    for (VkSemaphore& s : renderFinished) {
+        vk::check(vkCreateSemaphore(context->device(), &semInfo, nullptr, &s), "vkCreateSemaphore");
+    }
+}
+
+void Renderer::Impl::destroyRenderFinishedSemaphores() {
+    for (VkSemaphore s : renderFinished) vkDestroySemaphore(context->device(), s, nullptr);
+    renderFinished.clear();
+}
+
+void Renderer::Impl::createBindless() {
+    VkDevice device = context->device();
+    const uint32_t capacity = context->maxBindlessTextures();
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = std::min(16.0f, context->maxAnisotropy());
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+    vk::check(vkCreateSampler(device, &samplerInfo, nullptr, &linearSampler), "vkCreateSampler");
+
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    bindings[0].descriptorCount = capacity;
+    bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
+    bindings[1].pImmutableSamplers = &linearSampler;
+
+    // Partially bound: unused slots may be empty. Update-after-bind + unused-while-pending:
+    // new textures can be added while frames using the table are still in flight.
+    const VkDescriptorBindingFlags bindingFlags[2] = {
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+            VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+        0,
+    };
+    VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
+    flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    flagsInfo.bindingCount = 2;
+    flagsInfo.pBindingFlags = bindingFlags;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.pNext = &flagsInfo;
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layoutInfo.bindingCount = 2;
+    layoutInfo.pBindings = bindings;
+    vk::check(
+        vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "vkCreateDescriptorSetLayout");
+
+    const VkDescriptorPoolSize sizes[2] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, capacity},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1},
+    };
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = sizes;
+    vk::check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &bindlessPool), "vkCreateDescriptorPool");
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = bindlessPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &bindlessLayout;
+    vk::check(vkAllocateDescriptorSets(device, &allocInfo, &bindlessSet), "vkAllocateDescriptorSets");
+}
+
+void Renderer::Impl::createPipelines() {
+    VkPushConstantRange range{};
+    range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    range.size = sizeof(DrawPushConstants);
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &bindlessLayout;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &range;
+    vk::check(
+        vkCreatePipelineLayout(context->device(), &layoutInfo, nullptr, &pipelineLayout), "vkCreatePipelineLayout");
+
+    vk::GraphicsPipelineDesc desc;
+    desc.vertexShader = shaderPath("mesh.vert");
+    desc.fragmentShader = shaderPath("mesh.frag");
+    desc.colorFormat = kSceneColorFormat;
+    desc.depthFormat = kDepthFormat;
+    desc.layout = pipelineLayout;
+    meshPipeline = vk::createGraphicsPipeline(context->device(), desc);
+    desc.cullMode = VK_CULL_MODE_NONE;
+    meshDoubleSidedPipeline = vk::createGraphicsPipeline(context->device(), desc);
+    desc.alphaBlend = true;
+    meshBlendDoubleSidedPipeline = vk::createGraphicsPipeline(context->device(), desc);
+    desc.cullMode = VK_CULL_MODE_BACK_BIT;
+    meshBlendPipeline = vk::createGraphicsPipeline(context->device(), desc);
+    desc.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    for (int i = 0; i < 4; ++i) {
+        desc.alphaBlend = (i & 2) != 0;
+        desc.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        mirroredPipelines[i] = vk::createGraphicsPipeline(context->device(), desc);
+    }
+
+    // The editor grid: a transparent quad on the ground, depth-tested against the
+    // scene but not writing depth, drawn after everything opaque.
+    VkPushConstantRange gridRange{};
+    gridRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    gridRange.size = sizeof(GridPushConstants);
+    VkPipelineLayoutCreateInfo gridLayoutInfo{};
+    gridLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    gridLayoutInfo.pushConstantRangeCount = 1;
+    gridLayoutInfo.pPushConstantRanges = &gridRange;
+    vk::check(
+        vkCreatePipelineLayout(context->device(), &gridLayoutInfo, nullptr, &gridLayout), "vkCreatePipelineLayout");
+    vk::GraphicsPipelineDesc gridDesc;
+    gridDesc.vertexShader = shaderPath("grid.vert");
+    gridDesc.fragmentShader = shaderPath("grid.frag");
+    gridDesc.colorFormat = kSceneColorFormat;
+    gridDesc.depthFormat = kDepthFormat;
+    gridDesc.layout = gridLayout;
+    gridDesc.cullMode = VK_CULL_MODE_NONE;   // seen from below too
+    gridDesc.depthWrite = false;
+    gridDesc.alphaBlend = true;
+    gridPipeline = vk::createGraphicsPipeline(context->device(), gridDesc);
+
+    // Tonemapping: one fullscreen triangle from the HDR scene to the display image.
+    VkPushConstantRange tonemapRange{};
+    tonemapRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    tonemapRange.size = sizeof(TonemapPushConstants);
+    VkPipelineLayoutCreateInfo tonemapLayoutInfo{};
+    tonemapLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    tonemapLayoutInfo.setLayoutCount = 1;
+    tonemapLayoutInfo.pSetLayouts = &bindlessLayout;
+    tonemapLayoutInfo.pushConstantRangeCount = 1;
+    tonemapLayoutInfo.pPushConstantRanges = &tonemapRange;
+    vk::check(
+        vkCreatePipelineLayout(context->device(), &tonemapLayoutInfo, nullptr, &tonemapLayout),
+        "vkCreatePipelineLayout");
+    vk::GraphicsPipelineDesc tonemapDesc;
+    tonemapDesc.vertexShader = shaderPath("tonemap.vert");
+    tonemapDesc.fragmentShader = shaderPath("tonemap.frag");
+    tonemapDesc.colorFormat = kDisplayFormat;
+    tonemapDesc.layout = tonemapLayout;
+    tonemapDesc.cullMode = VK_CULL_MODE_NONE;
+    tonemapPipeline = vk::createGraphicsPipeline(context->device(), tonemapDesc);
+}
+
+}   // namespace shockwave
