@@ -39,6 +39,6 @@ jobs:
         run: xvfb-run -a build/bin/player --check Games/Sample/Sample.swproject
       - name: Verify generated documentation
         run: |
-          build/bin/player --schema docs/SceneSchema.md
-          build/bin/player --input-schema docs/InputSchema.md
+          xvfb-run -a build/bin/player --schema docs/SceneSchema.md
+          xvfb-run -a build/bin/player --input-schema docs/InputSchema.md
           git diff --exit-code docs/
