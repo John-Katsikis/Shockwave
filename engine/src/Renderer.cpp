@@ -38,21 +38,32 @@ struct DrawData {
     glm::mat4 mvp;
     glm::mat4 normalMatrix;
     glm::vec4 tint;
+    glm::vec2 uvScale;
     VkDeviceAddress vertexBuffer;
     uint32_t textureIndex;
-    uint32_t pad;
+    float alphaCutoff;
 };
-static_assert(offsetof(DrawData, vertexBuffer) == 144 && sizeof(DrawData) == 160,
+static_assert(offsetof(DrawData, vertexBuffer) == 152 && sizeof(DrawData) == 168,
               "DrawData must match the shader's scalar layout");
 
 struct DrawPushConstants {
     VkDeviceAddress drawBuffer;
 };
 
+// Must match the push constants in shaders/grid.vert and grid.frag.
+struct GridPushConstants {
+    glm::mat4 viewProjection;
+    glm::vec4 cameraPosition;   // xyz; w: half the quad's size (the fade distance)
+    glm::vec4 params;           // x: cell size, y: cells per major line, z: opacity
+};
+static_assert(sizeof(GridPushConstants) == 96, "GridPushConstants must match the grid shaders");
+
 struct DrawCommand {
     DrawData data;
     VkBuffer indexBuffer;
     uint32_t indexCount;
+    bool doubleSided = false, blend = false, mirrored = false;
+    float depth = 0.0f;
 };
 
 // One per thread so drawMesh never takes a lock on the hot path.
@@ -134,12 +145,21 @@ struct Renderer::Impl {
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline meshPipeline = VK_NULL_HANDLE;
+    VkPipeline meshDoubleSidedPipeline = VK_NULL_HANDLE;
+    VkPipeline meshBlendPipeline = VK_NULL_HANDLE;
+    VkPipeline meshBlendDoubleSidedPipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline,4> mirroredPipelines{};
+    VkPipelineLayout gridLayout = VK_NULL_HANDLE;
+    VkPipeline gridPipeline = VK_NULL_HANDLE;
+    GridSettings grid;
 
     // Fixed-capacity resource slots. A slot is fully written before its ready flag is
     // set (release), so readers on any thread need no lock.
     std::unique_ptr<Mesh[]> meshes = std::make_unique<Mesh[]>(kMaxMeshes);
     std::unique_ptr<std::atomic<bool>[]> meshReady = std::make_unique<std::atomic<bool>[]>(kMaxMeshes);
     std::atomic<uint32_t> meshReserved{0};
+    std::mutex resourceMutex;
+    std::vector<uint32_t> freeMeshes, freeTextures;
     std::unique_ptr<vk::Image[]> textures;
     std::atomic<uint32_t> textureReserved{0};
 
@@ -150,6 +170,7 @@ struct Renderer::Impl {
     std::mutex foreignDrawMutex;
     DrawList foreignDraws;                  // threads the job system doesn't own
     uint32_t lastDrawCount = 0;
+    std::vector<DrawCommand> gatheredDraws;
 
     vk::Image sceneColor;
     vk::Image sceneDepth;
@@ -178,6 +199,7 @@ struct Renderer::Impl {
     bool needsResize = false;
     Color clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     glm::mat4 viewProjection{1.0f};
+    glm::vec3 cameraPosition{0.0f};
 
     Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
         context = std::make_unique<vk::Context>(window.handle());
@@ -218,8 +240,14 @@ struct Renderer::Impl {
         vkDestroyCommandPool(device, uploadPool, nullptr);
         destroyImage(sceneColor);
         destroyImage(sceneDepth);
+        for (auto pipeline:mirroredPipelines) vkDestroyPipeline(device,pipeline,nullptr);
         vkDestroyPipeline(device, meshPipeline, nullptr);
+        vkDestroyPipeline(device, meshDoubleSidedPipeline, nullptr);
+        vkDestroyPipeline(device, meshBlendPipeline, nullptr);
+        vkDestroyPipeline(device, meshBlendDoubleSidedPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyPipeline(device, gridPipeline, nullptr);
+        vkDestroyPipelineLayout(device, gridLayout, nullptr);
         vkDestroySampler(device, linearSampler, nullptr);
         vkDestroyDescriptorPool(device, bindlessPool, nullptr);
         vkDestroyDescriptorSetLayout(device, bindlessLayout, nullptr);
@@ -540,6 +568,40 @@ struct Renderer::Impl {
         desc.depthFormat = kDepthFormat;
         desc.layout = pipelineLayout;
         meshPipeline = vk::createGraphicsPipeline(context->device(), desc);
+        desc.cullMode = VK_CULL_MODE_NONE;
+        meshDoubleSidedPipeline = vk::createGraphicsPipeline(context->device(), desc);
+        desc.alphaBlend = true;
+        meshBlendDoubleSidedPipeline = vk::createGraphicsPipeline(context->device(), desc);
+        desc.cullMode = VK_CULL_MODE_BACK_BIT;
+        meshBlendPipeline = vk::createGraphicsPipeline(context->device(), desc);
+        desc.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        for (int i=0;i<4;++i) {
+            desc.alphaBlend = (i & 2)!=0;
+            desc.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+            mirroredPipelines[i]=vk::createGraphicsPipeline(context->device(),desc);
+        }
+
+        // The editor grid: a transparent quad on the ground, depth-tested against the
+        // scene but not writing depth, drawn after everything opaque.
+        VkPushConstantRange gridRange{};
+        gridRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        gridRange.size = sizeof(GridPushConstants);
+        VkPipelineLayoutCreateInfo gridLayoutInfo{};
+        gridLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        gridLayoutInfo.pushConstantRangeCount = 1;
+        gridLayoutInfo.pPushConstantRanges = &gridRange;
+        vk::check(vkCreatePipelineLayout(context->device(), &gridLayoutInfo, nullptr, &gridLayout),
+                  "vkCreatePipelineLayout");
+        vk::GraphicsPipelineDesc gridDesc;
+        gridDesc.vertexShader = shaderPath("grid.vert");
+        gridDesc.fragmentShader = shaderPath("grid.frag");
+        gridDesc.colorFormat = kSceneColorFormat;
+        gridDesc.depthFormat = kDepthFormat;
+        gridDesc.layout = gridLayout;
+        gridDesc.cullMode = VK_CULL_MODE_NONE;   // seen from below too
+        gridDesc.depthWrite = false;
+        gridDesc.alphaBlend = true;
+        gridPipeline = vk::createGraphicsPipeline(context->device(), gridDesc);
     }
 
     // ---- Resources --------------------------------------------------------------------
@@ -632,31 +694,64 @@ struct Renderer::Impl {
         return buffer;
     }
 
+    uint32_t reserveSlot(std::vector<uint32_t>& free, std::atomic<uint32_t>& reserved, uint32_t maximum) {
+        std::lock_guard lock(resourceMutex);
+        if (!free.empty()) { const auto id=free.back(); free.pop_back(); return id; }
+        if (reserved.load()>=maximum) throw std::runtime_error("GPU asset capacity exhausted");
+        return reserved.fetch_add(1);
+    }
     MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
         if (vertices.empty() || indices.empty()) return {};
-        const uint32_t id = meshReserved.fetch_add(1);
-        if (id >= kMaxMeshes) throw std::runtime_error("Out of mesh slots");
-
-        Mesh& mesh = meshes[id];
-        mesh.vertices = uploadBuffer(vertices.data(), vertices.size_bytes(),
-                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-        mesh.indices = uploadBuffer(indices.data(), indices.size_bytes(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-        mesh.indexCount = static_cast<uint32_t>(indices.size());
-        mesh.vertexAddress = bufferAddress(mesh.vertices.buffer);
-
-        meshReady[id].store(true, std::memory_order_release);
-        return MeshHandle{id};
-    }
-
-    TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
-        if (width == 0 || height == 0 || rgba.size() < size_t(width) * height * 4) {
-            throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
+        const uint32_t id=reserveSlot(freeMeshes,meshReserved,kMaxMeshes);
+        Mesh& mesh=meshes[id];
+        try {
+            mesh.vertices=uploadBuffer(vertices.data(),vertices.size_bytes(),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+            mesh.indices=uploadBuffer(indices.data(),indices.size_bytes(),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            mesh.indexCount=static_cast<uint32_t>(indices.size());
+            mesh.vertexAddress=bufferAddress(mesh.vertices.buffer);
+            meshReady[id].store(true,std::memory_order_release);
+            return {id};
+        } catch (...) {
+            if (mesh.vertices.buffer) vmaDestroyBuffer(context->allocator(),mesh.vertices.buffer,mesh.vertices.allocation);
+            if (mesh.indices.buffer) vmaDestroyBuffer(context->allocator(),mesh.indices.buffer,mesh.indices.allocation);
+            mesh={};
+            std::lock_guard lock(resourceMutex); freeMeshes.push_back(id); throw;
         }
-        const uint32_t id = textureReserved.fetch_add(1);
-        if (id >= context->maxBindlessTextures()) throw std::runtime_error("Out of bindless texture slots");
-        textures[id] = uploadTexture(width, height, rgba, srgb);
-        writeTextureDescriptor(id);
-        return TextureHandle{id};
+    }
+    void destroyMesh(MeshHandle handle) {
+        if (handle.id>=kMaxMeshes || !meshReady[handle.id].load()) return;
+        vk::check(vkDeviceWaitIdle(context->device()),"vkDeviceWaitIdle");
+        Mesh& mesh=meshes[handle.id];
+        meshReady[handle.id].store(false,std::memory_order_release);
+        vmaDestroyBuffer(context->allocator(),mesh.vertices.buffer,mesh.vertices.allocation);
+        vmaDestroyBuffer(context->allocator(),mesh.indices.buffer,mesh.indices.allocation);
+        mesh={};
+        std::lock_guard lock(resourceMutex); freeMeshes.push_back(handle.id);
+    }
+    void destroyTexture(TextureHandle handle) {
+        if (!handle.id || handle.id>=std::min(textureReserved.load(),context->maxBindlessTextures()) || !textures[handle.id].image) return;
+        vk::check(vkDeviceWaitIdle(context->device()),"vkDeviceWaitIdle");
+        if (auto it=guiTextures.find(handle.id);it!=guiTextures.end()) {
+            ImGui_ImplVulkan_RemoveTexture(it->second); guiTextures.erase(it);
+        }
+        {
+            std::lock_guard lock(textureSwapMutex);
+            for (auto& swap:textureSwaps) if (swap.id==handle.id) destroyImage(swap.image);
+            std::erase_if(textureSwaps,[&](const auto& swap) { return swap.id==handle.id; });
+        }
+        destroyImage(textures[handle.id]);
+        // Fill the descriptor with white before recycling; don't own the white image.
+        textures[handle.id]=textures[0]; writeTextureDescriptor(handle.id); textures[handle.id]={};
+        std::lock_guard lock(resourceMutex); freeTextures.push_back(handle.id);
+    }
+    TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+        if (!width || !height || rgba.size()<size_t(width)*height*4)
+            throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
+        const uint32_t id=reserveSlot(freeTextures,textureReserved,context->maxBindlessTextures());
+        try {
+            textures[id]=uploadTexture(width,height,rgba,srgb); writeTextureDescriptor(id); return {id};
+        } catch (...) { std::lock_guard lock(resourceMutex); freeTextures.push_back(id); throw; }
     }
 
     void updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
@@ -798,8 +893,10 @@ struct Renderer::Impl {
 
     // ---- Per-frame --------------------------------------------------------------------
 
-    void drawMesh(MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint) {
+    void drawMesh(MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint, const DrawMaterial& material) {
         if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
+        const float determinant=glm::determinant(transform);
+        if (!std::isfinite(determinant) || std::abs(determinant)<1e-12f) return;
         const Mesh& mesh = meshes[handle.id];
 
         // The per-draw math runs here, on whichever thread submits the draw.
@@ -807,9 +904,15 @@ struct Renderer::Impl {
         command.data.mvp = viewProjection * transform;
         command.data.normalMatrix = glm::transpose(glm::inverse(transform));
         command.data.tint = tint;
+        command.data.uvScale = material.uvScale;
         command.data.vertexBuffer = mesh.vertexAddress;
         command.data.textureIndex = texture.id;
-        command.data.pad = 0;
+        command.data.alphaCutoff = material.alphaCutoff;
+        command.doubleSided = material.doubleSided;
+        command.blend = material.blend;
+        command.mirrored = determinant<0;
+        const auto center = viewProjection * transform * glm::vec4(0,0,0,1);
+        command.depth = center.w != 0 ? center.z / center.w : 0;
         command.indexBuffer = mesh.indices.buffer;
         command.indexCount = mesh.indexCount;
 
@@ -874,6 +977,31 @@ struct Renderer::Impl {
         return true;
     }
 
+    void setSceneViewport(VkCommandBuffer cmd) {
+        const VkExtent2D extent = sceneColor.extent;
+        // Negative height flips Y so standard Y-up projection matrices work unchanged.
+        VkViewport viewport{0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
+                            -static_cast<float>(extent.height), 0.0f, 1.0f};
+        VkRect2D scissor{{0, 0}, extent};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+    }
+
+    // One quad on y = 0 following the camera; the fragment shader draws the lines and
+    // fades them out with distance.
+    void recordGrid(VkCommandBuffer cmd) {
+        if (!grid.enabled) return;
+        GridPushConstants push;
+        push.viewProjection = viewProjection;
+        push.cameraPosition = glm::vec4(cameraPosition, std::max(grid.fadeDistance, 1.0f));
+        push.params = glm::vec4(std::max(grid.cellSize, 1e-3f), static_cast<float>(std::max(grid.majorEvery, 1)),
+                                std::clamp(grid.opacity, 0.0f, 1.0f), 0.0f);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gridPipeline);
+        vkCmdPushConstants(cmd, gridLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(push), &push);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+    }
+
     // Gathers every thread's draws into this frame's GPU draw table and records them.
     void recordDraws(VkCommandBuffer cmd, Frame& f) {
         uint32_t total = 0;
@@ -883,36 +1011,31 @@ struct Renderer::Impl {
         if (total == 0) return;
         ensureDrawCapacity(f, total);
 
-        const VkExtent2D extent = sceneColor.extent;
-        // Negative height flips Y so standard Y-up projection matrices work unchanged.
-        VkViewport viewport{0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
-                            -static_cast<float>(extent.height), 0.0f, 1.0f};
-        VkRect2D scissor{{0, 0}, extent};
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
         DrawPushConstants push{f.drawAddress};
         vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
 
-        uint32_t drawIndex = 0;
-        VkBuffer boundIndices = VK_NULL_HANDLE;
-        auto record = [&](const DrawList& list) {
-            for (const DrawCommand& draw : list.commands) {
-                f.drawData[drawIndex] = draw.data;
-                if (draw.indexBuffer != boundIndices) {
-                    vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                    boundIndices = draw.indexBuffer;
-                }
-                // firstInstance carries the draw's slot in the table (gl_InstanceIndex).
-                vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, drawIndex);
-                ++drawIndex;
+        auto& draws=gatheredDraws;
+        draws.clear(); draws.reserve(total);
+        for (const auto& list:drawLists) draws.insert(draws.end(),list.commands.begin(),list.commands.end());
+        { std::lock_guard lock(foreignDrawMutex); draws.insert(draws.end(),foreignDraws.commands.begin(),foreignDraws.commands.end()); }
+        const auto transparent=std::stable_partition(draws.begin(),draws.end(),[](const auto& draw) { return !draw.blend; });
+        // Reverse-Z is smaller farther away. Object-level sorting is the basic
+        // transparency path; intersecting transparent surfaces need a later solution.
+        std::stable_sort(transparent,draws.end(),[](const auto& a,const auto& b) { return a.depth<b.depth; });
+        uint32_t drawIndex=0;
+        VkBuffer boundIndices=VK_NULL_HANDLE;
+        VkPipeline boundPipeline=meshPipeline;
+        for (const auto& draw:draws) {
+            const auto pipeline=draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0)+(draw.doubleSided ? 1 : 0)] : draw.blend ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
+                                          : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
+            if (pipeline!=boundPipeline) { vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline); boundPipeline=pipeline; }
+            f.drawData[drawIndex]=draw.data;
+            if (draw.indexBuffer!=boundIndices) {
+                vkCmdBindIndexBuffer(cmd,draw.indexBuffer,0,VK_INDEX_TYPE_UINT32); boundIndices=draw.indexBuffer;
             }
-        };
-        for (const DrawList& list : drawLists) record(list);
-        {
-            std::lock_guard lock(foreignDrawMutex);
-            record(foreignDraws);
+            vkCmdDrawIndexed(cmd,draw.indexCount,1,0,0,drawIndex++);
         }
         vk::check(vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0,
                                      sizeof(DrawData) * drawIndex),
@@ -968,7 +1091,9 @@ struct Renderer::Impl {
         rendering.pColorAttachments = &color;
         rendering.pDepthAttachment = &depth;
         vkCmdBeginRendering(cmd, &rendering);
+        setSceneViewport(cmd);
         recordDraws(cmd, f);
+        recordGrid(cmd);
         vkCmdEndRendering(cmd);
 
         // How the swapchain image was last touched, for the final transition to present.
@@ -1104,6 +1229,9 @@ Renderer::Renderer(Window& window, JobSystem& jobs, bool vsync)
     : m_impl(std::make_unique<Impl>(window, jobs, vsync)) {}
 Renderer::~Renderer() = default;
 
+void Renderer::destroyMesh(MeshHandle handle) { m_impl->destroyMesh(handle); }
+void Renderer::destroyTexture(TextureHandle handle) { m_impl->destroyTexture(handle); }
+
 MeshHandle Renderer::createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
     return m_impl->createMesh(vertices, indices);
 }
@@ -1120,9 +1248,13 @@ uint64_t Renderer::guiTexture(TextureHandle texture) { return m_impl->guiTexture
 void Renderer::setClearColor(const Color& color) { m_impl->clearColor = color; }
 void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;
+    m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
 }
-void Renderer::drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint) {
-    m_impl->drawMesh(mesh, transform, texture, tint);
+void Renderer::setGrid(const GridSettings& grid) {
+    m_impl->grid = grid;
+}
+void Renderer::drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint, const DrawMaterial& material) {
+    m_impl->drawMesh(mesh, transform, texture, tint, material);
 }
 void Renderer::setRenderScale(float scale) {
     scale = std::clamp(scale, 0.25f, 2.0f);

@@ -28,4 +28,14 @@ MeshData makeCube(float size = 1.0f);
 MeshData makePlane(float size = 1.0f, float uvRepeat = 1.0f);   // in XZ, facing +Y
 MeshData makeSphere(float radius = 0.5f, uint32_t segments = 48, uint32_t rings = 24);
 
+struct Bounds {
+    glm::vec3 min{0.0f};
+    glm::vec3 max{0.0f};
+};
+Bounds computeBounds(const MeshData& mesh);
+
+// Nearest hit of a ray (origin, direction, both in the mesh's own space) with the mesh's
+// triangles, from either side. t is the distance along direction (in its units).
+bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t);
+
 } // namespace shockwave

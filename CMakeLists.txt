@@ -71,10 +71,57 @@ set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
 set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator glm stb_image)
 
+# All Assimp readers are available; exporters, tools and upstream tests aren't
+# needed by the engine. Pin the release tag for reproducible imports.
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+# Avoid an earlier system-minizip discovery leaking into the bundled build.
+set(UNZIP_FOUND FALSE CACHE INTERNAL "Use Assimp bundled minizip" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG v6.0.5
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(assimp)
+
+# Jolt rigid-body physics. Build only the CPU library, without upstream apps,
+# GPU compute backends, architecture-specific AVX assumptions, or global flags.
+set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)
+set(CPP_RTTI_ENABLED ON CACHE BOOL "" FORCE)
+set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+foreach(feature USE_AVX USE_AVX2 USE_AVX512 USE_FMADD USE_F16C USE_LZCNT USE_TZCNT USE_SSE4_1 USE_SSE4_2)
+    set(${feature} OFF CACHE BOOL "" FORCE)
+endforeach()
+FetchContent_Declare(JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG v5.6.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
 
 add_subdirectory(engine)
+# One compiled gameplay module is shared by editor Play and the standalone player.
+set(SHOCKWAVE_GAME_SOURCE "${CMAKE_SOURCE_DIR}/examples/game/Game.cpp" CACHE FILEPATH "C++ gameplay module source")
+add_library(shockwave_game STATIC ${SHOCKWAVE_GAME_SOURCE})
+target_link_libraries(shockwave_game PUBLIC shockwave)
+add_subdirectory(player)
 add_subdirectory(sandbox)
 add_subdirectory(editor)
 

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <span>
 #include <vector>
 
 namespace shockwave {
@@ -17,6 +18,7 @@ struct Image {
 // Reads PNG, JPEG, TGA, BMP, PSD, GIF (first frame), HDR (brought down to 8 bits) and
 // PNM files. Safe to call from many threads at once.
 bool loadImage(const std::filesystem::path& path, Image& image, std::string& error);
+bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& error);
 // Whether loadImage knows the file's extension.
 bool isImageFile(const std::filesystem::path& path);
 

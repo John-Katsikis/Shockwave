@@ -1,14 +1,19 @@
 #pragma once
 
+#include "Preferences.h"
 #include "Scene.h"
 
 #include <shockwave/AssetFolder.h>
 #include <shockwave/Engine.h>
+#include <shockwave/Gameplay.h>
+#include <shockwave/Project.h>
 
 #include <imgui.h>
 #include <ImGuizmo.h>
 
 #include <array>
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -20,27 +25,38 @@ namespace editor {
 // Drag and drop payloads between panels. Meshes and textures travel by asset name.
 inline constexpr const char* kEntityPayload = "SW_ENTITY";
 inline constexpr const char* kMeshPayload = "SW_MESH";
+inline constexpr const char* kModelPayload = "SW_MODEL";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
 
 struct EditorOptions {
-    std::string scenePath = "scenes/main.swscene";
-    std::string assetFolder = "assets";   // imported into the asset browser, watched for changes
-    int selectOnStart = -1;   // entity to select at startup, in hierarchy order (for screenshots and tests)
-    bool playOnStart = false; // press Play straight away (for tests)
+    std::string path;                 // project folder, .swproject or .swscene; empty: last project
+    Preferences prefs;
+    std::filesystem::path prefsPath;  // where prefs are saved back
+    std::string assetFolder;          // --assets: imported instead of the project's assets
+    std::string theme;                // --theme: wins over the project's and the preferences' theme
+    const shockwave::GameModule* gameModule = nullptr;   // the compiled gameplay Play runs
+    int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
+    bool playOnStart = false; // press Play straight away (tests)
 };
 
-// The Shockwave Editor: a docked Dear ImGui interface around a live viewport.
+// The Shockwave Editor: projects, scenes and a live viewport in a docked Dear ImGui UI.
 //
-//   Viewport   the scene, rendered by the engine at the panel's size, with transform and snapping tools
-//   Hierarchy  every entity in the scene as a tree; drag one onto another to attach it
+//   Commands   the scene and save state, Play / Pause / Stop, the mode
+//   Viewport   transform tools above the scene, an editor grid and gizmos; looks through the scene's
+//              Camera while playing (F8 switches between that and the editor camera)
+//   Hierarchy  the scene's entities as a tree, with multi-select, rename and drag to parent
 //   Inspector  the selected entity's components, generated from their registered fields
-//   Assets     meshes and textures, with the project's assets/ folder imported and
-//              watched; drag them onto the viewport or the inspector
-//   Renderer   frame timing, resolution, vsync, camera settings and the system schedule
-//   Log        what the editor did (saves, loads, errors)
+//   Content    the project's assets and scenes, plus the engine's built-in assets
+//   Console    what the editor did, with warnings and errors called out
+//   Status bar scene, save state, play state, selection and frame time at a glance
 //
-// The scene is an engine World, the same thing a game runs. Play copies it and runs the
-// game's systems on the copy each tick; Stop throws the copy away.
+// Everything belongs to a project (shockwave/Project.h): with none open, the editor shows
+// the project hub. Per-user settings live in Preferences; per-user, per-project state
+// (camera positions, autosaves) in the project's .shockwave folder.
+//
+// The scene is an engine World, the same thing a game runs. Play starts a GameSession:
+// the project's compiled gameplay and Jolt physics run on it each tick, and Stop puts
+// back the scene as authored.
 //
 // The UI runs on the main thread (ImGui is single-threaded); systems and drawing fan out
 // across the job system like any game.
@@ -50,76 +66,117 @@ public:
 
     void onStart() override;
     void onUpdate(double dt) override;
+    void onFrame(double dt) override;
     void onGui() override;
     void onRender(shockwave::Renderer& renderer, double alpha) override;
     bool onQuitRequested() override;
+    void onShutdown() override;
 
 private:
-    enum class Shape { Box, Sphere, Plane };
-    struct MeshAsset {
-        std::string name;
-        shockwave::MeshHandle handle;
-        Shape shape;
-    };
     // Something that would throw away unsaved changes, waiting on the user's answer.
-    enum class PendingAction { None, New, Open, OpenPath, Quit };
-    enum class PlayState { Editing, Playing, Paused };
+    enum class PendingAction { None, NewBasicScene, NewEmptyScene, OpenSceneDialog, OpenScene, OpenProject,
+                               CloseProject, Quit };
+    using PlayState = shockwave::GameSession::State;
+    enum class LogLevel { Info, Warning, Error };
+    struct LogEntry {
+        std::string time;   // HH:MM:SS
+        LogLevel level;
+        std::string text;
+    };
+    enum class ContentRoot { Assets, Scenes, Engine };
+    enum class CreateKind { Empty, Cube, Sphere, Plane, Camera, Environment };
 
-    // Assets
-    void createAssets();
-    const MeshAsset* findMesh(shockwave::MeshHandle handle) const;
+    // ---- Projects (Editor.cpp) ----
+    bool openProject(const std::filesystem::path& path, const std::filesystem::path& sceneToOpen = {});
+    void closeProject();
+    bool createNewProject(const std::filesystem::path& folder, const std::string& name);
+    void loadEditorState();
+    void saveEditorState();
+    void rememberCamera();
+    std::filesystem::path autosavePath() const;
+    void scanScenes();   // and the asset folder tree, for the Content panel
 
-    // Panels
+    // ---- Panels and windows ----
+    // Workspace.cpp: the frame around the panels.
     void drawMenuBar();
     void drawCommandBar();
+    void drawStatusBar();
     void drawDockspace();
     void buildDefaultLayout(ImGuiID dockspace);
+    void drawCreateMenuItems(shockwave::Entity parent);
+    void drawStatsWindow();
+    void drawPreferencesWindow();
+    void drawProjectSettingsWindow();
+    void drawControlsWindow();
+    void drawAboutWindow();
+    void drawUnsavedChangesModal();
+    void drawRecoveryModal();
+    // ProjectHub.cpp: shown when no project is open.
+    void drawProjectHub();
+    // ViewportPanel.cpp
     void drawViewport();
-    void drawViewportToolbar(const ImVec2& pos, const ImVec2& size);
-    void drawSelectionOutline(const ImVec2& pos, const ImVec2& size);
+    void drawViewportToolbar();
+    void drawViewportOverlay(const ImVec2& pos, const ImVec2& size);
+    void drawGizmo(const ImVec2& pos, const ImVec2& size);
     void drawOutline(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
+    void drawCameraIcons(const ImVec2& pos, const ImVec2& size);
+    shockwave::Entity cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) const;
+    void updateCamera(bool hovered);
+    shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size);
+    void mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const;
+    bool worldToScreen(const glm::vec3& p, const ImVec2& pos, const ImVec2& size, ImVec2& out) const;
+    void acceptViewportDrop(const ImVec2& pos, const ImVec2& size);
+    const shockwave::Bounds* meshBounds(shockwave::MeshHandle mesh);
+    bool entityBounds(shockwave::Entity e, shockwave::Bounds& out);   // local space
+    glm::mat4 projection(float aspect) const;          // reverse-Z, what the renderer uses
+    glm::mat4 gizmoProjection(float aspect) const;     // conventional depth, for ImGuizmo
+    bool lookingThroughSceneCamera() const;
+    // HierarchyPanel.cpp
     void drawHierarchy();
     using ChildMap = std::unordered_map<uint32_t, std::vector<shockwave::Entity>>;
     void drawHierarchyNode(shockwave::Entity e, const ChildMap& children, int depth);
     bool drawHierarchyRow(shockwave::Entity e, bool hasChildren);   // true if open
-    void drawAssetBrowser();
-    void drawAssetTiles(const char* section, int kind);
+    void drawEntityContextMenu(shockwave::Entity e);
+    // InspectorPanel.cpp
     void drawInspector();
-    void drawComponent(const shockwave::ComponentInfo& info, shockwave::Entity e, bool& removed);
+    void drawComponent(const shockwave::ComponentInfo& info, shockwave::Entity e);
     void drawField(const shockwave::Field& field, void* data, shockwave::Entity e);
     void drawEntityField(const std::string& label, shockwave::Entity* value, shockwave::Entity owner, bool isParent);
-    void drawRendererPanel();
-    void drawLog();
-    void drawControlsWindow();
-    void drawUnsavedChangesModal();
+    void drawAddComponentPopup(shockwave::Entity e);
+    void drawComponentNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
+    // AssetBrowser.cpp: the Content panel.
+    void drawContentBrowser();
+    void drawContentTree();
+    void drawContentItems();
+    // ConsolePanel.cpp
+    void drawConsole();
 
-    // Viewport interaction
-    void updateCamera(bool hovered);
-    shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size);
-    void mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const;
-    void acceptViewportDrop(const ImVec2& pos, const ImVec2& size);
-    glm::mat4 projection(float aspect) const;          // reverse-Z, what the renderer uses
-    glm::mat4 gizmoProjection(float aspect) const;     // conventional depth, for ImGuizmo
-    void focusSelected();
+    // ---- Selection (Editor.cpp) ----
+    void select(shockwave::Entity e);               // replaces the selection; null clears it
+    void toggleSelected(shockwave::Entity e);       // Ctrl+click
+    void selectRange(shockwave::Entity to);         // Shift+click, in hierarchy order
+    void selectAll();
+    bool isSelected(shockwave::Entity e) const;
+    shockwave::Entity selected() const;             // the primary (last clicked) entity, or null
+    std::vector<shockwave::Entity> selection() const;        // live entities, primary last
+    std::vector<shockwave::Entity> selectionRoots() const;   // without ones inside other selected ones
 
-    // Play mode
-    void play();
-    void pause();
-    void stop();
-    bool playing() const { return m_playState != PlayState::Editing; }
-
-    // Editing
-    void select(shockwave::Entity e);
-    shockwave::Entity selected() const;   // kNullEntity if nothing (alive) is selected
+    // ---- Editing (Editor.cpp) ----
     std::string displayName(shockwave::Entity e) const;
-    void addEntity(const char* name, const char* mesh, const char* texture);
-    void addEmptyEntity();
-    void addChild(const char* name, const char* mesh, const char* texture);
+    std::string kindLabel(shockwave::Entity e);   // "Mesh", "Camera", ... for the hierarchy
+    shockwave::Entity createEntity(CreateKind kind, shockwave::Entity parent);
     shockwave::Entity spawnMesh(const std::string& mesh, const glm::vec3& position);
+    shockwave::Entity spawnModel(const std::string& model, const glm::vec3& position);
+    glm::vec3 placementPoint() const;                   // where new things go: in front of the camera
     bool reparent(shockwave::Entity child, shockwave::Entity parent);
+    bool reparentSelection(shockwave::Entity dragged, shockwave::Entity parent);
     bool applyTexture(shockwave::Entity e, const std::string& texture);
     void duplicateSelected();
     void deleteSelected();
+    void groupSelected();
+    void alignSelectedToView();
+    void focusSelected();
+    void beginRename(shockwave::Entity e);
     std::string uniqueName(const std::string& base) const;
     void trackEdit();                 // call after a widget that edits the scene
     void pushUndo(shockwave::World before);
@@ -127,35 +184,77 @@ private:
     void redo();
     void handleShortcuts();
 
-    // Files
-    void newScene();
-    bool openScene(const std::string& path);
+    // ---- Play mode (Editor.cpp) ----
+    void play();
+    void pause();
+    void stop();
+    PlayState playState() const { return m_session ? m_session->state() : PlayState::Editing; }
+    bool playing() const { return playState() != PlayState::Editing; }
+    void applyProjectTheme();
+
+    // ---- Scene files (Editor.cpp) ----
+    void newScene(SceneTemplate kind);
+    bool openScene(const std::filesystem::path& path);
     bool saveScene();
-    void showOpenDialog();
-    void showSaveDialog();
+    bool saveSceneAs(std::filesystem::path path);
+    void showOpenSceneDialog();
+    void showSaveSceneDialog();
+    void showOpenProjectDialog();
+    void showNewProjectFolderDialog();
+    void showImportDialog(const std::filesystem::path& folder);
     void handleDialogResults();
     void requestAction(PendingAction action, const std::string& path = {});
     void runAction(PendingAction action, const std::string& path);
+    void autosave(double frameDt);
     void updateTitle();
+    std::string sceneDisplayName() const;
 
+    // ---- Console (ConsolePanel.cpp) ----
     void log(const std::string& message);
+    void warn(const std::string& message);
+    void error(const std::string& message);
+    void addLog(LogLevel level, const std::string& message);
     void logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& changes);
 
-    EditorOptions m_options;
-    shockwave::World m_world;
-    std::string m_scenePath;
-    bool m_dirty = false;
-    shockwave::Entity m_selected;
+    void savePreferences();
+    void applyViewPreferences();
 
-    std::vector<MeshAsset> m_meshes;
+    // ---- State ----
+    EditorOptions m_options;
+    Preferences& m_prefs;   // m_options.prefs
+    bool m_prefsDirty = false;
+
+    shockwave::Project m_project;
+    bool m_hasProject = false;
+    std::map<std::string, EditorCamera> m_sceneCameras;   // project-relative scene path -> view
+    std::string m_lastScene;                             // project-relative, reopened next time
+    std::vector<std::filesystem::path> m_scenes;         // .swscene files in the project
+    std::vector<std::string> m_assetFolders;             // folders inside assets/, forward slashes
+    double m_sceneScanTimer = 0.0;
+
+    shockwave::World m_world;
+    std::filesystem::path m_scenePath;   // empty for a scene that was never saved
+    bool m_dirty = false;
+    std::vector<shockwave::Entity> m_selection;   // primary last
+    shockwave::Entity m_rangeAnchor;
+    std::vector<shockwave::Entity> m_hierarchyOrder;   // rows as drawn last frame, for Shift+click
+    std::vector<shockwave::Entity> m_hierarchyOrderNext;
+
     std::unique_ptr<shockwave::AssetFolder> m_assetFolder;
-    std::string m_assetFilter;
-    std::string m_selectedAsset;
+    bool m_retryAssetImports = false;
+    std::unordered_map<uint32_t, shockwave::Bounds> m_meshBounds;   // by mesh id
+    ContentRoot m_contentRoot = ContentRoot::Assets;
+    std::string m_contentFolder;   // inside the root, forward slashes, "" for the top
+    std::string m_contentFilter;
+    std::string m_selectedContent;
     float m_tileSize = 84.0f;
 
-    shockwave::Schedule m_schedule;
-    PlayState m_playState = PlayState::Editing;
-    shockwave::World m_editWorld;   // the scene as it was when Play was pressed
+    // Play: the project's gameplay and physics on the live world; Stop restores the
+    // authored scene. Recreated per project.
+    std::unique_ptr<shockwave::GameSession> m_session;
+    bool m_gameModuleMatches = true;   // the project names the module this editor was built with
+    bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's
+    bool m_viewBeforePlay = false;
 
     shockwave::FlyCamera m_camera;
     bool m_looking = false;
@@ -177,31 +276,59 @@ private:
 
     ImGuizmo::OPERATION m_gizmoOperation = ImGuizmo::TRANSLATE;
     ImGuizmo::MODE m_gizmoMode = ImGuizmo::WORLD;
-    bool m_snap = false;
     bool m_gizmoWasUsing = false;
 
-    bool m_showHierarchy = true, m_showInspector = true, m_showRenderer = true, m_showLog = true, m_showAssets = true;
+    shockwave::Entity m_renaming;
+    std::string m_renameBuffer;
+    bool m_focusRename = false;
     bool m_revealSelection = false;   // open the selection's parents in the hierarchy next frame
-    bool m_checkedAssetsDock = false;
-    bool m_showControls = false, m_showDemo = false;
-    bool m_resetLayout = false;
     std::string m_hierarchyFilter;
+    std::string m_componentFilter;
+
+    bool m_showHierarchy = true, m_showInspector = true, m_showContent = true, m_showConsole = true;
+    bool m_showStats = false, m_showPreferences = false, m_showProjectSettings = false;
+    bool m_showControls = false, m_showAbout = false, m_showDemo = false, m_showMetrics = false;
+    bool m_resetLayout = false;
+    bool m_focusConsole = false;
 
     std::array<float, 240> m_frameTimes{};
     size_t m_frameTimeIndex = 0;
 
-    std::vector<std::string> m_log;
+    std::vector<LogEntry> m_log;
     bool m_logScrollToBottom = false;
+    bool m_logShowInfo = true, m_logShowWarnings = true, m_logShowErrors = true;
+    std::string m_logFilter;
+    size_t m_warningCount = 0, m_errorCount = 0;
 
     PendingAction m_pendingAction = PendingAction::None;
     std::string m_pendingPath;
     bool m_openUnsavedModal = false;
 
+    std::filesystem::path m_recoveryPath;   // an autosave newer than the scene, offered on open
+    bool m_openRecoveryModal = false;
+    double m_autosaveTimer = 0.0;
+
+    // Project hub form
+    std::string m_newProjectName = "My Game";
+    std::string m_newProjectLocation;
+    std::string m_hubError;
+
+    // Project settings form: an edited copy, applied on Save.
+    shockwave::Project m_projectEdit;
+
     // File dialogs answer from another thread.
+    enum class DialogKind { OpenScene, SaveScene, OpenProject, NewProjectFolder, Import };
+    struct DialogResult {
+        DialogKind kind;
+        std::vector<std::string> files;
+    };
     std::mutex m_dialogMutex;
-    std::string m_dialogOpenResult, m_dialogSaveResult, m_dialogError;
+    std::vector<DialogResult> m_dialogResults;
+    std::string m_dialogError;
+    std::filesystem::path m_importFolder;
 
     std::string m_title;
+    std::string m_iniPath;   // ImGui layout, next to the preferences
 };
 
 } // namespace editor

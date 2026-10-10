@@ -9,14 +9,17 @@ layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec2 vUv;
 layout(location = 2) in vec4 vColor;
 layout(location = 3) flat in uint vTexture;
+layout(location = 4) flat in float vAlphaCutoff;
 
 layout(location = 0) out vec4 outColor;
 
 void main() {
     vec4 albedo = texture(sampler2D(textures[nonuniformEXT(vTexture)], linearSampler), vUv) * vColor;
 
+    if (vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
+
     // Placeholder lighting (one sun plus sky ambient) until the real lighting milestone.
-    vec3 n = normalize(vNormal);
+    vec3 n = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
     vec3 sunDir = normalize(vec3(0.4, 0.8, 0.3));
     float diffuse = max(dot(n, sunDir), 0.0);
     float sky = 0.5 + 0.5 * n.y;

@@ -21,9 +21,10 @@ struct DrawData {
     mat4 mvp;
     mat4 normalMatrix;
     vec4 tint;
+    vec2 uvScale;
     VertexBuffer vertexBuffer;
     uint textureIndex;
-    uint pad;
+    float alphaCutoff;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {
@@ -38,6 +39,7 @@ layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec2 vUv;
 layout(location = 2) out vec4 vColor;
 layout(location = 3) flat out uint vTexture;
+layout(location = 4) flat out float vAlphaCutoff;
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
@@ -45,7 +47,8 @@ void main() {
 
     gl_Position = draw.mvp * vec4(v.position, 1.0);
     vNormal = mat3(draw.normalMatrix) * v.normal;
-    vUv = v.uv;
+    vUv = v.uv * draw.uvScale;
     vColor = v.color * draw.tint;
     vTexture = draw.textureIndex;
+    vAlphaCutoff = draw.alphaCutoff;
 }

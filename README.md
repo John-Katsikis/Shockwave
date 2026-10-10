@@ -26,6 +26,7 @@ no royalties. Linux first, with Windows and macOS (through MoltenVK) as later po
 ## Stack
 
 - **C++20 + CMake**
+- **Jolt Physics 5.6.0** for rigid bodies, triggers and character controllers
 - **SDL3**: windows, input, audio and timing on every platform
 - **Vulkan 1.3**, loaded at runtime by **volk**; setup through **vk-bootstrap**
 - **VMA** for GPU memory, **GLM** for math
@@ -37,7 +38,7 @@ no royalties. Linux first, with Windows and macOS (through MoltenVK) as later po
 ```
 Shockwave/
   CMakeLists.txt        top-level build; fetches dependencies
-  assets/               source files the editor imports (images so far), watched for changes
+  assets/               source files the editor imports (images and Assimp models), watched for changes
   cmake/                build helpers (shader compilation, Dear ImGui)
   engine/               the engine, built as a static library (shockwave)
     include/shockwave/    public API games include (no Vulkan types in here)
@@ -137,41 +138,68 @@ debug overlay, `--frames 300` quits after 300 frames.
 ### Editor
 
 ```
-./build/bin/editor                       # opens scenes/main.swscene
-./build/bin/editor path/to/level.swscene
+./build/bin/editor                       # from a project folder: opens its shockwave.swproject
+./build/bin/editor path/to/project       # a project folder or .swproject file
+./build/bin/editor path/to/level.swscene # a scene inside a project
 ```
 
-A docked layout around a live viewport: Hierarchy (entities as a tree), Inspector (every
-component on the selected entity, plus Add component), Assets (meshes and textures),
-Renderer (frame time graph, render scale, vsync, camera, the system schedule) and Log.
+With no project to open, the editor starts on the project hub: recent projects, Create
+project (writes `shockwave.swproject`, `assets/`, `scenes/`, a `.gitignore` and a starter
+scene) and Open the sample project.
 
-Drag an entity onto another in the Hierarchy to attach it; drop it below the list to
-detach it. It stays where it is either way. Deleting or duplicating an entity takes
-everything under it along.
+The editor is a docked workspace around a live viewport:
 
-The Assets panel shows every mesh and texture. Images saved into `assets/` (Open folder
-opens it) are imported straight away, and saving one again in any paint program updates
-it in the viewport. Drag a mesh onto the viewport to place it on the ground, or a texture
-onto an object to apply it. Both also drop onto the Inspector's fields.
-Panels can be dragged, docked and tabbed anywhere; View > Reset layout restores the default.
-The layout is remembered in `~/.local/share/Shockwave/Shockwave Editor/`.
+- **Command bar**: the open scene with Save, Undo and Redo on the left, Play, Pause and
+  Stop in the center, and the current mode (edit, simulation running, paused) on the right.
+- **Viewport toolbar**: Move, Rotate, Scale, World/Local and Snap (right-click for step
+  sizes) on the left; Grid, Game/Editor camera and View options (fov, fly speed, render
+  scale, overlays) on the right. Toolbars sit above the scene, never on top of it.
+- **Hierarchy**: search, entities as a tree with their kind on the right, multi-select,
+  rename in place, drag to attach and detach, Ctrl+G to group.
+- **Inspector**: name and + Component at the top (searchable and grouped by Core,
+  Rendering, Physics, Motion and Gameplay), then each component as a property grid.
+  Reset and Remove live in each component's "..." menu. Physics diagnostics and imported
+  materials show under their components.
+- **Content**: the project's `assets/` and `scenes/` folders plus the engine's built-in
+  meshes and textures. Search, import, new folder, drag meshes and models into the
+  viewport, drop textures on objects. Files saved from other programs reload straight away.
+- **Console** with info, warning and error filters, and a status bar with the scene's
+  save state, selection count, entity count and frame time.
+- Window > Stats (frame graph, system schedule, Jolt physics counters), Edit >
+  Preferences and Project > Project settings.
+
+Every scene should have an entity with a **Camera** component. Play looks through the
+primary camera (F8 switches back to the editor camera), and the player uses the same
+camera, so what you frame in the editor is what ships. Play runs the project's game
+module and Jolt physics on the scene; Stop restores it exactly, so nothing done while
+playing sticks (the colored frame around the viewport is the reminder). Play is disabled
+when the project's `game_module` isn't the one compiled into the editor.
+
+What gets saved where:
+
+- Scenes (`.swscene`) and the manifest are plain text and belong in git.
+- Per-user state (the open scene, the editor camera per scene, autosaves) goes in the
+  project's `.shockwave/` folder, which the generated `.gitignore` excludes. Unsaved
+  changes are autosaved there; reopening offers to recover them.
+- Preferences (theme, autosave interval, camera speed, grid) go in
+  `$XDG_CONFIG_HOME/shockwave/editor.swprefs` (usually `~/.config`), shared by all projects.
+- The dock layout goes in `~/.local/share/Shockwave/Shockwave Editor/`; Window > Reset
+  layout restores the default.
 
 Editor controls (Help > Controls, or F1, lists them too):
 
 - Hold the right mouse button in the viewport to fly: mouse to look, WASD to move,
   E/Q up and down, Shift faster, mouse wheel changes speed
 - Mouse wheel dollies, middle mouse drag pans
-- Left click selects; W / E / R switch the gizmo to move / rotate / scale; T toggles
-  world or local axes; hold Ctrl while dragging to snap
-- F (or double-click in the hierarchy) focuses the selection; Ctrl+D duplicates, Del deletes
-- Drag in the Hierarchy to attach and detach; drag from Assets to place meshes and apply
-  textures
+- Left click selects; Ctrl toggles, Shift adds; Shift+click in the Hierarchy selects a range
+- W / E / R switch the gizmo to move / rotate / scale; T toggles world or local axes;
+  hold Ctrl while dragging to flip snapping
+- F (or double-click in the hierarchy) focuses the selection; F2 renames; G toggles the
+  grid; F8 switches between the scene camera and the editor camera
+- Ctrl+D duplicates, Del deletes, Ctrl+G groups, Ctrl+A / Esc select all / none,
+  Ctrl+Shift+F moves the selection to the view
 - Ctrl+Z / Ctrl+Y undo and redo; Ctrl+N / Ctrl+O / Ctrl+S new, open, save
-- Ctrl+P plays and stops; Ctrl+Shift+P pauses
-
-The scene being edited is the same World a game runs. Play copies it and runs the
-game's systems on it at the fixed tick rate; Stop puts the copy back, so nothing done
-while playing sticks (an orange frame around the viewport is the reminder).
+- Ctrl+P plays and stops; Ctrl+Shift+P pauses; Ctrl+, opens Preferences
 
 Scenes are plain text, one property per line, so they diff and merge cleanly in git.
 A parent is saved as the position of its entity in the file (`entity 6` is the seventh
@@ -241,3 +269,40 @@ for the cyan engineering-panel palette, or `themes/ember.swtheme` for orange.
 New ImGui widgets inherit the global style automatically. Shared action, toolbar, and
 property-grid helpers are available in `shockwave/Gui.h`. Contributors and AI agents
 should follow [the UI guide](docs/UI.md) when adding options.
+
+### Game projects and player
+
+`shockwave.swproject` defines the startup scene, project assets, simulation settings,
+and C++ gameplay module. The editor and standalone player share the same compiled
+gameplay code:
+
+```
+./build/bin/editor --project shockwave.swproject --play
+./build/bin/player --project shockwave.swproject
+```
+
+The sample module adds a ColorPulse behavior to the Crate during Play. Stop restores
+the authored scene. Project paths work from any working directory when the manifest
+path is supplied. See [the project guide](docs/Projects.md) for the manifest format,
+your own game module, lifecycle hooks, and current runtime limitations.
+
+### Imported models and materials
+
+Drop glTF/GLB, FBX, OBJ and other Assimp models into the project assets folder,
+then place them from **Assets → Models**. Multipart meshes, source materials,
+embedded/external textures and dependency reloads are shared by editor and player.
+Modern `.blend` import uses an optional Blender executable to convert to GLB first.
+See [Assets](docs/Assets.md) for setup, supported rendering features and limitations.
+
+### Physics
+
+Editor Play and the standalone player share Jolt rigid bodies, collision shapes,
+triggers, raycasts, and an upright character controller at the project fixed tick.
+Components are editable and saved in scenes; Stop restores the authored state.
+
+```sh
+./build/bin/editor scenes/physics.swscene --play
+```
+
+See [Physics](docs/Physics.md) for component setup, gameplay APIs, collision masks,
+threading rules, and the supported shape and parenting constraints.

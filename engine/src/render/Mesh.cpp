@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace shockwave {
 
@@ -76,6 +77,45 @@ MeshData makeSphere(float radius, uint32_t segments, uint32_t rings) {
         }
     }
     return mesh;
+}
+
+Bounds computeBounds(const MeshData& mesh) {
+    if (mesh.vertices.empty()) return {};
+    Bounds b{mesh.vertices[0].position, mesh.vertices[0].position};
+    for (const Vertex& v : mesh.vertices) {
+        b.min = glm::min(b.min, v.position);
+        b.max = glm::max(b.max, v.position);
+    }
+    return b;
+}
+
+bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t) {
+    // Moller-Trumbore, two-sided, keeping the nearest hit in front of the origin.
+    bool hit = false;
+    float best = std::numeric_limits<float>::max();
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        const glm::vec3& a = mesh.vertices[mesh.indices[i]].position;
+        const glm::vec3& b = mesh.vertices[mesh.indices[i + 1]].position;
+        const glm::vec3& c = mesh.vertices[mesh.indices[i + 2]].position;
+        const glm::vec3 e1 = b - a, e2 = c - a;
+        const glm::vec3 p = glm::cross(direction, e2);
+        const float det = glm::dot(e1, p);
+        if (std::abs(det) < 1e-12f) continue;
+        const float inv = 1.0f / det;
+        const glm::vec3 s = origin - a;
+        const float u = glm::dot(s, p) * inv;
+        if (u < 0.0f || u > 1.0f) continue;
+        const glm::vec3 q = glm::cross(s, e1);
+        const float v = glm::dot(direction, q) * inv;
+        if (v < 0.0f || u + v > 1.0f) continue;
+        const float d = glm::dot(e2, q) * inv;
+        if (d > 0.0f && d < best) {
+            best = d;
+            hit = true;
+        }
+    }
+    if (hit) t = best;
+    return hit;
 }
 
 } // namespace shockwave

@@ -1,0 +1,222 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Shockwave self-authored fixtures"
+  },
+  "buffers": [
+    {
+      "uri": "parts.bin",
+      "byteLength": 68
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 36,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 36,
+      "byteLength": 6,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 44,
+      "byteLength": 24,
+      "target": 34962
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC2"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Paint red",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          1,
+          0.1,
+          0.1,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.8,
+        "baseColorTexture": {
+          "index": 0
+        }
+      }
+    },
+    {
+      "name": "Cutout blue",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.1,
+          0.3,
+          1,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.8
+      },
+      "alphaMode": "MASK",
+      "alphaCutoff": 0.4,
+      "doubleSided": true
+    },
+    {
+      "name": "Glass green",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.1,
+          1,
+          0.3,
+          0.4
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.8
+      },
+      "alphaMode": "BLEND",
+      "doubleSided": true
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Part0",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "TEXCOORD_0": 2
+          },
+          "indices": 1,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "Part1",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "TEXCOORD_0": 2
+          },
+          "indices": 1,
+          "material": 1
+        }
+      ]
+    },
+    {
+      "name": "Part2",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "TEXCOORD_0": 2
+          },
+          "indices": 1,
+          "material": 2
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Assembly",
+      "translation": [
+        2,
+        0,
+        0
+      ],
+      "children": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "Instance0",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Instance1",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "Instance2",
+      "mesh": 2,
+      "translation": [
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Instance3",
+      "mesh": 0,
+      "translation": [
+        0,
+        2,
+        0
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "scene": 0,
+  "images": [
+    {
+      "uri": "checker.png"
+    }
+  ],
+  "textures": [
+    {
+      "source": 0
+    }
+  ]
+}

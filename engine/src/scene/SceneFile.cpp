@@ -1,3 +1,4 @@
+#include <cstring>
 #include <shockwave/Components.h>
 #include <shockwave/SceneFile.h>
 
@@ -48,8 +49,12 @@ void writeField(std::ostream& out, const Field& f, const void* data, const Asset
                 const std::vector<int>& entityOrdinals) {
     switch (f.type) {
     case FieldType::Bool: out << ' ' << (*static_cast<const bool*>(data) ? 1 : 0); break;
+    case FieldType::Enum: {
+        int value; std::memcpy(&value,data,sizeof(value)); out << ' ' << value; break;
+    }
     case FieldType::Int: out << ' ' << *static_cast<const int*>(data); break;
     case FieldType::Float: writeFloats(out, static_cast<const float*>(data), 1); break;
+    case FieldType::Vec2: writeFloats(out, static_cast<const float*>(data), 2); break;
     case FieldType::Vec3: writeFloats(out, static_cast<const float*>(data), 3); break;
     case FieldType::Color: writeFloats(out, static_cast<const float*>(data), 4); break;
     case FieldType::Rotation: {
@@ -61,6 +66,11 @@ void writeField(std::ostream& out, const Field& f, const void* data, const Asset
     case FieldType::Mesh: {
         const std::string name = assets.meshName(*static_cast<const MeshHandle*>(data));
         writeName(out, name.empty() ? "none" : name);
+        break;
+    }
+    case FieldType::Model: {
+        const auto name=assets.modelName(*static_cast<const ModelHandle*>(data));
+        writeName(out,name.empty() ? "none" : name);
         break;
     }
     case FieldType::Texture: {
@@ -85,8 +95,14 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         *static_cast<bool*>(data) = v != 0;
         return true;
     }
+    case FieldType::Enum: {
+        int value;
+        if (!(in >> value) || (!f.options.empty() && (value<0 || size_t(value)>=f.options.size()))) return false;
+        std::memcpy(data,&value,sizeof(value)); return true;
+    }
     case FieldType::Int: return static_cast<bool>(in >> *static_cast<int*>(data));
     case FieldType::Float: return readFloats(in, static_cast<float*>(data), 1);
+    case FieldType::Vec2: return readFloats(in, static_cast<float*>(data), 2);
     case FieldType::Vec3: return readFloats(in, static_cast<float*>(data), 3);
     case FieldType::Color: {
         float* c = static_cast<float*>(data);
@@ -107,6 +123,14 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         const MeshHandle mesh = assets.findMesh(name);
         if (!mesh.valid() && name != "none") warnings.push_back("unknown mesh '" + name + "'");
         *static_cast<MeshHandle*>(data) = mesh;
+        return true;
+    }
+    case FieldType::Model: {
+        std::string name;
+        if (!(in >> std::quoted(name))) return false;
+        const auto handle=assets.findModel(name);
+        if (!handle.valid() && name!="none") warnings.push_back("unknown model '"+name+"'");
+        *static_cast<ModelHandle*>(data)=handle;
         return true;
     }
     case FieldType::Texture: {

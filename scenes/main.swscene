@@ -134,3 +134,14 @@ entity "Upper crate"
     tint 1 1 1 1
     visible 1
 end
+
+entity "Main Camera"
+  Transform
+    position 4 2.8 5.5
+    rotation -19 36 0
+    scale 1 1 1
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end

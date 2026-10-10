@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
 
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -106,7 +107,17 @@ void Engine::loadGuiTheme(bool reload) {
 }
 
 // Checks the theme file twice a second and reapplies it when it changes.
+void Engine::setGuiTheme(const std::string& path) {
+    m_config.guiTheme = path;
+    m_themeChangeRequested = true;
+}
+
 void Engine::pollGuiTheme(double frameDt) {
+    if (m_themeChangeRequested) {
+        m_themeChangeRequested = false;
+        loadGuiTheme(false);
+        return;
+    }
     if (m_themePath.empty()) return;
     m_themePollTimer += frameDt;
     if (m_themePollTimer < 0.5) return;
@@ -114,6 +125,10 @@ void Engine::pollGuiTheme(double frameDt) {
     std::error_code ec;
     const auto time = std::filesystem::last_write_time(m_themePath, ec);
     if (!ec && time != m_themeTime) loadGuiTheme(true);
+}
+
+void Engine::setTickRate(double ticksPerSecond) {
+    if (std::isfinite(ticksPerSecond) && ticksPerSecond >= 1.0) m_config.tickRate = ticksPerSecond;
 }
 
 void Engine::shutdownGui() {
@@ -124,7 +139,6 @@ void Engine::shutdownGui() {
 
 void Engine::run(Game& game) {
     // Fixed-timestep loop: simulation ticks at tickRate, rendering runs as fast as vsync allows.
-    const double dt = 1.0 / m_config.tickRate;
     const double maxFrameTime = 0.25;   // avoid the "spiral of death" after a long stall
     const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
 
@@ -166,6 +180,8 @@ void Engine::run(Game& game) {
         if (frameTime > maxFrameTime) frameTime = maxFrameTime;
         accumulator += frameTime;
 
+        // Read every frame: an editor switching projects can change the tick rate.
+        const double dt = 1.0 / m_config.tickRate;
         while (accumulator >= dt) {
             game.onUpdate(dt);
             accumulator -= dt;

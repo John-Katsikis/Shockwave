@@ -1,12 +1,14 @@
 #pragma once
 
 #include <shockwave/Assets.h>
+#include <shockwave/BuiltinAssets.h>
 #include <shockwave/Camera.h>
 #include <shockwave/Components.h>
 #include <shockwave/Hierarchy.h>
 #include <shockwave/Input.h>
 #include <shockwave/Jobs.h>
 #include <shockwave/Mesh.h>
+#include <shockwave/Project.h>
 #include <shockwave/Renderer.h>
 #include <shockwave/SceneFile.h>
 #include <shockwave/Schedule.h>
@@ -82,8 +84,15 @@ public:
     Input& input() { return *m_input; }
     Assets& assets() { return *m_assets; }
 
+    // Switches the UI theme (a .swtheme path, found like EngineConfig::guiTheme) from the
+    // next frame on. Main thread.
+    void setGuiTheme(const std::string& path);
+    const std::string& guiThemePath() const { return m_themePath; }   // empty: built-in theme
+
     double fps() const { return m_fps; }
     double tickRate() const { return m_config.tickRate; }
+    // Changes the simulation rate from the next frame on. Main thread.
+    void setTickRate(double ticksPerSecond);
     bool guiEnabled() const { return m_config.gui; }
 
 private:
@@ -105,6 +114,7 @@ private:
     std::string m_themePath;
     std::filesystem::file_time_type m_themeTime{};
     double m_themePollTimer = 0.0;
+    bool m_themeChangeRequested = false;
     float m_dpiScale = 1.0f;
     std::unordered_map<std::string, ImFont*> m_fonts;
 };

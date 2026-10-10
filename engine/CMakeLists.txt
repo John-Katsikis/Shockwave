@@ -1,8 +1,13 @@
 add_library(shockwave STATIC
     src/core/AssetFolder.cpp
     src/core/Assets.cpp
+    src/core/BuiltinAssets.cpp
+    src/core/Model.cpp
     src/core/Image.cpp
     src/core/Jobs.cpp
+    src/project/Project.cpp
+    src/project/Gameplay.cpp
+    src/physics/Physics.cpp
     src/input/Input.cpp
     src/render/Camera.cpp
     src/render/Mesh.cpp
@@ -31,7 +36,7 @@ target_include_directories(shockwave SYSTEM PRIVATE ${stb_image_SOURCE_DIR})
 find_package(Threads REQUIRED)
 target_link_libraries(shockwave
     PUBLIC SDL3::SDL3 glm::glm Threads::Threads imgui
-    PRIVATE Vulkan::Headers volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator
+    PRIVATE Jolt assimp::assimp Vulkan::Headers volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator
 )
 # Vulkan clip space has depth 0..1; GLM must produce matching projection matrices.
 target_compile_definitions(shockwave PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
@@ -53,4 +58,6 @@ endif()
 shockwave_compile_shaders(shockwave
     shaders/mesh.vert
     shaders/mesh.frag
+    shaders/grid.vert
+    shaders/grid.frag
 )

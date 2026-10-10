@@ -1,49 +1,87 @@
 #include "Editor.h"
 
+#include <charconv>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <exception>
+#include <filesystem>
+#include <stdexcept>
 
 // Shockwave Editor.
-//   editor [scene.swscene] [--uncapped] [--play] [--theme file.swtheme] [--assets folder] [--frames N] [--select N]
-// With no scene it opens scenes/main.swscene, creating it from the sample scene on first run.
-// Images in assets/ (or --assets) are imported into the asset browser and watched for changes.
+//   editor [project folder | project.swproject | scene.swscene] [options]
+//
+// With nothing given it opens the project in the working folder (shockwave.swproject),
+// else the last project, else the project hub. A scene opens inside its project.
+//
+// Options:
+//   --project path         the project to open (same as giving it first)
+//   --assets folder        import this folder instead of the project's assets
+//   --theme file.swtheme   UI theme for this run (Preferences sets the usual one)
+//   --uncapped             vsync off for this run
+//   --prefs file           preferences file to use instead of the user's (tests)
+//   --play                 press Play once the scene is open (tests)
+//   --select N             select the Nth entity of the scene (screenshots)
+//   --frames N             quit after N frames (smoke tests)
 int main(int argc, char** argv) {
-    shockwave::EngineConfig config;
-    config.window.title = "Shockwave Editor";
-    config.window.width = 1600;
-    config.window.height = 900;
-    config.window.vsync = true;   // an editor idles a lot; toggle in the Renderer panel
-    config.gui = true;
-    config.quitOnEscape = false;
-    config.showFpsInTitle = false;
-
-    editor::EditorOptions options;
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--uncapped") == 0) {
-            config.window.vsync = false;
-        } else if (i + 1 < argc && std::strcmp(argv[i], "--theme") == 0) {
-            config.guiTheme = argv[++i];
-        } else if (i + 1 < argc && std::strcmp(argv[i], "--assets") == 0) {
-            options.assetFolder = argv[++i];
-        } else if (std::strcmp(argv[i], "--play") == 0) {
-            options.playOnStart = true;
-        } else if (i + 1 < argc && std::strcmp(argv[i], "--frames") == 0) {
-            config.maxFrames = std::atoi(argv[++i]);
-        } else if (i + 1 < argc && std::strcmp(argv[i], "--select") == 0) {
-            options.selectOnStart = std::atoi(argv[++i]);
-        } else if (argv[i][0] != '-') {
-            options.scenePath = argv[i];
-        }
-    }
-
     try {
+        shockwave::EngineConfig config;
+        config.window.title = "Shockwave Editor";
+        config.window.width = 1600;
+        config.window.height = 900;
+        config.gui = true;
+        config.quitOnEscape = false;
+        config.showFpsInTitle = false;
+
+        editor::EditorOptions options;
+        options.prefsPath = editor::defaultPreferencesPath();
+        options.gameModule = &shockwave::projectGameModule();
+        bool uncapped = false;
+        auto integer = [](const std::string& text, const char* flag, int minimum) {
+            int value = 0;
+            const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (error != std::errc{} || end != text.data() + text.size() || value < minimum)
+                throw std::runtime_error(std::string("Invalid value for ") + flag);
+            return value;
+        };
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg = argv[i];
+            auto value = [&]() -> std::string {
+                if (i + 1 >= argc) throw std::runtime_error("Missing value for " + arg);
+                return argv[++i];
+            };
+            if (arg == "--project") options.path = value();
+            else if (arg == "--assets") options.assetFolder = value();
+            else if (arg == "--theme") options.theme = value();
+            else if (arg == "--prefs") options.prefsPath = value();
+            else if (arg == "--frames") config.maxFrames = integer(value(), "--frames", 1);
+            else if (arg == "--select") options.selectOnStart = integer(value(), "--select", 0);
+            else if (arg == "--uncapped") uncapped = true;
+            else if (arg == "--play") options.playOnStart = true;
+            else if (arg == "--help") {
+                std::puts("editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
+                          "       [--theme file] [--uncapped] [--prefs file] [--play] [--select N] [--frames N]");
+                return 0;
+            } else if (!arg.empty() && arg[0] != '-') options.path = arg;
+            else throw std::runtime_error("Unknown option: " + arg);
+        }
+        std::error_code ec;
+        if (options.path.empty() && std::filesystem::is_regular_file("shockwave.swproject", ec)) {
+            options.path = "shockwave.swproject";
+        }
+
+        std::string error;
+        if (!editor::loadPreferences(options.prefsPath, options.prefs, error)) {
+            std::fprintf(stderr, "Editor: preferences not loaded (using defaults): %s\n", error.c_str());
+        }
+        if (!options.theme.empty()) config.guiTheme = options.theme;
+        else if (!options.prefs.theme.empty()) config.guiTheme = options.prefs.theme;
+        config.window.vsync = options.prefs.vsync && !uncapped;
+        if (uncapped) options.prefs.vsync = false;
+
         shockwave::Engine engine(config);
-        editor::Editor editor(options);
+        editor::Editor editor(std::move(options));
         engine.run(editor);
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "Fatal: %s\n", e.what());
+        std::fprintf(stderr, "Editor: %s\n", e.what());
         return 1;
     }
     return 0;

@@ -26,6 +26,16 @@ struct TextureHandle {
     uint32_t id = 0;   // 0 is the built-in white texture, so "no texture" just works
 };
 
+// A reference grid on the ground plane (y = 0), drawn into the scene with depth testing,
+// for editors and debug views. Lines fade out towards fadeDistance from the camera.
+struct GridSettings {
+    bool enabled = false;
+    float cellSize = 1.0f;       // units between minor lines
+    int majorEvery = 10;         // a stronger line every this many cells
+    float fadeDistance = 150.0f; // units
+    float opacity = 1.0f;
+};
+
 // Public face of the renderer. Vulkan stays behind this interface so games never
 // include Vulkan headers, which keeps a later Metal/MoltenVK port contained.
 //
@@ -33,6 +43,13 @@ struct TextureHandle {
 // any thread, including job system workers. Draws go into per-thread lists, so
 // recording them doesn't contend. setClearColor and setCamera belong to the thread running
 // Game::onRender, and setCamera must come before that frame's drawMesh calls.
+struct DrawMaterial {
+    float alphaCutoff = -1.0f; // negative: opaque/blended, otherwise alpha test
+    bool doubleSided = false;
+    bool blend = false;
+    glm::vec2 uvScale{1.0f};   // repeats the texture across the surface (MeshRenderer::tiling)
+};
+
 class Renderer {
 public:
     Renderer(Window& window, JobSystem& jobs, bool vsync);
@@ -44,6 +61,10 @@ public:
     // Resources live until the renderer shuts down.
     MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices);
     MeshHandle createMesh(const MeshData& mesh) { return createMesh(mesh.vertices, mesh.indices); }
+    // Main thread, between frames, after users have dropped these handles. Waits
+    // for GPU readers and recycles the slot. Used by transactional model reload.
+    void destroyMesh(MeshHandle mesh);
+    void destroyTexture(TextureHandle texture);
     // RGBA8 pixels, rows top to bottom. Mipmaps are generated on the GPU. Every texture
     // lives in one bindless table, so any draw can use any texture at no extra cost.
     TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
@@ -62,7 +83,9 @@ public:
     // projection: reverse-Z (see perspectiveReverseZ in Camera.h).
     void setCamera(const glm::mat4& view, const glm::mat4& projection);
     void drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
-                  const glm::vec4& tint = glm::vec4(1.0f));
+                  const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
+    // Kept until changed. Same thread as setCamera.
+    void setGrid(const GridSettings& grid);
 
     // Resolution independence: the scene renders into its own HDR target at
     // renderScale x window resolution, then is scaled to the window. 1.0 = native,

@@ -133,7 +133,7 @@ public:
 
     void onRender(shockwave::Renderer& renderer, double alpha) override {
         renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
-        shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha);
+        shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
     }
 
 private:

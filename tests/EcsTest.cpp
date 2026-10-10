@@ -242,7 +242,8 @@ void sceneFiles() {
     const Entity e = w.create();
     w.add<Name>(e, {"Hero \"one\""});
     w.add<Transform>(e, {{1, 2, 3}, fromEulerDegrees({0, 45, 0}), {1, 2, 1}});
-    w.add<MeshRenderer>(e, {MeshHandle{7}, TextureHandle{3}, {1, 0.5f, 0.25f, 1}, false});
+    w.add<MeshRenderer>(e, {.mesh = MeshHandle{7}, .texture = TextureHandle{3}, .tint = {1, 0.5f, 0.25f, 1},
+                            .tiling = {4, 2.5f}, .visible = false});
     w.add<Health>(e, {42.0f, 2, "boss"});
     w.add<Velocity>(e);   // not registered: not saved
     w.create();           // bare entity
@@ -264,6 +265,7 @@ void sceneFiles() {
     CHECK(near(eulerDegrees(loaded.get<Transform>(le)->rotation).y, 45.0f, 1e-3f));
     CHECK(loaded.get<MeshRenderer>(le)->mesh.id == 7 && loaded.get<MeshRenderer>(le)->texture.id == 3);
     CHECK(!loaded.get<MeshRenderer>(le)->visible);
+    CHECK(near(loaded.get<MeshRenderer>(le)->tiling.x, 4.0f) && near(loaded.get<MeshRenderer>(le)->tiling.y, 2.5f));
     CHECK(loaded.get<Health>(le)->lives == 2 && loaded.get<Health>(le)->tag == "boss");
     CHECK(!loaded.has<Velocity>(le));
     CHECK(near(loaded.get<Environment>(loaded.entityAt(0))->skyColor.g, 0.2f));
@@ -393,6 +395,33 @@ void sceneParents() {
 
 } // namespace
 
+// Cameras: which one a game looks through, and the matrices it gets.
+void cameras() {
+    World w;
+    CHECK(!primaryCamera(w).valid());
+    const Entity a = w.create();
+    w.add<Transform>(a);
+    w.add<Camera>(a, {.fov = 50.0f, .nearPlane = 0.1f, .primary = false});
+    CHECK(primaryCamera(w) == a);   // no primary one: the first camera
+    const Entity rig = w.create();
+    w.add<Transform>(rig, {{0, 0, 10}, fromEulerDegrees({0, 90, 0}), {3, 3, 3}});
+    const Entity b = w.create();
+    w.add<Transform>(b, {{0, 2, 0}});
+    w.add<Camera>(b);
+    w.add<Parent>(b, {rig});
+    CHECK(primaryCamera(w) == b);
+
+    glm::mat4 view, projection;
+    CHECK(cameraMatrices(w, b, 16.0f / 9.0f, view, projection));
+    // Scale on the rig moves the camera (2 * 3 = 6 up) but doesn't scale the view.
+    const glm::mat4 inv = glm::inverse(view);
+    CHECK(near(glm::vec3(inv[3]), {0, 6, 10}, 1e-3f));
+    CHECK(near(glm::length(glm::vec3(view[0])), 1.0f, 1e-4f));
+    // Turned 90 degrees about Y, so it looks down -X.
+    CHECK(near(-glm::vec3(inv[2]), {-1, 0, 0}, 1e-4f));
+    CHECK(!cameraMatrices(w, rig, 1.0f, view, projection));
+}
+
 int main() {
     entities();
     recycling();
@@ -407,6 +436,7 @@ int main() {
     sceneFiles();
     hierarchy();
     sceneParents();
+    cameras();
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);
         return 1;

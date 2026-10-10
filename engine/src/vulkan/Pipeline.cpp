@@ -58,7 +58,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     raster.cullMode = desc.cullMode;
     // Counter-clockwise front faces, as in OpenGL and most content tools. This holds
     // because the renderer flips Y with a negative viewport height.
-    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.frontFace = desc.frontFace;
     raster.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
@@ -69,13 +69,21 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     VkPipelineDepthStencilStateCreateInfo depth{};
     depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth.depthTestEnable = desc.depthFormat != VK_FORMAT_UNDEFINED;
-    depth.depthWriteEnable = desc.depthFormat != VK_FORMAT_UNDEFINED;
+    // Blended surfaces test depth but never write it, so what's behind still shows.
+    depth.depthWriteEnable = desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend;
     depth.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
+    blendAttachment.blendEnable = desc.alphaBlend;
+    blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     blend.attachmentCount = 1;

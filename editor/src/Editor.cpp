@@ -1,26 +1,25 @@
+// The editor's core: projects, scenes, selection, editing operations, undo and play
+// mode. The panels that call into this live in the *Panel.cpp files and Workspace.cpp.
 #include "Editor.h"
 
+#include <shockwave/BuiltinAssets.h>
 #include <shockwave/Gui.h>
+#include <shockwave/Physics.h>
 
 #include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
-#include <imgui_internal.h>   // DockBuilder, for the default layout
-#include <imgui_stdlib.h>     // InputText with std::string
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
-#include <filesystem>
-#include <limits>
+#include <fstream>
+#include <sstream>
 
 namespace editor {
 
+namespace fs = std::filesystem;
 namespace gui = shockwave::gui;
-using shockwave::ComponentInfo;
 using shockwave::Entity;
-using shockwave::Field;
-using shockwave::FieldType;
 using shockwave::kNullEntity;
 using shockwave::MeshRenderer;
 using shockwave::Name;
@@ -29,213 +28,68 @@ using shockwave::Transform;
 
 namespace {
 
-// ---- Built-in textures, generated until asset import lands ----------------------------
-
-std::vector<uint8_t> makeChecker(uint32_t size, uint32_t cells, glm::vec3 a, glm::vec3 b) {
-    std::vector<uint8_t> pixels(size_t(size) * size * 4);
-    for (uint32_t y = 0; y < size; ++y) {
-        for (uint32_t x = 0; x < size; ++x) {
-            const bool odd = ((x * cells / size) + (y * cells / size)) % 2;
-            const glm::vec3 c = odd ? a : b;
-            uint8_t* p = &pixels[(size_t(y) * size + x) * 4];
-            p[0] = uint8_t(c.r * 255.0f);
-            p[1] = uint8_t(c.g * 255.0f);
-            p[2] = uint8_t(c.b * 255.0f);
-            p[3] = 255;
-        }
-    }
-    return pixels;
-}
-
-std::vector<uint8_t> makePanel(uint32_t size) {
-    std::vector<uint8_t> pixels(size_t(size) * size * 4);
-    for (uint32_t y = 0; y < size; ++y) {
-        for (uint32_t x = 0; x < size; ++x) {
-            const float u = (x + 0.5f) / size, v = (y + 0.5f) / size;
-            const float edge = std::min(std::min(u, 1.0f - u), std::min(v, 1.0f - v));
-            const float border = edge < 0.06f ? 0.35f : 1.0f;
-            const float rivet = (std::abs(u - 0.15f) < 0.03f || std::abs(u - 0.85f) < 0.03f) &&
-                                        (std::abs(v - 0.15f) < 0.03f || std::abs(v - 0.85f) < 0.03f)
-                                    ? 0.5f
-                                    : 1.0f;
-            const float shade = 0.85f + 0.15f * std::sin(u * 40.0f) * std::sin(v * 3.0f);
-            const uint8_t g = uint8_t(255.0f * border * rivet * shade);
-            uint8_t* p = &pixels[(size_t(y) * size + x) * 4];
-            p[0] = p[1] = p[2] = g;
-            p[3] = 255;
-        }
-    }
-    return pixels;
-}
-
-// One-unit tile with a bright edge and faint quarter lines: a measuring grid when the
-// floor repeats it once per unit.
-std::vector<uint8_t> makeGrid(uint32_t size) {
-    std::vector<uint8_t> pixels(size_t(size) * size * 4);
-    const uint32_t quarter = size / 4;
-    for (uint32_t y = 0; y < size; ++y) {
-        for (uint32_t x = 0; x < size; ++x) {
-            float g = 0.34f;
-            if (x % quarter < 1 || y % quarter < 1) g = 0.40f;
-            if (x < 2 || y < 2 || x >= size - 1 || y >= size - 1) g = 0.55f;
-            uint8_t* p = &pixels[(size_t(y) * size + x) * 4];
-            p[0] = uint8_t(g * 255.0f);
-            p[1] = uint8_t(g * 1.02f * 255.0f);
-            p[2] = uint8_t(g * 1.06f * 255.0f);
-            p[3] = 255;
-        }
-    }
-    return pixels;
-}
-
-// ---- Ray casts in an entity's local space ----------------------------------------------
-
-bool rayBox(const glm::vec3& o, const glm::vec3& d, const glm::vec3& lo, const glm::vec3& hi, float& t) {
-    float tmin = -std::numeric_limits<float>::max();
-    float tmax = std::numeric_limits<float>::max();
-    for (int i = 0; i < 3; ++i) {
-        if (std::abs(d[i]) < 1e-8f) {
-            if (o[i] < lo[i] || o[i] > hi[i]) return false;
-            continue;
-        }
-        float t1 = (lo[i] - o[i]) / d[i], t2 = (hi[i] - o[i]) / d[i];
-        if (t1 > t2) std::swap(t1, t2);
-        tmin = std::max(tmin, t1);
-        tmax = std::min(tmax, t2);
-    }
-    if (tmax < std::max(tmin, 0.0f)) return false;
-    t = tmin > 0.0f ? tmin : tmax;
-    return true;
-}
-
-bool raySphere(const glm::vec3& o, const glm::vec3& d, float radius, float& t) {
-    const float a = glm::dot(d, d);
-    const float b = 2.0f * glm::dot(o, d);
-    const float c = glm::dot(o, o) - radius * radius;
-    const float disc = b * b - 4.0f * a * c;
-    if (disc < 0.0f) return false;
-    const float s = std::sqrt(disc);
-    const float t0 = (-b - s) / (2.0f * a), t1 = (-b + s) / (2.0f * a);
-    if (t1 < 0.0f) return false;
-    t = t0 > 0.0f ? t0 : t1;
-    return true;
-}
-
-std::string fileName(const std::string& path) {
-    return std::filesystem::path(path).filename().string();
-}
-
 const SDL_DialogFileFilter kSceneFilter[] = {{"Shockwave scenes", "swscene"}};
-
-// "sky_color" -> "Sky color"
-std::string prettyName(const std::string& name) {
-    std::string s = name;
-    for (char& c : s) {
-        if (c == '_') c = ' ';
-    }
-    if (!s.empty()) s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    return s;
-}
+const SDL_DialogFileFilter kProjectFilter[] = {{"Shockwave projects", "swproject"}};
+const SDL_DialogFileFilter kImportFilter[] = {{"Images and models", "png;jpg;jpeg;tga;bmp;psd;gif;hdr;pic;pnm;glb;gltf;fbx;obj;dae;stl;ply;blend"},
+                                              {"All files", "*"}};
 
 } // namespace
 
-Editor::Editor(EditorOptions options) : m_options(std::move(options)) {}
+Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m_options.prefs) {}
 
-// ---- Startup ------------------------------------------------------------------------------
+// ---- Startup and shutdown -----------------------------------------------------------------
 
 void Editor::onStart() {
-    ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;   // dragging in the viewport is for the scene
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigWindowsMoveFromTitleBarOnly = true;   // dragging in the viewport is for the scene
+    // The dock layout is per user, next to the preferences, not in whatever folder the
+    // editor was started from.
+    std::error_code ec;
+    fs::create_directories(m_options.prefsPath.parent_path(), ec);
+    m_iniPath = (m_options.prefsPath.parent_path() / "editor-layout.ini").string();
+    io.IniFilename = m_iniPath.c_str();
     // ImGuizmo's colors are sRGB like ImGui's; convert them for the sRGB swapchain too.
     for (ImVec4& c : ImGuizmo::GetStyle().Colors) c = gui::color(c.x, c.y, c.z, c.w);
-    createAssets();
-    // Import the project's assets before the scene, so the scene finds them by name.
+
+    // Game types first, so scenes and the inspector know them; then the starter assets
+    // the editor and the player share.
+    const shockwave::GameModule* module = m_options.gameModule;
+    if (module && module->registerTypes) module->registerTypes();
+    shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
+    if (module && module->createAssets) module->createAssets(engine());
     m_assetFolder = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
-    logAssetChanges(m_assetFolder->open(m_options.assetFolder));
-    shockwave::addBuiltinSystems(m_schedule);
+    const auto factory = module ? module->create : shockwave::GameplayFactory([] { return std::make_unique<shockwave::Gameplay>(); });
+    m_session = std::make_unique<shockwave::GameSession>(m_world, engine().jobs(), factory, &engine());
     shockwave::FlyCamera::bindDefaultControls(engine().input());
+    applyViewPreferences();
 
-    if (std::filesystem::exists(m_options.scenePath)) {
-        if (!openScene(m_options.scenePath)) newScene();
-    } else {
-        // First run: start from the sample scene and write it out, so there's a file to edit.
-        makeDefaultScene(m_world, engine().assets());
-        m_scenePath = m_options.scenePath;
-        const EditorCamera camera;
-        m_camera.position = camera.position;
-        m_camera.yaw = camera.yaw;
-        m_camera.pitch = camera.pitch;
-        if (saveScene()) log("Created " + m_scenePath + " from the sample scene");
+    if (const char* home = std::getenv("HOME")) m_newProjectLocation = (fs::path(home) / "Shockwave Projects").string();
+
+    if (!m_options.path.empty()) {
+        const fs::path path = m_options.path;
+        if (const auto projectFile = shockwave::findProjectFile(path)) {
+            openProject(*projectFile, path.extension() == ".swscene" ? path : fs::path());
+        } else {
+            error("No Shockwave project at " + path.string() + ". Create one in the project hub.");
+        }
+    } else if (m_prefs.reopenLastProject && !m_prefs.recentProjects.empty() &&
+               fs::exists(m_prefs.recentProjects.front(), ec)) {
+        openProject(m_prefs.recentProjects.front());
     }
-    if (m_options.selectOnStart >= 0) select(m_world.entityAt(static_cast<size_t>(m_options.selectOnStart)));
-    if (m_options.playOnStart) play();
-    log("Hold the right mouse button in the viewport to fly; Help > Controls lists the shortcuts");
-}
 
-// Built-in meshes and textures, registered by name in the engine's Assets so scene files
-// and the inspector can refer to them.
-void Editor::createAssets() {
-    shockwave::Renderer& renderer = engine().renderer();
-    shockwave::Assets& assets = engine().assets();
-    m_meshes = {
-        {"cube", renderer.createMesh(shockwave::makeCube(1.0f)), Shape::Box},
-        {"sphere", renderer.createMesh(shockwave::makeSphere(0.5f)), Shape::Sphere},
-        {"plane", renderer.createMesh(shockwave::makePlane(1.0f, 1.0f)), Shape::Plane},
-        // A plane that tiles its texture 40 times: one tile per unit at the default 40 x 40.
-        {"floor", renderer.createMesh(shockwave::makePlane(1.0f, 40.0f)), Shape::Plane},
-    };
-    for (const MeshAsset& m : m_meshes) assets.addMesh(m.name, m.handle);
-    const auto checker = makeChecker(256, 8, {0.80f, 0.80f, 0.82f}, {0.55f, 0.56f, 0.6f});
-    const auto panel = makePanel(256);
-    const auto grid = makeGrid(256);
-    assets.addTexture("checker", renderer.createTexture(256, 256, checker));
-    assets.addTexture("panel", renderer.createTexture(256, 256, panel));
-    assets.addTexture("grid", renderer.createTexture(256, 256, grid));
-}
-
-const Editor::MeshAsset* Editor::findMesh(shockwave::MeshHandle handle) const {
-    for (const MeshAsset& m : m_meshes) {
-        if (m.handle.id == handle.id) return &m;
+    if (m_hasProject && m_options.selectOnStart >= 0) {
+        select(m_world.entityAt(static_cast<size_t>(m_options.selectOnStart)));
     }
-    return nullptr;
+    if (m_hasProject && m_options.playOnStart) play();
 }
 
-// ---- Per frame ----------------------------------------------------------------------------
-
-void Editor::onGui() {
-    ImGuizmo::BeginFrame();
-    m_frameTimes[m_frameTimeIndex] = ImGui::GetIO().DeltaTime * 1000.0f;
-    m_frameTimeIndex = (m_frameTimeIndex + 1) % m_frameTimes.size();
-
-    handleDialogResults();
-    logAssetChanges(m_assetFolder->poll(ImGui::GetIO().DeltaTime));
-    handleShortcuts();
-    drawMenuBar();
-    drawCommandBar();
-    drawDockspace();
-    drawViewport();
-    if (m_showHierarchy) drawHierarchy();
-    if (m_showInspector) drawInspector();
-    if (m_showRenderer) drawRendererPanel();
-    if (m_showLog) drawLog();
-    if (m_showAssets) drawAssetBrowser();
-    if (m_showControls) drawControlsWindow();
-    if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
-    drawUnsavedChangesModal();
-    updateTitle();
-}
-
-// Play mode runs the game's systems at the fixed tick rate, like a shipped game would.
-void Editor::onUpdate(double dt) {
-    if (m_playState != PlayState::Playing) return;
-    shockwave::storePreviousTransforms(m_world, engine().jobs());
-    m_schedule.run(m_world, engine().jobs(), dt);
-}
-
-void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
-    renderer.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});   // a scene without an Environment
-    renderer.setCamera(m_camera.view(), projection(renderer.aspectRatio()));
-    // While editing (or paused) nothing moves on its own, so draw exactly what's there.
-    shockwave::renderWorld(m_world, renderer, engine().jobs(), m_playState == PlayState::Playing ? alpha : 1.0);
+void Editor::onShutdown() {
+    stop();
+    if (m_hasProject) {
+        rememberCamera();
+        saveEditorState();
+    }
+    savePreferences();
 }
 
 bool Editor::onQuitRequested() {
@@ -244,1048 +98,384 @@ bool Editor::onQuitRequested() {
     return false;
 }
 
-// ---- Layout -------------------------------------------------------------------------------
-
-void Editor::drawMenuBar() {
-    if (!ImGui::BeginMainMenuBar()) return;
-
-    if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("New scene", "Ctrl+N")) requestAction(PendingAction::New);
-        if (ImGui::MenuItem("Open...", "Ctrl+O")) requestAction(PendingAction::Open);
-        if (ImGui::MenuItem("Save", "Ctrl+S")) saveScene();
-        if (ImGui::MenuItem("Save as...", "Ctrl+Shift+S")) showSaveDialog();
-        ImGui::Separator();
-        if (ImGui::MenuItem("Quit")) requestAction(PendingAction::Quit);
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Edit")) {
-        const bool hasSelection = selected().valid();
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty() && !playing())) undo();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty() && !playing())) redo();
-        ImGui::Separator();
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, hasSelection)) duplicateSelected();
-        if (ImGui::MenuItem("Delete", "Del", false, hasSelection)) deleteSelected();
-        if (ImGui::MenuItem("Focus", "F", false, hasSelection)) focusSelected();
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Add")) {
-        if (ImGui::MenuItem("Cube")) addEntity("Cube", "cube", "panel");
-        if (ImGui::MenuItem("Sphere")) addEntity("Sphere", "sphere", "checker");
-        if (ImGui::MenuItem("Plane")) addEntity("Plane", "plane", "grid");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Empty entity")) addEmptyEntity();
-        if (ImGui::BeginMenu("Child of selection", selected().valid())) {
-            if (ImGui::MenuItem("Cube")) addChild("Cube", "cube", "panel");
-            if (ImGui::MenuItem("Sphere")) addChild("Sphere", "sphere", "checker");
-            if (ImGui::MenuItem("Empty entity")) addChild("Entity", nullptr, nullptr);
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Play")) {
-        if (ImGui::MenuItem(m_playState == PlayState::Playing ? "Stop" : "Play", "Ctrl+P")) {
-            m_playState == PlayState::Playing ? stop() : play();
-        }
-        if (ImGui::MenuItem("Pause", "Ctrl+Shift+P", m_playState == PlayState::Paused, playing())) pause();
-        if (ImGui::MenuItem("Stop", nullptr, false, playing())) stop();
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("View")) {
-        ImGui::MenuItem("Hierarchy", nullptr, &m_showHierarchy);
-        ImGui::MenuItem("Inspector", nullptr, &m_showInspector);
-        ImGui::MenuItem("Renderer", nullptr, &m_showRenderer);
-        ImGui::MenuItem("Assets", nullptr, &m_showAssets);
-        ImGui::MenuItem("Log", nullptr, &m_showLog);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
-        ImGui::MenuItem("Dear ImGui demo", nullptr, &m_showDemo);
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Help")) {
-        ImGui::MenuItem("Controls", "F1", &m_showControls);
-        ImGui::EndMenu();
-    }
-
-    // Frame rate on the right of the menu bar.
-    char fps[64];
-    std::snprintf(fps, sizeof(fps), "%.0f fps", engine().fps());
-    const float width = ImGui::CalcTextSize(fps).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - width - ImGui::GetStyle().WindowPadding.x * 2.0f);
-    ImGui::TextDisabled("%s", fps);
-    ImGui::EndMainMenuBar();
+void Editor::applyViewPreferences() {
+    m_camera.moveSpeed = m_prefs.cameraSpeed;
+    m_camera.fovY = glm::radians(std::clamp(m_prefs.fieldOfView, 20.0f, 140.0f));
+    engine().renderer().setVsync(m_prefs.vsync);
+    engine().renderer().setRenderScale(m_prefs.renderScale);
 }
 
-void Editor::drawCommandBar() {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float height = ImGui::GetFrameHeight() + style.WindowPadding.y * 2.0f;
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
-    if (ImGui::BeginViewportSideBar("##WorkspaceCommands", ImGui::GetMainViewport(), ImGuiDir_Up, height, flags)) {
-        const char* playLabel = m_playState == PlayState::Paused ? "Resume" : "Play";
-        const float transportWidth = gui::controlGroupWidth({playLabel, "Pause", "Stop"});
-        const float centerX = (ImGui::GetWindowWidth() - transportWidth) * 0.5f;
-        const float rowY = ImGui::GetCursorPosY();
-        // Scene actions have their own scope; the transport always occupies the center.
-        ImGui::AlignTextToFramePadding();
-        if (centerX > ImGui::CalcTextSize("SCENE").x + style.WindowPadding.x + style.ItemSpacing.x)
-            ImGui::TextDisabled("SCENE");
-        else
-            ImGui::Dummy(ImVec2(0, ImGui::GetFrameHeight()));
-        const std::string scene = fileName(m_scenePath) + (m_dirty ? " *" : "");
-        const float nameWidth = ImGui::CalcTextSize(scene.c_str()).x;
-        if (ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + nameWidth + gui::buttonWidth("Save") + style.ItemSpacing.x * 3.0f < centerX) {
-            ImGui::SameLine();
-            ImGui::TextUnformatted(scene.c_str());
-            ImGui::SameLine();
-            ImGui::BeginDisabled(playing() || !m_dirty);
-            if (gui::button("Save")) saveScene();
-            ImGui::EndDisabled();
-            ImGui::SetItemTooltip("Save scene (Ctrl+S)");
-        }
-        ImGui::SetCursorPos(ImVec2(std::max(centerX, style.WindowPadding.x), rowY));
-        if (gui::toolButton(playLabel, playing(), "Play / stop; resume when paused (Ctrl+P)")) {
-            if (m_playState == PlayState::Playing) stop();
-            else play();
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!playing());
-        if (gui::toolButton("Pause", m_playState == PlayState::Paused, "Pause / resume (Ctrl+Shift+P)")) pause();
-        ImGui::SameLine();
-        if (gui::toolButton("Stop", false, "Stop and restore the scene before Play (Ctrl+P)")) stop();
-        ImGui::EndDisabled();
-        const char* state = m_playState == PlayState::Playing ? "SIMULATION RUNNING" : m_playState == PlayState::Paused ? "SIMULATION PAUSED" : "EDIT MODE";
-        const float stateWidth = ImGui::CalcTextSize(state).x;
-        const float right = ImGui::GetWindowWidth() - style.WindowPadding.x;
-        if (right - stateWidth > centerX + transportWidth + style.ItemSpacing.x * 2.0f) {
-            ImGui::SetCursorPos(ImVec2(right - stateWidth, rowY));
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(playing() ? gui::semanticColor(m_playState == PlayState::Paused ? gui::currentTheme().warning : gui::currentTheme().accent) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "%s", state);
-        }
-    }
-    ImGui::End();
+void Editor::savePreferences() {
+    m_prefsDirty = false;
+    std::string err;
+    if (!editor::savePreferences(m_options.prefsPath, m_prefs, err)) warn("Couldn't save preferences: " + err);
 }
 
-void Editor::drawDockspace() {
-    const ImGuiID dockspace = ImGui::GetID("ShockwaveDockspace");
-    if (m_resetLayout || !ImGui::DockBuilderGetNode(dockspace)) {
-        buildDefaultLayout(dockspace);
-        m_showHierarchy = m_showInspector = m_showRenderer = m_showLog = m_showAssets = true;
-        m_resetLayout = false;
-        m_checkedAssetsDock = true;
-    }
-    // Layouts saved before the asset browser existed: give it a tab next to the Log
-    // instead of letting it float over the viewport.
-    if (!m_checkedAssetsDock) {
-        m_checkedAssetsDock = true;
-        const ImGuiWindowSettings* log = ImGui::FindWindowSettingsByID(ImHashStr("Log"));
-        if (!ImGui::FindWindowSettingsByID(ImHashStr("Assets")) && log && log->DockId) {
-            ImGui::DockBuilderDockWindow("Assets", log->DockId);
-        }
-    }
-    ImGui::DockSpaceOverViewport(dockspace, ImGui::GetMainViewport());
-}
+// ---- Per frame ----------------------------------------------------------------------------
 
-void Editor::buildDefaultLayout(ImGuiID dockspace) {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::DockBuilderRemoveNode(dockspace);
-    ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockspace, viewport->WorkSize);
+void Editor::onGui() {
+    ImGuizmo::BeginFrame();
+    const float dt = ImGui::GetIO().DeltaTime;
+    m_frameTimes[m_frameTimeIndex] = dt * 1000.0f;
+    m_frameTimeIndex = (m_frameTimeIndex + 1) % m_frameTimes.size();
 
-    ImGuiID center = dockspace;
-    const ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.17f, nullptr, &center);
-    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.24f, nullptr, &center);
-    const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.28f, nullptr, &center);
-    const ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.45f, nullptr, &right);
-
-    ImGui::DockBuilderDockWindow("Hierarchy", left);
-    ImGui::DockBuilderDockWindow("Inspector", right);
-    ImGui::DockBuilderDockWindow("Renderer", rightBottom);
-    ImGui::DockBuilderDockWindow("Assets", bottom);
-    ImGui::DockBuilderDockWindow("Log", bottom);
-    ImGui::DockBuilderDockWindow("Viewport", center);
-    ImGui::DockBuilderFinish(dockspace);
-}
-
-// ---- Viewport -----------------------------------------------------------------------------
-
-glm::mat4 Editor::projection(float aspect) const {
-    return m_camera.projection(aspect);
-}
-
-glm::mat4 Editor::gizmoProjection(float aspect) const {
-    // ImGuizmo only needs to place handles on screen; it expects a conventional
-    // finite projection rather than reverse-Z with an infinite far plane.
-    return glm::perspective(m_camera.fovY, aspect, m_camera.nearPlane, 2000.0f);
-}
-
-void Editor::drawViewport() {
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool open = ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar();
-    if (!open) {
-        ImGui::End();
+    handleDialogResults();
+    if (!m_hasProject) {
+        engine().renderer().setViewport(0, 0);
+        drawMenuBar();
+        drawProjectHub();
+        drawUnsavedChangesModal();
+        if (m_showPreferences) drawPreferencesWindow();
+        if (m_showAbout) drawAboutWindow();
+        updateTitle();
         return;
     }
 
-    shockwave::Renderer& renderer = engine().renderer();
-    const ImGuiIO& io = ImGui::GetIO();
-    const float toolbarWidth = std::max(ImGui::GetContentRegionAvail().x, 1.0f);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float innerWidth = std::max(toolbarWidth - style.WindowPadding.x * 2.0f - style.ChildBorderSize * 2.0f, 1.0f);
-    const char* axes = m_gizmoMode == ImGuizmo::WORLD ? "World" : "Local";
-    const float groupGap = style.ItemSpacing.x * 3.0f;
-    const bool oneRow = gui::controlGroupWidth({"Move", "Rotate", "Scale"}) + groupGap + gui::controlGroupWidth({axes, "Snap"}) <= innerWidth;
-    const int rows = oneRow ? 1 : gui::toolbarRows(innerWidth, {"Move", "Rotate", "Scale"}) + gui::toolbarRows(innerWidth, {axes, "Snap"});
-    const float toolbarHeight = rows * ImGui::GetFrameHeight() + (rows - 1) * style.ItemSpacing.y + style.WindowPadding.y * 2.0f + style.ChildBorderSize * 2.0f;
-    ImGui::BeginChild("ViewportToolbar", ImVec2(0, toolbarHeight), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
-    drawViewportToolbar(ImGui::GetCursorScreenPos(), ImGui::GetContentRegionAvail());
-    ImGui::EndChild();
-
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const ImVec2 size(std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
-
-    // The engine renders the scene at exactly this panel's size, so it stays sharp and
-    // undistorted however the panel is docked or resized.
-    renderer.setViewport(static_cast<uint32_t>(size.x * io.DisplayFramebufferScale.x),
-                         static_cast<uint32_t>(size.y * io.DisplayFramebufferScale.y));
-    if (renderer.sceneTexture()) ImGui::Image(static_cast<ImTextureID>(renderer.sceneTexture()), size);
-    const bool imageHovered = ImGui::IsItemHovered();
-    acceptViewportDrop(pos, size);
-
-    updateCamera(imageHovered);
-    drawSelectionOutline(pos, size);
-
-    // View cube in the top-right corner: click a face to snap the camera to that axis.
-    const float aspect = size.x / size.y;
-    glm::mat4 view = m_camera.view();
-    const glm::mat4 before = view;
-    const float cubeSize = 96.0f * ImGui::GetStyle().FontScaleDpi;
-    ImGuizmo::SetDrawlist();
-    ImGuizmo::SetRect(pos.x, pos.y, size.x, size.y);
-    ImGuizmo::SetGizmoSizeClipSpace(0.14f);
-    ImGuizmo::ViewManipulate(&view[0][0], 8.0f, ImVec2(pos.x + size.x - cubeSize - 8.0f, pos.y + 8.0f),
-                             ImVec2(cubeSize, cubeSize), IM_COL32(0, 0, 0, 0));
-    if (std::memcmp(&view, &before, sizeof(view)) != 0) {
-        const glm::mat4 inv = glm::inverse(view);
-        const glm::vec3 forward = -glm::vec3(inv[2]);
-        m_camera.position = glm::vec3(inv[3]);
-        m_camera.pitch = std::asin(std::clamp(forward.y, -0.999f, 0.999f));
-        m_camera.yaw = std::atan2(-forward.x, -forward.z);
+    if (m_retryAssetImports) {
+        m_retryAssetImports = false;
+        logAssetChanges(m_assetFolder->refresh(true));
+    } else {
+        logAssetChanges(m_assetFolder->poll(dt));
     }
+    m_sceneScanTimer += dt;
+    if (m_sceneScanTimer > 2.0) scanScenes();
+    autosave(dt);
+    handleShortcuts();
 
-    // Transform gizmo on the selected entity.
-    if (Transform* t = m_world.get<Transform>(selected())) {
-        view = m_camera.view();
-        const glm::mat4 proj = gizmoProjection(aspect);
-        // The gizmo works in world space; a child's Transform is relative to its parent.
-        const Entity parent = shockwave::parentOf(m_world, selected());
-        const glm::mat4 parentWorld = parent.valid() ? shockwave::worldMatrix(m_world, parent) : glm::mat4(1.0f);
-        glm::mat4 model = parentWorld * t->matrix();
-        const bool snap = m_snap != io.KeyCtrl;   // Ctrl flips snapping while held
-        const float snapTranslate[3] = {0.5f, 0.5f, 0.5f};
-        const float snapRotate[3] = {15.0f, 15.0f, 15.0f};
-        const float snapScale[3] = {0.1f, 0.1f, 0.1f};
-        const float* snapValues = m_gizmoOperation == ImGuizmo::ROTATE ? snapRotate
-                                  : m_gizmoOperation == ImGuizmo::SCALE ? snapScale
-                                                                        : snapTranslate;
-        const bool changed = ImGuizmo::Manipulate(&view[0][0], &proj[0][0], m_gizmoOperation, m_gizmoMode,
-                                                  &model[0][0], nullptr, snap ? snapValues : nullptr);
-        const bool using_ = ImGuizmo::IsUsing();
-        if (using_ && !m_gizmoWasUsing) m_editStart = m_world;
-        if (changed) {
-            // Take only the part being edited, so the others don't pick up float drift.
-            const Transform edited = Transform::fromMatrix(glm::inverse(parentWorld) * model);
-            switch (m_gizmoOperation) {
-            case ImGuizmo::ROTATE: t->rotation = edited.rotation; break;
-            case ImGuizmo::SCALE: t->scale = edited.scale; break;
-            default: t->position = edited.position; break;
+    drawMenuBar();
+    drawCommandBar();
+    drawStatusBar();
+    drawDockspace();
+    drawViewport();
+    m_hierarchyOrderNext.clear();
+    if (m_showHierarchy) drawHierarchy();
+    m_hierarchyOrder.swap(m_hierarchyOrderNext);
+    if (m_showInspector) drawInspector();
+    if (m_showContent) drawContentBrowser();
+    if (m_showConsole) drawConsole();
+    if (m_showStats) drawStatsWindow();
+    if (m_showPreferences) drawPreferencesWindow();
+    if (m_showProjectSettings) drawProjectSettingsWindow();
+    if (m_showControls) drawControlsWindow();
+    if (m_showAbout) drawAboutWindow();
+    if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
+    if (m_showMetrics) ImGui::ShowMetricsWindow(&m_showMetrics);
+    drawUnsavedChangesModal();
+    drawRecoveryModal();
+    updateTitle();
+
+    // Preference changes are written once the user lets go of the widget.
+    if (m_prefsDirty && !ImGui::IsAnyItemActive()) savePreferences();
+}
+
+// Play mode runs the project's gameplay and physics at the fixed tick rate, like the player.
+void Editor::onUpdate(double dt) {
+    if (playState() != PlayState::Playing) return;
+    m_session->update(dt);
+}
+
+void Editor::onFrame(double dt) {
+    if (m_session) m_session->frame(dt);
+}
+
+void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
+    if (!m_hasProject) {
+        renderer.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});
+        renderer.setGrid({});
+        return;
+    }
+    renderer.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});   // a scene without an Environment
+    const bool sceneCamera = lookingThroughSceneCamera();
+    glm::mat4 view = m_camera.view(), proj = projection(renderer.aspectRatio());
+    if (sceneCamera) shockwave::cameraMatrices(m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, proj);
+    renderer.setCamera(view, proj);
+
+    shockwave::GridSettings grid;
+    grid.enabled = m_prefs.showGrid && !sceneCamera;
+    grid.cellSize = 1.0f;
+    grid.fadeDistance = std::clamp(m_camera.position.y * 12.0f + 60.0f, 60.0f, 600.0f);
+    renderer.setGrid(grid);
+    // While editing (or paused) nothing moves on its own, so draw exactly what's there.
+    shockwave::renderWorld(m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0,
+                           &engine().assets());
+}
+
+bool Editor::lookingThroughSceneCamera() const {
+    return m_viewThroughCamera && shockwave::primaryCamera(m_world).valid();
+}
+
+// ---- Projects -----------------------------------------------------------------------------
+
+bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
+    shockwave::Project project;
+    std::string err;
+    if (!shockwave::loadProject(path, project, err)) {
+        error("Couldn't open project: " + err);
+        m_hubError = err;
+        return false;
+    }
+    stop();
+    if (m_hasProject) {
+        rememberCamera();
+        saveEditorState();
+    }
+    m_project = project;
+    m_projectEdit = project;
+    m_hasProject = true;
+    m_hubError.clear();
+    m_scenePath.clear();
+    m_contentRoot = ContentRoot::Assets;
+    m_contentFolder.clear();
+    m_prefs.addRecentProject(m_project.file.string());
+    savePreferences();
+    log("Opened project " + m_project.name + " (" + m_project.root.string() + ")");
+    // Gameplay is compiled in: a project written for another module still opens for
+    // editing, but Play would run the wrong game, so it's switched off.
+    const std::string_view built = m_options.gameModule ? m_options.gameModule->id : std::string_view();
+    m_gameModuleMatches = m_project.gameModule == built;
+    if (!m_gameModuleMatches) {
+        warn("This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
+             std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its Game.cpp> to run it.");
+    }
+    engine().setTickRate(m_project.tickRate);
+    applyProjectTheme();
+    logAssetChanges(m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
+    loadEditorState();
+    scanScenes();
+
+    // The scene asked for, else the one open last time, else the startup scene, else any.
+    std::error_code ec;
+    fs::path scene = sceneToOpen;
+    if (scene.empty() && !m_lastScene.empty() && fs::exists(m_project.root / m_lastScene, ec)) {
+        scene = m_project.root / m_lastScene;
+    }
+    if (scene.empty() && fs::exists(m_project.startupScene, ec)) scene = m_project.startupScene;
+    if (scene.empty() && !m_scenes.empty()) scene = m_scenes.front();
+    if (scene.empty() || !openScene(scene)) {
+        // Give the project a first scene to work in, saved where it expects its startup scene.
+        newScene(SceneTemplate::Basic);
+        if (!fs::exists(m_project.startupScene, ec)) saveSceneAs(m_project.startupScene);
+    }
+    return true;
+}
+
+// The theme: --theme if given, else the one picked in Preferences, else the project's.
+void Editor::applyProjectTheme() {
+    std::error_code ec;
+    std::string theme = m_options.theme;
+    if (theme.empty()) theme = m_prefs.theme;
+    if (theme.empty() && m_hasProject && fs::is_regular_file(m_project.theme, ec)) theme = m_project.theme.string();
+    if (!theme.empty() && theme != engine().guiThemePath()) engine().setGuiTheme(theme);
+}
+
+void Editor::closeProject() {
+    if (!m_hasProject) return;
+    stop();
+    rememberCamera();
+    saveEditorState();
+    log("Closed project " + m_project.name);
+    m_hasProject = false;
+    m_world.clear();
+    m_scenePath.clear();
+    m_selection.clear();
+    m_undo.clear();
+    m_redo.clear();
+    m_dirty = false;
+    m_scenes.clear();
+}
+
+bool Editor::createNewProject(const fs::path& folder, const std::string& name) {
+    shockwave::Project project;
+    std::string err;
+    const std::string module = m_options.gameModule ? std::string(m_options.gameModule->id) : "game";
+    if (!shockwave::createProject(folder, name, module, project, err)) {
+        m_hubError = err;
+        error("Couldn't create the project: " + err);
+        return false;
+    }
+    m_hubError.clear();
+    log("Created project " + project.name + " in " + folder.string());
+    // The manifest needs its startup scene to exist before it will load.
+    shockwave::World scene;
+    makeScene(SceneTemplate::Basic, scene, engine().assets());
+    if (!shockwave::saveScene(scene, engine().assets(), project.startupScene.string(), err)) {
+        m_hubError = err;
+        error("Couldn't write the first scene: " + err);
+        return false;
+    }
+    return openProject(project.file);
+}
+
+// .shockwave/editor.swstate: which scene was open and where the camera was in each scene.
+// Per user, so it stays out of version control.
+void Editor::loadEditorState() {
+    m_sceneCameras.clear();
+    m_lastScene.clear();
+    std::ifstream in(m_project.statePath() / "editor.swstate");
+    std::string line;
+    while (std::getline(in, line)) {
+        std::istringstream ls(line);
+        std::string key;
+        ls >> key;
+        if (key == "last_scene") {
+            std::getline(ls >> std::ws, m_lastScene);
+        } else if (key == "camera") {
+            EditorCamera camera;
+            std::string scene;
+            if (ls >> camera.position.x >> camera.position.y >> camera.position.z >> camera.yaw >> camera.pitch &&
+                std::getline(ls >> std::ws, scene)) {
+                m_sceneCameras[scene] = camera;
             }
         }
-        if (!using_ && m_gizmoWasUsing) pushUndo(m_editStart);
-        m_gizmoWasUsing = using_;
+    }
+}
+
+void Editor::saveEditorState() {
+    if (!m_hasProject) return;
+    std::error_code ec;
+    fs::create_directories(m_project.statePath(), ec);
+    std::ofstream out(m_project.statePath() / "editor.swstate", std::ios::trunc);
+    out << "# Shockwave Editor state for this project, per user. Safe to delete.\n";
+    if (!m_lastScene.empty()) out << "last_scene " << m_lastScene << "\n";
+    for (const auto& [scene, c] : m_sceneCameras) {
+        out << "camera " << c.position.x << ' ' << c.position.y << ' ' << c.position.z << ' ' << c.yaw << ' '
+            << c.pitch << ' ' << scene << "\n";
+    }
+}
+
+void Editor::rememberCamera() {
+    if (m_scenePath.empty()) return;
+    m_sceneCameras[m_project.relative(m_scenePath)] = {m_camera.position, m_camera.yaw, m_camera.pitch};
+}
+
+fs::path Editor::autosavePath() const {
+    std::string name = m_scenePath.empty() ? "untitled" : m_project.relative(m_scenePath);
+    for (char& c : name) {
+        if (c == '/' || c == '\\' || c == ':') c = '_';
+    }
+    if (!name.ends_with(".swscene")) name += ".swscene";
+    return m_project.statePath() / "autosave" / name;
+}
+
+void Editor::scanScenes() {
+    m_sceneScanTimer = 0.0;
+    m_scenes.clear();
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(m_project.sceneFolder, ec); !ec && it != fs::end(it);
+         it.increment(ec)) {
+        if (it->is_regular_file(ec) && it->path().extension() == ".swscene") m_scenes.push_back(it->path());
+    }
+    std::sort(m_scenes.begin(), m_scenes.end());
+
+    m_assetFolders.clear();
+    const fs::path assets = m_project.assetFolder;
+    for (auto it = fs::recursive_directory_iterator(assets, ec); !ec && it != fs::end(it); it.increment(ec)) {
+        if (it->path().filename().string().starts_with(".")) {
+            if (it->is_directory(ec)) it.disable_recursion_pending();
+            continue;
+        }
+        if (it->is_directory(ec)) m_assetFolders.push_back(it->path().lexically_relative(assets).generic_string());
+    }
+    std::sort(m_assetFolders.begin(), m_assetFolders.end());
+}
+
+// ---- Selection ----------------------------------------------------------------------------
+
+void Editor::select(Entity e) {
+    const bool alive = m_world.alive(e);
+    const bool changed = !(m_selection.size() == 1 && m_selection[0] == e) && !(m_selection.empty() && !alive);
+    m_selection.clear();
+    if (alive) m_selection.push_back(e);
+    m_rangeAnchor = alive ? e : kNullEntity;
+    if (changed) m_revealSelection = true;
+}
+
+void Editor::toggleSelected(Entity e) {
+    if (!m_world.alive(e)) return;
+    if (isSelected(e)) {
+        std::erase(m_selection, e);
     } else {
-        m_gizmoWasUsing = false;
+        m_selection.push_back(e);
+        m_revealSelection = true;
     }
-
-
-    // Click to select. Clicks on the toolbar, gizmo or view cube don't count.
-    if (imageHovered && !m_looking && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered() &&
-        !ImGuizmo::IsOver() && !ImGuizmo::IsUsingAny() && !ImGuizmo::IsViewManipulateHovered()) {
-        select(pick(io.MousePos, pos, size));
-    }
-
-    // Status line in the bottom-left corner.
-    char status[192];
-    std::snprintf(status, sizeof(status), "%s%ux%u  |  %zu entities  |  %u draws  |  speed %.1f",
-                  m_playState == PlayState::Playing ? "PLAYING  |  " : m_playState == PlayState::Paused ? "PAUSED  |  " : "",
-                  renderer.renderWidth(), renderer.renderHeight(), m_world.entityCount(), renderer.drawCount(),
-                  m_camera.moveSpeed);
-    if (ImGui::CalcTextSize(status).x > size.x - 20.0f) {
-        std::snprintf(status, sizeof(status), "%s%ux%u",
-                      playing() ? (m_playState == PlayState::Playing ? "PLAY | " : "PAUSE | ") : "",
-                      renderer.renderWidth(), renderer.renderHeight());
-    }
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    // A coloured frame round the viewport while playing, so play-mode edits (which are
-    // thrown away on Stop) are hard to mistake for real ones.
-    if (playing()) {
-        draw->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                      m_playState == PlayState::Playing ? gui::semanticColorU32(gui::currentTheme().accent) : gui::semanticColorU32(gui::currentTheme().warning),
-                      0.0f, 0, 3.0f);
-    }
-    const ImVec2 textPos(pos.x + 10.0f, pos.y + size.y - ImGui::GetTextLineHeight() - 8.0f);
-    draw->AddRectFilled(ImVec2(pos.x, textPos.y - 4.0f), ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(ImGuiCol_WindowBg));
-    draw->AddText(textPos, ImGui::GetColorU32(ImGuiCol_Text), status);
-
-    ImGui::End();
+    m_rangeAnchor = e;
 }
 
-void Editor::drawViewportToolbar(const ImVec2&, const ImVec2& size) {
-    const char* axes = m_gizmoMode == ImGuizmo::WORLD ? "World" : "Local";
-    const float transformWidth = gui::controlGroupWidth({"Move", "Rotate", "Scale"});
-    const float settingsWidth = gui::controlGroupWidth({axes, "Snap"});
-    const bool oneRow = transformWidth + ImGui::GetStyle().ItemSpacing.x * 3.0f + settingsWidth <= size.x;
-    const float rowY = ImGui::GetCursorPosY();
-    if (gui::toolButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE, "Move (W)")) m_gizmoOperation = ImGuizmo::TRANSLATE;
-    gui::toolbarNext(gui::buttonWidth("Rotate"));
-    if (gui::toolButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE, "Rotate (E)")) m_gizmoOperation = ImGuizmo::ROTATE;
-    gui::toolbarNext(gui::buttonWidth("Scale"));
-    if (gui::toolButton("Scale", m_gizmoOperation == ImGuizmo::SCALE, "Scale (R)")) m_gizmoOperation = ImGuizmo::SCALE;
-    if (oneRow) {
-        ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - settingsWidth, rowY));
-    } else {
-        ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x);
-    }
-    if (gui::toolButton(axes, false, "World or local axes (T)"))
-        m_gizmoMode = m_gizmoMode == ImGuizmo::WORLD ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
-    gui::toolbarNext(gui::buttonWidth("Snap"));
-    if (gui::toolButton("Snap", m_snap, "Snap: 0.5 units, 15 degrees, 0.1 scale; Ctrl flips")) m_snap = !m_snap;
-}
-
-void Editor::drawSelectionOutline(const ImVec2& pos, const ImVec2& size) {
-    drawOutline(selected(), pos, size, gui::semanticColorU32(gui::currentTheme().accent));
-}
-
-// A wireframe box round an entity's mesh.
-void Editor::drawOutline(Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color) {
-    const Transform* t = m_world.get<Transform>(e);
-    const MeshRenderer* renderer = m_world.get<MeshRenderer>(e);
-    if (!t || !renderer || !renderer->visible) return;
-    const MeshAsset* mesh = findMesh(renderer->mesh);
-    if (!mesh) return;
-
-    const glm::vec3 lo = mesh->shape == Shape::Plane ? glm::vec3(-0.5f, 0.0f, -0.5f) : glm::vec3(-0.5f);
-    const glm::vec3 hi = mesh->shape == Shape::Plane ? glm::vec3(0.5f, 0.0f, 0.5f) : glm::vec3(0.5f);
-    const glm::mat4 mvp = projection(size.x / size.y) * m_camera.view() * shockwave::worldMatrix(m_world, e);
-
-    glm::vec4 clip[8];
-    for (int i = 0; i < 8; ++i) {
-        const glm::vec3 corner((i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z);
-        clip[i] = mvp * glm::vec4(corner, 1.0f);
-    }
-    auto toScreen = [&](const glm::vec4& c) {
-        return ImVec2(pos.x + (c.x / c.w * 0.5f + 0.5f) * size.x, pos.y + (0.5f - c.y / c.w * 0.5f) * size.y);
-    };
-
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    const float nearW = m_camera.nearPlane;
-    for (int i = 0; i < 8; ++i) {
-        for (int bit = 1; bit < 8; bit <<= 1) {
-            const int j = i | bit;
-            if (j == i) continue;
-            if (clip[i].w <= nearW || clip[j].w <= nearW) continue;   // behind the camera
-            draw->AddLine(toScreen(clip[i]), toScreen(clip[j]), color, 1.5f);
-        }
-    }
-}
-
-// Assets dropped on the viewport: a mesh lands on the ground under the cursor, a texture
-// goes onto whatever is under the cursor (outlined while you aim).
-void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
-    if (!ImGui::BeginDragDropTarget()) return;
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
-    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kMeshPayload)) {
-        const std::string mesh = static_cast<const char*>(payload->Data);
-        glm::vec3 origin, dir;
-        mouseRay(mouse, pos, size, origin, dir);
-        glm::vec3 at = origin + dir * 6.0f;
-        if (dir.y < -1e-4f) {
-            const float t = -origin.y / dir.y;   // where the ray meets the ground (y = 0)
-            if (t > 0.0f && t < 200.0f) at = origin + dir * t;
-        }
-        const MeshAsset* asset = findMesh(engine().assets().findMesh(mesh));
-        at.y = asset && asset->shape == Shape::Plane ? 0.01f : 0.5f;
-        spawnMesh(mesh, at);
-    }
-    if (const ImGuiPayload* payload =
-            ImGui::AcceptDragDropPayload(kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery |
-                                                              ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
-        const Entity target = pick(mouse, pos, size);
-        if (payload->IsDelivery()) {
-            applyTexture(target, static_cast<const char*>(payload->Data));
-        } else {
-            drawOutline(target, pos, size, ImGui::ColorConvertFloat4ToU32(gui::accent()));
-        }
-    }
-    ImGui::EndDragDropTarget();
-}
-
-void Editor::updateCamera(bool hovered) {
-    ImGuiIO& io = ImGui::GetIO();
-    shockwave::Input& input = engine().input();
-
-    // Unreal-style: hold the right mouse button in the viewport to fly.
-    if (!m_looking && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        m_looking = true;
-        ImGui::SetWindowFocus();   // so WASD doesn't also type into a text field
-    }
-    if (m_looking && !input.isMouseDown(shockwave::MouseButton::Right)) m_looking = false;
-
-    if (m_looking) {
-        m_camera.update(input, io.DeltaTime);   // captures the mouse while the button is held
-    } else {
-        input.setMouseCaptured(false);
-        if (hovered && io.MouseWheel != 0.0f) {
-            m_camera.position += m_camera.forward() * io.MouseWheel * std::max(0.5f, m_camera.moveSpeed * 0.15f);
-        }
-        if (hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f)) {
-            const glm::vec3 right = m_camera.right();
-            const glm::vec3 up = glm::cross(right, m_camera.forward());
-            const float k = 0.0025f * std::max(1.0f, m_camera.moveSpeed);
-            m_camera.position += (-right * io.MouseDelta.x + up * io.MouseDelta.y) * k;
-        }
-    }
-
-    // While flying, ImGui stays out of the way of the mouse and keyboard.
-    const ImGuiConfigFlags flyFlags =
-        ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NoKeyboard;
-    if (m_looking) {
-        io.ConfigFlags |= flyFlags;
-    } else {
-        io.ConfigFlags &= ~flyFlags;
-    }
-}
-
-void Editor::mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin,
-                      glm::vec3& dir) const {
-    const glm::vec2 ndc(2.0f * (mouse.x - pos.x) / size.x - 1.0f, 1.0f - 2.0f * (mouse.y - pos.y) / size.y);
-    const glm::mat4 invViewProj = glm::inverse(projection(size.x / size.y) * m_camera.view());
-    glm::vec4 nearPoint = invViewProj * glm::vec4(ndc, 1.0f, 1.0f);   // reverse-Z: depth 1 is the near plane
-    nearPoint /= nearPoint.w;
-    origin = m_camera.position;
-    dir = glm::normalize(glm::vec3(nearPoint) - origin);
-}
-
-Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) {
-    glm::vec3 origin, dir;
-    mouseRay(mouse, pos, size, origin, dir);
-
-    Entity best = kNullEntity;
-    float bestDistance = std::numeric_limits<float>::max();
-    m_world.each<const Transform, const MeshRenderer>([&](Entity e, const Transform&, const MeshRenderer& r) {
-        const MeshAsset* mesh = findMesh(r.mesh);
-        if (!r.visible || !mesh) return;
-        const glm::mat4 model = shockwave::worldMatrix(m_world, e);
-        const glm::mat4 inv = glm::inverse(model);
-        const glm::vec3 lo = glm::vec3(inv * glm::vec4(origin, 1.0f));
-        const glm::vec3 ld = glm::vec3(inv * glm::vec4(dir, 0.0f));
-
-        float hitT = 0.0f;
-        bool hit = false;
-        switch (mesh->shape) {
-        case Shape::Box: hit = rayBox(lo, ld, glm::vec3(-0.5f), glm::vec3(0.5f), hitT); break;
-        case Shape::Sphere: hit = raySphere(lo, ld, 0.5f, hitT); break;
-        case Shape::Plane: hit = rayBox(lo, ld, {-0.5f, -0.001f, -0.5f}, {0.5f, 0.001f, 0.5f}, hitT); break;
-        }
-        if (!hit) return;
-        const glm::vec3 worldHit = glm::vec3(model * glm::vec4(lo + ld * hitT, 1.0f));
-        const float distance = glm::length(worldHit - origin);
-        if (distance < bestDistance) {
-            bestDistance = distance;
-            best = e;
-        }
-    });
-    return best;
-}
-
-void Editor::focusSelected() {
-    if (!m_world.has<Transform>(selected())) return;
-    const glm::mat4 m = shockwave::worldMatrix(m_world, selected());
-    const float scale = std::max({glm::length(glm::vec3(m[0])), glm::length(glm::vec3(m[1])), glm::length(glm::vec3(m[2]))});
-    const float distance = std::clamp(scale * 0.75f * 3.0f, 2.5f, 60.0f);
-    m_camera.position = glm::vec3(m[3]) - m_camera.forward() * distance;
-}
-
-// ---- Panels -------------------------------------------------------------------------------
-
-void Editor::drawHierarchy() {
-    if (!ImGui::Begin("Hierarchy", &m_showHierarchy)) {
-        ImGui::End();
+void Editor::selectRange(Entity to) {
+    const auto a = std::find(m_hierarchyOrder.begin(), m_hierarchyOrder.end(), m_rangeAnchor);
+    const auto b = std::find(m_hierarchyOrder.begin(), m_hierarchyOrder.end(), to);
+    if (a == m_hierarchyOrder.end() || b == m_hierarchyOrder.end()) {
+        select(to);
         return;
     }
+    const Entity anchor = m_rangeAnchor;
+    m_selection.assign(std::min(a, b), std::max(a, b) + 1);
+    std::erase(m_selection, to);
+    m_selection.push_back(to);   // the clicked row is the primary
+    m_rangeAnchor = anchor;
+}
 
-    const float createWidth = gui::buttonWidth("+ Add");
-    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - createWidth - ImGui::GetStyle().ItemSpacing.x));
-    ImGui::InputTextWithHint("##filter", "Search entities", &m_hierarchyFilter);
-    gui::alignTrailing(createWidth);
-    if (gui::button("+ Add")) ImGui::OpenPopup("AddEntity");
-    if (ImGui::BeginPopup("AddEntity")) {
-        if (ImGui::MenuItem("Cube")) addEntity("Cube", "cube", "panel");
-        if (ImGui::MenuItem("Sphere")) addEntity("Sphere", "sphere", "checker");
-        if (ImGui::MenuItem("Plane")) addEntity("Plane", "plane", "grid");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Empty entity")) addEmptyEntity();
-        ImGui::EndPopup();
+void Editor::selectAll() {
+    m_selection.clear();
+    m_world.forEachEntity([&](Entity e) { m_selection.push_back(e); });
+}
+
+bool Editor::isSelected(Entity e) const {
+    return std::find(m_selection.begin(), m_selection.end(), e) != m_selection.end();
+}
+
+Entity Editor::selected() const {
+    for (auto it = m_selection.rbegin(); it != m_selection.rend(); ++it) {
+        if (m_world.alive(*it)) return *it;
     }
-    ImGui::Separator();
+    return kNullEntity;
+}
 
-    ImGui::BeginChild("entities");
-    // Who hangs under whom, worked out once per frame. Entities whose parent is gone
-    // count as top level, the same as the renderer treats them.
-    ChildMap children;
+std::vector<Entity> Editor::selection() const {
+    std::vector<Entity> live;
+    for (Entity e : m_selection) {
+        if (m_world.alive(e)) live.push_back(e);
+    }
+    return live;
+}
+
+std::vector<Entity> Editor::selectionRoots() const {
+    const std::vector<Entity> all = selection();
     std::vector<Entity> roots;
-    m_world.forEachEntity([&](Entity e) {
-        const Entity parent = shockwave::parentOf(m_world, e);
-        if (parent.valid()) {
-            children[parent.index].push_back(e);
-        } else {
-            roots.push_back(e);
-        }
-    });
-
-    if (m_hierarchyFilter.empty()) {
-        for (const Entity e : roots) drawHierarchyNode(e, children, 0);
-    } else {
-        // Filtering shows a flat list of matches, wherever they are in the tree.
-        auto lower = [](std::string text) {
-            std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
-            return text;
-        };
-        const std::string filter = lower(m_hierarchyFilter);
-        std::vector<Entity> matches;
-        m_world.forEachEntity([&](Entity e) {
-            if (lower(displayName(e)).find(filter) != std::string::npos) matches.push_back(e);
+    for (Entity e : all) {
+        const bool inside = std::any_of(all.begin(), all.end(), [&](Entity other) {
+            return !(other == e) && shockwave::isAncestor(m_world, other, e);
         });
-        for (const Entity e : matches) {
-            if (m_world.alive(e)) drawHierarchyRow(e, false);
-        }
+        if (!inside) roots.push_back(e);
     }
-    m_revealSelection = false;
-
-    // The empty space below the list: click to clear the selection, drop an entity on it
-    // to move it back to the top level.
-    const ImVec2 rest = ImGui::GetContentRegionAvail();
-    ImGui::InvisibleButton("##background", ImVec2(std::max(rest.x, 1.0f), std::max(rest.y, ImGui::GetFrameHeight())));
-    if (ImGui::IsItemClicked()) select(kNullEntity);
-    if (ImGui::BeginDragDropTarget()) {
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
-            reparent(*static_cast<const Entity*>(payload->Data), kNullEntity);
-        }
-        ImGui::EndDragDropTarget();
-    }
-    ImGui::EndChild();
-    ImGui::End();
-}
-
-void Editor::drawHierarchyNode(Entity e, const ChildMap& children, int depth) {
-    if (!m_world.alive(e)) return;   // deleted from a context menu earlier this frame
-    const auto it = children.find(e.index);
-    const bool hasChildren = it != children.end() && depth < shockwave::kMaxHierarchyDepth;
-    const bool open = drawHierarchyRow(e, hasChildren);
-    if (hasChildren && open) {
-        ImGui::TreePush(reinterpret_cast<const void*>(static_cast<uintptr_t>(e.index)));
-        const std::vector<Entity> list = it->second;   // copy: rows may edit the world
-        for (const Entity child : list) drawHierarchyNode(child, children, depth + 1);
-        ImGui::TreePop();
-    }
-}
-
-// One entity's row: visibility box, then its name as a tree node that can be dragged
-// onto another row (to attach it there) or onto the Inspector's entity fields.
-bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
-    ImGui::PushID(static_cast<int>(e.index));
-    MeshRenderer* renderer = m_world.get<MeshRenderer>(e);
-    const bool hidden = renderer && !renderer->visible;
-    if (renderer) {
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
-        ImGui::Checkbox("##visible", &renderer->visible);
-        ImGui::PopStyleVar();
-        trackEdit();
-        ImGui::SetItemTooltip("Visible");
-    } else {
-        ImGui::Dummy(ImVec2(ImGui::GetTextLineHeight() + 4.0f, ImGui::GetTextLineHeight() + 4.0f));   // keep names lined up
-    }
-    ImGui::SameLine(0.0f, 6.0f);
-
-    const std::string name = displayName(e);
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow |
-                               ImGuiTreeNodeFlags_FramePadding |
-                               ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
-    if (m_selected == e) flags |= ImGuiTreeNodeFlags_Selected;
-    if (hidden) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
-    // Open the way down to an entity picked in the viewport.
-    if (hasChildren && m_revealSelection && shockwave::isAncestor(m_world, e, selected())) ImGui::SetNextItemOpen(true);
-    const bool open = ImGui::TreeNodeEx("##node", flags, "%s", name.c_str());
-    ImGui::PopStyleVar();
-    if (hidden) ImGui::PopStyleColor();
-
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) select(e);
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) focusSelected();
-    if (ImGui::BeginDragDropSource()) {
-        ImGui::SetDragDropPayload(kEntityPayload, &e, sizeof(e));
-        ImGui::Text("%s", name.c_str());
-        ImGui::TextDisabled("Drop on an entity to attach it, or below the list to detach");
-        ImGui::EndDragDropSource();
-    }
-    if (ImGui::BeginDragDropTarget()) {
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
-            reparent(*static_cast<const Entity*>(payload->Data), e);
-        }
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
-            applyTexture(e, static_cast<const char*>(payload->Data));
-        }
-        ImGui::EndDragDropTarget();
-    }
-    if (ImGui::BeginPopupContextItem("row")) {
-        select(e);
-        if (ImGui::MenuItem("Focus", "F")) focusSelected();
-        if (ImGui::BeginMenu("Add child")) {
-            if (ImGui::MenuItem("Cube")) addChild("Cube", "cube", "panel");
-            if (ImGui::MenuItem("Sphere")) addChild("Sphere", "sphere", "checker");
-            if (ImGui::MenuItem("Empty entity")) addChild("Entity", nullptr, nullptr);
-            ImGui::EndMenu();
-        }
-        if (ImGui::MenuItem("Detach from parent", nullptr, false, shockwave::parentOf(m_world, e).valid())) {
-            reparent(e, kNullEntity);
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D")) duplicateSelected();
-        if (ImGui::MenuItem("Delete", "Del")) deleteSelected();
-        ImGui::EndPopup();
-    }
-    ImGui::PopID();
-    return open;
-}
-
-// The inspector knows no component types: it draws whatever is registered, from the
-// fields each component declared (see shockwave/Components.h). A game's own components
-// show up here as soon as they're registered.
-void Editor::drawInspector() {
-    if (!ImGui::Begin("Inspector", &m_showInspector)) {
-        ImGui::End();
-        return;
-    }
-    const Entity e = selected();
-    if (!e.valid()) {
-        ImGui::TextDisabled("Select an entity in the viewport or the hierarchy.");
-        ImGui::End();
-        return;
-    }
-
-    ImGui::PushItemWidth(-100.0f * ImGui::GetStyle().FontScaleDpi);
-    if (Name* name = m_world.get<Name>(e); name && gui::beginPropertyGrid("identity")) {
-        gui::propertyLabel("Name");
-        ImGui::InputText("##name", &name->value);
-        trackEdit();
-        ImGui::EndTable();
-    }
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("Entity %u (generation %u)", e.index, e.generation);
-
-    gui::alignTrailing(gui::buttonWidth("+ Component"));
-    if (gui::button("+ Component")) ImGui::OpenPopup("AddComponent");
-    if (ImGui::BeginPopup("AddComponent")) {
-        bool any = false;
-        for (const ComponentInfo& info : shockwave::registeredComponents()) {
-            if (info.has(m_world, e)) continue;
-            any = true;
-            if (ImGui::MenuItem(info.name.c_str())) {
-                pushUndo(m_world);
-                info.add(m_world, e);
-                log("Added " + info.name + " to " + displayName(e));
-            }
-        }
-        if (!any) ImGui::TextDisabled("It has every component already");
-        ImGui::EndPopup();
-    }
-    ImGui::Separator();
-    const uint32_t nameId = shockwave::componentId<Name>();
-    for (const ComponentInfo& info : shockwave::registeredComponents()) {
-        if (info.id == nameId || !info.has(m_world, e)) continue;
-        bool removed = false;
-        drawComponent(info, e, removed);
-    }
-
-    ImGui::PopItemWidth();
-    ImGui::End();
-}
-
-void Editor::drawComponent(const ComponentInfo& info, Entity e, bool& removed) {
-    ImGui::PushID(info.name.c_str());
-    ImGui::Spacing();
-    const bool open = ImGui::CollapsingHeader(info.name.c_str(),
-                                              ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
-    const float optionsWidth = ImGui::CalcTextSize("...").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - optionsWidth);
-    if (ImGui::SmallButton("...")) ImGui::OpenPopup("ComponentOptions");
-    ImGui::SetItemTooltip("%s options", info.name.c_str());
-    if (ImGui::BeginPopup("ComponentOptions")) {
-        if (ImGui::MenuItem("Remove component")) {
-            pushUndo(m_world);
-            if (info.id == shockwave::componentId<Parent>()) {
-                shockwave::setParent(m_world, e, kNullEntity);
-            } else {
-                info.remove(m_world, e);
-            }
-            log("Removed " + info.name + " from " + displayName(e));
-            removed = true;
-        }
-        ImGui::EndPopup();
-    }
-    if (open && !removed) {
-        char* data = static_cast<char*>(info.get(m_world, e));
-        if (info.fields.empty()) ImGui::TextDisabled("No settings");
-        if (gui::beginPropertyGrid("fields")) {
-            for (const Field& f : info.fields) drawField(f, data + f.offset, e);
-            ImGui::EndTable();
-        }
-    }
-    ImGui::PopID();
-}
-
-void Editor::drawField(const Field& f, void* data, Entity e) {
-    const std::string displayLabel = prettyName(f.name);
-    gui::propertyLabel(displayLabel.c_str());
-    const std::string label = "##value";
-    const bool limited = f.min < f.max;
-    const ImGuiSliderFlags clamp = limited ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None;
-    auto speed = [&](float fallback) { return f.speed > 0.0f ? f.speed : fallback; };
-    ImGui::PushID(f.name.c_str());
-
-    // Picking a different asset is one undo step.
-    auto assetCombo = [&](const auto& list, uint32_t currentId, auto assign) {
-        std::string preview = "none";
-        for (const auto& [n, h] : list) {
-            if (h.id == currentId) preview = n;
-        }
-        if (ImGui::BeginCombo(label.c_str(), preview.c_str())) {
-            for (const auto& [n, h] : list) {
-                const bool current = h.id == currentId;
-                if (ImGui::Selectable(n.c_str(), current) && !current) {
-                    pushUndo(m_world);
-                    assign(h);
-                }
-            }
-            ImGui::EndCombo();
-        }
-    };
-
-    switch (f.type) {
-    case FieldType::Bool:
-        ImGui::Checkbox(label.c_str(), static_cast<bool*>(data));
-        trackEdit();
-        break;
-    case FieldType::Int:
-        ImGui::DragInt(label.c_str(), static_cast<int*>(data), speed(0.2f), static_cast<int>(f.min),
-                       static_cast<int>(f.max), "%d", clamp);
-        trackEdit();
-        break;
-    case FieldType::Float:
-        ImGui::DragFloat(label.c_str(), static_cast<float*>(data), speed(0.05f), f.min, f.max, "%.2f", clamp);
-        trackEdit();
-        break;
-    case FieldType::Vec3:
-        ImGui::DragFloat3(label.c_str(), static_cast<float*>(data), speed(0.05f), f.min, f.max, "%.2f", clamp);
-        trackEdit();
-        break;
-    case FieldType::Color:
-        ImGui::ColorEdit4(label.c_str(), static_cast<float*>(data), ImGuiColorEditFlags_Float);
-        trackEdit();
-        break;
-    case FieldType::Rotation: {
-        glm::quat& q = *static_cast<glm::quat*>(data);
-        if (!(m_euler.entity == e) || m_euler.rotation != q) {
-            m_euler = {e, q, shockwave::eulerDegrees(q)};
-        }
-        if (ImGui::DragFloat3(label.c_str(), &m_euler.degrees.x, speed(0.5f), 0.0f, 0.0f, "%.1f\xc2\xb0")) {
-            q = shockwave::fromEulerDegrees(m_euler.degrees);
-            m_euler.rotation = q;
-        }
-        trackEdit();
-        break;
-    }
-    case FieldType::String:
-        ImGui::InputText(label.c_str(), static_cast<std::string*>(data));
-        trackEdit();
-        break;
-    case FieldType::Mesh: {
-        auto* mesh = static_cast<shockwave::MeshHandle*>(data);
-        assetCombo(engine().assets().meshes(), mesh->id, [&](shockwave::MeshHandle h) { *mesh = h; });
-        if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kMeshPayload)) {
-                pushUndo(m_world);
-                *mesh = engine().assets().findMesh(static_cast<const char*>(payload->Data));
-            }
-            ImGui::EndDragDropTarget();
-        }
-        break;
-    }
-    case FieldType::Texture: {
-        auto* texture = static_cast<shockwave::TextureHandle*>(data);
-        assetCombo(engine().assets().textures(), texture->id, [&](shockwave::TextureHandle h) { *texture = h; });
-        if (ImGui::BeginItemTooltip()) {
-            const float side = 128.0f * ImGui::GetStyle().FontScaleDpi;
-            if (const uint64_t id = engine().renderer().guiTexture(*texture)) {
-                ImGui::Image(static_cast<ImTextureID>(id), ImVec2(side, side));
-            }
-            ImGui::TextDisabled("Drop a texture from Assets here");
-            ImGui::EndTooltip();
-        }
-        if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
-                if (const auto h = engine().assets().findTexture(static_cast<const char*>(payload->Data))) {
-                    pushUndo(m_world);
-                    *texture = *h;
-                }
-            }
-            ImGui::EndDragDropTarget();
-        }
-        break;
-    }
-    case FieldType::Entity: {
-        auto* target = static_cast<Entity*>(data);
-        const Parent* parent = m_world.get<Parent>(e);
-        drawEntityField(label, target, e, parent && &parent->entity == target);
-        break;
-    }
-    }
-    ImGui::PopID();
-}
-
-// A combo of every other entity, which also takes an entity dragged from the Hierarchy.
-// Setting a Parent goes through reparent, so the entity stays put and loops are refused.
-void Editor::drawEntityField(const std::string& label, Entity* value, Entity owner, bool isParent) {
-    auto assign = [&](Entity target) {
-        if (target == *value || target == owner) return;
-        if (isParent) {
-            reparent(owner, target);
-        } else {
-            pushUndo(m_world);
-            *value = target;
-        }
-    };
-    const std::string preview = m_world.alive(*value) ? displayName(*value) : "none";
-    if (ImGui::BeginCombo(label.c_str(), preview.c_str())) {
-        if (ImGui::Selectable("none", !m_world.alive(*value))) assign(kNullEntity);
-        m_world.forEachEntity([&](Entity candidate) {
-            if (candidate == owner) return;
-            ImGui::PushID(static_cast<int>(candidate.index));
-            if (ImGui::Selectable(displayName(candidate).c_str(), candidate == *value)) assign(candidate);
-            ImGui::PopID();
-        });
-        ImGui::EndCombo();
-    }
-    if (ImGui::BeginDragDropTarget()) {
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
-            assign(*static_cast<const Entity*>(payload->Data));
-        }
-        ImGui::EndDragDropTarget();
-    }
-}
-
-void Editor::drawRendererPanel() {
-    if (!ImGui::Begin("Renderer", &m_showRenderer)) {
-        ImGui::End();
-        return;
-    }
-    shockwave::Renderer& renderer = engine().renderer();
-    const double fps = engine().fps();
-
-    ImGui::TextDisabled("%s", renderer.gpuName());
-    ImGui::Text("%.0f fps  (%.2f ms)", fps, fps > 0.0 ? 1000.0 / fps : 0.0);
-    float maxTime = 0.0f;
-    for (float t : m_frameTimes) maxTime = std::max(maxTime, t);
-    ImGui::PlotLines("##frametimes", m_frameTimes.data(), static_cast<int>(m_frameTimes.size()),
-                     static_cast<int>(m_frameTimeIndex), "frame time (ms)", 0.0f, std::max(maxTime * 1.2f, 1.0f),
-                     ImVec2(-1.0f, 56.0f * ImGui::GetStyle().FontScaleDpi));
-    ImGui::Text("Scene %u x %u, %u draws", renderer.renderWidth(), renderer.renderHeight(), renderer.drawCount());
-    ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
-
-    ImGui::SeparatorText("Output");
-    if (gui::beginPropertyGrid("output")) {
-        gui::propertyLabel("Render scale");
-        float scale = renderer.renderScale();
-        if (ImGui::SliderFloat("##scale", &scale, 0.25f, 2.0f, "%.2fx")) renderer.setRenderScale(scale);
-        ImGui::SetItemTooltip("Below 1 renders fewer pixels and scales up; above 1 supersamples");
-        gui::propertyLabel("VSync");
-        bool vsync = renderer.vsync();
-        if (ImGui::Checkbox("##vsync", &vsync)) renderer.setVsync(vsync);
-        ImGui::SetItemTooltip("Off renders as fast as the GPU can go");
-        ImGui::EndTable();
-    }
-
-    ImGui::SeparatorText("Camera");
-    if (gui::beginPropertyGrid("camera")) {
-        gui::propertyLabel("Field of view");
-        float fovDegrees = glm::degrees(m_camera.fovY);
-        if (ImGui::SliderFloat("##fov", &fovDegrees, 30.0f, 120.0f, "%.0f degrees"))
-            m_camera.fovY = glm::radians(fovDegrees);
-        gui::propertyLabel("Move speed");
-        ImGui::SliderFloat("##speed", &m_camera.moveSpeed, 0.5f, 500.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
-        ImGui::EndTable();
-    }
-
-    // How the scheduler laid out the game's systems: each stage runs after the one
-    // above it, and systems sharing a stage run at the same time.
-    ImGui::SeparatorText("Systems");
-    const auto stages = m_schedule.stages();
-    for (size_t i = 0; i < stages.size(); ++i) {
-        std::string row;
-        for (const std::string& name : stages[i]) row += (row.empty() ? "" : ", ") + name;
-        ImGui::BulletText("Stage %zu: %s", i + 1, row.c_str());
-    }
-    ImGui::TextDisabled("Runs in play mode, %.0f ticks per second", engine().tickRate());
-    ImGui::End();
-}
-
-void Editor::drawLog() {
-    if (!ImGui::Begin("Log", &m_showLog)) {
-        ImGui::End();
-        return;
-    }
-    if (ImGui::SmallButton("Clear")) m_log.clear();
-    ImGui::Separator();
-    ImGui::BeginChild("lines", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const std::string& line : m_log) ImGui::TextUnformatted(line.c_str());
-    if (m_logScrollToBottom) {
-        ImGui::SetScrollHereY(1.0f);
-        m_logScrollToBottom = false;
-    }
-    ImGui::EndChild();
-    ImGui::End();
-}
-
-void Editor::drawControlsWindow() {
-    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Controls", &m_showControls)) {
-        ImGui::End();
-        return;
-    }
-    static const char* rows[][2] = {
-        {"Right mouse (hold)", "Fly: look around"},
-        {"W A S D", "Fly: move (while holding right mouse)"},
-        {"E / Q, Space / Ctrl", "Fly: up and down"},
-        {"Shift", "Fly faster"},
-        {"Mouse wheel", "Dolly; while flying, change speed"},
-        {"Middle mouse drag", "Pan"},
-        {"Left click", "Select"},
-        {"W / E / R", "Move / rotate / scale gizmo"},
-        {"T", "Gizmo axes: world or local"},
-        {"Ctrl (while dragging)", "Toggle snapping"},
-        {"F, or double-click", "Focus the selection"},
-        {"Drag in Hierarchy", "Attach to another entity; drop below the list to detach"},
-        {"Drag from Assets", "Mesh onto the viewport places it; texture onto an object applies it"},
-        {"Ctrl+D / Del", "Duplicate / delete"},
-        {"Ctrl+Z / Ctrl+Y", "Undo / redo"},
-        {"Ctrl+N / O / S", "New / open / save scene"},
-        {"Ctrl+P", "Play / stop"},
-        {"Ctrl+Shift+P", "Pause / resume"},
-        {"Esc", "Clear the selection"},
-    };
-    if (ImGui::BeginTable("controls", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
-        for (const auto& row : rows) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(row[0]);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(row[1]);
-        }
-        ImGui::EndTable();
-    }
-    ImGui::End();
-}
-
-void Editor::drawUnsavedChangesModal() {
-    if (m_openUnsavedModal) {
-        ImGui::OpenPopup("Unsaved changes");
-        m_openUnsavedModal = false;
-    }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-
-    ImGui::Text("Save changes to %s first?", fileName(m_scenePath).c_str());
-    ImGui::Spacing();
-    if (gui::button("Save", ImVec2(110, 0))) {
-        if (saveScene()) {
-            ImGui::CloseCurrentPopup();
-            runAction(m_pendingAction, m_pendingPath);
-            m_pendingAction = PendingAction::None;
-        }
-    }
-    ImGui::SameLine();
-    if (gui::button("Don't save", ImVec2(110, 0))) {
-        ImGui::CloseCurrentPopup();
-        runAction(m_pendingAction, m_pendingPath);
-        m_pendingAction = PendingAction::None;
-    }
-    ImGui::SameLine();
-    if (gui::button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        ImGui::CloseCurrentPopup();
-        m_pendingAction = PendingAction::None;
-    }
-    ImGui::EndPopup();
-}
-
-// ---- Play mode ----------------------------------------------------------------------------
-
-void Editor::play() {
-    if (m_playState == PlayState::Paused) {
-        m_playState = PlayState::Playing;
-        log("Resumed");
-        return;
-    }
-    if (m_playState == PlayState::Playing) return;
-    // Systems run on the live world; the copy is what Stop puts back.
-    m_editWorld = m_world;
-    shockwave::storePreviousTransforms(m_world, engine().jobs());
-    m_playState = PlayState::Playing;
-    log("Playing. Changes made now are undone by Stop.");
-}
-
-void Editor::pause() {
-    if (m_playState == PlayState::Playing) {
-        m_playState = PlayState::Paused;
-        log("Paused");
-    } else if (m_playState == PlayState::Paused) {
-        play();
-    }
-}
-
-void Editor::stop() {
-    if (!playing()) return;
-    m_world = std::move(m_editWorld);
-    m_editWorld = shockwave::World();
-    m_playState = PlayState::Editing;
-    m_gizmoWasUsing = false;
-    log("Stopped");
+    return roots;
 }
 
 // ---- Editing ------------------------------------------------------------------------------
 
-void Editor::select(Entity e) {
-    const Entity next = m_world.alive(e) ? e : kNullEntity;
-    if (!(next == m_selected)) m_revealSelection = true;
-    m_selected = next;
-}
-
-Entity Editor::selected() const {
-    return m_world.alive(m_selected) ? m_selected : kNullEntity;
-}
-
 std::string Editor::displayName(Entity e) const {
     const Name* name = m_world.get<Name>(e);
     return name && !name->value.empty() ? name->value : "Entity " + std::to_string(e.index);
+}
+
+std::string Editor::kindLabel(Entity e) {
+    if (m_world.has<shockwave::Camera>(e)) return "Camera";
+    if (m_world.has<shockwave::Environment>(e)) return "Environment";
+    if (const MeshRenderer* r = m_world.get<MeshRenderer>(e)) {
+        const std::string mesh = engine().assets().meshName(r->mesh);
+        return mesh.empty() ? "Mesh" : fs::path(mesh).stem().string();
+    }
+    if (const auto* m = m_world.get<shockwave::ModelRenderer>(e)) {
+        const std::string model = engine().assets().modelName(m->model);
+        return model.empty() ? "Model" : fs::path(model).stem().string();
+    }
+    if (m_world.has<shockwave::CharacterController>(e)) return "Character";
+    if (m_world.has<shockwave::PhysicsSettings>(e)) return "Physics";
+    if (m_world.has<shockwave::Collider>(e)) {
+        const auto* body = m_world.get<shockwave::RigidBody>(e);
+        return body && body->sensor ? "Trigger" : "Collider";
+    }
+    return {};
 }
 
 std::string Editor::uniqueName(const std::string& base) const {
@@ -1303,62 +493,102 @@ std::string Editor::uniqueName(const std::string& base) const {
     }
 }
 
-void Editor::addEntity(const char* name, const char* mesh, const char* texture) {
-    pushUndo(m_world);
-    const Entity e = m_world.create();
-    m_world.add<Name>(e, {uniqueName(name)});
-    // Drop it a few units in front of the camera, resting on the ground.
-    const glm::vec3 ahead = m_camera.position + m_camera.forward() * 6.0f;
-    m_world.add<Transform>(e, {{ahead.x, std::string(mesh) == "plane" ? 0.01f : 0.5f, ahead.z}});
-    const shockwave::Assets& assets = engine().assets();
-    m_world.add<MeshRenderer>(e, {assets.findMesh(mesh), assets.findTexture(texture).value_or(shockwave::TextureHandle{})});
-    select(e);
-    log("Added " + displayName(e));
-}
-
-void Editor::addEmptyEntity() {
-    pushUndo(m_world);
-    const Entity e = m_world.create();
-    m_world.add<Name>(e, {uniqueName("Entity")});
-    m_world.add<Transform>(e, {m_camera.position + m_camera.forward() * 6.0f});
-    select(e);
-    log("Added " + displayName(e) + "; give it components in the Inspector");
-}
-
-void Editor::addChild(const char* name, const char* mesh, const char* texture) {
-    const Entity parent = selected();
-    if (!parent.valid()) return;
-    pushUndo(m_world);
-    const Entity e = m_world.create();
-    m_world.add<Name>(e, {uniqueName(name)});
-    // A step to the side of the parent, in its own space, so it doesn't hide inside it.
-    m_world.add<Transform>(e, {{1.5f, 0.0f, 0.0f}});
-    if (mesh) {
-        const shockwave::Assets& assets = engine().assets();
-        m_world.add<MeshRenderer>(e, {assets.findMesh(mesh), assets.findTexture(texture).value_or(shockwave::TextureHandle{})});
+glm::vec3 Editor::placementPoint() const {
+    // Where the view meets the ground, if that's reasonably close; otherwise a few units
+    // ahead, dropped to the ground.
+    const glm::vec3 forward = m_camera.forward();
+    glm::vec3 at = m_camera.position + forward * 6.0f;
+    if (forward.y < -0.05f) {
+        const float t = -m_camera.position.y / forward.y;
+        if (t > 0.0f && t < 40.0f) at = m_camera.position + forward * t;
     }
-    m_world.add<Parent>(e, {parent});
+    at.y = 0.0f;
+    if (m_prefs.snap && m_prefs.snapMove > 0.0f) {
+        at.x = std::round(at.x / m_prefs.snapMove) * m_prefs.snapMove;
+        at.z = std::round(at.z / m_prefs.snapMove) * m_prefs.snapMove;
+    }
+    return at;
+}
+
+Entity Editor::createEntity(CreateKind kind, Entity parent) {
+    if (parent.valid() && !m_world.alive(parent)) parent = kNullEntity;
+    pushUndo(m_world);
+    const Entity e = m_world.create();
+    const shockwave::Assets& assets = engine().assets();
+    const glm::vec3 ground = placementPoint();
+    auto addMesh = [&](const char* name, const char* mesh, float lift) {
+        m_world.add<Name>(e, {uniqueName(name)});
+        m_world.add<Transform>(e, {parent.valid() ? glm::vec3(0.0f) : ground + glm::vec3(0.0f, lift, 0.0f)});
+        MeshRenderer renderer;
+        renderer.mesh = assets.findMesh(mesh);
+        m_world.add<MeshRenderer>(e, renderer);
+    };
+    switch (kind) {
+    case CreateKind::Empty:
+        m_world.add<Name>(e, {uniqueName("Entity")});
+        m_world.add<Transform>(e, {parent.valid() ? glm::vec3(0.0f) : ground});
+        break;
+    case CreateKind::Cube: addMesh("Cube", "cube", 0.5f); break;
+    case CreateKind::Sphere: addMesh("Sphere", "sphere", 0.5f); break;
+    case CreateKind::Plane: addMesh("Plane", "plane", 0.0f); break;
+    case CreateKind::Camera: {
+        // Starts out seeing what the viewport sees.
+        m_world.add<Name>(e, {uniqueName("Camera")});
+        Transform t = Transform::fromMatrix(glm::inverse(m_camera.view()));
+        if (parent.valid()) t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
+        m_world.add<Transform>(e, t);
+        shockwave::Camera camera;
+        camera.primary = !shockwave::primaryCamera(m_world).valid();
+        m_world.add<shockwave::Camera>(e, camera);
+        break;
+    }
+    case CreateKind::Environment:
+        m_world.add<Name>(e, {uniqueName("Environment")});
+        m_world.add<shockwave::Environment>(e);
+        if (m_world.count<shockwave::Environment>() > 1) warn("The scene now has two Environments; only one is used");
+        break;
+    }
+    if (parent.valid() && m_world.has<Transform>(e)) m_world.add<Parent>(e, {parent});
     select(e);
-    log("Added " + displayName(e) + " under " + displayName(parent));
+    log("Created " + displayName(e) + (parent.valid() ? " under " + displayName(parent) : ""));
+    return e;
 }
 
 Entity Editor::spawnMesh(const std::string& mesh, const glm::vec3& position) {
     pushUndo(m_world);
     const Entity e = m_world.create();
-    std::string base = mesh;
+    std::string base = fs::path(mesh).stem().string();
     if (!base.empty()) base[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(base[0])));
     m_world.add<Name>(e, {uniqueName(base)});
     m_world.add<Transform>(e, {position});
-    m_world.add<MeshRenderer>(e, {engine().assets().findMesh(mesh), shockwave::TextureHandle{}});
+    MeshRenderer renderer;
+    renderer.mesh = engine().assets().findMesh(mesh);
+    m_world.add<MeshRenderer>(e, renderer);
     select(e);
-    log("Added " + displayName(e));
+    log("Placed " + displayName(e));
+    return e;
+}
+
+Entity Editor::spawnModel(const std::string& model, const glm::vec3& position) {
+    const auto handle = engine().assets().findModel(model);
+    if (!handle.valid()) {
+        warn(model + " hasn't been imported");
+        return kNullEntity;
+    }
+    pushUndo(m_world);
+    const Entity e = m_world.create();
+    m_world.add<Name>(e, {uniqueName(fs::path(model).stem().string())});
+    m_world.add<Transform>(e, {position});
+    m_world.add<shockwave::ModelRenderer>(e, {handle});
+    select(e);
+    log("Placed " + displayName(e));
     return e;
 }
 
 bool Editor::reparent(Entity child, Entity parent) {
     if (!m_world.alive(child) || shockwave::parentOf(m_world, child) == parent) return false;
     if (parent.valid() && (parent == child || shockwave::isAncestor(m_world, child, parent))) {
-        log("Can't put " + displayName(child) + " under " + displayName(parent) + ": it's inside it");
+        warn("Can't put " + displayName(child) + " under " + displayName(parent) + ": it's inside it");
         return false;
     }
     shockwave::World before = m_world;
@@ -1370,11 +600,28 @@ bool Editor::reparent(Entity child, Entity parent) {
     return true;
 }
 
+// Dragging one of several selected rows moves the whole selection.
+bool Editor::reparentSelection(Entity dragged, Entity parent) {
+    if (!isSelected(dragged) || selection().size() < 2) return reparent(dragged, parent);
+    shockwave::World before = m_world;
+    int moved = 0;
+    for (Entity e : selectionRoots()) {
+        if (e == parent || shockwave::parentOf(m_world, e) == parent) continue;
+        if (parent.valid() && shockwave::isAncestor(m_world, e, parent)) continue;
+        moved += shockwave::setParent(m_world, e, parent) ? 1 : 0;
+    }
+    if (moved == 0) return false;
+    pushUndo(std::move(before));
+    log((parent.valid() ? "Attached " + std::to_string(moved) + " entities to " + displayName(parent)
+                        : "Detached " + std::to_string(moved) + " entities"));
+    return true;
+}
+
 bool Editor::applyTexture(Entity e, const std::string& texture) {
     MeshRenderer* renderer = m_world.get<MeshRenderer>(e);
     const auto handle = engine().assets().findTexture(texture);
     if (!renderer || !handle) {
-        if (m_world.alive(e)) log(displayName(e) + " has no MeshRenderer to show " + texture + " on");
+        if (m_world.alive(e)) warn(displayName(e) + " has no MeshRenderer to show " + texture + " on");
         return false;
     }
     pushUndo(m_world);
@@ -1384,25 +631,108 @@ bool Editor::applyTexture(Entity e, const std::string& texture) {
 }
 
 void Editor::duplicateSelected() {
-    const Entity e = selected();
-    if (!e.valid()) return;
+    const std::vector<Entity> roots = selectionRoots();
+    if (roots.empty()) return;
     pushUndo(m_world);
-    const Entity copy = shockwave::cloneWithChildren(m_world, e);
-    if (Name* name = m_world.get<Name>(copy)) name->value = uniqueName(name->value);
-    if (Transform* t = m_world.get<Transform>(copy)) t->position.x += 1.0f;
-    select(copy);
-    log("Duplicated as " + displayName(copy));
+    std::vector<Entity> copies;
+    for (Entity e : roots) {
+        const Entity copy = shockwave::cloneWithChildren(m_world, e);
+        if (Name* name = m_world.get<Name>(copy)) name->value = uniqueName(name->value);
+        copies.push_back(copy);
+    }
+    m_selection = copies;
+    m_rangeAnchor = copies.back();
+    log(copies.size() == 1 ? "Duplicated as " + displayName(copies[0])
+                           : "Duplicated " + std::to_string(copies.size()) + " entities");
 }
 
 void Editor::deleteSelected() {
-    const Entity e = selected();
-    if (!e.valid()) return;
+    const std::vector<Entity> roots = selectionRoots();
+    if (roots.empty()) return;
     pushUndo(m_world);
-    const std::string name = displayName(e);
-    const size_t count = shockwave::subtree(m_world, e).size();
-    shockwave::destroyWithChildren(m_world, e);
+    size_t count = 0;
+    const std::string first = displayName(roots[0]);
+    for (Entity e : roots) {
+        count += shockwave::subtree(m_world, e).size();
+        shockwave::destroyWithChildren(m_world, e);
+    }
     select(kNullEntity);
-    log(count > 1 ? "Deleted " + name + " and " + std::to_string(count - 1) + " under it" : "Deleted " + name);
+    log(count == 1 ? "Deleted " + first : "Deleted " + std::to_string(count) + " entities");
+}
+
+// Puts the selection under a new empty entity at their centre, without moving anything.
+void Editor::groupSelected() {
+    const std::vector<Entity> roots = selectionRoots();
+    if (roots.empty()) return;
+    pushUndo(m_world);
+    Entity commonParent = shockwave::parentOf(m_world, roots[0]);
+    glm::vec3 centre(0.0f);
+    for (Entity e : roots) {
+        if (!(shockwave::parentOf(m_world, e) == commonParent)) commonParent = kNullEntity;
+        centre += glm::vec3(shockwave::worldMatrix(m_world, e)[3]);
+    }
+    centre /= static_cast<float>(roots.size());
+    const Entity group = m_world.create();
+    m_world.add<Name>(group, {uniqueName("Group")});
+    const glm::mat4 parentWorld = commonParent.valid() ? shockwave::worldMatrix(m_world, commonParent) : glm::mat4(1.0f);
+    m_world.add<Transform>(group, {glm::vec3(glm::inverse(parentWorld) * glm::vec4(centre, 1.0f))});
+    if (commonParent.valid()) m_world.add<Parent>(group, {commonParent});
+    for (Entity e : roots) shockwave::setParent(m_world, e, group);
+    select(group);
+    log("Grouped " + std::to_string(roots.size()) + " entities under " + displayName(group));
+}
+
+// Moves the selection to the editor camera: the quick way to set up a game camera.
+void Editor::alignSelectedToView() {
+    const Entity e = selected();
+    Transform* t = m_world.get<Transform>(e);
+    if (!t) return;
+    pushUndo(m_world);
+    const Entity parent = shockwave::parentOf(m_world, e);
+    const glm::mat4 parentWorld = parent.valid() ? shockwave::worldMatrix(m_world, parent) : glm::mat4(1.0f);
+    const Transform local = Transform::fromMatrix(glm::inverse(parentWorld) * glm::inverse(m_camera.view()));
+    t->position = local.position;
+    t->rotation = local.rotation;
+    log("Moved " + displayName(e) + " to the view");
+}
+
+// Frames everything selected: the world-space box round their meshes (or positions).
+void Editor::focusSelected() {
+    const std::vector<Entity> all = selection();
+    bool any = false;
+    glm::vec3 lo(0.0f), hi(0.0f);
+    auto grow = [&](const glm::vec3& p) {
+        lo = any ? glm::min(lo, p) : p;
+        hi = any ? glm::max(hi, p) : p;
+        any = true;
+    };
+    for (Entity e : all) {
+        if (!m_world.has<Transform>(e)) continue;
+        const glm::mat4 m = shockwave::worldMatrix(m_world, e);
+        shockwave::Bounds box;
+        if (!entityBounds(e, box)) {
+            grow(glm::vec3(m[3]));
+            continue;
+        }
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 corner((i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y,
+                                   (i & 4) ? box.max.z : box.min.z);
+            grow(glm::vec3(m * glm::vec4(corner, 1.0f)));
+        }
+    }
+    if (!any) return;
+    const glm::vec3 centre = (lo + hi) * 0.5f;
+    const float radius = std::max(glm::length(hi - lo) * 0.5f, 0.5f);
+    const float distance = std::clamp(radius / std::tan(m_camera.fovY * 0.5f) * 1.1f, 1.5f, 2000.0f);
+    m_camera.position = centre - m_camera.forward() * distance;
+}
+
+void Editor::beginRename(Entity e) {
+    if (!m_world.alive(e)) return;
+    m_renaming = e;
+    m_renameBuffer = displayName(e);
+    m_focusRename = true;
+    m_revealSelection = true;
 }
 
 void Editor::trackEdit() {
@@ -1440,28 +770,41 @@ void Editor::redo() {
 void Editor::handleShortcuts() {
     const ImGuiIO& io = ImGui::GetIO();
     const ImGuiInputFlags global = ImGuiInputFlags_RouteGlobal;
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, global)) requestAction(PendingAction::New);
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, global)) requestAction(PendingAction::Open);
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, global)) requestAction(PendingAction::NewBasicScene);
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, global)) requestAction(PendingAction::OpenSceneDialog);
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, global)) saveScene();
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, global)) showSaveDialog();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, global)) showSaveSceneDialog();
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, global)) undo();
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, global) ||
         ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, global)) {
         redo();
     }
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, global)) duplicateSelected();
-    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, global)) m_playState == PlayState::Playing ? stop() : play();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, global)) playState() == PlayState::Playing ? stop() : play();
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, global)) pause();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Comma, global)) m_showPreferences = true;
 
-    // Single keys only when nobody is typing and the camera isn't flying.
-    if (io.WantTextInput || m_looking || io.KeyCtrl || io.KeyAlt) return;
+    // The rest act on the scene, so not while typing.
+    if (io.WantTextInput) return;
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, global)) duplicateSelected();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A, global)) selectAll();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_G, global)) groupSelected();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_F, global)) alignSelectedToView();
+
+    // Single keys only when the camera isn't flying.
+    if (m_looking || io.KeyCtrl || io.KeyAlt) return;
     if (ImGui::IsKeyPressed(ImGuiKey_W, false)) m_gizmoOperation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(ImGuiKey_E, false)) m_gizmoOperation = ImGuizmo::ROTATE;
     if (ImGui::IsKeyPressed(ImGuiKey_R, false)) m_gizmoOperation = ImGuizmo::SCALE;
     if (ImGui::IsKeyPressed(ImGuiKey_T, false)) {
         m_gizmoMode = m_gizmoMode == ImGuizmo::WORLD ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
     }
+    if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !io.KeyShift) {
+        m_prefs.showGrid = !m_prefs.showGrid;
+        m_prefsDirty = true;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_F, false)) focusSelected();
+    if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) beginRename(selected());
+    if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) m_viewThroughCamera = !m_viewThroughCamera;
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) deleteSelected();
     if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) m_showControls = !m_showControls;
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup)) {
@@ -1469,39 +812,73 @@ void Editor::handleShortcuts() {
     }
 }
 
-// ---- Files --------------------------------------------------------------------------------
+// ---- Play mode ----------------------------------------------------------------------------
 
-void Editor::newScene() {
-    stop();
-    makeEmptyScene(m_world, engine().assets());
-    m_scenePath = (std::filesystem::path(m_scenePath).parent_path() / "untitled.swscene").string();
-    m_undo.clear();
-    m_redo.clear();
-    select(kNullEntity);
-    m_dirty = false;
-    log("New scene");
+void Editor::play() {
+    if (!m_session || playState() == PlayState::Playing) return;
+    if (!m_gameModuleMatches) {
+        warn("Play is off: this project's gameplay module isn't the one compiled into the editor");
+        return;
+    }
+    const bool resuming = playState() == PlayState::Paused;
+    try {
+        m_session->start();
+    } catch (const std::exception& e) {
+        error(std::string("Couldn't start gameplay: ") + e.what());
+        return;
+    }
+    if (resuming) {
+        log("Resumed");
+        return;
+    }
+    if (const auto* physics = m_session->physics()) {
+        for (const auto& problem : physics->diagnostics()) warn(displayName(problem.entity) + ": " + problem.message);
+    }
+    m_viewBeforePlay = m_viewThroughCamera;
+    if (m_prefs.playFromSceneCamera) {
+        if (shockwave::primaryCamera(m_world).valid()) {
+            m_viewThroughCamera = true;
+        } else {
+            warn("The scene has no Camera, so Play shows the editor's view. Add one with Create > Camera.");
+        }
+    }
+    log("Playing the project's gameplay and physics. Stop restores the scene; F8 switches cameras.");
 }
 
-bool Editor::openScene(const std::string& path) {
-    stop();
-    shockwave::World loaded;
-    std::string error;
-    std::vector<std::string> warnings;
-    EditorCamera camera;
-    shockwave::SceneFileHooks hooks;
-    hooks.readHeader = [&](const std::string& key, std::istream& in) {
-        // "camera" is what version 1 files called it.
-        if (key == "editor_camera" || key == "camera") {
-            in >> camera.position.x >> camera.position.y >> camera.position.z >> camera.yaw >> camera.pitch;
-        }
-    };
-    if (!shockwave::loadScene(loaded, engine().assets(), path, error, hooks, &warnings)) {
-        log("Couldn't open scene: " + error);
-        return false;
+void Editor::pause() {
+    if (!m_session) return;
+    if (playState() == PlayState::Playing) {
+        m_session->pause();
+        log("Paused");
+    } else if (playState() == PlayState::Paused) {
+        play();
     }
-    for (const std::string& w : warnings) log("Warning: " + w);
-    m_world = std::move(loaded);
-    m_scenePath = path;
+}
+
+void Editor::stop() {
+    if (!m_session || !playing()) return;
+    try {
+        m_session->stop();
+    } catch (const std::exception& e) {
+        error(std::string("Gameplay cleanup failed: ") + e.what());
+    }
+    m_gizmoWasUsing = false;
+    m_viewThroughCamera = m_viewBeforePlay;
+    log("Stopped after " + std::to_string(m_session->ticks()) + " simulation ticks");
+}
+
+// ---- Scene files --------------------------------------------------------------------------
+
+std::string Editor::sceneDisplayName() const {
+    return m_scenePath.empty() ? "Untitled" : m_scenePath.filename().string();
+}
+
+void Editor::newScene(SceneTemplate kind) {
+    stop();
+    rememberCamera();
+    makeScene(kind, m_world, engine().assets());
+    m_scenePath.clear();
+    const EditorCamera camera;
     m_camera.position = camera.position;
     m_camera.yaw = camera.yaw;
     m_camera.pitch = camera.pitch;
@@ -1509,77 +886,225 @@ bool Editor::openScene(const std::string& path) {
     m_redo.clear();
     select(kNullEntity);
     m_dirty = false;
-    log("Opened " + path + " (" + std::to_string(m_world.entityCount()) + " entities)");
+    m_viewThroughCamera = false;
+    log(kind == SceneTemplate::Basic ? "New scene from the Basic template" : "New empty scene");
+}
+
+bool Editor::openScene(const fs::path& path) {
+    stop();
+    shockwave::World loaded;
+    std::string err;
+    std::vector<std::string> warnings;
+    // Scenes saved by older editors carry the camera in the file.
+    EditorCamera fileCamera;
+    bool hasFileCamera = false;
+    shockwave::SceneFileHooks hooks;
+    hooks.readHeader = [&](const std::string& key, std::istream& in) {
+        if (key == "editor_camera" || key == "camera") {
+            in >> fileCamera.position.x >> fileCamera.position.y >> fileCamera.position.z >> fileCamera.yaw >>
+                fileCamera.pitch;
+            hasFileCamera = true;
+        }
+    };
+    if (!shockwave::loadScene(loaded, engine().assets(), path.string(), err, hooks, &warnings)) {
+        error("Couldn't open scene: " + err);
+        return false;
+    }
+    rememberCamera();
+    for (const std::string& w : warnings) warn(w);
+    m_world = std::move(loaded);
+    m_scenePath = fs::absolute(path).lexically_normal();
+    const std::string relative = m_project.relative(m_scenePath);
+    EditorCamera camera = hasFileCamera ? fileCamera : EditorCamera();
+    if (const auto it = m_sceneCameras.find(relative); it != m_sceneCameras.end()) camera = it->second;
+    m_camera.position = camera.position;
+    m_camera.yaw = camera.yaw;
+    m_camera.pitch = camera.pitch;
+    m_undo.clear();
+    m_redo.clear();
+    select(kNullEntity);
+    m_dirty = false;
+    m_viewThroughCamera = false;
+    m_autosaveTimer = 0.0;
+    m_lastScene = relative;
+    m_prefs.addRecentScene(m_scenePath.string());
+    m_prefsDirty = true;
+    saveEditorState();
+    log("Opened " + relative + " (" + std::to_string(m_world.entityCount()) + " entities)");
+
+    // An autosave newer than the file means the editor stopped with unsaved changes.
+    std::error_code ec;
+    const fs::path autosaved = autosavePath();
+    if (fs::exists(autosaved, ec) && fs::last_write_time(autosaved, ec) > fs::last_write_time(m_scenePath, ec)) {
+        m_recoveryPath = autosaved;
+        m_openRecoveryModal = true;
+    }
     return true;
 }
 
 bool Editor::saveScene() {
+    if (!m_hasProject) return false;
     if (playing()) {
-        log("Stop playing before saving: the scene is mid-simulation");
+        warn("Stop playing before saving: the scene is mid-simulation");
         return false;
     }
-    // The camera is saved with the scene so it reopens where you left off.
-    shockwave::SceneFileHooks hooks;
-    hooks.writeHeader = [&](std::ostream& out) {
-        out << "editor_camera " << m_camera.position.x << ' ' << m_camera.position.y << ' ' << m_camera.position.z
-            << ' ' << m_camera.yaw << ' ' << m_camera.pitch << "\n";
-    };
-    std::string error;
-    if (!shockwave::saveScene(m_world, engine().assets(), m_scenePath, error, hooks)) {
-        log("Couldn't save: " + error);
+    if (m_scenePath.empty()) {
+        showSaveSceneDialog();
         return false;
     }
+    return saveSceneAs(m_scenePath);
+}
+
+bool Editor::saveSceneAs(fs::path path) {
+    if (playing()) {
+        warn("Stop playing before saving: the scene is mid-simulation");
+        return false;
+    }
+    if (path.extension() != ".swscene") path += ".swscene";
+    path = fs::absolute(path).lexically_normal();
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    const fs::path oldAutosave = autosavePath();
+    std::string err;
+    if (!shockwave::saveScene(m_world, engine().assets(), path.string(), err)) {
+        error("Couldn't save: " + err);
+        return false;
+    }
+    fs::remove(oldAutosave, ec);
+    m_scenePath = path;
+    fs::remove(autosavePath(), ec);
     m_dirty = false;
-    log("Saved " + m_scenePath);
+    m_autosaveTimer = 0.0;
+    const std::string relative = m_project.relative(m_scenePath);
+    if (fs::path(relative).is_absolute()) warn(relative + " is outside the project folder; other machines won't find it");
+    m_lastScene = relative;
+    rememberCamera();
+    saveEditorState();
+    m_prefs.addRecentScene(m_scenePath.string());
+    m_prefsDirty = true;
+    scanScenes();
+    log("Saved " + relative);
+
+    // A project without a working startup scene gets this one.
+    if (!fs::is_regular_file(m_project.startupScene, ec)) {
+        m_project.startupScene = m_scenePath;
+        m_projectEdit.startupScene = m_scenePath;
+        if (shockwave::saveProject(m_project, err)) log("Startup scene set to " + relative);
+    }
     return true;
 }
 
-void Editor::showOpenDialog() {
-    // SDL calls back from another thread (or later on this one); results are picked up
-    // in handleDialogResults at the start of a frame.
-    const std::string folder = std::filesystem::absolute(m_scenePath).parent_path().string();
-    SDL_ShowOpenFileDialog(
-        [](void* user, const char* const* files, int) {
-            Editor* self = static_cast<Editor*>(user);
-            std::lock_guard lock(self->m_dialogMutex);
-            if (!files) {
-                self->m_dialogError = SDL_GetError();
-            } else if (files[0]) {
-                self->m_dialogOpenResult = files[0];
-            }
-        },
-        this, engine().window().handle(), kSceneFilter, 1, folder.c_str(), false);
+void Editor::autosave(double frameDt) {
+    if (m_prefs.autosaveMinutes <= 0 || !m_dirty || playing()) return;
+    m_autosaveTimer += frameDt;
+    if (m_autosaveTimer < m_prefs.autosaveMinutes * 60.0) return;
+    m_autosaveTimer = 0.0;
+    const fs::path path = autosavePath();
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    std::string err;
+    if (shockwave::saveScene(m_world, engine().assets(), path.string(), err)) {
+        log("Autosaved " + sceneDisplayName());
+    } else {
+        warn("Autosave failed: " + err);
+    }
 }
 
-void Editor::showSaveDialog() {
-    const std::string location = std::filesystem::absolute(m_scenePath).string();
-    SDL_ShowSaveFileDialog(
-        [](void* user, const char* const* files, int) {
-            Editor* self = static_cast<Editor*>(user);
-            std::lock_guard lock(self->m_dialogMutex);
-            if (!files) {
-                self->m_dialogError = SDL_GetError();
-            } else if (files[0]) {
-                self->m_dialogSaveResult = files[0];
-            }
-        },
-        this, engine().window().handle(), kSceneFilter, 1, location.c_str());
+// SDL calls back from another thread (or later on this one); results are picked up in
+// handleDialogResults at the start of a frame.
+namespace {
+
+struct PendingDialog {
+    std::mutex* mutex;
+    void* results;   // std::vector<Editor::DialogResult>*, type-erased to keep it private
+    int kind;
+    std::string* error;
+};
+
+} // namespace
+
+#define SW_DIALOG_CALLBACK                                                                            \
+    [](void* user, const char* const* files, int) {                                                   \
+        auto* pending = static_cast<PendingDialog*>(user);                                            \
+        {                                                                                             \
+            std::lock_guard lock(*pending->mutex);                                                    \
+            if (!files) {                                                                             \
+                *pending->error = SDL_GetError();                                                     \
+            } else if (files[0]) {                                                                    \
+                std::vector<std::string> list;                                                        \
+                for (const char* const* f = files; *f; ++f) list.emplace_back(*f);                    \
+                static_cast<std::vector<DialogResult>*>(pending->results)                             \
+                    ->push_back({static_cast<DialogKind>(pending->kind), std::move(list)});           \
+            }                                                                                         \
+        }                                                                                             \
+        delete pending;                                                                               \
+    }
+
+void Editor::showOpenSceneDialog() {
+    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenScene), &m_dialogError};
+    const std::string folder = m_project.sceneFolder.string();
+    SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kSceneFilter, 1, folder.c_str(), false);
 }
+
+void Editor::showSaveSceneDialog() {
+    if (!m_hasProject) return;
+    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::SaveScene), &m_dialogError};
+    const std::string location =
+        m_scenePath.empty() ? (m_project.sceneFolder / "untitled.swscene").string() : m_scenePath.string();
+    SDL_ShowSaveFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kSceneFilter, 1, location.c_str());
+}
+
+void Editor::showOpenProjectDialog() {
+    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenProject), &m_dialogError};
+    SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kProjectFilter, 1,
+                           m_newProjectLocation.c_str(), false);
+}
+
+void Editor::showNewProjectFolderDialog() {
+    auto* pending =
+        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::NewProjectFolder), &m_dialogError};
+    SDL_ShowOpenFolderDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), m_newProjectLocation.c_str(), false);
+}
+
+void Editor::showImportDialog(const fs::path& folder) {
+    m_importFolder = folder;
+    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::Import), &m_dialogError};
+    SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kImportFilter, 2, nullptr, true);
+}
+
+#undef SW_DIALOG_CALLBACK
 
 void Editor::handleDialogResults() {
-    std::string openPath, savePath, error;
+    std::vector<DialogResult> results;
+    std::string err;
     {
         std::lock_guard lock(m_dialogMutex);
-        openPath.swap(m_dialogOpenResult);
-        savePath.swap(m_dialogSaveResult);
-        error.swap(m_dialogError);
+        results.swap(m_dialogResults);
+        err.swap(m_dialogError);
     }
-    if (!error.empty()) log("File dialog unavailable (" + error + "). It needs xdg-desktop-portal or zenity.");
-    if (!openPath.empty()) openScene(openPath);   // unsaved changes were already confirmed
-    if (!savePath.empty()) {
-        if (std::filesystem::path(savePath).extension() != ".swscene") savePath += ".swscene";
-        m_scenePath = savePath;
-        saveScene();
+    if (!err.empty()) error("File dialog unavailable (" + err + "). It needs xdg-desktop-portal or zenity.");
+    for (const DialogResult& r : results) {
+        switch (r.kind) {
+        case DialogKind::OpenScene: openScene(r.files[0]); break;   // unsaved changes were already confirmed
+        case DialogKind::SaveScene: saveSceneAs(r.files[0]); break;
+        case DialogKind::OpenProject: requestAction(PendingAction::OpenProject, r.files[0]); break;
+        case DialogKind::NewProjectFolder: m_newProjectLocation = r.files[0]; break;
+        case DialogKind::Import: {
+            std::error_code ec;
+            fs::create_directories(m_importFolder, ec);
+            for (const std::string& file : r.files) {
+                const fs::path target = m_importFolder / fs::path(file).filename();
+                fs::copy_file(file, target, fs::copy_options::overwrite_existing, ec);
+                if (ec) {
+                    error("Couldn't import " + file + ": " + ec.message());
+                } else {
+                    log("Copied " + fs::path(file).filename().string() + " into " + m_project.relative(m_importFolder));
+                }
+            }
+            logAssetChanges(m_assetFolder->refresh());
+            break;
+        }
+        }
     }
 }
 
@@ -1595,42 +1120,39 @@ void Editor::requestAction(PendingAction action, const std::string& path) {
 
 void Editor::runAction(PendingAction action, const std::string& path) {
     switch (action) {
-    case PendingAction::New: newScene(); break;
-    case PendingAction::Open: showOpenDialog(); break;
-    case PendingAction::OpenPath: openScene(path); break;
+    case PendingAction::NewBasicScene: newScene(SceneTemplate::Basic); break;
+    case PendingAction::NewEmptyScene: newScene(SceneTemplate::Empty); break;
+    case PendingAction::OpenSceneDialog: showOpenSceneDialog(); break;
+    case PendingAction::OpenScene: openScene(path); break;
+    case PendingAction::OpenProject: {
+        const auto file = shockwave::findProjectFile(path);
+        if (file) {
+            m_dirty = false;   // confirmed
+            openProject(*file);
+        } else {
+            error("No Shockwave project at " + path);
+        }
+        break;
+    }
+    case PendingAction::CloseProject:
+        m_dirty = false;
+        closeProject();
+        break;
     case PendingAction::Quit: engine().quit(); break;
     case PendingAction::None: break;
     }
 }
 
 void Editor::updateTitle() {
-    const std::string title = "Shockwave Editor - " + fileName(m_scenePath) + (m_dirty ? " *" : "") +
-                              (playing() ? " [playing]" : "");
+    std::string title = "Shockwave Editor";
+    if (m_hasProject) {
+        title = m_project.name + " - " + sceneDisplayName() + (m_dirty ? " *" : "") + (playing() ? " [Playing]" : "") +
+                " - Shockwave Editor";
+    }
     if (title != m_title) {
         engine().window().setTitle(title);
         m_title = title;
     }
-}
-
-void Editor::logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& changes) {
-    using What = shockwave::AssetFolder::Change::What;
-    for (const auto& change : changes) {
-        switch (change.what) {
-        case What::Added:
-            if (const auto* file = m_assetFolder->find(change.name); file && file->imported) log("Imported " + change.name);
-            break;
-        case What::Reloaded: log("Reloaded " + change.name); break;
-        case What::Failed: log("Couldn't import " + change.name + ": " + change.error); break;
-        case What::Removed: log(change.name + " was removed; anything using it keeps the last version"); break;
-        }
-    }
-}
-
-void Editor::log(const std::string& message) {
-    std::printf("Editor: %s\n", message.c_str());
-    m_log.push_back(message);
-    if (m_log.size() > 500) m_log.erase(m_log.begin());
-    m_logScrollToBottom = true;
 }
 
 } // namespace editor

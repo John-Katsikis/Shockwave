@@ -1,7 +1,9 @@
 #pragma once
 
 #include <shockwave/Renderer.h>
+#include <shockwave/Model.h>
 #include <shockwave/World.h>
+#include <shockwave/Physics.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -45,7 +47,25 @@ struct MeshRenderer {
     MeshHandle mesh;
     TextureHandle texture;
     glm::vec4 tint{1.0f};
+    glm::vec2 tiling{1.0f};   // texture repeats across the surface, per axis
     bool visible = true;
+};
+
+// A reusable imported model. Its internal nodes/materials stay in the asset;
+// this entity's transform places the complete model, and tint multiplies colors.
+struct ModelRenderer {
+    ModelHandle model;
+    glm::vec4 tint{1.0f};
+    bool visible = true;
+};
+
+// What the player sees: a game renders the scene from the primary Camera's world
+// transform, looking down its -Z axis (see primaryCamera in Systems.h). The editor's
+// Play button looks through it too.
+struct Camera {
+    float fov = 60.0f;          // vertical field of view, degrees
+    float nearPlane = 0.1f;     // units; there is no far plane (reverse-Z, infinite)
+    bool primary = true;        // with several cameras, the first primary one wins
 };
 
 // Scene-wide settings. Give one entity one; with several, any of them may win.
@@ -84,7 +104,7 @@ struct PreviousTransform {
 
 // Entity fields refer to another entity in the same world; scene files save them as
 // the position of that entity's block in the file.
-enum class FieldType { Bool, Int, Float, Vec3, Color, Rotation, String, Mesh, Texture, Entity };
+enum class FieldType { Bool, Int, Enum, Float, Vec2, Vec3, Color, Rotation, String, Mesh, Texture, Model, Entity };
 
 struct Field {
     std::string name;
@@ -93,19 +113,26 @@ struct Field {
     float speed = 0.0f;   // editor drag speed; 0 picks a default for the type
     float min = 0.0f;     // editor limits; min == max means none
     float max = 0.0f;
+    std::vector<std::string> options{}; // named values for int-backed enums
 };
 
 template <class T>
 constexpr FieldType fieldTypeOf() {
     if constexpr (std::is_same_v<T, bool>) return FieldType::Bool;
+    else if constexpr (std::is_enum_v<T>) {
+        static_assert(std::is_same_v<std::underlying_type_t<T>,int>, "reflected enums must use int storage");
+        return FieldType::Enum;
+    }
     else if constexpr (std::is_same_v<T, int>) return FieldType::Int;
     else if constexpr (std::is_same_v<T, float>) return FieldType::Float;
+    else if constexpr (std::is_same_v<T, glm::vec2>) return FieldType::Vec2;
     else if constexpr (std::is_same_v<T, glm::vec3>) return FieldType::Vec3;
     else if constexpr (std::is_same_v<T, glm::vec4>) return FieldType::Color;
     else if constexpr (std::is_same_v<T, glm::quat>) return FieldType::Rotation;
     else if constexpr (std::is_same_v<T, std::string>) return FieldType::String;
     else if constexpr (std::is_same_v<T, MeshHandle>) return FieldType::Mesh;
     else if constexpr (std::is_same_v<T, TextureHandle>) return FieldType::Texture;
+    else if constexpr (std::is_same_v<T, ModelHandle>) return FieldType::Model;
     else if constexpr (std::is_same_v<T, Entity>) return FieldType::Entity;
     else static_assert(sizeof(T) == 0, "unsupported field type");
 }
@@ -115,12 +142,21 @@ Field field(std::string name, M C::*member, float speed = 0.0f, float min = 0.0f
     const C probe{};
     const size_t offset = static_cast<size_t>(reinterpret_cast<const char*>(&(probe.*member)) -
                                               reinterpret_cast<const char*>(&probe));
-    return Field{std::move(name), fieldTypeOf<M>(), offset, speed, min, max};
+    return Field{std::move(name), fieldTypeOf<M>(), offset, speed, min, max, {}};
+}
+
+template <class C, class E>
+Field enumField(std::string name, E C::*member, std::vector<std::string> options) {
+    static_assert(std::is_enum_v<E>);
+    auto result=field(std::move(name),member);
+    result.options=std::move(options);
+    return result;
 }
 
 // Type-erased access to a registered component.
 struct ComponentInfo {
     std::string name;
+    std::string category;   // groups the editor's Add Component menu ("Rendering", say)
     uint32_t id = 0;
     std::vector<Field> fields;
     std::function<bool(const World&, Entity)> has;
@@ -137,9 +173,10 @@ void addComponentInfo(ComponentInfo info);
 // Registers (or re-registers) T. Do it at startup on the main thread; the built-in
 // components above are registered already.
 template <class T>
-void registerComponent(std::string name, std::vector<Field> fields) {
+void registerComponent(std::string name, std::vector<Field> fields, std::string category = "Gameplay") {
     ComponentInfo info;
     info.name = std::move(name);
+    info.category = std::move(category);
     info.id = componentId<T>();
     info.fields = std::move(fields);
     info.has = [](const World& w, Entity e) { return w.has<T>(e); };
@@ -152,7 +189,7 @@ void registerComponent(std::string name, std::vector<Field> fields) {
     detail::addComponentInfo(std::move(info));
 }
 
-// In registration order: built-ins first (Name, Transform, Parent, MeshRenderer,
+// In registration order: built-ins first (Name, Transform, Parent, MeshRenderer, Camera,
 // Environment, Spin, Bob), then the game's own.
 const std::vector<ComponentInfo>& registeredComponents();
 const ComponentInfo* findComponent(std::string_view name);
