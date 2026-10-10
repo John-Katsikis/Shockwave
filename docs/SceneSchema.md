@@ -222,16 +222,16 @@ Names a scene can use, built-in and from this project's asset folder.
 
 ## Project manifest
 
-`shockwave.swproject` sits at the project root; paths are relative to it and quoted.
+`<Name>.swproject` sits at the project root; paths are relative to it and quoted.
 
 ```text
 shockwave_project 1
 name "My Game"
 game_module "sample"      # must match the compiled gameplay library
-startup_scene "scenes/main.swscene"   # must exist
-assets "assets"                       # optional, default assets
-scenes "scenes"                       # optional, default scenes
-theme "themes/default.swtheme"        # optional
+startup_scene "Scenes/main.swscene"   # must exist
+assets "Content"                      # optional, default Content
+scenes "Scenes"                       # optional, default Scenes
+theme "Config/Editor.swtheme"         # optional editor theme for this project
 tick_rate 60                           # simulation updates per second
 window_size 1280 720
 vsync true

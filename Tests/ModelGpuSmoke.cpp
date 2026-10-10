@@ -23,7 +23,7 @@ struct Temporary {
         fs::remove_all(root, ec);
     }
 };
-class Smoke final : public Game {
+class Smoke final : public Application {
 public:
     explicit Smoke(fs::path source) : m_source(std::move(source)) {}
     void onStart() override {

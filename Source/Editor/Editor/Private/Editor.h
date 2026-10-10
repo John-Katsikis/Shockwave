@@ -64,7 +64,7 @@ struct EditorOptions {
 //
 // The UI runs on the main thread (ImGui is single-threaded); systems and drawing fan out
 // across the job system like any game.
-class Editor : public shockwave::Game {
+class Editor : public shockwave::Application {
 public:
     explicit Editor(EditorOptions options);
     ~Editor() override { disconnectConsole(); }

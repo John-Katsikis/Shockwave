@@ -43,7 +43,7 @@ struct GridSettings {
 // Threading: createMesh, createTexture, updateTexture and drawMesh may be called from
 // any thread, including job system workers. Draws go into per-thread lists, so
 // recording them doesn't contend. setClearColor and setCamera belong to the thread running
-// Game::onRender, and setCamera must come before that frame's drawMesh calls.
+// Application::onRender, and setCamera must come before that frame's drawMesh calls.
 struct DrawMaterial {
     float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
@@ -105,7 +105,7 @@ public:
     // since a reload hands out a new one.
     uint64_t guiTexture(TextureHandle texture);
 
-    // Per-frame commands, called from Game::onRender.
+    // Per-frame commands, called from Application::onRender.
     void setClearColor(const Color& color);
     // view: a standard right-handed, Y-up view matrix (glm::lookAt).
     // projection: reverse-Z (see perspectiveReverseZ in Camera.h).

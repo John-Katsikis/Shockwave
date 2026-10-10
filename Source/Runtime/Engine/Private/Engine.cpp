@@ -141,7 +141,7 @@ void Engine::shutdownGui() {
     ImGui::DestroyContext();
 }
 
-void Engine::run(Game& game) {
+void Engine::run(Application& app) {
     // Fixed-timestep loop: simulation ticks at tickRate, rendering runs as fast as vsync allows.
     const double maxFrameTime = 0.25;   // avoid the "spiral of death" after a long stall
     const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
@@ -154,8 +154,8 @@ void Engine::run(Game& game) {
     int fpsFrames = 0;
 
     m_running = true;
-    game.m_engine = this;
-    game.onStart();
+    app.m_engine = this;
+    app.onStart();
 
     while (m_running) {
         m_input->beginFrame();
@@ -165,7 +165,7 @@ void Engine::run(Game& game) {
             m_input->handleEvent(event);
             switch (event.type) {
             case SDL_EVENT_QUIT:
-                if (game.onQuitRequested()) m_running = false;
+                if (app.onQuitRequested()) m_running = false;
                 break;
             case SDL_EVENT_KEY_DOWN:
                 if (m_config.quitOnEscape && event.key.scancode == SDL_SCANCODE_ESCAPE) m_running = false;
@@ -184,10 +184,10 @@ void Engine::run(Game& game) {
         // Read every frame: an editor switching projects can change the tick rate.
         const double dt = 1.0 / m_config.tickRate;
         while (accumulator >= dt) {
-            game.onUpdate(dt);
+            app.onUpdate(dt);
             accumulator -= dt;
         }
-        game.onFrame(frameTime);
+        app.onFrame(frameTime);
 
         if (m_renderer->beginFrame()) {
             if (m_config.gui) {
@@ -195,10 +195,10 @@ void Engine::run(Game& game) {
                 m_renderer->newGuiFrame();
                 ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
-                game.onGui();
+                app.onGui();
                 ImGui::Render();
             }
-            game.onRender(*m_renderer, accumulator / dt);
+            app.onRender(*m_renderer, accumulator / dt);
             m_renderer->endFrame();
         } else {
             SDL_Delay(10);   // minimized: don't spin the CPU
@@ -226,7 +226,7 @@ void Engine::run(Game& game) {
     }
 
     m_renderer->waitIdle();
-    game.onShutdown();
+    app.onShutdown();
 }
 
 }   // namespace shockwave

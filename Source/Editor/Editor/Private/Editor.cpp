@@ -86,6 +86,11 @@ void Editor::onShutdown() {
         saveEditorState();
     }
     savePreferences();
+    // The engine destroys the ImGui context after the editor is gone, and ImGui saves
+    // the layout then; save it now and stop ImGui from using m_iniPath once it's freed
+    // (it used to write the layout to a file with a garbage name in the working folder).
+    ImGui::SaveIniSettingsToDisk(m_iniPath.c_str());
+    ImGui::GetIO().IniFilename = nullptr;
     disconnectConsole();
 }
 

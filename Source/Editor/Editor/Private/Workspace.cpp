@@ -269,7 +269,7 @@ void Editor::drawCommandBar() {
             ImGui::TextColored(color, "%s", state);
             if (!m_gameModuleMatches) {
                 ImGui::SetItemTooltip(
-                    "The project wants gameplay module \"%s\"; rebuild the editor with its Game.cpp",
+                    "The project wants gameplay module \"%s\"; rebuild the editor with its game module",
                     m_project.gameModule.c_str());
             }
         }
@@ -553,7 +553,7 @@ void Editor::drawProjectSettingsWindow() {
         std::string module = m_projectEdit.gameModule;
         ImGui::InputText("##module", &module);
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Matches the compiled Game.cpp; see docs/Projects.md");
+        ImGui::SetItemTooltip("Matches the game module compiled into the editor; see docs/Projects.md");
         gui::propertyLabel("Assets");
         ImGui::TextDisabled("%s", m_project.relative(m_projectEdit.assetFolder).c_str());
         gui::propertyLabel("Scenes");

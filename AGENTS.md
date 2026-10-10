@@ -15,3 +15,21 @@ To see a scene, render it with `build/bin/player --scene <file> --screenshot out
 Every feature needs both an editor UI for people and a text/CLI path for tools: a field in
 the schema, a `--check` rule where mistakes are likely, and a way to verify it from the
 command line.
+
+## Code layout
+
+The engine is split into modules the way Unreal's is; read `docs/Architecture.md` first.
+
+- Engine code lives in `Source/Runtime/<Module>/`. `Public/<Module>/` holds the module's
+  API (included as `<Module/Header.h>`), `Private/` everything else. Editor code is in
+  `Source/Editor/`, executables in `Source/Programs/`, the sample game in `Games/Sample/`.
+- A module only depends on modules listed before it in `Source/Runtime/CMakeLists.txt`,
+  and declares them in its `CMakeLists.txt`. Never include another module's `Private/`
+  headers. Vulkan stays inside RHI and Renderer.
+- New files go in the module they belong to; a new module gets `shockwave_module()`.
+- Game code uses GameMode/GameInstance/Subsystems on top of the ECS: components hold
+  data, systems in a Schedule do the work in parallel. No per-entity virtual Tick.
+- Log with `SW_LOG(Category, Level, "...")` (`Core/Log.h`), not printf. Tool results
+  that scripts read (player `--check`, `--schema -`) stay on standard output.
+- Format with `clang-format -i` (the repo's `.clang-format`). Includes go in groups:
+  own header, local headers, Shockwave modules, third-party, standard library.

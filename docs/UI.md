@@ -1,8 +1,8 @@
 # Shockwave tool UI
 
-The tools use a shared engineering-panel design system in `shockwave/Gui.h`.
-New standard ImGui widgets automatically inherit it. Keep all ImGui work on the main
-thread, inside `Game::onGui()`.
+The tools use a shared engineering-panel design system in `UI/Gui.h`
+(`Source/Runtime/UI/Public/UI/Gui.h`). New standard ImGui widgets automatically inherit
+it. Keep all ImGui work on the main thread, inside `Application::onGui()`.
 
 ## Geometry and layout
 

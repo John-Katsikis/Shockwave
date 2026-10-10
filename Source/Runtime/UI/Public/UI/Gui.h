@@ -8,13 +8,13 @@
 #include <utility>
 #include <vector>
 
-// Helpers for Dear ImGui inside Shockwave (EngineConfig::gui, Game::onGui).
+// Helpers for Dear ImGui inside Shockwave (EngineConfig::gui, Application::onGui).
 //
 // The window's swapchain is sRGB, so colors written by the GUI are treated as linear and
 // encoded on output. ImGui colors are authored in sRGB, so every color handed to ImGui
 // must go through gui::color() first, or it comes out washed out. Themes do this for you.
 //
-// Threading: ImGui is main-thread only. Call it from Game::onGui.
+// Threading: ImGui is main-thread only. Call it from Application::onGui.
 namespace shockwave::gui {
 
 // sRGB color (0..1 components, as a color picker shows them) to what ImGui needs here.

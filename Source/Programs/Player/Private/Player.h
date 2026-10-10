@@ -32,7 +32,7 @@ struct Tool {
     bool printFrame = false;   // --print-frame: the render graph, at exit
 };
 
-class Player final : public shockwave::Game {
+class Player final : public shockwave::Application {
 public:
     Player(shockwave::Project project, Tool tool) : m_project(std::move(project)), m_tool(std::move(tool)) {}
     int exitCode() const { return m_exitCode; }

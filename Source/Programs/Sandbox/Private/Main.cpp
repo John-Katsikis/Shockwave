@@ -64,7 +64,7 @@ glm::vec4 hueColor(float h) {
 // systems and drawn by renderWorld, all spread across the job system.
 // Hold the right mouse button to look, WASD to move, E/Q (or Space/Ctrl) up and down,
 // Shift for speed, scroll to change speed.
-class Sandbox : public shockwave::Game {
+class Sandbox : public shockwave::Application {
 public:
     explicit Sandbox(int grid) : m_grid(grid) {}
 

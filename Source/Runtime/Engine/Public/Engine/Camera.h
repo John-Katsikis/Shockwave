@@ -28,7 +28,7 @@ public:
     // camera_up, camera_down, camera_fast, camera_look). Rebind them to change controls.
     static void bindDefaultControls(Input& input);
 
-    // Call once per rendered frame with the real frame time (Game::onFrame).
+    // Call once per rendered frame with the real frame time (Application::onFrame).
     void update(Input& input, double frameDt);
 
     void lookAt(const glm::vec3& target);

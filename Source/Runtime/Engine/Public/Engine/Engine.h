@@ -27,11 +27,12 @@ namespace shockwave {
 
 class Engine;
 
-// A game plugs into the engine by overriding these hooks. They run on the main
+// The program the engine runs: the editor, the player or a sandbox overrides these
+// hooks (game code itself goes in a GameMode; see GameFramework). They run on the main
 // thread; use engine().jobs() to spread work across cores.
-class Game {
+class Application {
 public:
-    virtual ~Game() = default;
+    virtual ~Application() = default;
     virtual void onStart() {}
     // Simulation: runs at a fixed rate (EngineConfig::tickRate) no matter the frame rate,
     // so gameplay and physics behave the same at 30 fps and 500 fps.
@@ -67,7 +68,7 @@ struct EngineConfig {
     int maxFrames = 0;   // 0 = run until closed; >0 quits after N frames (handy for smoke tests)
     bool showFpsInTitle = true;
     bool quitOnEscape = true;
-    bool gui = false;   // Dear ImGui on top of the scene; see Game::onGui
+    bool gui = false;   // Dear ImGui on top of the scene; see Application::onGui
     // The UI theme, looked for in the working folder, then next to the executable. Saved
     // changes to it apply straight away. Empty, or missing, uses the built-in theme.
     std::string guiTheme = "themes/default.swtheme";
@@ -78,7 +79,7 @@ public:
     explicit Engine(const EngineConfig& config);
     ~Engine();
 
-    void run(Game& game);
+    void run(Application& app);
     void quit() { m_running = false; }
 
     JobSystem& jobs() { return *m_jobs; }

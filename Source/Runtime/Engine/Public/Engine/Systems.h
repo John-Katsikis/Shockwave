@@ -16,7 +16,7 @@ void addBuiltinSystems(Schedule& schedule);
 void storePreviousTransforms(World& world, JobSystem& jobs);
 
 // Draws every visible MeshRenderer and, when assets is supplied, ModelRenderer,
-// where its parents put it, spread across the job system, and sets the clear color from the Environment. alpha is Game::onRender's;
+// where its parents put it, spread across the job system, and sets the clear color from the Environment. alpha is Application::onRender's;
 // pass 1 to draw the current state with no blending (an editor that isn't playing).
 // Set the camera first.
 void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets = nullptr);

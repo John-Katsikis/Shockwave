@@ -58,7 +58,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     if (!m_gameModuleMatches) {
         warn(
             "This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
-            std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its Game.cpp> to run it.");
+            std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its game module .cpp> to run it.");
     }
     engine().setTickRate(m_project.tickRate);
     applyProjectTheme();
