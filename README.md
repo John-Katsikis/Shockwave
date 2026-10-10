@@ -1,5 +1,7 @@
 # Shockwave
 
+[![Build](https://github.com/John-Katsikis/Shockwave/actions/workflows/build.yml/badge.svg)](https://github.com/John-Katsikis/Shockwave/actions/workflows/build.yml)
+
 A modern 3D game engine in C++20, rendering natively with Vulkan. Open source (MIT),
 no royalties. Linux first, with Windows and macOS (through MoltenVK) as later ports.
 
