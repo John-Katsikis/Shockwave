@@ -52,6 +52,7 @@ struct DrawMaterial {
     float roughness = 0.6f;   // 0 mirror-smooth .. 1 fully matte
     float metallic = 0.0f;
     glm::vec3 emissive{0.0f};   // linear HDR color the surface emits
+    bool castShadows = true;   // blended (transparent) surfaces never cast
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of
@@ -64,6 +65,12 @@ struct LightDesc {
     glm::vec3 color{1.0f};   // already multiplied by intensity
     float range = 10.0f;
     float cosOuter = 0.0f, cosInner = 0.0f;   // spot cone, as cosines of the half-angles
+    // Shadows (see the Light component). The first shadow-casting directional light gets
+    // cascaded shadow maps; spot and point lights share an atlas, nearest first.
+    bool castShadows = false;
+    float shadowStrength = 1.0f;   // 0 no shadow .. 1 fully dark
+    float shadowSoftness = 0.3f;   // 0 sharp .. 1 very soft edges
+    float shadowBias = 1.0f;   // multiplies the automatic bias; raise if surfaces shadow themselves
 };
 
 // Scene-wide lighting and the HDR-to-display step. Kept until changed.
@@ -73,10 +80,23 @@ struct LightingDesc {
     glm::vec3 groundAmbient{0.18f, 0.16f, 0.14f};   // ambient from below
     float exposure = 0.0f;   // stops
     Tonemapper tonemapper = Tonemapper::ACES;
+    float shadowDistance = 80.0f;   // meters from the camera the sun's shadows reach
+    uint32_t shadowCascades = 4;   // 1..4: more keeps nearby shadows sharp over long distances
 };
 
-// What the scene shows: the lit result, or a view for checking content.
-enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting };
+// What the scene shows: the lit result, or a view for checking content. ShadowCascades
+// tints the sun's shadow cascades (red, green, blue, yellow nearest to farthest).
+enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades };
+
+// Shadow map resolution, filtering and how many lights can cast at once: a per-device
+// performance setting, unlike the scene's shadow distance.
+//            sun cascades   light tiles   lights (spot / point)   filter taps
+//   Low      1024           256           64 tiles in 2048         4
+//   Medium   2048           512           64 tiles in 4096         8
+//   High     2048           512           64 tiles in 4096         16
+//   Ultra    4096           1024          16 tiles in 4096         32
+// A spot light takes one tile, a point light six.
+enum class ShadowQuality : uint32_t { Off, Low, Medium, High, Ultra };
 
 class Renderer {
 public:
@@ -126,6 +146,16 @@ public:
     DebugView debugView() const;
     uint32_t lightCount() const;   // lights used last frame, not counting the default sun
     uint32_t droppedLights() const;   // lights over kMaxLights last frame
+    // Main thread. Changing it rebuilds the shadow maps before the next frame.
+    void setShadowQuality(ShadowQuality quality);
+    ShadowQuality shadowQuality() const;
+    struct ShadowStats {
+        uint32_t cascades = 0;   // the sun's cascades drawn last frame (0: no sun shadow)
+        uint32_t shadowedLights = 0;   // spot and point lights that cast shadows
+        uint32_t skippedLights = 0;   // wanted to cast but the atlas was full
+        uint32_t casterDraws = 0;   // draws into all shadow maps, after culling
+    };
+    ShadowStats shadowStats() const;
 
     // Saves the next finished frame, tonemapped, as a PNG at output resolution (the
     // editor viewport or the window, without GUI). Main thread. The result is reported

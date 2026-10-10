@@ -301,7 +301,7 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
    action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
 4. Gamepads, flight sticks and wheels (done), and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
-6. Render graph, tonemapping and lighting (done); shadows, upscaling, glTF assets in the
+6. Render graph, tonemapping, lighting and shadows (done); upscaling, glTF assets in the
    asset browser, audio
 7. Hot reload of game code and shaders
 8. Editor (first version done): Dear ImGui docking UI, viewport rendered by the engine at
@@ -349,7 +349,9 @@ which images they read and write and the graph places the synchronization2 barri
 The scene renders to an HDR target with forward PBR shading (GGX specular, Lambert
 diffuse, up to 256 directional, point and spot lights, hemisphere ambient), then a
 tonemap pass applies exposure and the chosen curve into an sRGB image at the window or
-viewport size. Shadows, bloom and upscaling are not done yet.
+viewport size. The sun casts soft cascaded shadows and spot and point lights cast
+shadows from a shared atlas; see [Shadows](docs/Shadows.md). Bloom and upscaling are
+not done yet.
 
 The player can render without anyone looking, which is how tools and AI agents check
 how a scene looks:

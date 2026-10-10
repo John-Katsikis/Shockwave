@@ -126,6 +126,7 @@ void Editor::applyViewPreferences() {
     engine().setFrameLimit(m_prefs.frameLimit);
     engine().setLowLatency(m_prefs.lowLatency);
     engine().renderer().setRenderScale(m_prefs.renderScale);
+    engine().renderer().setShadowQuality(static_cast<shockwave::ShadowQuality>(m_prefs.shadowQuality));
 }
 
 void Editor::savePreferences() {

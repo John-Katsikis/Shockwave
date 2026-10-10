@@ -21,6 +21,7 @@ struct Preferences {
     float frameLimit = 0.0f;   // the editor's own frame cap, fps; 0 = none
     bool lowLatency = false;
     float renderScale = 1.0f;
+    int shadowQuality = 3;   // shockwave::ShadowQuality: 0 off .. 4 ultra
     float masterVolume = 1.0f;
 
     float cameraSpeed = 8.0f;

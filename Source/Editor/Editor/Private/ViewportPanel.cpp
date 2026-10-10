@@ -292,11 +292,18 @@ void Editor::drawViewportToolbar() {
         }
         // What the scene shows: the lit result or a view for checking content. The same
         // views are available to tools as player --view.
-        static const char* views[] = {"Lit", "Unlit (albedo)", "Normals", "Lighting only"};
+        static const char* views[] = {"Lit", "Unlit (albedo)", "Normals", "Lighting only", "Shadow cascades"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {
             renderer.setDebugView(static_cast<shockwave::DebugView>(view));
+        }
+        int shadows = static_cast<int>(renderer.shadowQuality());
+        ImGui::SetNextItemWidth(160.0f * dpi);
+        if (ImGui::Combo("Shadows", &shadows, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames))) {
+            renderer.setShadowQuality(static_cast<shockwave::ShadowQuality>(shadows));
+            m_prefs.shadowQuality = shadows;
+            m_prefsDirty = true;
         }
         ImGui::SeparatorText("Capture");
         if (gui::button("Save screenshot", ImVec2(-FLT_MIN, 0.0f))) {

@@ -107,6 +107,17 @@ MeshHandle Renderer::Impl::createMesh(std::span<const Vertex> vertices, std::spa
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
         mesh.indices = uploadBuffer(indices.data(), indices.size_bytes(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
         mesh.indexCount = static_cast<uint32_t>(indices.size());
+        // A bounding sphere for culling: centered on the bounding box, wide enough for every vertex.
+        glm::vec3 lo(vertices[0].position), hi(vertices[0].position);
+        for (const Vertex& v : vertices) {
+            lo = glm::min(lo, v.position);
+            hi = glm::max(hi, v.position);
+        }
+        const glm::vec3 center = (lo + hi) * 0.5f;
+        float radius2 = 0.0f;
+        for (const Vertex& v : vertices)
+            radius2 = std::max(radius2, glm::dot(v.position - center, v.position - center));
+        mesh.bounds = glm::vec4(center, std::sqrt(radius2));
         mesh.vertexAddress = bufferAddress(mesh.vertices.buffer);
         meshReady[id].store(true, std::memory_order_release);
         return {id};

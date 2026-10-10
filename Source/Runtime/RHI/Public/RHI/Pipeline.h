@@ -18,10 +18,13 @@ struct GraphicsPipelineDesc {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
     bool depthWrite = true;   // with a depth format: test always, write only if set
+    // Depth bias set per draw with vkCmdSetDepthBias (shadow maps). Reverse-Z: negative
+    // values push surfaces away from the viewer.
+    bool dynamicDepthBias = false;
 };
 
 // Pipeline for dynamic rendering with vertex pulling (no vertex input state) and
-// reverse-Z depth. Viewport and scissor are dynamic so resizes don't rebuild it.
+// reverse-Z depth. No color format: depth only (shadow maps). Viewport and scissor are dynamic so resizes don't rebuild it.
 VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& desc);
 
 }   // namespace shockwave::vk

@@ -102,17 +102,19 @@ static void testProjectSettings(const std::filesystem::path& source) {
     std::string error;
     CHECK(loadProject(source / "Games/Sample/Sample.swproject", project, error));
     if (!error.empty()) std::fprintf(stderr, "  %s\n", error.c_str());
-    CHECK(project.frameLimit == 0 && !project.lowLatency);   // defaults
+    CHECK(project.frameLimit == 0 && !project.lowLatency && project.shadowQuality == 3);   // defaults
 
     // Save a copy beside the original, so its relative paths still resolve.
     const auto copy = source / "Games/Sample/FramePacingTest.swproject";
     project.file = copy;
     project.frameLimit = 144;
     project.lowLatency = true;
+    project.shadowQuality = 1;
     CHECK(saveProject(project, error));
     Project again;
     CHECK(loadProject(copy, again, error));
-    CHECK(again.frameLimit == 144 && again.lowLatency);
+    CHECK(again.frameLimit == 144 && again.lowLatency && again.shadowQuality == 1);
+    CHECK(parseShadowQuality("ultra") == 4 && parseShadowQuality("extreme") < 0);
     std::filesystem::remove(copy);
 }
 

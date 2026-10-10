@@ -78,8 +78,13 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Normals;
                 else if (view == "lighting")
                     tool.view = shockwave::DebugView::Lighting;
+                else if (view == "cascades")
+                    tool.view = shockwave::DebugView::ShadowCascades;
                 else
-                    throw std::runtime_error("--view takes lit, unlit, normals or lighting");
+                    throw std::runtime_error("--view takes lit, unlit, normals, lighting or cascades");
+            } else if (arg == "--shadows" && i + 1 < argc) {
+                tool.shadows = shockwave::parseShadowQuality(argv[++i]);
+                if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
             } else if (arg == "--size" && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const size_t x = value.find('x');
@@ -118,9 +123,13 @@ int main(int argc, char** argv) {
                 tool.printFrame = true;
             } else if (arg == "--help") {
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
-                          "       [--size WxH] [--view lit|unlit|normals|lighting] [--print-frame]\n"
+                          "       [--size WxH] [--view lit|unlit|normals|lighting|cascades] [--print-frame]\n"
+                          "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                           "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
                           "                                    play N frames (default 30), save the last, quit\n"
+                          "player --benchmark [seconds] [--json file]\n"
+                          "                                    run the scene for that long (default 10) and report\n"
+                          "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"

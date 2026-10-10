@@ -24,6 +24,8 @@ uint64_t Renderer::guiTexture(TextureHandle texture) { return m_impl->guiTexture
 void Renderer::setClearColor(const Color& color) { m_impl->clearColor = color; }
 void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;
+    m_impl->view = view;
+    m_impl->projection = projection;
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
 }
 void Renderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
@@ -36,6 +38,13 @@ void Renderer::setDebugView(DebugView view) { m_impl->debugView = view; }
 DebugView Renderer::debugView() const { return m_impl->debugView; }
 uint32_t Renderer::lightCount() const { return m_impl->lastLightCount; }
 uint32_t Renderer::droppedLights() const { return m_impl->lastDroppedLights; }
+void Renderer::setShadowQuality(ShadowQuality quality) {
+    if (quality == m_impl->shadowQuality) return;
+    m_impl->shadowQuality = quality;
+    m_impl->needsShadowRebuild = true;
+}
+ShadowQuality Renderer::shadowQuality() const { return m_impl->shadowQuality; }
+Renderer::ShadowStats Renderer::shadowStats() const { return m_impl->shadowStats; }
 void Renderer::requestScreenshot(const std::string& path) {
     m_impl->screenshotPath = path;
     m_impl->screenshotRequested = true;

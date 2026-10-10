@@ -29,6 +29,7 @@ struct Tool {
     fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
     int screenshotFrame = 30;   // --frames with --screenshot
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
+    int shadows = -1;   // --shadows: a ShadowQuality; -1 uses the project's shadow_quality
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
     fs::path benchmarkJson;   // --json with --benchmark

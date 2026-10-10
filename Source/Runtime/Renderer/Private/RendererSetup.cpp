@@ -23,7 +23,10 @@ Renderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
     const uint8_t white[4] = {255, 255, 255, 255};
     createTexture(1, 1, white, false);   // slot 0: the default texture
     sceneSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
+    cascadeSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
+    localSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
     createRenderTargets();
+    createShadowMaps();
 }
 
 Renderer::Impl::~Impl() {
@@ -43,6 +46,10 @@ Renderer::Impl::~Impl() {
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyImage(displayColor);
+    destroyShadowMaps();
+    vkDestroyPipeline(device, shadowPipeline, nullptr);
+    vkDestroyPipelineLayout(device, shadowLayout, nullptr);
+    vkDestroySampler(device, shadowSampler, nullptr);
     vkDestroyPipeline(device, tonemapPipeline, nullptr);
     vkDestroyPipelineLayout(device, tonemapLayout, nullptr);
     for (auto pipeline : mirroredPipelines) vkDestroyPipeline(device, pipeline, nullptr);

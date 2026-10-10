@@ -1,5 +1,6 @@
 #include <Projects/Project.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -9,6 +10,19 @@
 #include <system_error>
 
 namespace shockwave {
+namespace {
+constexpr const char* kShadowQualities[] = {"off", "low", "medium", "high", "ultra"};
+}
+
+const char* shadowQualityName(int quality) { return kShadowQualities[std::clamp(quality, 0, 4)]; }
+
+int parseShadowQuality(const std::string& name) {
+    for (int i = 0; i < 5; ++i) {
+        if (name == kShadowQualities[i]) return i;
+    }
+    return -1;
+}
+
 bool loadProject(const std::filesystem::path& path, Project& project, std::string& error) {
     error.clear();
     std::ifstream in(path);
@@ -68,6 +82,11 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 row >> value;
                 if (value != "true" && value != "false") return fail(key + " must be true or false");
                 (key == "vsync" ? result.vsync : result.lowLatency) = value == "true";
+            } else if (key == "shadow_quality") {
+                std::string value;
+                row >> value;
+                result.shadowQuality = parseShadowQuality(value);
+                if (result.shadowQuality < 0) return fail("shadow_quality must be off, low, medium, high or ultra");
             } else if (key == "frame_limit") {
                 if (!(row >> result.frameLimit) || !std::isfinite(result.frameLimit) || result.frameLimit < 0 ||
                     (result.frameLimit > 0 && result.frameLimit < 10) || result.frameLimit > 1000)
@@ -119,6 +138,7 @@ bool saveProject(const Project& project, std::string& error) {
         << "vsync " << (project.vsync ? "true" : "false") << "\n";
     if (project.frameLimit > 0) out << "frame_limit " << project.frameLimit << "\n";
     if (project.lowLatency) out << "low_latency true\n";
+    if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";
     const fs::path temp = project.file.string() + ".tmp";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);

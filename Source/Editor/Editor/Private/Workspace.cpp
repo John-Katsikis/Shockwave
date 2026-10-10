@@ -478,6 +478,21 @@ void Editor::drawStatsWindow() {
             gui::semanticColor(gui::currentTheme().warning), "%u lights over the limit are ignored",
             renderer.droppedLights());
     }
+    const auto shadowStats = renderer.shadowStats();
+    if (renderer.shadowQuality() == shockwave::ShadowQuality::Off) {
+        ImGui::TextDisabled("Shadows are off (View > Shadows)");
+    } else {
+        ImGui::Text(
+            "Shadows %s: %u sun cascades, %u shadowed lights, %u caster draws",
+            kShadowQualityNames[static_cast<int>(renderer.shadowQuality())], shadowStats.cascades,
+            shadowStats.shadowedLights, shadowStats.casterDraws);
+        if (shadowStats.skippedLights > 0) {
+            ImGui::TextColored(
+                gui::semanticColor(gui::currentTheme().warning),
+                "%u shadowed lights didn't fit the shadow atlas; the farthest go unshadowed",
+                shadowStats.skippedLights);
+        }
+    }
     if (ImGui::TreeNode("Render graph")) {
         // The passes the renderer ran last frame and the barriers it placed between them.
         ImGui::TextUnformatted(renderer.frameGraph().c_str());
@@ -589,6 +604,13 @@ void Editor::drawPreferencesWindow() {
         renderer.setRenderScale(m_prefs.renderScale);
         changed = true;
     }
+    int shadows = m_prefs.shadowQuality;
+    if (ImGui::Combo("Shadows", &shadows, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames))) {
+        m_prefs.shadowQuality = shadows;
+        renderer.setShadowQuality(static_cast<shockwave::ShadowQuality>(shadows));
+        changed = true;
+    }
+    ImGui::SetItemTooltip("Shadow quality in the editor's viewport. The player uses the project's setting");
     if (ImGui::SliderFloat("Field of view", &m_prefs.fieldOfView, 20.0f, 140.0f, "%.0f\xc2\xb0")) {
         m_camera.fovY = glm::radians(m_prefs.fieldOfView);
         changed = true;
@@ -656,6 +678,10 @@ void Editor::drawProjectSettingsWindow() {
         gui::propertyLabel("Player low latency");
         ImGui::Checkbox("##low_latency", &m_projectEdit.lowLatency);
         ImGui::SetItemTooltip("Wait for each frame to reach the screen before the next (low_latency)");
+        gui::propertyLabel("Player shadows");
+        ImGui::Combo(
+            "##shadow_quality", &m_projectEdit.shadowQuality, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames));
+        ImGui::SetItemTooltip("Shadow quality the player starts with; player --shadows overrides it (shadow_quality)");
         gui::propertyLabel("Game module");
         ImGui::BeginDisabled();
         std::string module = m_projectEdit.gameModule;
@@ -675,7 +701,8 @@ void Editor::drawProjectSettingsWindow() {
                          m_projectEdit.tickRate != m_project.tickRate || m_projectEdit.width != m_project.width ||
                          m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync ||
                          m_projectEdit.frameLimit != m_project.frameLimit ||
-                         m_projectEdit.lowLatency != m_project.lowLatency;
+                         m_projectEdit.lowLatency != m_project.lowLatency ||
+                         m_projectEdit.shadowQuality != m_project.shadowQuality;
     ImGui::BeginDisabled(!changed || m_projectEdit.name.empty() || playing());
     if (gui::button("Save")) {
         std::string err;

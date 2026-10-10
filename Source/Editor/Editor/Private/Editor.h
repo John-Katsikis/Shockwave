@@ -33,6 +33,8 @@ inline constexpr const char* kMeshPayload = "SW_MESH";
 inline constexpr const char* kModelPayload = "SW_MODEL";
 inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
+// Labels for shockwave::ShadowQuality, indexed by its value.
+inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
 struct EditorOptions {
     std::string path;   // project folder, .swproject or .swscene; empty: last project

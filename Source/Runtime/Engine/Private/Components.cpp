@@ -86,6 +86,7 @@ void registerBuiltins() {
             field("metallic", &MeshRenderer::metallic, 0.01f, 0.0f, 1.0f),
             field("emissive", &MeshRenderer::emissive),
             field("emissive_intensity", &MeshRenderer::emissiveIntensity, 0.05f, 0.0f, 1000.0f),
+            field("cast_shadows", &MeshRenderer::castShadows),
         },
         "Rendering");
     registerComponent<ModelRenderer>(
@@ -94,6 +95,7 @@ void registerBuiltins() {
             field("model", &ModelRenderer::model),
             field("tint", &ModelRenderer::tint),
             field("visible", &ModelRenderer::visible),
+            field("cast_shadows", &ModelRenderer::castShadows),
         },
         "Rendering");
     registerComponent<Camera>(
@@ -164,6 +166,8 @@ void registerBuiltins() {
             field("ambient_intensity", &Environment::ambientIntensity, 0.01f, 0.0f, 100.0f),
             field("exposure", &Environment::exposure, 0.05f, -16.0f, 16.0f),
             enumField("tonemapper", &Environment::tonemapper, {"ACES", "AgX", "Reinhard", "None"}),
+            field("shadow_distance", &Environment::shadowDistance, 1.0f, 1.0f, 10000.0f),
+            field("shadow_cascades", &Environment::shadowCascades, 1.0f, 1.0f, 4.0f),
         },
         "Rendering");
     registerComponent<Light>(
@@ -176,6 +180,10 @@ void registerBuiltins() {
             field("spot_angle", &Light::spotAngle, 0.5f, 1.0f, 89.0f),
             field("spot_softness", &Light::spotSoftness, 0.01f, 0.0f, 1.0f),
             field("enabled", &Light::enabled),
+            field("cast_shadows", &Light::castShadows),
+            field("shadow_strength", &Light::shadowStrength, 0.01f, 0.0f, 1.0f),
+            field("shadow_softness", &Light::shadowSoftness, 0.01f, 0.0f, 1.0f),
+            field("shadow_bias", &Light::shadowBias, 0.05f, 0.0f, 10.0f),
         },
         "Rendering");
     registerComponent<Spin>(

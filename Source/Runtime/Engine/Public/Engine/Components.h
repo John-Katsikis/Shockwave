@@ -53,6 +53,7 @@ struct MeshRenderer {
     float metallic = 0.0f;   // 0 plastic, wood, stone .. 1 bare metal
     glm::vec4 emissive{0, 0, 0, 1};   // light the surface gives off itself (rgb)
     float emissiveIntensity = 1.0f;   // multiplies emissive; above 1 for bright glows
+    bool castShadows = true;
 };
 
 // A reusable imported model. Its internal nodes/materials stay in the asset;
@@ -61,6 +62,7 @@ struct ModelRenderer {
     ModelHandle model;
     glm::vec4 tint{1.0f};
     bool visible = true;
+    bool castShadows = true;
 };
 
 // What the player sees: a game renders the scene from the primary Camera's world
@@ -83,6 +85,10 @@ struct Environment {
     float ambientIntensity = 0.6f;
     float exposure = 0.0f;   // in stops: +1 doubles brightness, -1 halves it
     Tonemapper tonemapper = Tonemapper::ACES;
+    // The sun's shadows: how far from the camera they reach, and in how many cascades
+    // (more keeps nearby shadows sharp across long distances).
+    float shadowDistance = 80.0f;   // meters
+    int shadowCascades = 4;   // 1..4
 };
 
 // A light source, placed and aimed by the entity's Transform: directional and spot
@@ -97,6 +103,13 @@ struct Light {
     float spotAngle = 30.0f;   // spot: half-angle of the cone, degrees
     float spotSoftness = 0.2f;   // spot: 0 hard edge .. 1 fades from the center
     bool enabled = true;
+    // Shadows. The first shadow-casting directional light gets the sun's cascaded shadows;
+    // spot and point lights cast while there's room in the shadow atlas, nearest first (a
+    // point light costs six times a spot light).
+    bool castShadows = true;
+    float shadowStrength = 1.0f;   // 0 no shadow .. 1 fully dark
+    float shadowSoftness = 0.3f;   // 0 sharp .. 1 very soft edges
+    float shadowBias = 1.0f;   // raise if lit surfaces show dark speckles; lower if shadows detach
 };
 
 // Turns around an axis (world space) at a steady rate.
@@ -191,7 +204,7 @@ constexpr FieldType fieldTypeOf() {
 }
 
 template <class C, class M>
-Field field(std::string name, M C::* member, float speed = 0.0f, float min = 0.0f, float max = 0.0f) {
+Field field(std::string name, M C::*member, float speed = 0.0f, float min = 0.0f, float max = 0.0f) {
     const C probe{};
     const size_t offset =
         static_cast<size_t>(reinterpret_cast<const char*>(&(probe.*member)) - reinterpret_cast<const char*>(&probe));
@@ -199,7 +212,7 @@ Field field(std::string name, M C::* member, float speed = 0.0f, float min = 0.0
 }
 
 template <class C, class E>
-Field enumField(std::string name, E C::* member, std::vector<std::string> options) {
+Field enumField(std::string name, E C::*member, std::vector<std::string> options) {
     static_assert(std::is_enum_v<E>);
     auto result = field(std::move(name), member);
     result.options = std::move(options);

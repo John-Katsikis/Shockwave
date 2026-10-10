@@ -59,6 +59,13 @@ static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 && sizeof(DrawData) == 256,
     "DrawData must match the shader's scalar layout");
 
+// Shadow maps hold reverse-Z depth, like the scene: cleared to 0, closer is greater.
+constexpr VkFormat kShadowFormat = VK_FORMAT_D32_SFLOAT;
+constexpr uint32_t kMaxCascades = 4;
+constexpr uint32_t kMaxLocalShadowViews = 64;   // tiles in the spot/point light atlas
+constexpr uint32_t kMaxShadowViews = kMaxCascades + kMaxLocalShadowViews;
+constexpr uint32_t kNoShadow = 0xFFFFFFFFu;
+
 // Must match LightData and FrameBuffer in shaders/mesh.frag.
 struct LightData {
     glm::vec3 position;
@@ -68,19 +75,52 @@ struct LightData {
     glm::vec3 color;
     float cosOuter;
     float cosInner;
+    uint32_t shadowView;   // first ShadowView (point lights: six, one per cube face); kNoShadow: none
+    float shadowStrength;
+    float shadowSoftness;   // filter radius in shadow map texels
+    float shadowBias;   // normal offset, in shadow map texels
     float pad[3];
 };
-static_assert(sizeof(LightData) == 64, "LightData must match the shader's scalar layout");
+static_assert(sizeof(LightData) == 80, "LightData must match the shader's scalar layout");
+// One shadow map: a sun cascade, a spot light, or one face of a point light.
+struct ShadowView {
+    glm::mat4 viewProjection;
+    glm::vec4 rect;   // where it is in its atlas: uv offset (xy) and scale (zw)
+    float texelSize;   // world size of a texel: at distance 1 for perspective views
+    uint32_t perspective;
+    float pad[2];
+};
+static_assert(sizeof(ShadowView) == 96, "ShadowView must match the shader's scalar layout");
 struct FrameData {
     glm::vec3 cameraPosition;
     uint32_t lightCount;
     glm::vec3 skyAmbient;
     uint32_t debugView;
     glm::vec3 groundAmbient;
+    uint32_t cascadeCount;
+    glm::vec3 cameraForward;
+    float shadowDistance;
+    glm::vec4 cascadeEnds;   // view depth where each cascade ends
+    uint32_t cascadeAtlas;   // bindless slots of the two shadow atlases
+    uint32_t localAtlas;
+    uint32_t shadowTaps;   // filter samples per lookup
     float pad;
+    VkDeviceAddress shadowViews;
+    uint64_t pad2;
 };
-static_assert(sizeof(FrameData) == 48, "FrameData must match the shader's scalar layout");
-constexpr VkDeviceSize kFrameDataSize = sizeof(FrameData) + sizeof(LightData) * Renderer::kMaxLights;
+static_assert(
+    sizeof(FrameData) == 112 && offsetof(FrameData, shadowViews) == 96,
+    "FrameData must match the shader's scalar layout");
+constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * Renderer::kMaxLights;
+constexpr VkDeviceSize kFrameDataSize = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
+
+// Must match the push constants in shaders/shadow.vert and shadow.frag.
+struct ShadowPushConstants {
+    VkDeviceAddress drawBuffer;
+    uint64_t pad;
+    glm::mat4 viewProjection;
+};
+static_assert(sizeof(ShadowPushConstants) == 80, "ShadowPushConstants must match the shadow shaders");
 
 struct DrawPushConstants {
     VkDeviceAddress drawBuffer;
@@ -105,11 +145,31 @@ static_assert(sizeof(GridPushConstants) == 96, "GridPushConstants must match the
 
 struct DrawCommand {
     DrawData data;
+    glm::vec4 bounds;   // world-space bounding sphere: center, radius
     VkBuffer indexBuffer;
     uint32_t indexCount;
-    bool doubleSided = false, blend = false, mirrored = false;
+    uint32_t drawIndex = 0;   // its entry in the frame's draw table, once gathered
+    bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     float depth = 0.0f;
 };
+
+// One shadow map to draw this frame: where in which atlas, from where, and which draws.
+struct ShadowPass {
+    glm::mat4 viewProjection;
+    VkRect2D rect;
+    float depthBias = 0;   // reverse-Z: negative pushes surfaces away from the light
+    float slopeBias = 0;
+    std::vector<uint32_t> draws;   // indices into gatheredDraws
+};
+
+// Shadow map settings for a ShadowQuality.
+struct ShadowConfig {
+    uint32_t cascadeSize = 0;   // one cascade's tile; the atlas holds 2 x 2
+    uint32_t tileSize = 0;   // one spot light or point light face
+    uint32_t localAtlasSize = 0;
+    uint32_t taps = 0;
+};
+ShadowConfig shadowConfig(ShadowQuality quality);
 
 // One per thread so drawMesh never takes a lock on the hot path.
 struct alignas(64) DrawList {
@@ -121,6 +181,7 @@ struct Mesh {
     vk::Buffer indices;
     VkDeviceAddress vertexAddress = 0;
     uint32_t indexCount = 0;
+    glm::vec4 bounds{0.0f};   // bounding sphere in mesh space: center, radius
 };
 
 // Records a layout transition with synchronization2.
@@ -214,6 +275,20 @@ struct Renderer::Impl {
     VkPipelineLayout tonemapLayout = VK_NULL_HANDLE;
     VkPipeline tonemapPipeline = VK_NULL_HANDLE;
 
+    // Shadows: one atlas for the sun's cascades, one for spot and point lights, both
+    // sampled through the bindless table with a comparison sampler.
+    ShadowQuality shadowQuality = ShadowQuality::High;
+    ShadowConfig shadowSettings;
+    bool needsShadowRebuild = false;
+    vk::Image cascadeAtlas, localAtlas;
+    vk::ImageState cascadeState, localState;
+    uint32_t cascadeSlot = 0, localSlot = 0;
+    VkSampler shadowSampler = VK_NULL_HANDLE;
+    VkPipelineLayout shadowLayout = VK_NULL_HANDLE;
+    VkPipeline shadowPipeline = VK_NULL_HANDLE;
+    std::vector<ShadowPass> cascadePasses, localPasses;   // this frame's
+    Renderer::ShadowStats shadowStats;
+
     // Lighting for the frame being recorded.
     std::mutex lightMutex;
     std::vector<LightDesc> lights;
@@ -279,6 +354,7 @@ struct Renderer::Impl {
     bool needsResize = false;
     Color clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     glm::mat4 viewProjection{1.0f};
+    glm::mat4 view{1.0f}, projection{1.0f};
     glm::vec3 cameraPosition{0.0f};
 
     Impl(Window& w, JobSystem& j, bool vsync);
@@ -388,8 +464,22 @@ struct Renderer::Impl {
     // fades them out with distance.
     void recordGrid(VkCommandBuffer cmd);
 
-    // Gathers every thread's draws into this frame's GPU draw table and records them.
+    // Gathers every thread's draws into this frame's GPU draw table, sorted for drawing.
+    void prepareDraws(Frame& f);
+    // Records the gathered draws into the scene.
     void recordDraws(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Shadows (RendererShadows.cpp) -------------------------------------------------
+
+    void createShadowMaps();
+    void destroyShadowMaps();
+    // Picks the shadow casters among this frame's lights, fits their shadow maps, culls
+    // the draws for each, and fills the lights' shadow fields and the ShadowViews.
+    void planShadows(
+        const std::vector<LightDesc>& descs, LightData* lightData, uint32_t lightCount, ShadowView* views,
+        FrameData& header);
+    // Draws one atlas's shadow maps.
+    void recordShadows(VkCommandBuffer cmd, Frame& f, const std::vector<ShadowPass>& passes, const vk::Image& atlas);
 
     void endFrame();
 

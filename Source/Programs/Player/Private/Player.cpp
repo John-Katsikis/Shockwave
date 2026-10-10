@@ -48,6 +48,8 @@ void Player::onStart() {
     if (!importProblems.empty()) throw std::runtime_error("Asset " + importProblems.front());
     if (!m_tool.scene.empty()) m_project.startupScene = m_tool.scene;
     engine().renderer().setDebugView(m_tool.view);
+    engine().renderer().setShadowQuality(
+        static_cast<shockwave::ShadowQuality>(m_tool.shadows >= 0 ? m_tool.shadows : m_project.shadowQuality));
     std::string error;
     std::vector<std::string> warnings;
     shockwave::SceneFileHooks hooks;

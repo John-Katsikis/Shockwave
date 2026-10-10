@@ -96,7 +96,22 @@ void Renderer::Impl::createBindless() {
     samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
     vk::check(vkCreateSampler(device, &samplerInfo, nullptr, &linearSampler), "vkCreateSampler");
 
-    VkDescriptorSetLayoutBinding bindings[2]{};
+    // Shadow maps are read with hardware depth comparison (bilinear PCF per tap).
+    // Reverse-Z: a surface is lit when its depth is at least the map's (nothing nearer).
+    VkSamplerCreateInfo shadowInfo{};
+    shadowInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    shadowInfo.magFilter = VK_FILTER_LINEAR;
+    shadowInfo.minFilter = VK_FILTER_LINEAR;
+    shadowInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    shadowInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    shadowInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    shadowInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    shadowInfo.compareEnable = VK_TRUE;
+    shadowInfo.compareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+    shadowInfo.maxLod = 0.0f;
+    vk::check(vkCreateSampler(device, &shadowInfo, nullptr, &shadowSampler), "vkCreateSampler");
+
+    VkDescriptorSetLayoutBinding bindings[3]{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     bindings[0].descriptorCount = capacity;
@@ -106,31 +121,37 @@ void Renderer::Impl::createBindless() {
     bindings[1].descriptorCount = 1;
     bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
     bindings[1].pImmutableSamplers = &linearSampler;
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = VK_SHADER_STAGE_ALL;
+    bindings[2].pImmutableSamplers = &shadowSampler;
 
     // Partially bound: unused slots may be empty. Update-after-bind + unused-while-pending:
     // new textures can be added while frames using the table are still in flight.
-    const VkDescriptorBindingFlags bindingFlags[2] = {
+    const VkDescriptorBindingFlags bindingFlags[3] = {
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+        0,
         0,
     };
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flagsInfo.bindingCount = 2;
+    flagsInfo.bindingCount = 3;
     flagsInfo.pBindingFlags = bindingFlags;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.pNext = &flagsInfo;
     layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layoutInfo.bindingCount = 2;
+    layoutInfo.bindingCount = 3;
     layoutInfo.pBindings = bindings;
     vk::check(
         vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "vkCreateDescriptorSetLayout");
 
     const VkDescriptorPoolSize sizes[2] = {
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, capacity},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 2},
     };
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -224,6 +245,27 @@ void Renderer::Impl::createPipelines() {
     tonemapDesc.layout = tonemapLayout;
     tonemapDesc.cullMode = VK_CULL_MODE_NONE;
     tonemapPipeline = vk::createGraphicsPipeline(context->device(), tonemapDesc);
+
+    // Shadow maps: depth only, both faces (single-sided planes still cast), bias per map.
+    VkPushConstantRange shadowRange{};
+    shadowRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    shadowRange.size = sizeof(ShadowPushConstants);
+    VkPipelineLayoutCreateInfo shadowLayoutInfo{};
+    shadowLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    shadowLayoutInfo.setLayoutCount = 1;
+    shadowLayoutInfo.pSetLayouts = &bindlessLayout;
+    shadowLayoutInfo.pushConstantRangeCount = 1;
+    shadowLayoutInfo.pPushConstantRanges = &shadowRange;
+    vk::check(
+        vkCreatePipelineLayout(context->device(), &shadowLayoutInfo, nullptr, &shadowLayout), "vkCreatePipelineLayout");
+    vk::GraphicsPipelineDesc shadowDesc;
+    shadowDesc.vertexShader = shaderPath("shadow.vert");
+    shadowDesc.fragmentShader = shaderPath("shadow.frag");
+    shadowDesc.depthFormat = kShadowFormat;
+    shadowDesc.layout = shadowLayout;
+    shadowDesc.cullMode = VK_CULL_MODE_NONE;
+    shadowDesc.dynamicDepthBias = true;
+    shadowPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
 }
 
 }   // namespace shockwave
