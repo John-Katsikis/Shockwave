@@ -1,6 +1,7 @@
 #include <Audio/Audio.h>
 
 #include <Assets/Assets.h>
+#include <Assets/AssetFolder.h>
 #include <Engine/Components.h>
 #include <Engine/SceneFile.h>
 #include <GameFramework/GameInstance.h>
@@ -40,7 +41,7 @@ void loading(const fs::path& root) {
     std::string error;
     check(loadAudioClip(root / "Games/Sample/Content/Audio/pulse.wav", wav, error), "WAV loads");
     check(wav.frames() == 8640 && near(float(wav.duration()), .18f), "WAV duration/sample conversion");
-    check(loadAudioClip(root / "Tests/Fixtures/Audio/pulse.ogg", ogg, error), "Ogg loads");
+    check(loadAudioClip(root / "Tests/fixtures/audio/pulse.ogg", ogg, error), "Ogg loads");
     check(std::abs(double(ogg.frames()) - wav.frames()) < 64, "Ogg duration");
     check(
         std::all_of(ogg.samples.begin(), ogg.samples.end(), [](float f) { return std::isfinite(f); }),
@@ -49,7 +50,7 @@ void loading(const fs::path& root) {
     for (float sample : ogg.samples) energy += sample * sample;
     check(energy > 1, "Ogg is audible PCM");
     check(
-        !loadAudioClip(root / "Tests/Fixtures/Audio/missing.wav", wav, error) && !error.empty(), "missing clip fails");
+        !loadAudioClip(root / "Tests/fixtures/audio/missing.wav", wav, error) && !error.empty(), "missing clip fails");
     const auto bad = fs::temp_directory_path() / "shockwave-audio-invalid.ogg";
     {
         std::ofstream file(bad);
@@ -59,6 +60,45 @@ void loading(const fs::path& root) {
     fs::remove(bad);
     check(isAudioFile("SOUND.WAV") && isAudioFile("sound.Ogg") && !isAudioFile("sound.mp3"), "extensions");
 }
+void reload(const fs::path& root) {
+    const auto folder = fs::temp_directory_path() / "shockwave-audio-reload";
+    fs::remove_all(folder);
+    fs::create_directories(folder);
+    const auto path = folder / "tone.wav";
+    fs::copy_file(root / "Games/Sample/Content/Audio/pulse.wav", path);
+    Assets assets;
+    JobSystem jobs(2);
+    AssetFolder files(assets, jobs);
+    const auto first = files.open(folder);
+    check(first.size() == 1 && assets.audioClip("tone.wav"), "audio-only asset tools load clips");
+    const auto before = assets.audioClip("tone.wav");
+    fs::copy_file(root / "Games/Sample/Content/Audio/ambient.wav", path, fs::copy_options::overwrite_existing);
+    files.refresh();
+    check(assets.audioClip("tone.wav") == before, "reload keeps old PCM while decoding");
+    for (int i = 0; i < 200 && assets.audioClip("tone.wav") == before; ++i) {
+        SDL_Delay(5);
+        files.refresh();
+    }
+    const auto replaced = assets.audioClip("tone.wav");
+    check(replaced != before && replaced->duration() > 1, "completed decode replaces clip atomically");
+    {
+        std::ofstream bad(path, std::ios::trunc);
+        bad << "bad wav";
+    }
+    files.refresh();
+    for (int i = 0; i < 200 && files.find("tone.wav")->error.empty(); ++i) {
+        SDL_Delay(5);
+        files.refresh();
+    }
+    check(
+        !files.find("tone.wav")->error.empty() && assets.audioClip("tone.wav") == replaced,
+        "failed reload retains last-good clip");
+    fs::remove(path);
+    files.refresh();
+    check(!assets.audioClip("tone.wav"), "removed clip invalidates its asset name");
+    fs::remove_all(folder);
+}
+
 void roundTrip() {
     registerAudioComponents();
     Assets assets;
@@ -202,6 +242,14 @@ void worldAudio() {
     check(audio.play(source), "source can replay");
     audio.mixer().render(buffer);
     check(buffer[0] > 0, "replay audible");
+    for (int i = 0; i < 1024; ++i) check(audio.mixer().setVolume(999999, .5f), "queue accepts bounded commands");
+    check(!audio.stop(source), "full queue reports failure without losing source handle");
+    audio.mixer().render(buffer);
+    check(audio.stop(source), "stop retries after queue drains");
+    audio.mixer().render(buffer);
+    check(buffer[0] == 0, "retried stop silences looping source");
+    check(audio.play(source), "source replays after queue pressure");
+    audio.mixer().render(buffer);
     world.destroy(source);
     audio.synchronize();
     audio.mixer().render(buffer);
@@ -231,6 +279,7 @@ int main(int argc, char** argv) {
     try {
         check(argc == 2, "source root argument");
         loading(argv[1]);
+        reload(argv[1]);
         roundTrip();
         spatial();
         mixing();

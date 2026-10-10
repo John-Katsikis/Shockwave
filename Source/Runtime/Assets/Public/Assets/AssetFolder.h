@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Assets/Assets.h>
+#include <Core/Jobs.h>
 
 #include <filesystem>
 #include <string>
@@ -54,6 +55,10 @@ public:
     };
 
     AssetFolder(Renderer& renderer, Assets& assets, JobSystem& jobs);
+    AssetFolder(Assets& assets, JobSystem& jobs);   // audio-only tools, no GPU publication
+    ~AssetFolder();
+    AssetFolder(const AssetFolder&) = delete;
+    AssetFolder& operator=(const AssetFolder&) = delete;
 
     // Switches to a folder and imports everything in it. A missing folder is fine: it
     // just has no files until it's created.
@@ -68,7 +73,11 @@ public:
     const File* find(std::string_view name) const;
 
 private:
-    Renderer& m_renderer;
+    struct AudioImport;
+    std::vector<std::shared_ptr<AudioImport>> m_audioImports;
+    JobCounter m_audioJobs;
+    bool m_initialImport = false;
+    Renderer* m_renderer = nullptr;
     Assets& m_assets;
     JobSystem& m_jobs;
     std::filesystem::path m_root;

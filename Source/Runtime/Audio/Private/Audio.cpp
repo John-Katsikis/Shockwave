@@ -305,8 +305,7 @@ void AudioWorld::synchronize() {
         if (state.overrideVolume >= 0) state.options.volume = state.overrideVolume;
         if (!clip || !valid(state.options) || !std::isfinite(source.minDistance) ||
             !std::isfinite(source.maxDistance) || source.minDistance < 0 || source.maxDistance < source.minDistance) {
-            if (state.voice) p.mixer.stop(state.voice);
-            state.voice = 0;
+            if (!state.voice || p.mixer.stop(state.voice)) state.voice = 0;
             return;
         }
         if (!state.started && source.playOnStart) {
@@ -316,12 +315,17 @@ void AudioWorld::synchronize() {
             state.voice && (oldClip != clip || oldOptions.volume != state.options.volume ||
                             oldOptions.pitch != state.options.pitch || oldOptions.loop != state.options.loop ||
                             oldOptions.spatial != state.options.spatial || oldOptions.gains != state.options.gains))
-            p.mixer.update(state.voice, clip, state.options);
+            if (!p.mixer.update(state.voice, clip, state.options)) {
+                state.clip = oldClip;
+                state.options = oldOptions;   // retry next synchronization
+            }
     });
     for (auto it = p.sources.begin(); it != p.sources.end();) {
         if (it->second.seen != p.epoch) {
-            p.mixer.stop(it->second.voice);
-            it = p.sources.erase(it);
+            if (!it->second.voice || p.mixer.stop(it->second.voice))
+                it = p.sources.erase(it);
+            else
+                ++it;   // a full queue must not orphan a looping voice
         } else
             ++it;
     }
@@ -333,7 +337,7 @@ bool AudioWorld::play(Entity e) {
     if (it == p.sources.end()) return false;
     auto& source = it->second;
     source.started = true;
-    if (source.voice) p.mixer.stop(source.voice);
+    if (source.voice && !p.mixer.stop(source.voice)) return false;
     source.voice = p.mixer.play(source.clip, source.options);
     return source.voice != 0;
 }
@@ -344,8 +348,9 @@ bool AudioWorld::stop(Entity e) {
     if (it == p.sources.end()) return false;
     it->second.started = true;
     const auto voice = it->second.voice;
+    if (voice && !p.mixer.stop(voice)) return false;
     it->second.voice = 0;
-    return p.mixer.stop(voice);
+    return true;
 }
 bool AudioWorld::setVolume(Entity e, float volume) {
     if (!std::isfinite(volume) || volume < 0 || volume > 1) return false;
@@ -354,9 +359,10 @@ bool AudioWorld::setVolume(Entity e, float volume) {
     const auto it = p.sources.find(key(e));
     if (it == p.sources.end()) return false;
     auto& source = it->second;
+    if (source.voice && !p.mixer.setVolume(source.voice, volume)) return false;
     source.overrideVolume = volume;
     source.options.volume = volume;
-    return !source.voice || p.mixer.setVolume(source.voice, volume);
+    return true;
 }
 AudioVoice AudioWorld::playClip(std::string_view name, AudioPlayback options) {
     return m_impl->assets ? m_impl->mixer.play(m_impl->assets->audioClip(name), options) : 0;
