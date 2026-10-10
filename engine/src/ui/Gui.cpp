@@ -1,7 +1,10 @@
 #include <shockwave/Gui.h>
 
+#include <imgui_internal.h>   // the focused window, for focusOutline
+
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 
 namespace shockwave::gui {
 
@@ -96,6 +99,22 @@ void propertyLabel(const char* label) {
     ImGui::TextUnformatted(label);
     ImGui::TableSetColumnIndex(1);
     ImGui::SetNextItemWidth(-1.0f);
+}
+
+void focusOutline() {
+    ImGuiWindow* window = ImGui::GetCurrentContext()->NavWindow;
+    if (!window) return;
+    window = window->RootWindow;   // the panel, not a list or toolbar inside it
+    // Popups and tooltips carry their own border; ## windows are bars and hosts, not panels.
+    if (!window->Active || window->Hidden || std::strncmp(window->Name, "##", 2) == 0 ||
+        (window->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip))) return;
+    const ImVec2 min = window->Pos;
+    const ImVec2 max(min.x + window->Size.x, min.y + window->Size.y);
+    ImDrawList* draw = window->DrawList;
+    draw->PushClipRect(min, max, false);
+    draw->AddRect(min, max, ImGui::GetColorU32(accent()), 0.0f, 0,
+                  ImGui::GetStyle().WindowBorderSize);
+    draw->PopClipRect();
 }
 
 ImVec4 accent() {

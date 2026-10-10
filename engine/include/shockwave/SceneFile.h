@@ -25,11 +25,15 @@ namespace shockwave {
 //   end
 //
 // Every registered component (see Components.h) is saved with its fields. Meshes and
-// textures are saved by their name in Assets. Entity fields (a Parent, say) are saved as
-// the position of the entity's block in the file, counting from 0, with -1 for none.
+// textures are saved by their name in Assets, enums by their option name. Entity fields
+// (a Parent, say) are saved as the target's name when it's unique, otherwise as the
+// position of its block in the file counting from 0; "none" when empty. Both load.
 // "entity" and "end" start at the left edge; component names and fields are indented.
-// Unknown components and fields are skipped on load, so newer files still open in older
-// builds.
+// Unknown components and fields are skipped on load with a warning, so newer files
+// still open in older builds.
+//
+// The format is meant to be written by people, tools and AI alike: writeSceneSchema
+// documents every component, and `player --check` validates files.
 struct SceneFileHooks {
     // Extra top-level lines to write after the version line (an editor camera, say).
     std::function<void(std::ostream&)> writeHeader;
@@ -44,5 +48,10 @@ bool saveScene(const World& world, const Assets& assets, const std::string& path
 // loaded with a problem (an unknown mesh name, say).
 bool loadScene(World& world, const Assets& assets, const std::string& path, std::string& error,
                const SceneFileHooks& hooks = {}, std::vector<std::string>* warnings = nullptr);
+
+// Writes a Markdown reference for authoring scenes: the file layout, every registered
+// component with its fields, value syntax and defaults, and the asset names available.
+// Main thread, after the game's types and assets are registered.
+void writeSceneSchema(std::ostream& out, const Assets& assets);
 
 } // namespace shockwave

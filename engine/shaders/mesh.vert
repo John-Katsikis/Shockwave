@@ -19,12 +19,17 @@ layout(buffer_reference, scalar) readonly buffer VertexBuffer {
 // Must match DrawData in Renderer.cpp.
 struct DrawData {
     mat4 mvp;
+    mat4 model;
     mat4 normalMatrix;
     vec4 tint;
     vec2 uvScale;
     VertexBuffer vertexBuffer;
     uint textureIndex;
     float alphaCutoff;
+    float roughness;
+    float metallic;
+    vec3 emissive;
+    uint pad;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {
@@ -40,6 +45,9 @@ layout(location = 1) out vec2 vUv;
 layout(location = 2) out vec4 vColor;
 layout(location = 3) flat out uint vTexture;
 layout(location = 4) flat out float vAlphaCutoff;
+layout(location = 5) out vec3 vWorldPosition;
+layout(location = 6) flat out vec2 vRoughnessMetallic;
+layout(location = 7) flat out vec3 vEmissive;
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
@@ -51,4 +59,7 @@ void main() {
     vColor = v.color * draw.tint;
     vTexture = draw.textureIndex;
     vAlphaCutoff = draw.alphaCutoff;
+    vWorldPosition = (draw.model * vec4(v.position, 1.0)).xyz;
+    vRoughnessMetallic = vec2(draw.roughness, draw.metallic);
+    vEmissive = draw.emissive;
 }

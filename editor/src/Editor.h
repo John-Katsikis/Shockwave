@@ -84,7 +84,7 @@ private:
         std::string text;
     };
     enum class ContentRoot { Assets, Scenes, Engine };
-    enum class CreateKind { Empty, Cube, Sphere, Plane, Camera, Environment };
+    enum class CreateKind { Empty, Cube, Sphere, Plane, Camera, Environment, DirectionalLight, PointLight, SpotLight };
 
     // ---- Projects (Editor.cpp) ----
     bool openProject(const std::filesystem::path& path, const std::filesystem::path& sceneToOpen = {});
@@ -121,6 +121,8 @@ private:
     void drawOutline(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     void drawCameraIcons(const ImVec2& pos, const ImVec2& size);
     shockwave::Entity cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) const;
+    void drawLightIcons(const ImVec2& pos, const ImVec2& size);
+    void saveViewportScreenshot();
     void updateCamera(bool hovered);
     shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size);
     void mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const;
@@ -255,6 +257,7 @@ private:
     bool m_gameModuleMatches = true;   // the project names the module this editor was built with
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's
     bool m_viewBeforePlay = false;
+    std::filesystem::path m_screenshotPath;   // waiting for the renderer to write it
 
     shockwave::FlyCamera m_camera;
     bool m_looking = false;

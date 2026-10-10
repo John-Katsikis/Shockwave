@@ -1,6 +1,7 @@
 // Entity/component system tests. No GPU or window needed: ctest --test-dir build
 #include <shockwave/Components.h>
 #include <shockwave/Hierarchy.h>
+#include <shockwave/Physics.h>
 #include <shockwave/SceneFile.h>
 #include <shockwave/Schedule.h>
 #include <shockwave/Systems.h>
@@ -10,6 +11,8 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <iterator>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -363,7 +366,7 @@ void sceneParents() {
     const Entity gone = w.create();
     const Entity orphan = w.create();
     w.add<Parent>(orphan, {gone});
-    w.destroy(gone);   // a dangling link saves as -1
+    w.destroy(gone);   // a dangling link saves as none
 
     std::string error;
     CHECK(saveScene(w, assets, "parents.swscene", error));
@@ -391,6 +394,125 @@ void sceneParents() {
     CHECK(saveScene(named, assets, "names.swscene", error));
     CHECK(loadScene(loaded, assets, "names.swscene", error));
     CHECK(loaded.get<MeshRenderer>(loaded.entityAt(0))->texture.id == 4);
+}
+
+// Scenes written by hand or by tools: names instead of numbers, and loud mistakes.
+void authoredScenes() {
+    Assets assets;
+    std::string error;
+    std::vector<std::string> warnings;
+    {
+        std::ofstream out("authored.swscene");
+        out << "shockwave_scene 2\n"
+               "entity \"Wheel\"\n  Parent\n    entity \"Car\"\n  Collider\n    shape \"Convex model\"\n"
+               "  RigidBody\n    motion dynamic\n    sensor true\nend\n"
+               "entity \"Car\"\n  Transform\n    position 0 0 4\nend\n";
+    }
+    World loaded;
+    CHECK(loadScene(loaded, assets, "authored.swscene", error, {}, &warnings));
+    CHECK(warnings.empty());
+    const Entity wheel = loaded.entityAt(0), car = loaded.entityAt(1);
+    CHECK(parentOf(loaded, wheel) == car);
+    CHECK(loaded.get<Collider>(wheel)->shape == Collider::Shape::ConvexModel);
+    CHECK(loaded.get<RigidBody>(wheel)->sensor);
+
+    // Saving writes unique names and option names, so the file reads the same way.
+    CHECK(saveScene(loaded, assets, "authored.swscene", error));
+    {
+        std::ifstream in("authored.swscene");
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(text.find("entity \"Car\"\n  Transform") != std::string::npos);
+        CHECK(text.find("    entity \"Car\"\n") != std::string::npos);
+        CHECK(text.find("shape \"Convex model\"") != std::string::npos);
+    }
+
+    // Typos, unknown names, ambiguous links and out-of-range values all warn with a line.
+    {
+        std::ofstream out("mistakes.swscene");
+        out << "shockwave_scene 2\n"
+               "entity \"A\"\n  Transform\n    positon 1 2 3\n    scale 0 1 1\n  Parent\n    entity \"B\"\nend\n"
+               "entity \"B\"\nend\nentity \"B\"\n  Parent\n    entity \"Nobody\"\n  Wobble\n    speed 2\nend\n";
+    }
+    CHECK(loadScene(loaded, assets, "mistakes.swscene", error, {}, &warnings));
+    CHECK(warnings.size() == 5);
+    bool lineNumbers = true;
+    for (const std::string& w : warnings) lineNumbers &= w.rfind("mistakes.swscene:", 0) == 0;
+    CHECK(lineNumbers);
+    CHECK(loaded.get<Parent>(loaded.entityAt(0))->entity == kNullEntity);
+
+    // A bad enum fails and says what it accepts.
+    {
+        std::ofstream out("badenum.swscene");
+        out << "shockwave_scene 2\nentity\n  Collider\n    shape Cone\nend\n";
+    }
+    CHECK(!loadScene(loaded, assets, "badenum.swscene", error));
+    CHECK(error.find("Sphere") != std::string::npos);
+
+    // The schema lists every component and the asset names a scene can use.
+    assets.addMesh("cube", MeshHandle{1});
+    std::ostringstream schema;
+    writeSceneSchema(schema, assets);
+    CHECK(schema.str().find("#### Collider") != std::string::npos);
+    CHECK(schema.str().find("\"Convex model\"") != std::string::npos);
+    CHECK(schema.str().find("- `cube`") != std::string::npos);
+}
+
+
+// Lights, materials and the environment's look are plain fields an author or a tool
+// writes by name; they come back exactly.
+void lighting() {
+    Assets assets;
+    std::string error;
+    std::vector<std::string> warnings;
+    {
+        std::ofstream out("lit.swscene");
+        out << "shockwave_scene 2\n"
+               "entity \"Environment\"\n  Environment\n    ground_color 0.1 0.1 0.1\n    exposure -1.5\n"
+               "    tonemapper AgX\nend\n"
+               "entity \"Spot\"\n  Transform\n    rotation -90 0 0\n  Light\n    type Spot\n    color 1 0.5 0.25\n"
+               "    intensity 12\n    range 8\n    spot_angle 25\n    spot_softness 0.5\n    enabled no\nend\n"
+               "entity \"Glow\"\n  MeshRenderer\n    roughness 0.2\n    metallic 1\n    emissive 0 1 0\n"
+               "    emissive_intensity 4\nend\n";
+    }
+    World loaded;
+    CHECK(loadScene(loaded, assets, "lit.swscene", error, {}, &warnings));
+    CHECK(warnings.empty());
+    for (int pass = 0; pass < 2; ++pass) {
+        const Environment* env = loaded.get<Environment>(loaded.entityAt(0));
+        const Light* light = loaded.get<Light>(loaded.entityAt(1));
+        const MeshRenderer* glow = loaded.get<MeshRenderer>(loaded.entityAt(2));
+        CHECK(env && light && glow);
+        if (!env || !light || !glow) return;
+        CHECK(near(env->exposure, -1.5f) && env->tonemapper == Environment::Tonemapper::AgX);
+        CHECK(near(env->groundColor.r, 0.1f));
+        CHECK(light->type == Light::Type::Spot && !light->enabled);
+        CHECK(near(light->intensity, 12.0f) && near(light->range, 8.0f) && near(light->spotAngle, 25.0f));
+        CHECK(near(light->spotSoftness, 0.5f) && near(light->color.g, 0.5f));
+        CHECK(near(glow->roughness, 0.2f) && near(glow->metallic, 1.0f));
+        CHECK(near(glow->emissive.g, 1.0f) && near(glow->emissiveIntensity, 4.0f));
+        // Save and read it back: the second pass checks the round trip.
+        CHECK(saveScene(loaded, assets, "lit.swscene", error));
+        CHECK(loadScene(loaded, assets, "lit.swscene", error, {}, &warnings));
+        CHECK(warnings.empty());
+    }
+    {
+        std::ifstream in("lit.swscene");
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK(text.find("type Spot") != std::string::npos);
+        CHECK(text.find("tonemapper AgX") != std::string::npos);
+    }
+
+    // Out-of-range light values warn rather than silently clamping.
+    {
+        std::ofstream out("badlight.swscene");
+        out << "shockwave_scene 2\nentity\n  Light\n    spot_angle 120\n    range -1\nend\n";
+    }
+    CHECK(loadScene(loaded, assets, "badlight.swscene", error, {}, &warnings));
+    CHECK(warnings.size() == 2);
+    std::ostringstream schema;
+    writeSceneSchema(schema, assets);
+    CHECK(schema.str().find("#### Light") != std::string::npos);
+    CHECK(schema.str().find("`tonemapper`") != std::string::npos);
 }
 
 } // namespace
@@ -436,6 +558,8 @@ int main() {
     sceneFiles();
     hierarchy();
     sceneParents();
+    authoredScenes();
+    lighting();
     cameras();
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);

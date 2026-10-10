@@ -160,6 +160,7 @@ void Editor::onGui() {
     if (m_showAbout) drawAboutWindow();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
     if (m_showMetrics) ImGui::ShowMetricsWindow(&m_showMetrics);
+    gui::focusOutline();
     drawUnsavedChangesModal();
     drawRecoveryModal();
     updateTitle();
@@ -461,6 +462,11 @@ std::string Editor::displayName(Entity e) const {
 std::string Editor::kindLabel(Entity e) {
     if (m_world.has<shockwave::Camera>(e)) return "Camera";
     if (m_world.has<shockwave::Environment>(e)) return "Environment";
+    if (const auto* light = m_world.get<shockwave::Light>(e)) {
+        static const char* kinds[] = {"Directional light", "Point light", "Spot light"};
+        const int type = static_cast<int>(light->type);
+        return type >= 0 && type < 3 ? kinds[type] : "Light";
+    }
     if (const MeshRenderer* r = m_world.get<MeshRenderer>(e)) {
         const std::string mesh = engine().assets().meshName(r->mesh);
         return mesh.empty() ? "Mesh" : fs::path(mesh).stem().string();
@@ -540,6 +546,38 @@ Entity Editor::createEntity(CreateKind kind, Entity parent) {
         shockwave::Camera camera;
         camera.primary = !shockwave::primaryCamera(m_world).valid();
         m_world.add<shockwave::Camera>(e, camera);
+        break;
+    }
+    case CreateKind::DirectionalLight:
+    case CreateKind::PointLight:
+    case CreateKind::SpotLight: {
+        shockwave::Light light;
+        Transform t;
+        if (kind == CreateKind::DirectionalLight) {
+            // Only the direction matters; slanted like an afternoon sun, above the scene.
+            m_world.add<Name>(e, {uniqueName("Sun")});
+            light.type = shockwave::Light::Type::Directional;
+            light.intensity = 2.5f;
+            t.position = glm::vec3(0.0f, 10.0f, 0.0f);
+            t.rotation = shockwave::fromEulerDegrees({-50.0f, 35.0f, 0.0f});
+        } else if (kind == CreateKind::PointLight) {
+            m_world.add<Name>(e, {uniqueName("Point light")});
+            light.type = shockwave::Light::Type::Point;
+            light.intensity = 4.0f;
+            light.range = 8.0f;
+            t.position = placementPoint() + glm::vec3(0.0f, 2.0f, 0.0f);
+        } else {
+            // Above where the camera looks, pointing down at it.
+            m_world.add<Name>(e, {uniqueName("Spot light")});
+            light.type = shockwave::Light::Type::Spot;
+            light.intensity = 10.0f;
+            light.range = 12.0f;
+            t.position = placementPoint() + glm::vec3(0.0f, 4.0f, 0.0f);
+            t.rotation = shockwave::fromEulerDegrees({-90.0f, 0.0f, 0.0f});
+        }
+        if (parent.valid()) t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
+        m_world.add<Transform>(e, t);
+        m_world.add<shockwave::Light>(e, light);
         break;
     }
     case CreateKind::Environment:

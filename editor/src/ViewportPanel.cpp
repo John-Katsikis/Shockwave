@@ -1,16 +1,20 @@
 // The Viewport panel: the scene rendered at the panel's size, the editor grid, camera
-// controls, picking, the transform gizmo, camera icons and drops from the Content panel.
+// controls, picking, the transform gizmo, camera and light icons, shading views,
+// screenshots and drops from the Content panel.
 #include "Editor.h"
 
 #include <shockwave/Gui.h>
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <limits>
+#include <span>
 
 namespace editor {
 
@@ -122,7 +126,10 @@ void Editor::drawViewport() {
         for (Entity e : selection()) {
             drawOutline(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
         }
-        if (m_prefs.showCameraIcons) drawCameraIcons(pos, size);
+        if (m_prefs.showCameraIcons) {
+            drawCameraIcons(pos, size);
+            drawLightIcons(pos, size);
+        }
 
         // View cube in the top-right corner: click a face to snap the camera to that axis.
         glm::mat4 view = m_camera.view();
@@ -161,6 +168,13 @@ void Editor::drawViewport() {
         } else {
             select(hit);
         }
+    }
+
+    if (!m_screenshotPath.empty() && !engine().renderer().screenshotPending()) {
+        const std::string& result = engine().renderer().screenshotResult();
+        if (result.empty()) log("Saved " + (m_hasProject ? m_project.relative(m_screenshotPath) : m_screenshotPath.string()));
+        else error("Screenshot failed: " + result);
+        m_screenshotPath.clear();
     }
 
     // A coloured frame round the viewport while playing, so play-mode edits (which are
@@ -243,7 +257,7 @@ void Editor::drawViewportToolbar() {
     if (ImGui::BeginPopup("ViewOptions")) {
         ImGui::SeparatorText("Show");
         if (ImGui::MenuItem("Grid", "G", &m_prefs.showGrid)) m_prefsDirty = true;
-        if (ImGui::MenuItem("Camera icons", nullptr, &m_prefs.showCameraIcons)) m_prefsDirty = true;
+        if (ImGui::MenuItem("Camera and light icons", nullptr, &m_prefs.showCameraIcons)) m_prefsDirty = true;
         if (ImGui::MenuItem("Stats", nullptr, &m_prefs.showStats)) m_prefsDirty = true;
         ImGui::SeparatorText("Editor camera");
         ImGui::SetNextItemWidth(160.0f * dpi);
@@ -266,6 +280,20 @@ void Editor::drawViewportToolbar() {
             m_prefs.renderScale = scale;
             m_prefsDirty = true;
         }
+        // What the scene shows: the lit result or a view for checking content. The same
+        // views are available to tools as player --view.
+        static const char* views[] = {"Lit", "Unlit (albedo)", "Normals", "Lighting only"};
+        int view = static_cast<int>(renderer.debugView());
+        ImGui::SetNextItemWidth(160.0f * dpi);
+        if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {
+            renderer.setDebugView(static_cast<shockwave::DebugView>(view));
+        }
+        ImGui::SeparatorText("Capture");
+        if (gui::button("Save screenshot", ImVec2(-FLT_MIN, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+            saveViewportScreenshot();
+        }
+        ImGui::SetItemTooltip("Saves the viewport, without editor overlays, to the project's screenshots folder");
         ImGui::EndPopup();
     }
     ImGui::EndChild();
@@ -433,23 +461,102 @@ void Editor::drawCameraIcons(const ImVec2& pos, const ImVec2& size) {
     });
 }
 
+// The camera or light icon under the mouse, if any.
 Entity Editor::cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) const {
     const float radius = 11.0f * ImGui::GetStyle().FontScaleDpi;
     Entity best = kNullEntity;
     float bestDistance = radius * radius;
-    const auto* cameras = m_world.pool<shockwave::Camera>();
-    if (!cameras) return best;
-    for (Entity e : cameras->entities()) {
-        if (!m_world.has<Transform>(e)) continue;
-        ImVec2 c;
-        if (!worldToScreen(glm::vec3(shockwave::worldMatrix(m_world, e)[3]), pos, size, c)) continue;
-        const float dx = c.x - mouse.x, dy = c.y - mouse.y;
-        if (dx * dx + dy * dy < bestDistance) {
-            bestDistance = dx * dx + dy * dy;
-            best = e;
+    auto consider = [&](std::span<const Entity> entities) {
+        for (Entity e : entities) {
+            if (!m_world.has<Transform>(e)) continue;
+            ImVec2 c;
+            if (!worldToScreen(glm::vec3(shockwave::worldMatrix(m_world, e)[3]), pos, size, c)) continue;
+            const float dx = c.x - mouse.x, dy = c.y - mouse.y;
+            if (dx * dx + dy * dy < bestDistance) {
+                bestDistance = dx * dx + dy * dy;
+                best = e;
+            }
         }
-    }
+    };
+    if (const auto* cameras = m_world.pool<shockwave::Camera>()) consider(cameras->entities());
+    if (const auto* lights = m_world.pool<shockwave::Light>()) consider(lights->entities());
     return best;
+}
+
+// Lights have no mesh either: an icon in the light's own color, and when selected, where
+// it reaches (a range ring for point lights, the cone for spots, the direction for suns).
+void Editor::drawLightIcons(const ImVec2& pos, const ImVec2& size) {
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const float dpi = ImGui::GetStyle().FontScaleDpi;
+    m_world.each<const shockwave::Light, const Transform>([&](Entity e, const shockwave::Light& light, const Transform&) {
+        const glm::mat4 world = shockwave::worldMatrix(m_world, e);
+        const glm::vec3 origin(world[3]);
+        const glm::vec3 forward = glm::normalize(-glm::vec3(world[2]));
+        const bool chosen = isSelected(e);
+        const ImU32 outline = chosen ? accentU32() : ImGui::GetColorU32(light.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+        auto line = [&](const glm::vec3& a, const glm::vec3& b) {
+            ImVec2 sa, sb;
+            if (worldToScreen(a, pos, size, sa) && worldToScreen(b, pos, size, sb)) draw->AddLine(sa, sb, outline, 1.2f);
+        };
+        if (chosen) {
+            using Type = shockwave::Light::Type;
+            if (light.type == Type::Directional) {
+                line(origin, origin + forward * 3.0f);
+            } else {
+                // A ring (point) or the cone's rim (spot), as 32 segments.
+                glm::vec3 side = glm::normalize(glm::cross(forward, std::abs(forward.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
+                glm::vec3 up = glm::cross(side, forward);
+                glm::vec3 center = origin;
+                float radius = light.range;
+                if (light.type == Type::Spot) {
+                    const float angle = glm::radians(std::clamp(light.spotAngle, 1.0f, 89.0f));
+                    center = origin + forward * (light.range * std::cos(angle));
+                    radius = light.range * std::sin(angle);
+                } else {
+                    side = glm::vec3(1, 0, 0);   // point lights: a horizontal ring
+                    up = glm::vec3(0, 0, 1);
+                }
+                glm::vec3 previous = center + side * radius;
+                for (int i = 1; i <= 32; ++i) {
+                    const float a = glm::two_pi<float>() * static_cast<float>(i) / 32.0f;
+                    const glm::vec3 next = center + (side * std::cos(a) + up * std::sin(a)) * radius;
+                    line(previous, next);
+                    if (light.type == Type::Spot && i % 8 == 0) line(origin, next);
+                    previous = next;
+                }
+            }
+        }
+        ImVec2 c;
+        if (!worldToScreen(origin, pos, size, c)) return;
+        const float s = 6.0f * dpi;
+        const glm::vec3 tint = glm::clamp(glm::vec3(light.color), 0.0f, 1.0f);
+        const ImU32 fill = ImGui::GetColorU32(ImVec4(tint.r, tint.g, tint.b, light.enabled ? 1.0f : 0.35f));
+        draw->AddCircleFilled(c, s, fill);
+        draw->AddCircle(c, s, outline, 0, 1.5f);
+        if (light.type == shockwave::Light::Type::Directional) {
+            // Rays round the disc: the sun.
+            for (int i = 0; i < 8; ++i) {
+                const float a = glm::two_pi<float>() * static_cast<float>(i) / 8.0f;
+                const ImVec2 d(std::cos(a), std::sin(a));
+                draw->AddLine(ImVec2(c.x + d.x * s * 1.4f, c.y + d.y * s * 1.4f), ImVec2(c.x + d.x * s * 2.0f, c.y + d.y * s * 2.0f),
+                              outline, 1.5f);
+            }
+        }
+    });
+}
+
+// The viewport as rendered, tonemapped, without icons or gizmos (the grid stays if shown).
+void Editor::saveViewportScreenshot() {
+    const std::string scene = m_scenePath.empty() ? std::string("untitled") : m_scenePath.stem().string();
+    char stamp[32];
+    const std::time_t now = std::time(nullptr);
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", std::localtime(&now));
+    namespace fs = std::filesystem;
+    const fs::path folder = (m_hasProject ? m_project.root : fs::current_path()) / "screenshots";
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    m_screenshotPath = folder / (scene + "-" + stamp + ".png");
+    engine().renderer().requestScreenshot(m_screenshotPath.string());
 }
 
 // Assets dropped on the viewport: a mesh lands on the ground under the cursor, a texture

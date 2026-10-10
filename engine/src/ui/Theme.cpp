@@ -34,6 +34,7 @@ const Key kKeys[] = {
     {"warning", &Theme::warning},
     {"error", &Theme::error},
     {"background", &Theme::background},
+    {"panel", &Theme::panel},
     {"surface", &Theme::surface},
     {"frame", &Theme::frame},
     {"frame_hover", &Theme::frameHover},
@@ -46,6 +47,7 @@ const Key kKeys[] = {
     {"accent", &Theme::accent},
     {"accent_hover", &Theme::accentHover},
     {"accent_active", &Theme::accentActive},
+    {"secondary", &Theme::secondary},
     {"selection", &Theme::selection},
     {"scrollbar", &Theme::scrollbar},
     {"scrollbar_hover", &Theme::scrollbarHover},
@@ -203,6 +205,7 @@ void applyTheme(const Theme& t, float dpiScale) {
     style.TreeLinesRounding = 0.0f;
     style.TreeLinesSize = 1.0f;
     style.TabBarBorderSize = 1.0f;
+    style.TabBarOverlineSize = 2.0f;   // the lit bar over the open tab
     style.SeparatorTextPadding = t.framePadding;
     style.WindowMenuButtonPosition = ImGuiDir_None;
     style.SeparatorTextBorderSize = 1.0f;
@@ -214,13 +217,14 @@ void applyTheme(const Theme& t, float dpiScale) {
     const ImVec4 bg = lin(t.background), surface = lin(t.surface), frame = lin(t.frame);
     const ImVec4 frameHover = lin(t.frameHover), frameActive = lin(t.frameActive), border = lin(t.border);
     const ImVec4 accentColor = lin(t.accent), accentHover = lin(t.accentHover);
+    const ImVec4 panel = lin(t.panel), secondary = lin(t.secondary);
     const ImVec4 clear(0, 0, 0, 0);
     ImVec4* c = style.Colors;
 
     c[ImGuiCol_Text] = lin(t.text);
     c[ImGuiCol_TextDisabled] = lin(t.textDisabled);
     c[ImGuiCol_WindowBg] = bg;
-    c[ImGuiCol_ChildBg] = clear;
+    c[ImGuiCol_ChildBg] = panel;
     c[ImGuiCol_PopupBg] = withAlpha(surface, 0.98f);
     c[ImGuiCol_Border] = border;
     c[ImGuiCol_BorderShadow] = clear;
@@ -258,19 +262,19 @@ void applyTheme(const Theme& t, float dpiScale) {
     c[ImGuiCol_TabSelectedOverline] = accentColor;
     c[ImGuiCol_TabDimmed] = surface;
     c[ImGuiCol_TabDimmedSelected] = bg;
-    c[ImGuiCol_TabDimmedSelectedOverline] = border;
+    c[ImGuiCol_TabDimmedSelectedOverline] = withAlpha(accentColor, 0.35f);
     c[ImGuiCol_DockingPreview] = withAlpha(accentColor, 0.4f);
     c[ImGuiCol_DockingEmptyBg] = bg;
     c[ImGuiCol_PlotLines] = accentColor;
-    c[ImGuiCol_PlotLinesHovered] = accentHover;
-    c[ImGuiCol_PlotHistogram] = accentColor;
-    c[ImGuiCol_PlotHistogramHovered] = accentHover;
-    c[ImGuiCol_TableHeaderBg] = surface;
+    c[ImGuiCol_PlotLinesHovered] = secondary;
+    c[ImGuiCol_PlotHistogram] = secondary;
+    c[ImGuiCol_PlotHistogramHovered] = accentColor;
+    c[ImGuiCol_TableHeaderBg] = panel;
     c[ImGuiCol_TableBorderStrong] = border;
     c[ImGuiCol_TableBorderLight] = withAlpha(border, 0.6f);
     c[ImGuiCol_TableRowBg] = clear;
-    c[ImGuiCol_TableRowBgAlt] = withAlpha(surface, 0.65f);
-    c[ImGuiCol_TextLink] = accentHover;
+    c[ImGuiCol_TableRowBgAlt] = withAlpha(panel, 0.65f);
+    c[ImGuiCol_TextLink] = accentColor;
     c[ImGuiCol_TextSelectedBg] = lin(t.selection);
     c[ImGuiCol_TreeLines] = border;
     c[ImGuiCol_DragDropTarget] = accentHover;

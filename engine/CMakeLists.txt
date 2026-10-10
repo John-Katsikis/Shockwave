@@ -25,6 +25,7 @@ add_library(shockwave STATIC
     src/vulkan/Context.cpp
     src/vulkan/Swapchain.cpp
     src/vulkan/Pipeline.cpp
+    src/vulkan/RenderGraph.cpp
     src/vulkan/Vma.cpp
     ${SHOCKWAVE_IMGUI_BACKENDS}
 )
@@ -60,4 +61,6 @@ shockwave_compile_shaders(shockwave
     shaders/mesh.frag
     shaders/grid.vert
     shaders/grid.frag
+    shaders/tonemap.vert
+    shaders/tonemap.frag
 )

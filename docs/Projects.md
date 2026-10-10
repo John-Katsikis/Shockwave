@@ -133,6 +133,35 @@ hosts; see [Physics](Physics.md).
 The player rejects scene/asset loading errors rather than silently launching incomplete
 content. Scenes and assets must currently remain accessible on disk.
 
+## Authoring with tools and AI
+
+Projects and scenes are designed to be generated as well as edited by hand:
+
+1. Read [SceneSchema.md](SceneSchema.md). It is generated from the engine's component
+   registry and the project's assets, so it always matches the build:
+   `build/bin/player --schema docs/SceneSchema.md`.
+2. Write or edit the `.swscene` (and `shockwave.swproject` if needed). Refer to other
+   entities by unique name (`entity "Stack"`) and to options by name (`motion Kinematic`).
+   Leave out fields that keep their defaults.
+3. Run `build/bin/player --check` (every scene in the project) or
+   `build/bin/player --check scenes/level.swscene`. It loads the manifest, imports assets,
+   loads each scene and starts the gameplay and physics on it as Play would. Every
+   problem prints as `scenes/level.swscene:14: no entity named 'Grond'; left empty`, and
+   the exit code is 1 until there are none. It also flags scenes without exactly one
+   primary Camera, lights without a Transform, more lights than the renderer draws and
+   extra Environments.
+4. Look at the result: `build/bin/player --scene scenes/level.swscene --screenshot
+   level.png` renders the scene in a hidden window and saves the frame. Add
+   `--view lighting` or `--view normals` to see the light or the geometry on its own,
+   and `--size 1280x720` to pick the resolution. An agent that can read images can
+   compare this against what it meant to build.
+
+The loader warns about anything it has to skip or guess: unknown components or fields,
+unknown asset names, broken or ambiguous entity links, extra values and values outside
+a field's range. The editor shows the same warnings in its Console when it opens a scene,
+and saving a scene writes names rather than numbers, so files stay stable when entities
+are added or reordered. Numeric links and option numbers from older files still load.
+
 ## Checks
 
 `ctest --test-dir build --output-on-failure` checks manifest validation and relative

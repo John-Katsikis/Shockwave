@@ -18,7 +18,7 @@ entity "Floor"
     texture grid
     tint 0.35 0.4 0.5 1
   Collider
-    shape 0
+    shape Box
     half_extents 0.5 0.5 0.5
 end
 entity "Falling crate"
@@ -30,9 +30,9 @@ entity "Falling crate"
     texture panel
     tint 1 0.5 0.2 1
   Collider
-    shape 0
+    shape Box
   RigidBody
-    motion 1
+    motion Dynamic
     mass 2
     friction 0.6
     restitution 0.15
@@ -46,10 +46,10 @@ entity "Falling ball"
     texture checker
     tint 0.35 0.65 1 1
   Collider
-    shape 1
+    shape Sphere
     radius 0.5
   RigidBody
-    motion 1
+    motion Dynamic
     restitution 0.6
 end
 entity "Kinematic platform"
@@ -61,9 +61,9 @@ entity "Kinematic platform"
     texture panel
     tint 0.2 0.75 0.55 1
   Collider
-    shape 0
+    shape Box
   RigidBody
-    motion 2
+    motion Kinematic
   Bob
     amplitude 0.35
     frequency 0.25
@@ -72,10 +72,10 @@ entity "Trigger volume"
   Transform
     position -1.5 1 0
   Collider
-    shape 0
+    shape Box
     half_extents 1.1 1 1.1
   RigidBody
-    motion 0
+    motion Static
     sensor 1
 end
 entity "Imported dynamic hull"
@@ -86,9 +86,9 @@ entity "Imported dynamic hull"
   ModelRenderer
     model models/material-demo.glb
   Collider
-    shape 3
+    shape "Convex model"
   RigidBody
-    motion 1
+    motion Dynamic
     mass 3
 end
 entity "Imported static triangles"
@@ -99,7 +99,7 @@ entity "Imported static triangles"
   ModelRenderer
     model models/material-demo.glb
   Collider
-    shape 4
+    shape "Triangle model"
 end
 entity "Character"
   Transform
@@ -116,7 +116,7 @@ entity "Character visual"
     position 0 0.85 0
     scale 0.7 1.7 0.7
   Parent
-    entity 8
+    entity "Character"
   MeshRenderer
     mesh sphere
     texture white
@@ -132,4 +132,14 @@ entity "Main Camera"
     fov 60
     near_plane 0.1
     primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -55 40 0
+  Light
+    type Directional
+    color 1 0.96 0.9 1
+    intensity 2.6
 end

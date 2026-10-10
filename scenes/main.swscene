@@ -92,7 +92,7 @@ entity "Moon"
     rotation 0 0 0
     scale 0.5 0.5 0.5
   Parent
-    entity 6
+    entity "Small crate"
   MeshRenderer
     mesh sphere
     texture checker
@@ -113,7 +113,7 @@ entity "Lower crate"
     rotation 0 0 0
     scale 0.8 0.8 0.8
   Parent
-    entity 8
+    entity "Stack"
   MeshRenderer
     mesh cube
     texture textures/wood.png
@@ -127,7 +127,7 @@ entity "Upper crate"
     rotation 0 30 0
     scale 0.5 0.5 0.5
   Parent
-    entity 8
+    entity "Stack"
   MeshRenderer
     mesh cube
     texture textures/wood.png
@@ -144,4 +144,37 @@ entity "Main Camera"
     fov 60
     near_plane 0.1
     primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -50 35 0
+  Light
+    type Directional
+    color 1 0.95 0.86 1
+    intensity 2.6
+end
+
+entity "Lamp"
+  Transform
+    position -1.2 1.4 1.6
+  Light
+    type Point
+    color 1 0.55 0.2 1
+    intensity 6
+    range 6
+end
+
+entity "Spotlight"
+  Transform
+    position 3.5 3.2 -1.5
+    rotation -60 70 0
+  Light
+    type Spot
+    color 0.45 0.7 1 1
+    intensity 12
+    range 12
+    spot_angle 28
+    spot_softness 0.3
 end

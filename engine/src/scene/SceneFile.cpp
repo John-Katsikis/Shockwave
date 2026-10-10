@@ -2,7 +2,10 @@
 #include <shockwave/Components.h>
 #include <shockwave/SceneFile.h>
 
+#include <algorithm>
+#include <charconv>
 #include <cmath>
+#include <unordered_map>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -44,13 +47,31 @@ void writeName(std::ostream& out, const std::string& name) {
     }
 }
 
-// entityOrdinals maps an entity index to the position of its block in the file.
+std::string lower(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    return text;
+}
+
+bool parseInt(const std::string& text, int& value) {
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+    return ec == std::errc{} && end == text.data() + text.size();
+}
+
+// entityRefs maps an entity index to how other entities refer to it in the file.
+
 void writeField(std::ostream& out, const Field& f, const void* data, const Assets& assets, const World& world,
-                const std::vector<int>& entityOrdinals) {
+                const std::vector<std::string>& entityRefs) {
     switch (f.type) {
     case FieldType::Bool: out << ' ' << (*static_cast<const bool*>(data) ? 1 : 0); break;
     case FieldType::Enum: {
-        int value; std::memcpy(&value,data,sizeof(value)); out << ' ' << value; break;
+        int value;
+        std::memcpy(&value, data, sizeof(value));
+        if (value >= 0 && size_t(value) < f.options.size()) {
+            writeName(out, f.options[size_t(value)]);
+        } else {
+            out << ' ' << value;
+        }
+        break;
     }
     case FieldType::Int: out << ' ' << *static_cast<const int*>(data); break;
     case FieldType::Float: writeFloats(out, static_cast<const float*>(data), 1); break;
@@ -80,7 +101,7 @@ void writeField(std::ostream& out, const Field& f, const void* data, const Asset
     }
     case FieldType::Entity: {
         const Entity e = *static_cast<const Entity*>(data);
-        out << ' ' << (world.alive(e) ? entityOrdinals[e.index] : -1);
+        out << ' ' << (world.alive(e) && e.index < entityRefs.size() ? entityRefs[e.index] : "none");
         break;
     }
     }
@@ -90,15 +111,28 @@ void writeField(std::ostream& out, const Field& f, const void* data, const Asset
 bool readField(std::istream& in, const Field& f, void* data, const Assets& assets, std::vector<std::string>& warnings) {
     switch (f.type) {
     case FieldType::Bool: {
-        int v = 0;
-        if (!(in >> v)) return false;
-        *static_cast<bool*>(data) = v != 0;
+        std::string word;
+        if (!(in >> word)) return false;
+        word = lower(word);
+        if (word == "1" || word == "true" || word == "yes") *static_cast<bool*>(data) = true;
+        else if (word == "0" || word == "false" || word == "no") *static_cast<bool*>(data) = false;
+        else return false;
         return true;
     }
     case FieldType::Enum: {
-        int value;
-        if (!(in >> value) || (!f.options.empty() && (value<0 || size_t(value)>=f.options.size()))) return false;
-        std::memcpy(data,&value,sizeof(value)); return true;
+        // An option's name ("Box", "Convex model") or its number.
+        std::string word;
+        if (!(in >> std::quoted(word))) return false;
+        int value = -1;
+        if (!parseInt(word, value)) {
+            for (size_t i = 0; i < f.options.size(); ++i) {
+                if (lower(f.options[i]) == lower(word)) value = int(i);
+            }
+            if (value < 0) return false;
+        }
+        if (!f.options.empty() && (value < 0 || size_t(value) >= f.options.size())) return false;
+        std::memcpy(data, &value, sizeof(value));
+        return true;
     }
     case FieldType::Int: return static_cast<bool>(in >> *static_cast<int*>(data));
     case FieldType::Float: return readFloats(in, static_cast<float*>(data), 1);
@@ -146,6 +180,32 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
     return false;
 }
 
+// How a field's value is written, for error messages and the schema.
+std::string valueSyntax(const Field& f) {
+    switch (f.type) {
+    case FieldType::Bool: return "1 or 0 (true/false also accepted)";
+    case FieldType::Int: return "whole number";
+    case FieldType::Enum: {
+        std::string text = "one of:";
+        for (size_t i = 0; i < f.options.size(); ++i) {
+            text += (i ? ", " : " ") + (f.options[i].find(' ') == std::string::npos ? f.options[i] : "\"" + f.options[i] + "\"");
+        }
+        return text + " (or its number, counting from 0)";
+    }
+    case FieldType::Float: return "number";
+    case FieldType::Vec2: return "x y";
+    case FieldType::Vec3: return "x y z";
+    case FieldType::Color: return "r g b [a], linear 0..1, alpha optional";
+    case FieldType::Rotation: return "pitch yaw roll in degrees (applied X, then Y, then Z)";
+    case FieldType::String: return "quoted text";
+    case FieldType::Mesh: return "mesh name, or none";
+    case FieldType::Texture: return "texture name (white when unset)";
+    case FieldType::Model: return "model path inside the asset folder, or none";
+    case FieldType::Entity: return "quoted entity name, or none (a block number counting from 0 also works)";
+    }
+    return {};
+}
+
 const Field* findField(const ComponentInfo& info, const std::string& name) {
     for (const Field& f : info.fields) {
         if (f.name == name) return &f;
@@ -168,11 +228,25 @@ bool saveScene(const World& world, const Assets& assets, const std::string& path
 
     const uint32_t nameId = componentId<Name>();
     const std::vector<ComponentInfo>& components = registeredComponents();
-    std::vector<int> ordinals;
+    // Other entities are referred to by name when it's unique, so links survive blocks
+    // being added, removed or reordered; otherwise by block position.
+    std::unordered_map<std::string, int> nameCounts;
+    world.forEachEntity([&](Entity e) {
+        if (const Name* name = world.get<Name>(e); name && !name->value.empty()) ++nameCounts[name->value];
+    });
+    std::vector<std::string> refs;
     int ordinal = 0;
     world.forEachEntity([&](Entity e) {
-        if (e.index >= ordinals.size()) ordinals.resize(size_t(e.index) + 1, -1);
-        ordinals[e.index] = ordinal++;
+        if (e.index >= refs.size()) refs.resize(size_t(e.index) + 1, "none");
+        const Name* name = world.get<Name>(e);
+        if (name && !name->value.empty() && nameCounts[name->value] == 1) {
+            std::ostringstream quoted;
+            quoted << std::quoted(name->value);
+            refs[e.index] = quoted.str();
+        } else {
+            refs[e.index] = std::to_string(ordinal);
+        }
+        ++ordinal;
     });
 
     // Write to a temporary file and rename, so a crash mid-save never eats the scene.
@@ -199,7 +273,7 @@ bool saveScene(const World& world, const Assets& assets, const std::string& path
                 out << "  " << info.name << '\n';
                 for (const Field& f : info.fields) {
                     out << "    " << f.name;
-                    writeField(out, f, static_cast<const char*>(data) + f.offset, assets, world, ordinals);
+                    writeField(out, f, static_cast<const char*>(data) + f.offset, assets, world, refs);
                     out << '\n';
                 }
             }
@@ -233,7 +307,8 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
         Entity owner;
         const ComponentInfo* component;
         size_t offset;
-        int ordinal;
+        int ordinal;        // block position, or -1 with a name
+        std::string name;   // empty for a block position or none
         int line;
     };
     std::vector<EntityLink> links;
@@ -337,25 +412,70 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
         if (skipping) continue;
         if (!component) return fail("'" + key + "' outside a component");
         const Field* f = findField(*component, key);
-        if (!f) continue;   // a field this build doesn't have
+        if (!f) {   // a field this build doesn't have
+            warn("unknown field '" + key + "' in " + component->name + " skipped");
+            continue;
+        }
+        auto badValue = [&] {
+            return fail("bad " + component->name + "." + key + ": expected " + valueSyntax(*f));
+        };
         if (f->type == FieldType::Entity) {
+            std::string target;
+            if (!(ls >> std::quoted(target))) return badValue();
             int ordinal = -1;
-            if (!(ls >> ordinal)) return fail("bad " + component->name + "." + key);
-            links.push_back({current, component, f->offset, ordinal, lineNumber});
+            if (parseInt(target, ordinal) || target == "none") {
+                links.push_back({current, component, f->offset, ordinal, {}, lineNumber});
+            } else {
+                links.push_back({current, component, f->offset, -1, target, lineNumber});
+            }
+            if (!restIsEmpty(ls)) warn("extra values after " + component->name + "." + key + " ignored");
             continue;
         }
         void* data = component->get(result, current);
-        if (!readField(ls, *f, static_cast<char*>(data) + f->offset, assets, warnings)) {
-            return fail("bad " + component->name + "." + key);
+        const size_t before = warnings.size();
+        if (!readField(ls, *f, static_cast<char*>(data) + f->offset, assets, warnings)) return badValue();
+        for (size_t i = before; i < warnings.size(); ++i) {   // asset lookups don't know the line
+            warnings[i] = path + ":" + std::to_string(lineNumber) + ": " + warnings[i];
+        }
+        if (f->type != FieldType::Color && !restIsEmpty(ls)) {
+            warn("extra values after " + component->name + "." + key + " ignored");
+        }
+        // Limits are the editor's; out-of-range values still load, but are probably a mistake.
+        const int count = f->type == FieldType::Float ? 1 : f->type == FieldType::Vec2 ? 2 : f->type == FieldType::Vec3 ? 3 : 0;
+        if (f->min != f->max && count > 0) {
+            const float* v = reinterpret_cast<const float*>(static_cast<const char*>(data) + f->offset);
+            for (int i = 0; i < count; ++i) {
+                if (v[i] < f->min || v[i] > f->max) {
+                    std::ostringstream range;
+                    range << component->name << "." << key << " is outside " << f->min << " to " << f->max;
+                    warn(range.str());
+                    break;
+                }
+            }
         }
     }
     if (version == 0) return fail("not a Shockwave scene");
 
+    std::unordered_map<std::string, std::vector<Entity>> byName;
+    for (Entity e : created) {
+        if (const Name* name = result.get<Name>(e)) byName[name->value].push_back(e);
+    }
     for (const EntityLink& link : links) {
         void* data = link.component->get(result, link.owner);
         if (!data) continue;
         Entity target = kNullEntity;
-        if (link.ordinal >= 0 && size_t(link.ordinal) < created.size()) {
+        const std::string at = path + ":" + std::to_string(link.line) + ": ";
+        if (!link.name.empty()) {
+            const auto found = byName.find(link.name);
+            if (found == byName.end()) {
+                warnings.push_back(at + "no entity named '" + link.name + "'; left empty");
+            } else if (found->second.size() > 1) {
+                warnings.push_back(at + std::to_string(found->second.size()) + " entities are named '" + link.name +
+                                   "'; give the target a unique name. Left empty");
+            } else {
+                target = found->second.front();
+            }
+        } else if (link.ordinal >= 0 && size_t(link.ordinal) < created.size()) {
             target = created[size_t(link.ordinal)];
         } else if (link.ordinal >= 0) {
             warnings.push_back(path + ":" + std::to_string(link.line) + ": entity " + std::to_string(link.ordinal) +
@@ -367,6 +487,110 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
     world = std::move(result);
     if (warningsOut) *warningsOut = std::move(warnings);
     return true;
+}
+
+
+void writeSceneSchema(std::ostream& out, const Assets& assets) {
+    out << std::setprecision(6);
+    out << "# Shockwave scene schema\n\n"
+        << "Generated by `player --schema` from the engine's component registry and this project's\n"
+        << "assets. Regenerate it after adding components or assets; don't edit it by hand.\n\n"
+        << "## File layout\n\n"
+        << "```text\n"
+        << "# Comments start with #.\n"
+        << "shockwave_scene " << kFormatVersion << "\n\n"
+        << "entity \"Stack\"\n"
+        << "  Transform\n"
+        << "    position 0 0 0\n"
+        << "end\n\n"
+        << "entity \"Upper crate\"\n"
+        << "  Transform\n"
+        << "    position 0 1 0\n"
+        << "  Parent\n"
+        << "    entity \"Stack\"\n"
+        << "  MeshRenderer\n"
+        << "    mesh cube\n"
+        << "    texture panel\n"
+        << "end\n"
+        << "```\n\n"
+        << "- `entity \"Name\"` and `end` start at the left edge. Component names are indented two\n"
+        << "  spaces, fields four. Names should be unique: links to other entities use them.\n"
+        << "- A component line is the component name alone. Each field line is the field name and\n"
+        << "  its value. Leave out fields to keep their defaults, and components to not have them.\n"
+        << "- Values with spaces are quoted. Numbers use `.` for decimals.\n"
+        << "- +Y is up, -Z is forward, units are meters. A Transform under a Parent is relative to it.\n"
+        << "- Every playable scene needs one entity with a `Camera` (primary 1): the game looks\n"
+        << "  through it.\n"
+        << "- Lighting: a `Light` shines along its Transform's -Z (rotation -90 0 0 points straight\n"
+        << "  down); position only matters for Point and Spot. Colors are linear. Intensity 1 lights\n"
+        << "  a white surface facing the light to full white before exposure; a sun is usually 2 to\n"
+        << "  4, a lamp 3 to 20. Point and Spot fall off to nothing at `range`. With no Light at all\n"
+        << "  the renderer adds a default sun. The first `Environment` sets the sky and ground\n"
+        << "  ambient, exposure (in stops) and tonemapper.\n"
+        << "- See a scene as the game renders it with `player --screenshot out.png --scene path`\n"
+        << "  (`--view normals|lighting|unlit` to isolate a problem).\n"
+        << "- Check a file with `player --check path/to/scene.swscene` (no path: every scene in the\n"
+        << "  project). It prints one `file:line: problem` per issue and exits non-zero on any.\n\n"
+        << "## Components\n";
+
+    // Defaults come from default-constructed components, written exactly as a file would.
+    World scratch;
+    const Entity probe = scratch.create();
+    const std::vector<std::string> noRefs;
+    std::string category = "\x01";
+    std::vector<const ComponentInfo*> sorted;
+    for (const ComponentInfo& info : registeredComponents()) {
+        if (info.id != componentId<Name>()) sorted.push_back(&info);
+    }
+    std::stable_sort(sorted.begin(), sorted.end(), [](const ComponentInfo* a, const ComponentInfo* b) {
+        return a->category < b->category;
+    });
+    for (const ComponentInfo* info : sorted) {
+        if (info->category != category) {
+            category = info->category;
+            out << "\n### " << (category.empty() ? "Other" : category) << "\n";
+        }
+        info->add(scratch, probe);
+        const char* data = static_cast<const char*>(info->getConst(scratch, probe));
+        out << "\n#### " << info->name << "\n\n";
+        if (info->fields.empty()) {
+            out << "No fields; the component's presence is what matters.\n";
+        } else {
+            out << "| Field | Value | Default |\n|---|---|---|\n";
+            for (const Field& f : info->fields) {
+                std::ostringstream value;
+                value << std::setprecision(6);
+                writeField(value, f, data + f.offset, assets, scratch, noRefs);
+                std::string syntax = valueSyntax(f);
+                if (f.min != f.max) {
+                    std::ostringstream range;
+                    range << std::setprecision(6) << "; range " << f.min << " to " << f.max;
+                    syntax += range.str();
+                }
+                out << "| `" << f.name << "` | " << syntax << " | `" << value.str().substr(1) << "` |\n";
+            }
+        }
+        info->remove(scratch, probe);
+    }
+
+    auto list = [&](const char* title, const std::vector<std::string>& names) {
+        out << "\n### " << title << "\n\n";
+        if (names.empty()) {
+            out << "None.\n";
+            return;
+        }
+        for (const std::string& name : names) out << "- `" << name << "`\n";
+    };
+    out << "\n## Assets\n\nNames a scene can use, built-in and from this project's asset folder.\n";
+    std::vector<std::string> names;
+    for (const auto& [name, handle] : assets.meshes()) names.push_back(name);
+    list("Meshes (MeshRenderer.mesh)", names);
+    names.clear();
+    for (const auto& [name, handle] : assets.textures()) names.push_back(name);
+    list("Textures (MeshRenderer.texture)", names);
+    names.clear();
+    for (const auto& [name, handle] : assets.models()) names.push_back(name);
+    list("Models (ModelRenderer.model, Collider convex/triangle shapes)", names);
 }
 
 } // namespace shockwave

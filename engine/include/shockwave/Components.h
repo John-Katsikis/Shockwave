@@ -49,6 +49,10 @@ struct MeshRenderer {
     glm::vec4 tint{1.0f};
     glm::vec2 tiling{1.0f};   // texture repeats across the surface, per axis
     bool visible = true;
+    float roughness = 0.6f;              // 0 mirror-smooth .. 1 fully matte
+    float metallic = 0.0f;               // 0 plastic, wood, stone .. 1 bare metal
+    glm::vec4 emissive{0, 0, 0, 1};      // light the surface gives off itself (rgb)
+    float emissiveIntensity = 1.0f;      // multiplies emissive; above 1 for bright glows
 };
 
 // A reusable imported model. Its internal nodes/materials stay in the asset;
@@ -69,8 +73,30 @@ struct Camera {
 };
 
 // Scene-wide settings. Give one entity one; with several, any of them may win.
+// Scene-wide look: the sky behind everything, the ambient light that fills shadows (a
+// blend from groundColor below to skyColor above), and how HDR light becomes screen
+// colors. One per scene; without one the defaults below apply.
 struct Environment {
+    enum class Tonemapper : int { ACES, AgX, Reinhard, None };
     glm::vec4 skyColor{0.32f, 0.42f, 0.58f, 1.0f};
+    glm::vec4 groundColor{0.18f, 0.16f, 0.14f, 1.0f};
+    float ambientIntensity = 0.6f;
+    float exposure = 0.0f;   // in stops: +1 doubles brightness, -1 halves it
+    Tonemapper tonemapper = Tonemapper::ACES;
+};
+
+// A light source, placed and aimed by the entity's Transform: directional and spot
+// lights shine along its forward axis (-Z). Intensity 1 lights a white surface facing
+// the light to full white; point and spot lights fade to nothing at range.
+struct Light {
+    enum class Type : int { Directional, Point, Spot };
+    Type type = Type::Point;
+    glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+    float intensity = 1.0f;
+    float range = 10.0f;         // point and spot: meters
+    float spotAngle = 30.0f;     // spot: half-angle of the cone, degrees
+    float spotSoftness = 0.2f;   // spot: 0 hard edge .. 1 fades from the center
+    bool enabled = true;
 };
 
 // Turns around an axis (world space) at a steady rate.

@@ -59,6 +59,12 @@ void Editor::drawCreateMenuItems(Entity parent) {
     if (ImGui::MenuItem("Plane")) createEntity(CreateKind::Plane, parent);
     ImGui::SeparatorText("Scene");
     if (ImGui::MenuItem("Camera")) createEntity(CreateKind::Camera, parent);
+    if (ImGui::BeginMenu("Light")) {
+        if (ImGui::MenuItem("Directional (sun)")) createEntity(CreateKind::DirectionalLight, parent);
+        if (ImGui::MenuItem("Point")) createEntity(CreateKind::PointLight, parent);
+        if (ImGui::MenuItem("Spot")) createEntity(CreateKind::SpotLight, parent);
+        ImGui::EndMenu();
+    }
     ImGui::SetItemTooltip("Placed where the viewport is looking from");
     if (ImGui::MenuItem("Environment", nullptr, false, !parent.valid())) createEntity(CreateKind::Environment, kNullEntity);
 }
@@ -370,6 +376,22 @@ void Editor::drawStatsWindow() {
                 renderer.renderScale(), renderer.drawCount());
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
+
+    ImGui::SeparatorText("Lighting");
+    if (renderer.lightCount() == 0) {
+        ImGui::TextDisabled("No lights: a default sun is used. Create > Light adds one.");
+    } else {
+        ImGui::Text("%u of up to %u lights", renderer.lightCount(), shockwave::Renderer::kMaxLights);
+    }
+    if (renderer.droppedLights() > 0) {
+        ImGui::TextColored(gui::semanticColor(gui::currentTheme().warning), "%u lights over the limit are ignored",
+                           renderer.droppedLights());
+    }
+    if (ImGui::TreeNode("Render graph")) {
+        // The passes the renderer ran last frame and the barriers it placed between them.
+        ImGui::TextUnformatted(renderer.frameGraph().c_str());
+        ImGui::TreePop();
+    }
 
     // How the scheduler laid out the game's systems: each stage runs after the one
     // above it, and systems sharing a stage run at the same time.

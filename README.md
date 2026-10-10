@@ -153,7 +153,7 @@ The editor is a docked workspace around a live viewport:
   Stop in the center, and the current mode (edit, simulation running, paused) on the right.
 - **Viewport toolbar**: Move, Rotate, Scale, World/Local and Snap (right-click for step
   sizes) on the left; Grid, Game/Editor camera and View options (fov, fly speed, render
-  scale, overlays) on the right. Toolbars sit above the scene, never on top of it.
+  scale, overlays, shading view, Save screenshot) on the right. Toolbars sit above the scene, never on top of it.
 - **Hierarchy**: search, entities as a tree with their kind on the right, multi-select,
   rename in place, drag to attach and detach, Ctrl+G to group.
 - **Inspector**: name and + Component at the top (searchable and grouped by Core,
@@ -165,7 +165,8 @@ The editor is a docked workspace around a live viewport:
   viewport, drop textures on objects. Files saved from other programs reload straight away.
 - **Console** with info, warning and error filters, and a status bar with the scene's
   save state, selection count, entity count and frame time.
-- Window > Stats (frame graph, system schedule, Jolt physics counters), Edit >
+- Window > Stats (frame graph, render graph passes and barriers, light count, system
+  schedule, Jolt physics counters), Edit >
   Preferences and Project > Project settings.
 
 Every scene should have an entity with a **Camera** component. Play looks through the
@@ -174,6 +175,15 @@ camera, so what you frame in the editor is what ships. Play runs the project's g
 module and Jolt physics on the scene; Stop restores it exactly, so nothing done while
 playing sticks (the colored frame around the viewport is the reminder). Play is disabled
 when the project's `game_module` isn't the one compiled into the editor.
+
+Lighting is part of the scene. **Create > Light** adds a directional sun, a point light
+or a spot light in front of the camera; each shows as a colored icon you can click, and
+the selected one draws its direction, range or cone. Rotate a light to aim it (it shines
+along its -Z). The **Environment** entity sets the sky and ground ambient, exposure in
+stops and the tonemapper (ACES, AgX, Reinhard or None), and **MeshRenderer** has
+roughness, metallic and emissive. View > Shading switches the viewport to Unlit, Normals
+or Lighting only, and View > Save screenshot writes the viewport (without icons or
+gizmos) to the project's `screenshots/` folder. A scene with no lights gets a default sun.
 
 What gets saved where:
 
@@ -201,9 +211,13 @@ Editor controls (Help > Controls, or F1, lists them too):
 - Ctrl+Z / Ctrl+Y undo and redo; Ctrl+N / Ctrl+O / Ctrl+S new, open, save
 - Ctrl+P plays and stops; Ctrl+Shift+P pauses; Ctrl+, opens Preferences
 
-Scenes are plain text, one property per line, so they diff and merge cleanly in git.
-A parent is saved as the position of its entity in the file (`entity 6` is the seventh
-`entity` block).
+Scenes are plain text, one property per line, so they diff and merge cleanly in git,
+and so people, scripts and AI can write them too. Links to other entities (a Parent)
+use the target's name, and options use their names (`shape "Convex model"`).
+[docs/SceneSchema.md](docs/SceneSchema.md) lists every component, field, default and
+asset name (`player --schema` regenerates it), and `player --check` validates a
+project's manifest and scenes, printing `file:line: problem` and exiting non-zero on
+any problem. See [Authoring with tools and AI](docs/Projects.md#authoring-with-tools-and-ai).
 Scene files from the first editor still open, and are saved in the new format.
 
 ### UI themes
@@ -250,7 +264,8 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
    action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
 4. Gamepads, and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
-6. Render graph, tonemapping and upscaling, lighting, glTF assets, audio
+6. Render graph, tonemapping and lighting (done); shadows, upscaling, glTF assets in the
+   asset browser, audio
 7. Hot reload of game code and shaders
 8. Editor (first version done): Dear ImGui docking UI, viewport rendered by the engine at
    panel size, hierarchy, inspector, move/rotate/scale gizmos, click to select, undo/redo,
@@ -285,6 +300,27 @@ The sample module adds a ColorPulse behavior to the Crate during Play. Stop rest
 the authored scene. Project paths work from any working directory when the manifest
 path is supplied. See [the project guide](docs/Projects.md) for the manifest format,
 your own game module, lifecycle hooks, and current runtime limitations.
+
+### Rendering and lighting
+
+Each frame is a small render graph (`engine/src/vulkan/RenderGraph.h`): passes declare
+which images they read and write and the graph places the synchronization2 barriers.
+The scene renders to an HDR target with forward PBR shading (GGX specular, Lambert
+diffuse, up to 256 directional, point and spot lights, hemisphere ambient), then a
+tonemap pass applies exposure and the chosen curve into an sRGB image at the window or
+viewport size. Shadows, bloom and upscaling are not done yet.
+
+The player can render without anyone looking, which is how tools and AI agents check
+how a scene looks:
+
+```sh
+./build/bin/player --scene scenes/main.swscene --screenshot shot.png --size 1280x720
+./build/bin/player --scene scenes/main.swscene --screenshot normals.png --view normals
+./build/bin/player --frames 5 --print-frame   # the render graph's passes and barriers
+```
+
+`--view` takes `lit`, `unlit`, `normals` or `lighting`; `--frames N` picks which frame is
+captured (default 30).
 
 ### Imported models and materials
 

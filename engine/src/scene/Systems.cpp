@@ -45,10 +45,19 @@ void storePreviousTransforms(World& world, JobSystem& jobs) {
 }
 
 void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets) {
+    // The first Environment sets the sky, ambient light and tonemapping; defaults without one.
+    Environment environment;
     if (const Pool<Environment>* environments = world.pool<Environment>(); environments && environments->size()) {
-        const glm::vec4 sky = environments->components()[0].skyColor;
-        renderer.setClearColor({sky.r, sky.g, sky.b, 1.0f});
+        environment = environments->components()[0];
     }
+    const glm::vec4 sky = environment.skyColor;
+    renderer.setClearColor({sky.r, sky.g, sky.b, 1.0f});
+    LightingDesc lighting;
+    lighting.skyAmbient = glm::vec3(environment.skyColor) * environment.ambientIntensity;
+    lighting.groundAmbient = glm::vec3(environment.groundColor) * environment.ambientIntensity;
+    lighting.exposure = environment.exposure;
+    lighting.tonemapper = static_cast<LightingDesc::Tonemapper>(environment.tonemapper);
+    renderer.setLighting(lighting);
 
     const float a = static_cast<float>(alpha);
     const Pool<PreviousTransform>* previous = a < 1.0f ? world.pool<PreviousTransform>() : nullptr;
@@ -76,6 +85,9 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             }
             DrawMaterial material;
             material.uvScale = m.tiling;
+            material.roughness = m.roughness;
+            material.metallic = m.metallic;
+            material.emissive = glm::vec3(m.emissive) * m.emissiveIntensity;
             renderer.drawMesh(m.mesh, model, m.texture, m.tint, material);
         },
         256);
@@ -100,10 +112,28 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                 options.alphaCutoff=material.alpha==ModelMaterial::Alpha::Mask ? material.alphaCutoff : -1.0f;
                 options.doubleSided=material.doubleSided;
                 options.blend=material.alpha==ModelMaterial::Alpha::Blend;
+                options.roughness=material.roughness;
+                options.metallic=material.metallic;
+                options.emissive=material.emissive;
                 renderer.drawMesh(asset->meshes[index],model*node.world,texture,material.baseColor*instance.tint,options);
             }
         },64);
 
+    // Lights shine along their entity's forward axis (-Z), wherever the hierarchy puts it.
+    world.each<const Transform, const Light>([&](Entity e, const Transform&, const Light& light) {
+        if (!light.enabled || light.intensity <= 0.0f) return;
+        const glm::mat4 m = worldMatrix(world, e);
+        LightDesc desc;
+        desc.type = static_cast<LightDesc::Type>(light.type);
+        desc.position = glm::vec3(m[3]);
+        desc.direction = -glm::vec3(m[2]);
+        desc.color = glm::vec3(light.color) * light.intensity;
+        desc.range = light.range;
+        const float outer = glm::radians(std::clamp(light.spotAngle, 1.0f, 89.0f));
+        desc.cosOuter = std::cos(outer);
+        desc.cosInner = std::cos(outer * (1.0f - std::clamp(light.spotSoftness, 0.0f, 1.0f)));
+        renderer.addLight(desc);
+    });
 }
 
 Entity primaryCamera(const World& world) {

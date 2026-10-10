@@ -25,8 +25,9 @@ constexpr ImVec4 hex(uint32_t rgb, float alpha = 1.0f) {
     return ImVec4(((rgb >> 16) & 0xff) / 255.0f, ((rgb >> 8) & 0xff) / 255.0f, (rgb & 0xff) / 255.0f, alpha);
 }
 
-// Shared engineering-panel palette and density: square controls, crisp borders,
-// graphite panels and an indigo accent. Geometry stays consistent across themes.
+// Shared telemetry-console palette and density: square controls, crisp 1px borders, an
+// obsidian void with matte slate inner panels, electric cyan for what's active and amber
+// for secondary data. Geometry stays consistent across themes.
 //
 // Usually you don't touch this in code: the engine loads themes/default.swtheme at
 // startup (EngineConfig::guiTheme) and reloads it whenever the file is saved, so the UI
@@ -34,30 +35,32 @@ constexpr ImVec4 hex(uint32_t rgb, float alpha = 1.0f) {
 // All colors are sRGB, exactly as a color picker or a design tool shows them.
 struct Theme {
     // ---- Palette ----
-    ImVec4 background = hex(0x111113);       // window and panel backgrounds
-    ImVec4 surface = hex(0x18181b);          // menu bar, title bars, tab bars, popups
-    ImVec4 frame = hex(0x18181b);            // buttons, text fields, sliders, checkboxes
-    ImVec4 frameHover = hex(0x222226);
-    ImVec4 frameActive = hex(0x27272a);
-    ImVec4 border = hex(0x3f3f46);           // the 1px lines around panels and controls
-    ImVec4 header = hex(0x1d1d21);           // collapsing headers, selected list rows
-    ImVec4 headerHover = hex(0x26262b);
-    ImVec4 text = hex(0xededef);
-    ImVec4 textDisabled = hex(0x71717a);
-    ImVec4 accent = hex(0x6366f1);           // active tools, tabs, ticked checkboxes, sliders
-    ImVec4 accentHover = hex(0x818cf8);
-    ImVec4 accentActive = hex(0x4f46e5);
-    ImVec4 selection = hex(0x6366f1, 0.22f); // selected text, the row being clicked
-    ImVec4 scrollbar = hex(0x27272a);
-    ImVec4 scrollbarHover = hex(0x3f3f46);
+    ImVec4 background = hex(0x06080a);       // window backgrounds: the obsidian void
+    ImVec4 panel = hex(0x0d161c);            // inner panels: child regions, lists, table rows
+    ImVec4 surface = hex(0x0d1616);          // menu bar, title bars, tab bars, popups
+    ImVec4 frame = hex(0x0d1c22);            // buttons, text fields, sliders, checkboxes
+    ImVec4 frameHover = hex(0x16222a);
+    ImVec4 frameActive = hex(0x0d3542);
+    ImVec4 border = hex(0x223d49);           // the 1px lines around panels and controls
+    ImVec4 header = hex(0x0d1c26);           // collapsing headers, selected list rows
+    ImVec4 headerHover = hex(0x16323d);
+    ImVec4 text = hex(0xd4dee6);
+    ImVec4 textDisabled = hex(0x5c6875);
+    ImVec4 accent = hex(0x00e5ff);           // active tools, tabs, focused panel, graph lines
+    ImVec4 accentHover = hex(0x6cf3ff);
+    ImVec4 accentActive = hex(0x00b4cc);
+    ImVec4 secondary = hex(0xffb020);        // secondary data highlights: histograms, hovered plots
+    ImVec4 selection = hex(0x00e5ff, 0.18f); // selected text, the row being clicked
+    ImVec4 scrollbar = hex(0x162632);
+    ImVec4 scrollbarHover = hex(0x263d49);
 
     // Semantic colors for custom controls and scene overlays (also theme-file keys).
-    ImVec4 button = hex(0x18181b);
-    ImVec4 buttonHover = hex(0x26262b);
-    ImVec4 buttonActive = hex(0x4f46e5);
-    ImVec4 onAccent = hex(0xffffff);
-    ImVec4 warning = hex(0xfbbf24);
-    ImVec4 error = hex(0xf87171);
+    ImVec4 button = hex(0x0d1c22);
+    ImVec4 buttonHover = hex(0x16222a);
+    ImVec4 buttonActive = hex(0x00b4cc);
+    ImVec4 onAccent = hex(0x02090c);
+    ImVec4 warning = hex(0xffd23f);
+    ImVec4 error = hex(0xff3d5a);
 
     // ---- Shape and spacing, in pixels at 100% display scale ----
     float windowRounding = 0.0f;
@@ -67,14 +70,14 @@ struct Theme {
     float tabRounding = 0.0f;
     float grabRounding = 0.0f;
     float scrollbarRounding = 0.0f;
-    ImVec2 windowPadding{8.0f, 8.0f};
-    ImVec2 framePadding{8.0f, 4.0f};
-    ImVec2 itemSpacing{6.0f, 4.0f};
-    ImVec2 itemInnerSpacing{4.0f, 4.0f};
-    ImVec2 cellPadding{6.0f, 4.0f};
-    float indentSpacing = 16.0f;
-    float scrollbarSize = 10.0f;
-    float grabMinSize = 10.0f;
+    ImVec2 windowPadding{6.0f, 4.0f};
+    ImVec2 framePadding{6.0f, 3.0f};
+    ImVec2 itemSpacing{4.0f, 3.0f};
+    ImVec2 itemInnerSpacing{3.0f, 3.0f};
+    ImVec2 cellPadding{4.0f, 2.0f};
+    float indentSpacing = 12.0f;
+    float scrollbarSize = 8.0f;
+    float grabMinSize = 4.0f;
     float windowBorderSize = 1.0f;
     float frameBorderSize = 1.0f;
     float popupBorderSize = 1.0f;
@@ -82,8 +85,8 @@ struct Theme {
     float dockingSeparatorSize = 1.0f;
 
     // ---- Text ----
-    float fontSize = 15.0f;
-    std::string font = "fonts/Roboto-Medium.ttf";   // a .ttf/.otf; relative to the working folder or the executable
+    float fontSize = 14.0f;
+    std::string font = "fonts/Cousine-Regular.ttf";   // a .ttf/.otf; relative to the working folder or the executable
 
     // Escape hatch: any individual ImGui color by its ImGuiCol_ index, applied last.
     std::vector<std::pair<int, ImVec4>> colorOverrides;
@@ -119,5 +122,9 @@ ImU32 semanticColorU32(const ImVec4& srgb);
 
 // The current accent color, ready for ImGui (already converted).
 ImVec4 accent();
+
+// Outlines the focused panel or window in the accent color. Call once per frame, after
+// the tool windows and before any modal popups.
+void focusOutline();
 
 } // namespace shockwave::gui

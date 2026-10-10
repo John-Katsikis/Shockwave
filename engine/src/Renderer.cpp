@@ -4,6 +4,7 @@
 
 #include "vulkan/Context.h"
 #include "vulkan/Pipeline.h"
+#include "vulkan/RenderGraph.h"
 #include "vulkan/Swapchain.h"
 
 #include <SDL3/SDL.h>
@@ -20,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -32,22 +34,62 @@ constexpr uint32_t kMaxMeshes = 65536;
 // The scene renders in HDR; tonemapping to the display happens at the end of the frame.
 constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
+// The tonemapped result at output resolution: what the window or editor viewport shows.
+constexpr VkFormat kDisplayFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
 // One entry per draw in the frame's draw table. Must match DrawData in shaders/mesh.vert.
 struct DrawData {
     glm::mat4 mvp;
+    glm::mat4 model;
     glm::mat4 normalMatrix;
     glm::vec4 tint;
     glm::vec2 uvScale;
     VkDeviceAddress vertexBuffer;
     uint32_t textureIndex;
     float alphaCutoff;
+    float roughness;
+    float metallic;
+    glm::vec3 emissive;
+    uint32_t pad;
 };
-static_assert(offsetof(DrawData, vertexBuffer) == 152 && sizeof(DrawData) == 168,
+static_assert(offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
+                  sizeof(DrawData) == 256,
               "DrawData must match the shader's scalar layout");
+
+// Must match LightData and FrameBuffer in shaders/mesh.frag.
+struct LightData {
+    glm::vec3 position;
+    uint32_t type;
+    glm::vec3 direction;
+    float range;
+    glm::vec3 color;
+    float cosOuter;
+    float cosInner;
+    float pad[3];
+};
+static_assert(sizeof(LightData) == 64, "LightData must match the shader's scalar layout");
+struct FrameData {
+    glm::vec3 cameraPosition;
+    uint32_t lightCount;
+    glm::vec3 skyAmbient;
+    uint32_t debugView;
+    glm::vec3 groundAmbient;
+    float pad;
+};
+static_assert(sizeof(FrameData) == 48, "FrameData must match the shader's scalar layout");
+constexpr VkDeviceSize kFrameDataSize = sizeof(FrameData) + sizeof(LightData) * Renderer::kMaxLights;
 
 struct DrawPushConstants {
     VkDeviceAddress drawBuffer;
+    VkDeviceAddress frameBuffer;
+};
+
+// Must match the push constants in shaders/tonemap.frag.
+struct TonemapPushConstants {
+    glm::vec2 outputSize;
+    uint32_t sceneTexture;
+    float exposureScale;
+    uint32_t tonemapper;
 };
 
 // Must match the push constants in shaders/grid.vert and grid.frag.
@@ -120,6 +162,9 @@ struct Renderer::Impl {
         DrawData* drawData = nullptr;
         VkDeviceAddress drawAddress = 0;
         uint32_t drawCapacity = 0;
+        vk::Buffer frameBuffer;                       // lights and camera, persistently mapped
+        uint8_t* frameData = nullptr;
+        VkDeviceAddress frameAddress = 0;
     };
 
     Window& window;
@@ -152,6 +197,25 @@ struct Renderer::Impl {
     VkPipelineLayout gridLayout = VK_NULL_HANDLE;
     VkPipeline gridPipeline = VK_NULL_HANDLE;
     GridSettings grid;
+    VkPipelineLayout tonemapLayout = VK_NULL_HANDLE;
+    VkPipeline tonemapPipeline = VK_NULL_HANDLE;
+
+    // Lighting for the frame being recorded.
+    std::mutex lightMutex;
+    std::vector<LightDesc> lights;
+    LightingDesc lighting;
+    DebugView debugView = DebugView::Lit;
+    uint32_t lastLightCount = 0, lastDroppedLights = 0;
+
+    // The frame's passes, rebuilt every frame; image states carry over between frames.
+    vk::RenderGraph graph;
+    vk::ImageState sceneColorState, sceneDepthState, displayState;
+    std::string frameGraphText;
+
+    // A screenshot asked for by requestScreenshot, taken at the end of the next frame.
+    std::string screenshotPath;
+    bool screenshotRequested = false;
+    std::string screenshotMessage;
 
     // Fixed-capacity resource slots. A slot is fully written before its ready flag is
     // set (release), so readers on any thread need no lock.
@@ -174,6 +238,8 @@ struct Renderer::Impl {
 
     vk::Image sceneColor;
     vk::Image sceneDepth;
+    vk::Image displayColor;
+    uint32_t sceneSlot = 0;   // sceneColor's place in the bindless table, for the tonemap pass
     float renderScale = 1.0f;
     // Editor viewport size; when set, the scene is sized from it instead of the window
     // and handed to the GUI as a texture.
@@ -214,7 +280,6 @@ struct Renderer::Impl {
         vk::check(vkCreateCommandPool(context->device(), &poolInfo, nullptr, &uploadPool), "vkCreateCommandPool");
 
         checkBlitSupport();
-        createRenderTargets();
         createFrames();
         createRenderFinishedSemaphores();
         createBindless();
@@ -222,6 +287,8 @@ struct Renderer::Impl {
 
         const uint8_t white[4] = {255, 255, 255, 255};
         createTexture(1, 1, white, false);   // slot 0: the default texture
+        sceneSlot = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
+        createRenderTargets();
     }
 
     ~Impl() {
@@ -240,6 +307,9 @@ struct Renderer::Impl {
         vkDestroyCommandPool(device, uploadPool, nullptr);
         destroyImage(sceneColor);
         destroyImage(sceneDepth);
+        destroyImage(displayColor);
+        vkDestroyPipeline(device, tonemapPipeline, nullptr);
+        vkDestroyPipelineLayout(device, tonemapLayout, nullptr);
         for (auto pipeline:mirroredPipelines) vkDestroyPipeline(device,pipeline,nullptr);
         vkDestroyPipeline(device, meshPipeline, nullptr);
         vkDestroyPipeline(device, meshDoubleSidedPipeline, nullptr);
@@ -255,6 +325,7 @@ struct Renderer::Impl {
         vkDestroySemaphore(device, frameTimeline, nullptr);
         for (Frame& f : frames) {
             vmaDestroyBuffer(allocator, f.drawBuffer.buffer, f.drawBuffer.allocation);
+            vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
             vkDestroySemaphore(device, f.imageAcquired, nullptr);
             vkDestroyCommandPool(device, f.pool, nullptr);
         }
@@ -329,6 +400,26 @@ struct Renderer::Impl {
         sceneDepth = createImage(extent, kDepthFormat,
                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                  VK_IMAGE_ASPECT_DEPTH_BIT, 1, true);
+        displayColor = createImage(out, kDisplayFormat,
+                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                   VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
+
+        // The tonemap pass reads the scene through the bindless table like any texture.
+        std::lock_guard lock(descriptorMutex);
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageView = sceneColor.view;
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = bindlessSet;
+        write.dstBinding = 0;
+        write.dstArrayElement = sceneSlot;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
         registerGuiSceneTexture();
     }
 
@@ -336,13 +427,14 @@ struct Renderer::Impl {
     void registerGuiSceneTexture() {
         if (!guiEnabled) return;
         if (guiSceneTexture) ImGui_ImplVulkan_RemoveTexture(guiSceneTexture);
-        guiSceneTexture = ImGui_ImplVulkan_AddTexture(sceneColor.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        guiSceneTexture = ImGui_ImplVulkan_AddTexture(displayColor.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
     void recreateSceneTargets() {
         vkDeviceWaitIdle(context->device());
         destroyImage(sceneColor);
         destroyImage(sceneDepth);
+        destroyImage(displayColor);
         createRenderTargets();
         needsSceneResize = false;
     }
@@ -433,6 +525,14 @@ struct Renderer::Impl {
             vk::check(vkCreateSemaphore(device, &semInfo, nullptr, &f.imageAcquired), "vkCreateSemaphore");
 
             ensureDrawCapacity(f, 4096);
+            VmaAllocationInfo info{};
+            f.frameBuffer = createBuffer(kFrameDataSize,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                             VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                                         &info);
+            f.frameData = static_cast<uint8_t*>(info.pMappedData);
+            f.frameAddress = bufferAddress(f.frameBuffer.buffer);
         }
 
         VkSemaphoreTypeCreateInfo timelineInfo{};
@@ -549,7 +649,7 @@ struct Renderer::Impl {
 
     void createPipelines() {
         VkPushConstantRange range{};
-        range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         range.size = sizeof(DrawPushConstants);
 
         VkPipelineLayoutCreateInfo layoutInfo{};
@@ -602,6 +702,26 @@ struct Renderer::Impl {
         gridDesc.depthWrite = false;
         gridDesc.alphaBlend = true;
         gridPipeline = vk::createGraphicsPipeline(context->device(), gridDesc);
+
+        // Tonemapping: one fullscreen triangle from the HDR scene to the display image.
+        VkPushConstantRange tonemapRange{};
+        tonemapRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        tonemapRange.size = sizeof(TonemapPushConstants);
+        VkPipelineLayoutCreateInfo tonemapLayoutInfo{};
+        tonemapLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        tonemapLayoutInfo.setLayoutCount = 1;
+        tonemapLayoutInfo.pSetLayouts = &bindlessLayout;
+        tonemapLayoutInfo.pushConstantRangeCount = 1;
+        tonemapLayoutInfo.pPushConstantRanges = &tonemapRange;
+        vk::check(vkCreatePipelineLayout(context->device(), &tonemapLayoutInfo, nullptr, &tonemapLayout),
+                  "vkCreatePipelineLayout");
+        vk::GraphicsPipelineDesc tonemapDesc;
+        tonemapDesc.vertexShader = shaderPath("tonemap.vert");
+        tonemapDesc.fragmentShader = shaderPath("tonemap.frag");
+        tonemapDesc.colorFormat = kDisplayFormat;
+        tonemapDesc.layout = tonemapLayout;
+        tonemapDesc.cullMode = VK_CULL_MODE_NONE;
+        tonemapPipeline = vk::createGraphicsPipeline(context->device(), tonemapDesc);
     }
 
     // ---- Resources --------------------------------------------------------------------
@@ -902,7 +1022,12 @@ struct Renderer::Impl {
         // The per-draw math runs here, on whichever thread submits the draw.
         DrawCommand command;
         command.data.mvp = viewProjection * transform;
+        command.data.model = transform;
         command.data.normalMatrix = glm::transpose(glm::inverse(transform));
+        command.data.roughness = material.roughness;
+        command.data.metallic = material.metallic;
+        command.data.emissive = material.emissive;
+        command.data.pad = 0;
         command.data.tint = tint;
         command.data.uvScale = material.uvScale;
         command.data.vertexBuffer = mesh.vertexAddress;
@@ -936,6 +1061,7 @@ struct Renderer::Impl {
         destroyRenderFinishedSemaphores();
         destroyImage(sceneColor);
         destroyImage(sceneDepth);
+        destroyImage(displayColor);
         swapchain->recreate(window.pixelWidth(), window.pixelHeight());
         createRenderTargets();
         createRenderFinishedSemaphores();
@@ -945,6 +1071,10 @@ struct Renderer::Impl {
 
     bool beginFrame() {
         clearDrawLists();
+        {
+            std::lock_guard lock(lightMutex);
+            lights.clear();
+        }
         if (window.isMinimized()) return false;
         if (needsResize) {
             recreateSwapchain();
@@ -1013,8 +1143,9 @@ struct Renderer::Impl {
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
-        DrawPushConstants push{f.drawAddress};
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        DrawPushConstants push{f.drawAddress, f.frameAddress};
+        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(push), &push);
 
         auto& draws=gatheredDraws;
         draws.clear(); draws.reserve(total);
@@ -1053,119 +1184,10 @@ struct Renderer::Impl {
         begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vk::check(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer");
 
-        // 1. Render the scene into the HDR target at render resolution.
-        //    Source stages: last frame's blit or GUI pass may still be reading this image.
-        transitionImage(cmd, sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_BLIT_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        transitionImage(cmd, sceneDepth.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-
-        VkRenderingAttachmentInfo color{};
-        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = sceneColor.view;
-        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
-
-        VkRenderingAttachmentInfo depth{};
-        depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depth.imageView = sceneDepth.view;
-        depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
-
-        VkRenderingInfo rendering{};
-        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rendering.renderArea = {{0, 0}, sceneColor.extent};
-        rendering.layerCount = 1;
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachments = &color;
-        rendering.pDepthAttachment = &depth;
-        vkCmdBeginRendering(cmd, &rendering);
-        setSceneViewport(cmd);
-        recordDraws(cmd, f);
-        recordGrid(cmd);
-        vkCmdEndRendering(cmd);
-
-        // How the swapchain image was last touched, for the final transition to present.
-        VkPipelineStageFlags2 lastStage;
-        VkAccessFlags2 lastAccess;
-        VkImageLayout lastLayout;
-
-        if (viewportMode()) {
-            // 2a. Editor: the GUI samples the scene inside its viewport panel.
-            transitionImage(cmd, sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-            transitionImage(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-            recordGui(cmd, swapchain->imageView(imageIndex), true);
-            lastStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-            lastAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-            lastLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        } else {
-            // 2b. Scale the scene to the window. A blit for now; the tonemap and upscaler
-            //     pass (FSR-style) replaces this step without changing anything above it.
-            transitionImage(cmd, sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
-            transitionImage(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, 0,
-                            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-
-            const VkExtent2D out = swapchain->extent();
-            VkImageBlit2 region{};
-            region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
-            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            region.srcOffsets[1] = {static_cast<int32_t>(sceneColor.extent.width),
-                                    static_cast<int32_t>(sceneColor.extent.height), 1};
-            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            region.dstOffsets[1] = {static_cast<int32_t>(out.width), static_cast<int32_t>(out.height), 1};
-
-            VkBlitImageInfo2 blit{};
-            blit.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
-            blit.srcImage = sceneColor.image;
-            blit.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            blit.dstImage = image;
-            blit.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            blit.regionCount = 1;
-            blit.pRegions = &region;
-            blit.filter = VK_FILTER_LINEAR;
-            vkCmdBlitImage2(cmd, &blit);
-            lastStage = VK_PIPELINE_STAGE_2_BLIT_BIT;
-            lastAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            lastLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-
-            // 3. In-game GUI on top of the scene.
-            if (guiEnabled) {
-                transitionImage(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT,
-                                VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-                recordGui(cmd, swapchain->imageView(imageIndex), false);
-                lastStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-                lastAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-                lastLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            }
-        }
-
-        // Destination stage must match the renderFinished signal below, so the
-        // transition is ordered before presentation.
-        transitionImage(cmd, image, VK_IMAGE_ASPECT_COLOR_BIT, lastLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        lastStage, lastAccess, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0);
+        writeFrameData(f);
+        buildGraph(cmd, f, image);
+        graph.execute(cmd);
+        frameGraphText = graph.description();
 
         vk::check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
 
@@ -1175,8 +1197,9 @@ struct Renderer::Impl {
         VkSemaphoreSubmitInfo waitInfo{};
         waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         waitInfo.semaphore = f.imageAcquired;
-        // First use of the swapchain image: the blit, or the GUI pass in editor mode.
-        waitInfo.stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // First use of the swapchain image: the blit, or the GUI pass in editor mode. Must
+        // match the stages the swapchain image is imported with in buildGraph.
+        waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
         VkSemaphoreSubmitInfo signalInfos[2]{};
         signalInfos[0].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -1221,8 +1244,239 @@ struct Renderer::Impl {
             vk::check(result, "vkQueuePresentKHR");
         }
 
+        if (screenshotRequested) finishScreenshot();
         frameIndex = (frameIndex + 1) % kFramesInFlight;
     }
+
+    // Camera, ambient light and this frame's lights, where the mesh shader reads them.
+    void writeFrameData(Frame& f) {
+        FrameData header{};
+        header.cameraPosition = cameraPosition;
+        header.skyAmbient = lighting.skyAmbient;
+        header.groundAmbient = lighting.groundAmbient;
+        header.debugView = static_cast<uint32_t>(debugView);
+        auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
+        uint32_t count = 0;
+        {
+            std::lock_guard lock(lightMutex);
+            lastDroppedLights = lights.size() > kMaxLights ? static_cast<uint32_t>(lights.size()) - kMaxLights : 0;
+            for (const LightDesc& light : lights) {
+                if (count == kMaxLights) break;
+                LightData& d = out[count++];
+                d = {};
+                d.position = light.position;
+                d.type = static_cast<uint32_t>(light.type);
+                const float length = glm::length(light.direction);
+                d.direction = length > 1e-6f ? light.direction / length : glm::vec3(0, 0, -1);
+                d.range = std::max(light.range, 0.01f);
+                d.color = light.color;
+                d.cosOuter = light.cosOuter;
+                d.cosInner = std::max(light.cosInner, light.cosOuter + 1e-4f);
+            }
+        }
+        lastLightCount = count;
+        if (count == 0) {
+            // No lights in the scene: a soft default sun, so content is never pitch black.
+            LightData& d = out[count++];
+            d = {};
+            d.type = 0;
+            d.direction = -glm::normalize(glm::vec3(0.4f, 0.8f, 0.3f));
+            d.color = glm::vec3(1.0f, 0.96f, 0.9f) * 2.5f;
+            d.range = 1.0f;
+        }
+        header.lightCount = count;
+        std::memcpy(f.frameData, &header, sizeof(header));
+        vk::check(vmaFlushAllocation(context->allocator(), f.frameBuffer.allocation, 0,
+                                     sizeof(FrameData) + sizeof(LightData) * count),
+                  "vmaFlushAllocation");
+    }
+
+    // The frame as a render graph: scene, tonemap, then to the screen (and the GUI).
+    void buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImage) {
+        graph.reset();
+        using vk::ImageUse;
+        const auto color = graph.import("scene color (HDR)", sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT,
+                                        sceneColorState, true);
+        const auto depth = graph.import("scene depth", sceneDepth.image, VK_IMAGE_ASPECT_DEPTH_BIT, sceneDepthState, true);
+        const auto display = graph.import("display", displayColor.image, VK_IMAGE_ASPECT_COLOR_BIT, displayState, true);
+        // Freshly acquired: the acquire semaphore's wait stages stand in for "last use".
+        swapchainState = {VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          VK_ACCESS_2_NONE};
+        const auto backbuffer = graph.import("swapchain", swapchainImage, VK_IMAGE_ASPECT_COLOR_BIT, swapchainState, true);
+
+        graph.addPass("scene", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
+                      [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); });
+        graph.addPass("tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
+                      [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+        if (screenshotRequested) {
+            graph.addPass("screenshot readback", {{display, ImageUse::TransferSrc}},
+                          [this](VkCommandBuffer cmd) { recordScreenshotCopy(cmd); });
+        }
+        if (viewportMode()) {
+            // Editor: the GUI shows the display image inside its viewport panel.
+            graph.addPass("gui", {{display, ImageUse::Sampled}, {backbuffer, ImageUse::ColorAttachment}},
+                          [this](VkCommandBuffer cmd) { recordGui(cmd, swapchain->imageView(imageIndex), true); });
+        } else {
+            graph.addPass("copy to window", {{display, ImageUse::TransferSrc}, {backbuffer, ImageUse::TransferDst}},
+                          [this, swapchainImage](VkCommandBuffer cmd) { recordCopyToWindow(cmd, swapchainImage); });
+            if (guiEnabled) {
+                graph.addPass("gui", {{backbuffer, ImageUse::ColorAttachment}},
+                              [this](VkCommandBuffer cmd) { recordGui(cmd, swapchain->imageView(imageIndex), false); });
+            }
+        }
+        graph.addPass("present", {{backbuffer, ImageUse::Present}}, nullptr);
+    }
+
+    void recordScene(VkCommandBuffer cmd, Frame& f) {
+        VkRenderingAttachmentInfo colorAttachment{};
+        colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        colorAttachment.imageView = sceneColor.view;
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView = sceneDepth.view;
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
+
+        VkRenderingInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering.renderArea = {{0, 0}, sceneColor.extent};
+        rendering.layerCount = 1;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachments = &colorAttachment;
+        rendering.pDepthAttachment = &depthAttachment;
+        vkCmdBeginRendering(cmd, &rendering);
+        setSceneViewport(cmd);
+        recordDraws(cmd, f);
+        recordGrid(cmd);
+        vkCmdEndRendering(cmd);
+    }
+
+    void recordTonemap(VkCommandBuffer cmd) {
+        VkRenderingAttachmentInfo target{};
+        target.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        target.imageView = displayColor.view;
+        target.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        target.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;   // every pixel is written
+        target.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering.renderArea = {{0, 0}, displayColor.extent};
+        rendering.layerCount = 1;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachments = &target;
+        vkCmdBeginRendering(cmd, &rendering);
+        const VkExtent2D extent = displayColor.extent;
+        VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
+        VkRect2D scissor{{0, 0}, extent};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapLayout, 0, 1, &bindlessSet, 0, nullptr);
+        TonemapPushConstants push{};
+        push.outputSize = glm::vec2(extent.width, extent.height);
+        push.sceneTexture = sceneSlot;
+        push.exposureScale = std::exp2(std::clamp(lighting.exposure, -16.0f, 16.0f));
+        // Debug views show raw values: no exposure or curve.
+        push.tonemapper = debugView == DebugView::Lit || debugView == DebugView::Lighting
+                              ? static_cast<uint32_t>(lighting.tonemapper)
+                              : 99u;
+        vkCmdPushConstants(cmd, tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdEndRendering(cmd);
+    }
+
+    void recordCopyToWindow(VkCommandBuffer cmd, VkImage swapchainImage) {
+        // Same size; a blit rather than a copy because the formats differ (RGBA vs BGRA).
+        const VkExtent2D out = swapchain->extent();
+        VkImageBlit2 region{};
+        region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.srcOffsets[1] = {static_cast<int32_t>(displayColor.extent.width),
+                                static_cast<int32_t>(displayColor.extent.height), 1};
+        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.dstOffsets[1] = {static_cast<int32_t>(out.width), static_cast<int32_t>(out.height), 1};
+        VkBlitImageInfo2 blit{};
+        blit.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+        blit.srcImage = displayColor.image;
+        blit.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        blit.dstImage = swapchainImage;
+        blit.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        blit.regionCount = 1;
+        blit.pRegions = &region;
+        blit.filter = VK_FILTER_LINEAR;
+        vkCmdBlitImage2(cmd, &blit);
+    }
+
+    // ---- Screenshots ------------------------------------------------------------------
+
+    vk::Buffer screenshotBuffer;
+    VkExtent2D screenshotExtent{};
+
+    void recordScreenshotCopy(VkCommandBuffer cmd) {
+        screenshotExtent = displayColor.extent;
+        VmaAllocationInfo info{};
+        screenshotBuffer = createBuffer(VkDeviceSize(screenshotExtent.width) * screenshotExtent.height * 4,
+                                        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                                        &info);
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {screenshotExtent.width, screenshotExtent.height, 1};
+        vkCmdCopyImageToBuffer(cmd, displayColor.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, screenshotBuffer.buffer,
+                               1, &region);
+        // Make the copy visible to the CPU once the frame's timeline value is reached.
+        VkMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+        VkDependencyInfo dep{};
+        dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dep.memoryBarrierCount = 1;
+        dep.pMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(cmd, &dep);
+    }
+
+    // Waits for the frame that copied the image, then writes the PNG.
+    void finishScreenshot() {
+        screenshotRequested = false;
+        if (!screenshotBuffer.buffer) {
+            screenshotMessage = "the frame was skipped";
+            return;
+        }
+        VkSemaphoreWaitInfo waitInfo{};
+        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        waitInfo.semaphoreCount = 1;
+        waitInfo.pSemaphores = &frameTimeline;
+        waitInfo.pValues = &frameNumber;
+        vk::check(vkWaitSemaphores(context->device(), &waitInfo, UINT64_MAX), "vkWaitSemaphores");
+        VmaAllocationInfo info{};
+        vmaGetAllocationInfo(context->allocator(), screenshotBuffer.allocation, &info);
+        vmaInvalidateAllocation(context->allocator(), screenshotBuffer.allocation, 0, VK_WHOLE_SIZE);
+        // The display image is sRGB-encoded RGBA8: exactly what a PNG stores.
+        SDL_Surface* surface = SDL_CreateSurfaceFrom(static_cast<int>(screenshotExtent.width),
+                                                     static_cast<int>(screenshotExtent.height),
+                                                     SDL_PIXELFORMAT_RGBA32, info.pMappedData,
+                                                     static_cast<int>(screenshotExtent.width * 4));
+        screenshotMessage.clear();
+        if (!surface || !SDL_SavePNG(surface, screenshotPath.c_str())) {
+            screenshotMessage = std::string("can't save ") + screenshotPath + ": " + SDL_GetError();
+        }
+        if (surface) SDL_DestroySurface(surface);
+        vmaDestroyBuffer(context->allocator(), screenshotBuffer.buffer, screenshotBuffer.allocation);
+        screenshotBuffer = {};
+    }
+
+    vk::ImageState swapchainState;
 };
 
 Renderer::Renderer(Window& window, JobSystem& jobs, bool vsync)
@@ -1253,6 +1507,23 @@ void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
 void Renderer::setGrid(const GridSettings& grid) {
     m_impl->grid = grid;
 }
+void Renderer::addLight(const LightDesc& light) {
+    std::lock_guard lock(m_impl->lightMutex);
+    m_impl->lights.push_back(light);
+}
+void Renderer::setLighting(const LightingDesc& lighting) { m_impl->lighting = lighting; }
+void Renderer::setDebugView(DebugView view) { m_impl->debugView = view; }
+DebugView Renderer::debugView() const { return m_impl->debugView; }
+uint32_t Renderer::lightCount() const { return m_impl->lastLightCount; }
+uint32_t Renderer::droppedLights() const { return m_impl->lastDroppedLights; }
+void Renderer::requestScreenshot(const std::string& path) {
+    m_impl->screenshotPath = path;
+    m_impl->screenshotRequested = true;
+    m_impl->screenshotMessage.clear();
+}
+bool Renderer::screenshotPending() const { return m_impl->screenshotRequested; }
+const std::string& Renderer::screenshotResult() const { return m_impl->screenshotMessage; }
+std::string Renderer::frameGraph() const { return m_impl->frameGraphText; }
 void Renderer::drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint, const DrawMaterial& material) {
     m_impl->drawMesh(mesh, transform, texture, tint, material);
 }

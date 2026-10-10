@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string>
 
 namespace shockwave {
 
@@ -48,7 +49,34 @@ struct DrawMaterial {
     bool doubleSided = false;
     bool blend = false;
     glm::vec2 uvScale{1.0f};   // repeats the texture across the surface (MeshRenderer::tiling)
+    float roughness = 0.6f;    // 0 mirror-smooth .. 1 fully matte
+    float metallic = 0.0f;
+    glm::vec3 emissive{0.0f};  // linear HDR color the surface emits
 };
+
+// A light for this frame, in world space. See the Light component for the meaning of
+// each value; spot angles here are cosines.
+struct LightDesc {
+    enum class Type : uint32_t { Directional, Point, Spot };
+    Type type = Type::Point;
+    glm::vec3 position{0.0f};
+    glm::vec3 direction{0.0f, 0.0f, -1.0f};   // where it shines (directional, spot)
+    glm::vec3 color{1.0f};                    // already multiplied by intensity
+    float range = 10.0f;
+    float cosOuter = 0.0f, cosInner = 0.0f;   // spot cone, as cosines of the half-angles
+};
+
+// Scene-wide lighting and the HDR-to-display step. Kept until changed.
+struct LightingDesc {
+    enum class Tonemapper : uint32_t { ACES, AgX, Reinhard, None };
+    glm::vec3 skyAmbient{0.32f, 0.42f, 0.58f};      // ambient from above, already scaled
+    glm::vec3 groundAmbient{0.18f, 0.16f, 0.14f};   // ambient from below
+    float exposure = 0.0f;                          // stops
+    Tonemapper tonemapper = Tonemapper::ACES;
+};
+
+// What the scene shows: the lit result, or a view for checking content.
+enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting };
 
 class Renderer {
 public:
@@ -86,6 +114,29 @@ public:
                   const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
+
+    // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
+    // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no
+    // lights at all, a default sun keeps unlit scenes readable.
+    static constexpr uint32_t kMaxLights = 256;
+    void addLight(const LightDesc& light);
+    void setLighting(const LightingDesc& lighting);
+    void setDebugView(DebugView view);
+    DebugView debugView() const;
+    uint32_t lightCount() const;      // lights used last frame, not counting the default sun
+    uint32_t droppedLights() const;   // lights over kMaxLights last frame
+
+    // Saves the next finished frame, tonemapped, as a PNG at output resolution (the
+    // editor viewport or the window, without GUI). Main thread. The result is reported
+    // by screenshotResult() once screenshotPending() turns false: empty on success,
+    // otherwise why it failed.
+    void requestScreenshot(const std::string& path);
+    bool screenshotPending() const;
+    const std::string& screenshotResult() const;
+
+    // The last frame's render graph as text: each pass in order, what it reads and
+    // writes, and the barriers the graph inserted. For the Stats window and tools.
+    std::string frameGraph() const;
 
     // Resolution independence: the scene renders into its own HDR target at
     // renderScale x window resolution, then is scaled to the window. 1.0 = native,

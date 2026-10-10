@@ -38,11 +38,13 @@ int main(int argc, char** argv) {
     gui::applyTheme(base, 1);
     check(s.FramePadding.x == base.framePadding.x && s.FrameBorderSize == 1, "Theme reload does not accumulate DPI scaling");
     const auto fixture = std::filesystem::path("ui-theme-test.swtheme");
-    { std::ofstream out(fixture); out << "button = #00ccff\nwarning = #ffcc00\nerror = #ff0000\nButtonHovered = #ffffff\n"; }
+    { std::ofstream out(fixture); out << "button = #00ccff\nwarning = #ffcc00\nerror = #ff0000\npanel = #0b0f13\nsecondary = #ffb020\nButtonHovered = #ffffff\n"; }
     gui::Theme custom;
     check(gui::loadTheme(fixture.string(), custom, error), "Custom semantic and ImGui colors load");
     gui::applyTheme(custom);
     check(same(s.Colors[ImGuiCol_ButtonHovered], gui::semanticColor(gui::hex(0xffffff))), "Explicit ImGui override wins");
+    check(same(s.Colors[ImGuiCol_ChildBg], gui::semanticColor(gui::hex(0x0b0f13))), "Panel color fills inner panels");
+    check(same(s.Colors[ImGuiCol_PlotHistogram], gui::semanticColor(gui::hex(0xffb020))), "Secondary color drives histograms");
     const auto previous = custom.button;
     { std::ofstream out(fixture); out << "button = #ff0000\nunknown_key = 3\n"; }
     check(!gui::loadTheme(fixture.string(), custom, error) && same(previous, custom.button), "Invalid theme leaves previous palette intact");

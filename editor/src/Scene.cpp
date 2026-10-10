@@ -19,6 +19,16 @@ void makeScene(SceneTemplate kind, World& world, const Assets& assets) {
     world.add<Transform>(camera, {{0.0f, 3.0f, 9.0f}, fromEulerDegrees({-15.0f, 0.0f, 0.0f})});
     world.add<Camera>(camera);
 
+    // A warm sun from above and to the side, so the scene isn't flat.
+    const Entity sun = world.create();
+    world.add<Name>(sun, {"Sun"});
+    world.add<Transform>(sun, {{0.0f, 10.0f, 0.0f}, fromEulerDegrees({-50.0f, 35.0f, 0.0f})});
+    Light light;
+    light.type = Light::Type::Directional;
+    light.color = {1.0f, 0.95f, 0.86f, 1.0f};
+    light.intensity = 2.5f;
+    world.add<Light>(sun, light);
+
     // 50 x 50 units with the prototyping grid repeated once per unit.
     const Entity ground = world.create();
     world.add<Name>(ground, {"Ground"});

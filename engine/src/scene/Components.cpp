@@ -79,6 +79,10 @@ void registerBuiltins() {
         field("tint", &MeshRenderer::tint),
         field("tiling", &MeshRenderer::tiling, 0.05f, 0.001f, 10000.0f),
         field("visible", &MeshRenderer::visible),
+        field("roughness", &MeshRenderer::roughness, 0.01f, 0.0f, 1.0f),
+        field("metallic", &MeshRenderer::metallic, 0.01f, 0.0f, 1.0f),
+        field("emissive", &MeshRenderer::emissive),
+        field("emissive_intensity", &MeshRenderer::emissiveIntensity, 0.05f, 0.0f, 1000.0f),
     }, "Rendering");
     registerComponent<ModelRenderer>("ModelRenderer", {
         field("model", &ModelRenderer::model), field("tint", &ModelRenderer::tint), field("visible", &ModelRenderer::visible),
@@ -123,7 +127,22 @@ void registerBuiltins() {
         field("collision_mask", &CharacterController::collisionMask, 1.0f, 0.0f, 65535.0f),
         field("enabled", &CharacterController::enabled),
     }, "Physics");
-    registerComponent<Environment>("Environment", {field("sky_color", &Environment::skyColor)}, "Rendering");
+    registerComponent<Environment>("Environment", {
+        field("sky_color", &Environment::skyColor),
+        field("ground_color", &Environment::groundColor),
+        field("ambient_intensity", &Environment::ambientIntensity, 0.01f, 0.0f, 100.0f),
+        field("exposure", &Environment::exposure, 0.05f, -16.0f, 16.0f),
+        enumField("tonemapper", &Environment::tonemapper, {"ACES", "AgX", "Reinhard", "None"}),
+    }, "Rendering");
+    registerComponent<Light>("Light", {
+        enumField("type", &Light::type, {"Directional", "Point", "Spot"}),
+        field("color", &Light::color),
+        field("intensity", &Light::intensity, 0.05f, 0.0f, 100000.0f),
+        field("range", &Light::range, 0.1f, 0.01f, 100000.0f),
+        field("spot_angle", &Light::spotAngle, 0.5f, 1.0f, 89.0f),
+        field("spot_softness", &Light::spotSoftness, 0.01f, 0.0f, 1.0f),
+        field("enabled", &Light::enabled),
+    }, "Rendering");
     registerComponent<Spin>("Spin", {
         field("axis", &Spin::axis, 0.01f),
         field("speed", &Spin::speed, 1.0f),

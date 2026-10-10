@@ -11,6 +11,7 @@ struct WindowDesc {
     int width = 1280;
     int height = 720;
     bool vsync = false;   // off = render as fast as the GPU allows (mailbox, no tearing where supported)
+    bool hidden = false;  // never shown; for command-line tools that need the renderer
 };
 
 // Owns the OS window. The renderer creates its Vulkan surface from it.
