@@ -115,6 +115,8 @@ FetchContent_Declare(JoltPhysics
 )
 FetchContent_MakeAvailable(JoltPhysics)
 
+include(cmake/AudioCodecs.cmake)
+
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
 

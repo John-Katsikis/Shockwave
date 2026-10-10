@@ -46,6 +46,21 @@ end
 
 ## Components
 
+### Audio
+
+#### AudioSource
+
+| Field | Value | Default |
+|---|---|---|
+| `clip` | quoted audio clip path inside Content (.wav or .ogg) | `""` |
+| `volume` | number; range 0 to 1 | `1` |
+| `pitch` | number; range 0.125 to 8 | `1` |
+| `loop` | 1 or 0 (true/false also accepted) | `0` |
+| `play_on_start` | 1 or 0 (true/false also accepted) | `1` |
+| `spatial` | 1 or 0 (true/false also accepted) | `1` |
+| `min_distance` | number; range 0 to 10000 | `1` |
+| `max_distance` | number; range 0 to 10000 | `30` |
+
 ### Core
 
 #### Transform
@@ -219,6 +234,11 @@ Names a scene can use, built-in and from this project's asset folder.
 ### Models (ModelRenderer.model, Collider convex/triangle shapes)
 
 - `models/material-demo.glb`
+
+### Audio clips (AudioSource.clip)
+
+- `Audio/ambient.wav`
+- `Audio/pulse.wav`
 
 ## Project manifest
 

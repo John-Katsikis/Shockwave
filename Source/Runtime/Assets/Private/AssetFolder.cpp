@@ -36,6 +36,8 @@ AssetFolder::AssetFolder(Renderer& renderer, Assets& assets, JobSystem& jobs)
     : m_renderer(renderer), m_assets(assets), m_jobs(jobs) {}
 
 std::vector<AssetFolder::Change> AssetFolder::open(fs::path root) {
+    for (const auto& old : m_files)
+        if (old.kind == Kind::Audio) m_assets.addAudioClip(old.name, nullptr);
     m_root = std::move(root);
     m_files.clear();
     m_pollTimer = 0.0;
@@ -75,7 +77,10 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             File f;
             f.path = it->path();
             f.name = fs::relative(f.path, m_root, ec).generic_string();
-            f.kind = isImageFile(f.path) ? Kind::Texture : isModelFile(f.path) ? Kind::Model : Kind::Other;
+            f.kind = isImageFile(f.path)   ? Kind::Texture
+                     : isModelFile(f.path) ? Kind::Model
+                     : isAudioFile(f.path) ? Kind::Audio
+                                           : Kind::Other;
             f.bytes = it->file_size(ec);
             f.modified = it->last_write_time(ec);
             found.push_back(std::move(f));
@@ -87,6 +92,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
     struct Import {
         size_t file;
         bool reload;
+        AudioClip audio;
         Image image;
         ModelData model;
         std::vector<fs::path> dependencies;
@@ -113,12 +119,15 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             if (!old) changes.push_back({Change::What::Added, f.name, {}});
             continue;
         }
-        imports.push_back({i, f.imported, {}, {}, {}, {}});
+        imports.push_back({i, f.imported, {}, {}, {}, {}, {}});
     }
     for (const File& old : m_files) {
         const bool gone = std::none_of(found.begin(), found.end(), [&](const File& f) { return f.name == old.name; });
         // Its texture stays registered, so scenes using it keep their last good copy.
-        if (gone) changes.push_back({Change::What::Removed, old.name, {}});
+        if (gone) {
+            if (old.kind == Kind::Audio) m_assets.addAudioClip(old.name, nullptr);
+            changes.push_back({Change::What::Removed, old.name, {}});
+        }
     }
 
     // CPU imports run in parallel with one Assimp instance per job. Publication and
@@ -127,7 +136,9 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         for (size_t i = begin; i < end; ++i) {
             auto& job = imports[i];
             const auto& f = found[job.file];
-            if (f.kind == Kind::Model)
+            if (f.kind == Kind::Audio)
+                loadAudioClip(f.path, job.audio, job.error);
+            else if (f.kind == Kind::Model)
                 loadModel(f.path, job.model, job.error, &job.dependencies);
             else
                 loadImage(f.path, job.image, job.error);
@@ -139,7 +150,9 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         f.dependencies.clear();
         for (const auto& path : job.dependencies) f.dependencies.push_back(stamp(path));
         if (job.error.empty()) {
-            if (f.kind == Kind::Model) {
+            if (f.kind == Kind::Audio) {
+                m_assets.addAudioClip(f.name, std::make_shared<const AudioClip>(std::move(job.audio)));
+            } else if (f.kind == Kind::Model) {
                 auto uploaded = std::make_shared<ModelAsset>();
                 uploaded->data = std::move(job.model);
                 uploaded->meshes.reserve(uploaded->data.meshes.size());

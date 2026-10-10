@@ -11,6 +11,7 @@ namespace shockwave {
 
 class Engine;
 class PhysicsWorld;
+class AudioWorld;
 
 // What game code can reach during Play.
 struct GameContext {
@@ -23,6 +24,7 @@ struct GameContext {
     T* subsystem() const {
         return subsystems.find<T>();
     }
+    AudioWorld& audio() const;   // always there during Play
     PhysicsWorld& physics() const;   // always there during Play
 };
 

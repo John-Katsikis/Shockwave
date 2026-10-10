@@ -33,6 +33,7 @@ public:
     const Schedule& schedule() const { return m_schedule; }
     GameMode* gameMode() const { return m_mode.get(); }
     SubsystemCollection& subsystems() { return m_subsystems; }
+    AudioWorld* audio() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
 
 private:

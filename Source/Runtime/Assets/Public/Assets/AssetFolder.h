@@ -23,7 +23,7 @@ class Renderer;
 // Main thread only.
 class AssetFolder {
 public:
-    enum class Kind { Texture, Model, Other };
+    enum class Kind { Texture, Model, Audio, Other };
     struct Dependency {
         std::filesystem::path path;
         bool exists = false;

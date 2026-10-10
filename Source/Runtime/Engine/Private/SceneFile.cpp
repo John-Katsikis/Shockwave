@@ -83,6 +83,7 @@ void writeField(
         writeFloats(out, &euler.x, 3);
         break;
     }
+    case FieldType::AudioClip:
     case FieldType::String: out << ' ' << std::quoted(*static_cast<const std::string*>(data)); break;
     case FieldType::Mesh: {
         const std::string name = assets.meshName(*static_cast<const MeshHandle*>(data));
@@ -153,6 +154,7 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         *static_cast<glm::quat*>(data) = fromEulerDegrees(euler);
         return true;
     }
+    case FieldType::AudioClip:
     case FieldType::String: return static_cast<bool>(in >> std::quoted(*static_cast<std::string*>(data)));
     case FieldType::Mesh: {
         std::string name;
@@ -202,6 +204,7 @@ std::string valueSyntax(const Field& f) {
     case FieldType::Color: return "r g b [a], linear 0..1, alpha optional";
     case FieldType::Rotation: return "pitch yaw roll in degrees (applied X, then Y, then Z)";
     case FieldType::String: return "quoted text";
+    case FieldType::AudioClip: return "quoted audio clip path inside Content (.wav or .ogg)";
     case FieldType::Mesh: return "mesh name, or none";
     case FieldType::Texture: return "texture name (white when unset)";
     case FieldType::Model: return "model path inside the asset folder, or none";
@@ -601,6 +604,7 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
     names.clear();
     for (const auto& [name, handle] : assets.models()) names.push_back(name);
     list("Models (ModelRenderer.model, Collider convex/triangle shapes)", names);
+    list("Audio clips (AudioSource.clip)", assets.audioClips());
 }
 
 }   // namespace shockwave

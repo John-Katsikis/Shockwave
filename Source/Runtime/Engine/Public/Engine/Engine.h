@@ -16,6 +16,7 @@
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -87,6 +88,8 @@ public:
     Renderer& renderer() { return *m_renderer; }
     Input& input() { return *m_input; }
     Assets& assets() { return *m_assets; }
+    void setMasterVolume(float volume);   // any thread; 0..1
+    float masterVolume() const { return m_masterVolume.load(); }
 
     // Switches the UI theme (a .swtheme path, found like EngineConfig::guiTheme) from the
     // next frame on. Main thread.
@@ -111,6 +114,7 @@ private:
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<Input> m_input;
     std::unique_ptr<Assets> m_assets;
+    std::atomic<float> m_masterVolume{1};
     bool m_running = false;
     double m_fps = 0.0;
 

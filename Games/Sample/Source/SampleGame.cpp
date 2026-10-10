@@ -3,6 +3,7 @@
 // Pressing "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and
 // rumbles the pad; the binding lives in Config/Input.swinput.
 
+#include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Components.h>
 #include <Engine/Engine.h>
@@ -65,6 +66,7 @@ public:
         if (!input.wasActionPressed("pulse")) return;
         ctx.world.each<ColorPulse>([](Entity, ColorPulse& pulse) { pulse.flash = 1.0f; });
         input.rumble(0.3f, 0.8f, 0.2);
+        ctx.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
     }
 
     void endPlay(GameContext&) override { SW_LOG(LogGame, Info, "Sample gameplay stopped"); }
