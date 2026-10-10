@@ -98,4 +98,4 @@ nested transforms, materials, triangle picking, failed dependency repair, stable
 asset references and scene serialization. The GPU smoke test covers actual uploads,
 repeated reloads, missing buffers/textures, MTL edits, last-good retention, resource
 recycling and rendering all three material parts. Fixtures are self-authored and
-can be regenerated with `python3 tests/fixtures/models/generate.py`.
+can be regenerated with `python3 Tests/fixtures/models/generate.py`.
