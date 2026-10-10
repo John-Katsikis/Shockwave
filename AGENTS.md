@@ -15,6 +15,9 @@ To see a scene, render it with `build/bin/player --scene <file> --screenshot out
 Controls live in `Config/Input.swinput`; follow `docs/InputSchema.md` (regenerate with
 `build/bin/player --input-schema docs/InputSchema.md`), and use `player --devices` to see
 what controllers are plugged in and how their inputs are named.
+To measure performance, run `build/bin/player --benchmark 5 --json out.json` (frame rate,
+1% and 0.1% lows, jitter, GPU time per pass; see `docs/FramePacing.md`) before and after a
+change.
 Every feature needs both an editor UI for people and a text/CLI path for tools: a field in
 the schema, a `--check` rule where mistakes are likely, and a way to verify it from the
 command line.

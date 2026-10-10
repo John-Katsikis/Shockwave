@@ -1,7 +1,10 @@
 #include <Core/Jobs.h>
 
+#include <Core/Profile.h>
+
 #include <algorithm>
 #include <deque>
+#include <string>
 
 namespace shockwave {
 
@@ -99,6 +102,7 @@ bool JobSystem::tryRunOne(uint32_t self) {
 
 void JobSystem::workerLoop(uint32_t index) {
     t_threadIndex = index;
+    SW_PROFILE_THREAD(("Worker " + std::to_string(index)).c_str());
     while (true) {
         if (tryRunOne(index)) continue;
 

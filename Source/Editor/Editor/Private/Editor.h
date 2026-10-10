@@ -1,11 +1,10 @@
 #pragma once
 
 #include "Preferences.h"
-
-#include <Audio/Audio.h>
 #include "SceneTemplates.h"
 
 #include <Assets/AssetFolder.h>
+#include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
@@ -34,6 +33,8 @@ inline constexpr const char* kMeshPayload = "SW_MESH";
 inline constexpr const char* kModelPayload = "SW_MODEL";
 inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
+// Labels for shockwave::ShadowQuality, indexed by its value.
+inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
 struct EditorOptions {
     std::string path;   // project folder, .swproject or .swscene; empty: last project
@@ -125,6 +126,7 @@ private:
     void buildDefaultLayout(ImGuiID dockspace);
     void drawCreateMenuItems(shockwave::Entity parent);
     void drawStatsWindow();
+    void drawFrameTimeGraph();
     void drawPreferencesWindow();
     void previewAudio(const std::string& clip, shockwave::AudioPlayback options = {});
     void stopAudioPreview();
@@ -338,9 +340,6 @@ private:
     int m_inputListenFrames = 0;   // frames to ignore after starting, so the click isn't recorded
     std::string m_inputNewAction, m_inputTyped, m_inputTypedError;
     glm::vec3 m_padLight{0.0f, 0.9f, 1.0f};
-
-    std::array<float, 240> m_frameTimes{};
-    size_t m_frameTimeIndex = 0;
 
     std::vector<LogEntry> m_log;
     std::mutex m_pendingLogMutex;

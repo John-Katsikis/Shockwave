@@ -172,6 +172,7 @@ end
 | `metallic` | number; range 0 to 1 | `0` |
 | `emissive` | r g b [a], linear 0..1, alpha optional | `0 0 0 1` |
 | `emissive_intensity` | number; range 0 to 1000 | `1` |
+| `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
 
 #### ModelRenderer
 
@@ -180,6 +181,7 @@ end
 | `model` | model path inside the asset folder, or none | `none` |
 | `tint` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
 | `visible` | 1 or 0 (true/false also accepted) | `1` |
+| `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
 
 #### Camera
 
@@ -198,6 +200,8 @@ end
 | `ambient_intensity` | number; range 0 to 100 | `0.6` |
 | `exposure` | number; range -16 to 16 | `0` |
 | `tonemapper` | one of: ACES, AgX, Reinhard, None (or its number, counting from 0) | `ACES` |
+| `shadow_distance` | number; range 1 to 10000 | `80` |
+| `shadow_cascades` | whole number; range 1 to 4 | `4` |
 
 #### Light
 
@@ -210,6 +214,10 @@ end
 | `spot_angle` | number; range 1 to 89 | `30` |
 | `spot_softness` | number; range 0 to 1 | `0.2` |
 | `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
+| `shadow_strength` | number; range 0 to 1 | `1` |
+| `shadow_softness` | number; range 0 to 1 | `0.3` |
+| `shadow_bias` | number; range 0 to 10 | `1` |
 
 ## Assets
 

@@ -44,7 +44,7 @@ Shockwave/
   cmake/                build helpers (engine modules, shader compilation, Dear ImGui)
   Source/
     Runtime/            the engine, one static library per module
-      Core/               job system, logging
+      Core/               job system, logging, frame pacing, profiling
       Platform/           window
       Input/              keyboard, mouse, gamepads, joysticks and action mapping
       RHI/                Vulkan backend: device, swapchain, pipelines, render graph
@@ -222,8 +222,14 @@ What gets saved where:
   changes are autosaved there; reopening offers to recover them.
 - Preferences (theme, autosave interval, camera speed, grid) go in
   `$XDG_CONFIG_HOME/shockwave/editor.swprefs` (usually `~/.config`), shared by all projects.
-- The dock layout goes in `editor-layout.ini` next to the preferences; Window > Reset
-  layout restores the default.
+- Any panel can be docked anywhere, stacked as tabs, or dragged out of the editor by its
+  tab or title bar into a window of its own, on any monitor. Drag it back onto the editor
+  to dock it again. Turn this off with Preferences > Panels can leave the main window
+  (`detachable_panels = false`). Wayland can't let programs place windows, so on a Wayland
+  desktop the editor runs through XWayland while this is on (set `SDL_VIDEO_DRIVER=wayland`
+  to force native Wayland, with panels kept inside).
+- The dock layout, detached windows included, goes in `editor-layout.ini` next to the
+  preferences; Window > Reset layout restores the default.
 
 Editor controls (Help > Controls, or F1, lists them too):
 
@@ -295,7 +301,7 @@ https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
    action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
 4. Gamepads, flight sticks and wheels (done), and GPU-driven rendering: frustum culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
-6. Render graph, tonemapping and lighting (done); shadows, upscaling, glTF assets in the
+6. Render graph, tonemapping, lighting and shadows (done); upscaling, glTF assets in the
    asset browser, audio
 7. Hot reload of game code and shaders
 8. Editor (first version done): Dear ImGui docking UI, viewport rendered by the engine at
@@ -343,7 +349,9 @@ which images they read and write and the graph places the synchronization2 barri
 The scene renders to an HDR target with forward PBR shading (GGX specular, Lambert
 diffuse, up to 256 directional, point and spot lights, hemisphere ambient), then a
 tonemap pass applies exposure and the chosen curve into an sRGB image at the window or
-viewport size. Shadows, bloom and upscaling are not done yet.
+viewport size. The sun casts soft cascaded shadows and spot and point lights cast
+shadows from a shared atlas; see [Shadows](docs/Shadows.md). Bloom and upscaling are
+not done yet.
 
 The player can render without anyone looking, which is how tools and AI agents check
 how a scene looks:
@@ -393,6 +401,20 @@ the bindings live in the project's `Config/Input.swinput` and reload when it cha
 
 A gamepad also flies the editor camera while the viewport has focus: left stick moves, right
 stick looks, triggers go up and down.
+
+### Frame pacing and profiling
+
+A precise frame limiter, a low-latency mode, present timing where the driver supports it,
+and frame statistics that track the 1% and 0.1% lows, not just the average. Set them in
+Preferences or Project settings (`frame_limit` and `low_latency` in the `.swproject`), watch
+them in **Window > Stats**, or measure from the command line:
+
+```sh
+./build/bin/player --benchmark 10 --json bench.json
+```
+
+Build with `-DSHOCKWAVE_PROFILE=ON` to profile every thread with Tracy. See
+[Frame pacing](docs/FramePacing.md).
 
 ### Audio
 

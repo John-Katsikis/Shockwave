@@ -27,13 +27,22 @@ void Swapchain::build(uint32_t width, uint32_t height) {
         .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
         .set_old_swapchain(m_swapchain);
     if (m_vsync) {
-        builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        if (m_lowLatency && m_context.fifoLatestReady()) {
+            builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_LATEST_READY_KHR)
+                .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        } else {
+            builder.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+        }
     } else {
         // Uncapped: mailbox renders flat out without tearing; immediate is the fallback.
         // FIFO is always available as the last resort.
         builder.set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
             .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
+    }
+    if (m_context.presentWait() == Context::PresentWait::Version2) {
+        builder.set_create_flags(static_cast<VkSwapchainCreateFlagBitsKHR>(
+            VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR | VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR));
     }
 
     auto result = builder.build();

@@ -48,3 +48,9 @@ if(SHOCKWAVE_XVFB_RUN)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/AudioCheck.cmake)
     set_tests_properties(audio_cli_check PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
 endif()
+
+add_executable(frame_pacing_test FramePacingTest.cpp)
+target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
+shockwave_warnings(frame_pacing_test)
+add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
+         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

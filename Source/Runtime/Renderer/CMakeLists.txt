@@ -14,4 +14,6 @@ shockwave_compile_shaders(ShockwaveRenderer
     Shaders/grid.frag
     Shaders/tonemap.vert
     Shaders/tonemap.frag
+    Shaders/shadow.vert
+    Shaders/shadow.frag
 )

@@ -39,13 +39,18 @@ theme "Config/Editor.swtheme"
 tick_rate 60
 window_size 1280 720
 vsync true
+frame_limit 0      # optional: cap in frames per second, 0 = none
+low_latency false  # optional: wait for each frame to reach the screen before the next
+shadow_quality high  # optional: off, low, medium, high or ultra
 ```
 
 The version, name, module ID, and existing startup scene are required. The content and
 scene folders default to `Content` and `Scenes` (an optional `scenes "levels"` line
 moves where the editor lists and saves scenes). `theme` is optional; the editor uses it
 when neither `--theme` nor Preferences picks one. Runtime defaults are 60 Hz,
-1280 x 720 and VSync enabled. Names and paths containing spaces must be quoted. Whole
+1280 x 720, VSync enabled, no frame cap, low latency off and high shadows; see
+[Frame pacing](FramePacing.md) for the frame settings and [Shadows](Shadows.md) for the
+shadow qualities. Names and paths containing spaces must be quoted. Whole
 line and trailing `#` comments are accepted. Unknown/duplicate keys and invalid values
 are errors, with file and line diagnostics. The editor uses its own workspace size
 and VSync by default, but shares the project's simulation tick rate. Explicit editor

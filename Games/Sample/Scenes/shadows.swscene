@@ -1,0 +1,386 @@
+# Shockwave scene
+shockwave_scene 2
+
+# Shadow showcase: a low evening sun across a row of pillars reaching into the distance
+# (View > Shading > Shadow cascades, or player --view cascades, shows the cascades), a
+# spot light casting a crate onto the floor, and a point light inside a ring of posts.
+
+entity "Environment"
+  Environment
+    sky_color 0.45 0.52 0.68 1
+    ground_color 0.2 0.17 0.14 1
+    ambient_intensity 0.35
+    shadow_distance 80
+    shadow_cascades 4
+end
+
+entity "Floor"
+  Transform
+    position 0 0 -30
+    scale 120 1 120
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.9 0.9 0.9 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 3.5 12
+    rotation -12 0 0
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 20 0
+    rotation -22 125 0
+  Light
+    type Directional
+    color 1 0.82 0.62 1
+    intensity 3
+    shadow_softness 0.35
+end
+
+entity "Pillar L1"
+  Transform
+    position -5 2 4
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R1"
+  Transform
+    position 5 2 4
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L2"
+  Transform
+    position -5 2 -2
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R2"
+  Transform
+    position 5 2 -2
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L3"
+  Transform
+    position -5 2 -8
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R3"
+  Transform
+    position 5 2 -8
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L4"
+  Transform
+    position -5 2 -14
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R4"
+  Transform
+    position 5 2 -14
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L5"
+  Transform
+    position -5 2 -20
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R5"
+  Transform
+    position 5 2 -20
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L6"
+  Transform
+    position -5 2 -26
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R6"
+  Transform
+    position 5 2 -26
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L7"
+  Transform
+    position -5 2 -32
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R7"
+  Transform
+    position 5 2 -32
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L8"
+  Transform
+    position -5 2 -38
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R8"
+  Transform
+    position 5 2 -38
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L9"
+  Transform
+    position -5 2 -44
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R9"
+  Transform
+    position 5 2 -44
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L10"
+  Transform
+    position -5 2 -50
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R10"
+  Transform
+    position 5 2 -50
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L11"
+  Transform
+    position -5 2 -56
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R11"
+  Transform
+    position 5 2 -56
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar L12"
+  Transform
+    position -5 2 -62
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Pillar R12"
+  Transform
+    position 5 2 -62
+    scale 0.8 4 0.8
+  MeshRenderer
+    mesh cube
+    texture textures/bricks.png
+end
+
+entity "Ball"
+  Transform
+    position -1.5 1 2
+  MeshRenderer
+    mesh sphere
+    texture checker
+    tint 0.35 0.65 1 1
+    roughness 0.3
+end
+
+entity "Crate"
+  Transform
+    position 1.8 0.5 1
+    rotation 0 25 0
+  MeshRenderer
+    mesh cube
+    texture textures/wood.png
+end
+
+entity "Spotlight"
+  Transform
+    position 2.6 4 2.6
+    rotation -65 30 0
+  Light
+    type Spot
+    color 0.5 0.75 1 1
+    intensity 25
+    range 14
+    spot_angle 32
+    spot_softness 0.25
+    shadow_softness 0.2
+end
+
+entity "Lantern"
+  Transform
+    position 0 1.2 -10
+  Light
+    type Point
+    color 1 0.55 0.2 1
+    intensity 14
+    range 9
+    shadow_softness 0.5
+end
+
+entity "Post 1"
+  Transform
+    position 2.200 1.25 -10.000
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 2"
+  Transform
+    position 1.556 1.25 -8.444
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 3"
+  Transform
+    position 0.000 1.25 -7.800
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 4"
+  Transform
+    position -1.556 1.25 -8.444
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 5"
+  Transform
+    position -2.200 1.25 -10.000
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 6"
+  Transform
+    position -1.556 1.25 -11.556
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 7"
+  Transform
+    position -0.000 1.25 -12.200
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end
+
+entity "Post 8"
+  Transform
+    position 1.556 1.25 -11.556
+    scale 0.25 2.5 0.25
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.8 0.75 0.7 1
+end

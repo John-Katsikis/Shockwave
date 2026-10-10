@@ -60,6 +60,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     // because the renderer flips Y with a negative viewport height.
     raster.frontFace = desc.frontFace;
     raster.lineWidth = 1.0f;
+    raster.depthBiasEnable = desc.dynamicDepthBias;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -86,18 +87,20 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend.attachmentCount = 1;
+    const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED;
+    blend.attachmentCount = hasColor ? 1 : 0;
     blend.pAttachments = &blendAttachment;
 
-    const VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    const VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS};
     VkPipelineDynamicStateCreateInfo dynamic{};
     dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic.dynamicStateCount = 2;
+    dynamic.dynamicStateCount = desc.dynamicDepthBias ? 3 : 2;
     dynamic.pDynamicStates = dynamicStates;
 
     VkPipelineRenderingCreateInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = 1;
+    rendering.colorAttachmentCount = hasColor ? 1 : 0;
     rendering.pColorAttachmentFormats = &desc.colorFormat;
     rendering.depthAttachmentFormat = desc.depthFormat;
 

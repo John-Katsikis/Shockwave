@@ -1,8 +1,8 @@
 #include "Preferences.h"
 
 #include <algorithm>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -85,11 +85,21 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             loaded.theme = value;
         else if (key == "vsync")
             loaded.vsync = parseBool(value);
+        else if (key == "frame_limit")
+            number(loaded.frameLimit);
+        else if (key == "low_latency")
+            loaded.lowLatency = parseBool(value);
+        else if (key == "detachable_panels")
+            loaded.detachablePanels = parseBool(value);
         else if (key == "master_volume")
             number(loaded.masterVolume);
         else if (key == "render_scale")
             number(loaded.renderScale);
-        else if (key == "camera_speed")
+        else if (key == "shadow_quality") {
+            float quality = static_cast<float>(loaded.shadowQuality);
+            number(quality);
+            loaded.shadowQuality = std::clamp(static_cast<int>(quality), 0, 4);
+        } else if (key == "camera_speed")
             number(loaded.cameraSpeed);
         else if (key == "field_of_view")
             number(loaded.fieldOfView);
@@ -132,8 +142,12 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
     out << "\n# Appearance and output\n"
         << "theme = " << prefs.theme << "\n"
         << "vsync = " << flag(prefs.vsync) << "\n"
+        << "frame_limit = " << prefs.frameLimit << "\n"
+        << "low_latency = " << flag(prefs.lowLatency) << "\n"
+        << "detachable_panels = " << flag(prefs.detachablePanels) << "\n"
         << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
+        << "shadow_quality = " << prefs.shadowQuality << "   # 0 off, 1 low, 2 medium, 3 high, 4 ultra\n"
         << "\n# Viewport\n"
         << "camera_speed = " << prefs.cameraSpeed << "\n"
         << "field_of_view = " << prefs.fieldOfView << "\n"

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <vector>
 
 namespace shockwave::vk {
 
@@ -14,6 +15,7 @@ namespace {
 
 SW_LOG_CATEGORY(LogVulkan);
 
+#ifdef SHOCKWAVE_VALIDATION
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
@@ -24,6 +26,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     shockwave::logMessage(LogVulkan, level, data->pMessage);
     return VK_FALSE;
 }
+#endif
 
 }   // namespace
 
@@ -39,6 +42,11 @@ Context::Context(SDL_Window* window) {
     vkb::InstanceBuilder instanceBuilder(vkGetInstanceProcAddr);
     instanceBuilder.set_app_name("Shockwave").set_engine_name("Shockwave").require_api_version(1, 3, 0);
     for (Uint32 i = 0; i < extCount; ++i) instanceBuilder.enable_extension(exts[i]);
+    // Needed to ask a surface whether it supports present wait 2 (frame pacing).
+    auto systemInfo = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
+    const bool surfaceCaps2 =
+        systemInfo && systemInfo->is_extension_available(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+    if (surfaceCaps2) instanceBuilder.enable_extension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 #ifdef SHOCKWAVE_VALIDATION
     // Validation layers catch API misuse early. Install them from your distro
     // (vulkan-validation-layers); without them the engine still runs.
@@ -100,7 +108,10 @@ Context::Context(SDL_Window* window) {
             "No GPU supports what Shockwave needs (Vulkan 1.3): " + physicalResult.error().message());
     }
 
-    auto deviceResult = vkb::DeviceBuilder(physicalResult.value()).build();
+    vkb::PhysicalDevice physical = physicalResult.value();
+    enablePresentTiming(physical, surfaceCaps2);
+
+    auto deviceResult = vkb::DeviceBuilder(physical).build();
     if (!deviceResult) {
         throw std::runtime_error("Creating the Vulkan device failed: " + deviceResult.error().message());
     }
@@ -114,6 +125,7 @@ Context::Context(SDL_Window* window) {
     props.pNext = &props12;
     vkGetPhysicalDeviceProperties2(physicalDevice(), &props);
     m_maxAnisotropy = props.properties.limits.maxSamplerAnisotropy;
+    m_timestampPeriod = props.properties.limits.timestampPeriod;
     m_maxBindlessTextures = std::min<uint32_t>(props12.maxDescriptorSetUpdateAfterBindSampledImages, 65536);
 
     auto queue = m_device.get_queue(vkb::QueueType::graphics);
@@ -123,6 +135,14 @@ Context::Context(SDL_Window* window) {
     }
     m_graphicsQueue = queue.value();
     m_graphicsQueueFamily = family.value();
+    // GPU timers need timestamps on the graphics queue.
+    uint32_t familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice(), &familyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> families(familyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice(), &familyCount, families.data());
+    if (m_graphicsQueueFamily < familyCount && families[m_graphicsQueueFamily].timestampValidBits == 0)
+        m_timestampPeriod = 0.0f;
+    SW_LOG(LogVulkan, Info, "frame pacing: {}{}", presentTimingName(), m_fifoLatestReady ? ", FIFO latest ready" : "");
 
     VmaVulkanFunctions vmaFunctions{};
     vmaFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -143,6 +163,91 @@ Context::~Context() {
     vkb::destroy_device(m_device);
     if (m_surface) vkDestroySurfaceKHR(m_instance.instance, m_surface, nullptr);
     vkb::destroy_instance(m_instance);
+}
+
+const char* Context::presentTimingName() const {
+    switch (m_presentWait) {
+    case PresentWait::Version2: return "present wait 2";
+    case PresentWait::Version1: return "present wait";
+    case PresentWait::None: break;
+    }
+    return "no present wait (estimated from the CPU)";
+}
+
+// Present wait tells the CPU when a frame actually reached the screen, which the low-latency
+// mode and the frame statistics use. Prefers the newer present id 2 / present wait 2, which
+// the surface must also support, and falls back to the original extensions. Every piece is
+// optional: without them the engine paces from CPU timing.
+void Context::enablePresentTiming(vkb::PhysicalDevice& physical, bool surfaceCaps2) {
+    VkPhysicalDevicePresentId2FeaturesKHR id2{};
+    id2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR;
+    VkPhysicalDevicePresentWait2FeaturesKHR wait2{};
+    wait2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR;
+    VkPhysicalDevicePresentIdFeaturesKHR id1{};
+    id1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+    VkPhysicalDevicePresentWaitFeaturesKHR wait1{};
+    wait1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
+    VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR latest{};
+    latest.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR;
+
+    auto has = [&](const char* ext) { return physical.is_extension_present(ext); };
+    const bool hasV2 = has(VK_KHR_PRESENT_ID_2_EXTENSION_NAME) && has(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
+    const bool hasV1 = has(VK_KHR_PRESENT_ID_EXTENSION_NAME) && has(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+    const bool hasLatest = has(VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+    // Ask which features the device really has (only structs of present extensions may be chained).
+    VkPhysicalDeviceFeatures2 query{};
+    query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    void** next = &query.pNext;
+    auto chain = [&](auto& feature) {
+        *next = &feature;
+        next = &feature.pNext;
+    };
+    if (hasV2) chain(id2), chain(wait2);
+    if (hasV1) chain(id1), chain(wait1);
+    if (hasLatest) chain(latest);
+    vkGetPhysicalDeviceFeatures2(physical.physical_device, &query);
+    id2.pNext = wait2.pNext = id1.pNext = wait1.pNext = latest.pNext = nullptr;
+
+    bool surfaceV2 = false;
+    if (hasV2 && id2.presentId2 && wait2.presentWait2 && surfaceCaps2) {
+        VkSurfaceCapabilitiesPresentId2KHR capsId{};
+        capsId.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR;
+        VkSurfaceCapabilitiesPresentWait2KHR capsWait{};
+        capsWait.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR;
+        capsWait.pNext = &capsId;
+        VkSurfaceCapabilities2KHR caps{};
+        caps.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
+        caps.pNext = &capsWait;
+        VkPhysicalDeviceSurfaceInfo2KHR info{};
+        info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+        info.surface = m_surface;
+        if (vkGetPhysicalDeviceSurfaceCapabilities2KHR &&
+            vkGetPhysicalDeviceSurfaceCapabilities2KHR(physical.physical_device, &info, &caps) == VK_SUCCESS)
+            surfaceV2 = capsId.presentId2Supported && capsWait.presentWait2Supported;
+    }
+    if (surfaceV2) {
+        id2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR, nullptr, VK_TRUE};
+        wait2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR, nullptr, VK_TRUE};
+        physical.enable_extension_if_present(VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
+        physical.enable_extension_if_present(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
+        physical.enable_extension_features_if_present(id2);
+        physical.enable_extension_features_if_present(wait2);
+        m_presentWait = PresentWait::Version2;
+    } else if (hasV1 && id1.presentId && wait1.presentWait) {
+        id1 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR, nullptr, VK_TRUE};
+        wait1 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR, nullptr, VK_TRUE};
+        physical.enable_extension_if_present(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+        physical.enable_extension_if_present(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+        physical.enable_extension_features_if_present(id1);
+        physical.enable_extension_features_if_present(wait1);
+        m_presentWait = PresentWait::Version1;
+    }
+    if (hasLatest && latest.presentModeFifoLatestReady) {
+        latest = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR, nullptr, VK_TRUE};
+        physical.enable_extension_if_present(VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+        physical.enable_extension_features_if_present(latest);
+        m_fifoLatestReady = true;
+    }
 }
 
 }   // namespace shockwave::vk

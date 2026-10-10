@@ -20,12 +20,19 @@ struct Project {
     double tickRate = 60;
     int width = 1280, height = 720;
     bool vsync = true;
+    double frameLimit = 0;   // frames per second, 0 = no cap beyond vsync
+    bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)
+    int shadowQuality = 3;   // 0 off, 1 low, 2 medium, 3 high, 4 ultra (Renderer's ShadowQuality)
 
     std::filesystem::path statePath() const { return root / "Saved"; }
     // Project-relative with forward slashes ("Scenes/main.swscene"); paths outside the
     // project come back absolute.
     std::string relative(const std::filesystem::path& path) const;
 };
+// "off", "low", "medium", "high", "ultra" for 0..4; parse returns -1 for anything else.
+const char* shadowQualityName(int quality);
+int parseShadowQuality(const std::string& name);
+
 // Strict versioned manifest. Failure leaves the destination unchanged.
 bool loadProject(const std::filesystem::path& path, Project& project, std::string& error);
 // Writes the manifest (through a temporary file, so a crash can't leave half of one).

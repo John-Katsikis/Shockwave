@@ -52,6 +52,14 @@ public:
     // The last execute(), as text: passes in order with their uses and inserted barriers.
     const std::string& description() const { return m_description; }
 
+    // GPU timing. With a query pool set, execute() writes a timestamp before the first pass
+    // and after every pass that records commands, so each pass is timed with no code of its
+    // own. Query i + 1 minus query i is timedPasses()[i]. The pool needs at least
+    // kMaxTimedPasses + 1 queries; passes beyond that go untimed. Null turns timing off.
+    static constexpr uint32_t kMaxTimedPasses = 31;
+    void setTimestampPool(VkQueryPool pool) { m_queryPool = pool; }
+    const std::vector<std::string>& timedPasses() const { return m_timedPasses; }
+
 private:
     struct Image {
         std::string name;
@@ -69,6 +77,8 @@ private:
     std::vector<Image> m_images;
     std::vector<Pass> m_passes;
     std::string m_description;
+    VkQueryPool m_queryPool = VK_NULL_HANDLE;
+    std::vector<std::string> m_timedPasses;
 };
 
 }   // namespace shockwave::vk

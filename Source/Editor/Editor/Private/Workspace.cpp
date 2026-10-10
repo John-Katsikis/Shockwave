@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -331,9 +332,8 @@ void Editor::drawStatusBar() {
                 count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
                 fps > 0.0 ? 1000.0 / fps : 0.0);
             const float width = ImGui::CalcTextSize(right).x;
-            ImGui::SameLine(
-                std::max(
-                    ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
+            ImGui::SameLine(std::max(
+                ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
             ImGui::TextDisabled("%s", right);
             ImGui::EndMenuBar();
         }
@@ -376,6 +376,52 @@ void Editor::buildDefaultLayout(ImGuiID dockspace) {
 
 // ---- Windows ------------------------------------------------------------------------------
 
+// The last few hundred frames: frame time in the accent color, GPU time in the secondary
+// color, and the frame cap as a faint line. Spikes are stutters.
+void Editor::drawFrameTimeGraph() {
+    const std::vector<shockwave::FrameSample> all = engine().frameStats().samples();
+    const size_t count = std::min<size_t>(all.size(), 300);
+    const float height = 64.0f * ImGui::GetStyle().FontScaleDpi;
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const float width = std::max(ImGui::GetContentRegionAvail().x, 50.0f);
+    ImGui::InvisibleButton("##frame_graph", ImVec2(width, height));
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const gui::Theme& theme = gui::currentTheme();
+    draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), gui::semanticColorU32(theme.panel));
+    if (count < 2) return;
+    const size_t first = all.size() - count;
+    float top = 1.0f;
+    for (size_t i = first; i < all.size(); ++i) top = std::max({top, all[i].frameMs, all[i].gpuMs});
+    top *= 1.15f;
+    auto point = [&](size_t i, float ms) {
+        return ImVec2(
+            origin.x + width * static_cast<float>(i - first) / static_cast<float>(count - 1),
+            origin.y + height - height * std::min(ms / top, 1.0f));
+    };
+    const double target = engine().frameLimit() > 0 ? 1000.0 / engine().frameLimit() : 0.0;
+    if (target > 0 && target < top) {
+        const float y = point(first, static_cast<float>(target)).y;
+        draw->AddLine(ImVec2(origin.x, y), ImVec2(origin.x + width, y), gui::semanticColorU32(theme.textDisabled));
+    }
+    const ImU32 frameColor = ImGui::GetColorU32(gui::accent());
+    const ImU32 gpuColor = gui::semanticColorU32(theme.secondary);
+    for (size_t i = first + 1; i < all.size(); ++i) {
+        if (all[i].gpuMs > 0 && all[i - 1].gpuMs > 0)
+            draw->AddLine(point(i - 1, all[i - 1].gpuMs), point(i, all[i].gpuMs), gpuColor);
+        draw->AddLine(point(i - 1, all[i - 1].frameMs), point(i, all[i].frameMs), frameColor, 1.5f);
+    }
+    char label[48];
+    std::snprintf(label, sizeof label, "%.1f ms", static_cast<double>(top));
+    draw->AddText(ImVec2(origin.x + 4, origin.y + 2), gui::semanticColorU32(theme.textDisabled), label);
+    if (ImGui::IsItemHovered()) {
+        const float t = std::clamp((ImGui::GetMousePos().x - origin.x) / width, 0.0f, 1.0f);
+        const size_t i = first + static_cast<size_t>(t * static_cast<float>(count - 1) + 0.5f);
+        ImGui::SetTooltip(
+            "frame %.2f ms\nCPU %.2f ms\nGPU %.2f ms", static_cast<double>(all[i].frameMs),
+            static_cast<double>(all[i].cpuMs), static_cast<double>(all[i].gpuMs));
+    }
+}
+
 void Editor::drawStatsWindow() {
     ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Stats", &m_showStats)) {
@@ -386,11 +432,35 @@ void Editor::drawStatsWindow() {
     const double fps = engine().fps();
     ImGui::TextDisabled("%s", renderer.gpuName());
     ImGui::Text("%.0f fps  (%.2f ms)", fps, fps > 0.0 ? 1000.0 / fps : 0.0);
-    float maxTime = 0.0f;
-    for (float t : m_frameTimes) maxTime = std::max(maxTime, t);
-    ImGui::PlotLines(
-        "##frametimes", m_frameTimes.data(), static_cast<int>(m_frameTimes.size()), static_cast<int>(m_frameTimeIndex),
-        "frame time (ms)", 0.0f, std::max(maxTime * 1.2f, 1.0f), ImVec2(-1.0f, 56.0f * ImGui::GetStyle().FontScaleDpi));
+    drawFrameTimeGraph();
+
+    // Frame pacing: averages hide stutter, so the slow tail is shown too.
+    const shockwave::FrameSummary pacing = engine().frameStats().summary();
+    if (gui::beginPropertyGrid("pacing")) {
+        gui::propertyLabel("1% / 0.1% low");
+        ImGui::Text("%.0f / %.0f fps", pacing.low1Fps, pacing.low01Fps);
+        gui::propertyLabel("Worst frame");
+        ImGui::Text("%.2f ms (jitter %.2f ms)", pacing.maxMs, pacing.jitterMs);
+        gui::propertyLabel("CPU / GPU");
+        if (pacing.gpuMs > 0)
+            ImGui::Text("%.2f / %.2f ms", pacing.cpuMs, pacing.gpuMs);
+        else
+            ImGui::Text("%.2f ms / no GPU timers", pacing.cpuMs);
+        gui::propertyLabel("Presentation");
+        ImGui::TextUnformatted(renderer.presentModeName());
+        ImGui::SetItemTooltip("Timing: %s", renderer.presentTiming());
+        if (pacing.presentMs > 0) {
+            gui::propertyLabel("On screen every");
+            ImGui::Text("%.2f ms", pacing.presentMs);
+        }
+        ImGui::EndTable();
+    }
+    if (!renderer.passTimings().empty() && ImGui::TreeNode("GPU time per pass")) {
+        for (const auto& pass : renderer.passTimings())
+            ImGui::Text("%7.3f ms  %s", static_cast<double>(pass.gpuMs), pass.name.c_str());
+        ImGui::TreePop();
+    }
+    ImGui::Separator();
     ImGui::Text(
         "Scene %u x %u at %.2fx, %u draws", renderer.renderWidth(), renderer.renderHeight(), renderer.renderScale(),
         renderer.drawCount());
@@ -407,6 +477,21 @@ void Editor::drawStatsWindow() {
         ImGui::TextColored(
             gui::semanticColor(gui::currentTheme().warning), "%u lights over the limit are ignored",
             renderer.droppedLights());
+    }
+    const auto shadowStats = renderer.shadowStats();
+    if (renderer.shadowQuality() == shockwave::ShadowQuality::Off) {
+        ImGui::TextDisabled("Shadows are off (View > Shadows)");
+    } else {
+        ImGui::Text(
+            "Shadows %s: %u sun cascades, %u shadowed lights, %u caster draws",
+            kShadowQualityNames[static_cast<int>(renderer.shadowQuality())], shadowStats.cascades,
+            shadowStats.shadowedLights, shadowStats.casterDraws);
+        if (shadowStats.skippedLights > 0) {
+            ImGui::TextColored(
+                gui::semanticColor(gui::currentTheme().warning),
+                "%u shadowed lights didn't fit the shadow atlas; the farthest go unshadowed",
+                shadowStats.skippedLights);
+        }
     }
     if (ImGui::TreeNode("Render graph")) {
         // The passes the renderer ran last frame and the barriers it placed between them.
@@ -480,6 +565,10 @@ void Editor::drawPreferencesWindow() {
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("Themes are .swtheme files in themes/. Edit one while the editor runs to restyle it live.");
+    changed |= ImGui::Checkbox("Panels can leave the main window", &m_prefs.detachablePanels);
+    ImGui::SetItemTooltip("Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
+                          "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
+                          "desktop the editor then runs through XWayland, since Wayland can't place windows.");
 
     ImGui::SeparatorText("Audio");
     if (gui::beginPropertyGrid("audio_preferences")) {
@@ -498,10 +587,30 @@ void Editor::drawPreferencesWindow() {
         changed = true;
     }
     ImGui::SetItemTooltip("Off renders as fast as the GPU can go");
+    if (ImGui::SliderFloat(
+            "Frame limit", &m_prefs.frameLimit, 0.0f, 360.0f, m_prefs.frameLimit > 0 ? "%.0f fps" : "none")) {
+        if (m_prefs.frameLimit > 0.0f && m_prefs.frameLimit < 10.0f) m_prefs.frameLimit = 10.0f;
+        engine().setFrameLimit(m_prefs.frameLimit);
+        changed = true;
+    }
+    ImGui::SetItemTooltip("A precise cap; steadier than uncapped and saves power. 0 is no cap");
+    if (ImGui::Checkbox("Low latency", &m_prefs.lowLatency)) {
+        engine().setLowLatency(m_prefs.lowLatency);
+        changed = true;
+    }
+    ImGui::SetItemTooltip("Wait for each frame to reach the screen before starting the next, so input feels\n"
+                          "more immediate. Costs some frame rate when the GPU is the bottleneck");
     if (ImGui::SliderFloat("Render scale", &m_prefs.renderScale, 0.25f, 2.0f, "%.2fx")) {
         renderer.setRenderScale(m_prefs.renderScale);
         changed = true;
     }
+    int shadows = m_prefs.shadowQuality;
+    if (ImGui::Combo("Shadows", &shadows, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames))) {
+        m_prefs.shadowQuality = shadows;
+        renderer.setShadowQuality(static_cast<shockwave::ShadowQuality>(shadows));
+        changed = true;
+    }
+    ImGui::SetItemTooltip("Shadow quality in the editor's viewport. The player uses the project's setting");
     if (ImGui::SliderFloat("Field of view", &m_prefs.fieldOfView, 20.0f, 140.0f, "%.0f\xc2\xb0")) {
         m_camera.fovY = glm::radians(m_prefs.fieldOfView);
         changed = true;
@@ -561,6 +670,18 @@ void Editor::drawProjectSettingsWindow() {
         }
         gui::propertyLabel("Player VSync");
         ImGui::Checkbox("##vsync", &m_projectEdit.vsync);
+        gui::propertyLabel("Player frame limit");
+        float limit = static_cast<float>(m_projectEdit.frameLimit);
+        if (ImGui::SliderFloat("##frame_limit", &limit, 0.0f, 360.0f, limit > 0 ? "%.0f fps" : "none"))
+            m_projectEdit.frameLimit = limit > 0.0f ? std::max(10.0, std::round(static_cast<double>(limit))) : 0.0;
+        ImGui::SetItemTooltip("A precise frame cap for the player; 0 is none (frame_limit)");
+        gui::propertyLabel("Player low latency");
+        ImGui::Checkbox("##low_latency", &m_projectEdit.lowLatency);
+        ImGui::SetItemTooltip("Wait for each frame to reach the screen before the next (low_latency)");
+        gui::propertyLabel("Player shadows");
+        ImGui::Combo(
+            "##shadow_quality", &m_projectEdit.shadowQuality, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames));
+        ImGui::SetItemTooltip("Shadow quality the player starts with; player --shadows overrides it (shadow_quality)");
         gui::propertyLabel("Game module");
         ImGui::BeginDisabled();
         std::string module = m_projectEdit.gameModule;
@@ -578,7 +699,10 @@ void Editor::drawProjectSettingsWindow() {
 
     const bool changed = m_projectEdit.name != m_project.name || m_projectEdit.startupScene != m_project.startupScene ||
                          m_projectEdit.tickRate != m_project.tickRate || m_projectEdit.width != m_project.width ||
-                         m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync;
+                         m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync ||
+                         m_projectEdit.frameLimit != m_project.frameLimit ||
+                         m_projectEdit.lowLatency != m_project.lowLatency ||
+                         m_projectEdit.shadowQuality != m_project.shadowQuality;
     ImGui::BeginDisabled(!changed || m_projectEdit.name.empty() || playing());
     if (gui::button("Save")) {
         std::string err;

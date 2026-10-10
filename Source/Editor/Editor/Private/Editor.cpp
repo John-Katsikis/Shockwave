@@ -2,8 +2,8 @@
 // the editor core is in Editor*.cpp and PlayInEditor.cpp; panels in *Panel.cpp.
 #include "Editor.h"
 
-#include <Audio/Audio.h>
 #include <Assets/BuiltinAssets.h>
+#include <Audio/Audio.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -123,7 +123,10 @@ void Editor::applyViewPreferences() {
     m_camera.moveSpeed = m_prefs.cameraSpeed;
     m_camera.fovY = glm::radians(std::clamp(m_prefs.fieldOfView, 20.0f, 140.0f));
     engine().renderer().setVsync(m_prefs.vsync);
+    engine().setFrameLimit(m_prefs.frameLimit);
+    engine().setLowLatency(m_prefs.lowLatency);
     engine().renderer().setRenderScale(m_prefs.renderScale);
+    engine().renderer().setShadowQuality(static_cast<shockwave::ShadowQuality>(m_prefs.shadowQuality));
 }
 
 void Editor::savePreferences() {
@@ -138,8 +141,6 @@ void Editor::onGui() {
     drainConsole();
     ImGuizmo::BeginFrame();
     const float dt = ImGui::GetIO().DeltaTime;
-    m_frameTimes[m_frameTimeIndex] = dt * 1000.0f;
-    m_frameTimeIndex = (m_frameTimeIndex + 1) % m_frameTimes.size();
 
     handleDialogResults();
     if (!m_hasProject) {

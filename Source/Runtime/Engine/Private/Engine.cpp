@@ -1,11 +1,13 @@
 #include <Engine/Engine.h>
 
 #include <Core/Log.h>
+#include <Core/Profile.h>
 #include <UI/Gui.h>
 
 #include <imgui_impl_sdl3.h>
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -13,8 +15,38 @@
 
 namespace shockwave {
 
+namespace {
+
+// Wayland doesn't let programs place their own windows, so Dear ImGui can't put a panel
+// where it was dropped. When windows must leave the main one, use X11 through XWayland
+// instead, unless the user picked a video driver themselves.
+bool preferX11ForGuiViewports() {
+#ifdef __linux__
+    if (SDL_getenv("SDL_VIDEO_DRIVER") || !SDL_getenv("WAYLAND_DISPLAY") || !SDL_getenv("DISPLAY")) return false;
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+    return true;
+#else
+    return false;
+#endif
+}
+
+}   // namespace
+
 Engine::Engine(const EngineConfig& config) : m_config(config) {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    // Closing the main window is handled as a quit request below; SDL's own quit is left
+    // for signals (Ctrl+C), so the request isn't made twice.
+    SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
+    bool initialized = false;
+    if (m_config.gui && m_config.guiViewports && preferX11ForGuiViewports()) {
+        initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+        if (initialized) {
+            SW_LOG(LogEngine, Info, "Wayland session: using XWayland so panels can be dragged out of the main window");
+        } else {   // no XWayland, or SDL built without X11: stay on Wayland
+            SW_LOG(LogEngine, Warning, "XWayland unavailable ({}): panels stay inside the main window", SDL_GetError());
+            SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+        }
+    }
+    if (!initialized && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     }
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
@@ -22,6 +54,8 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_renderer = std::make_unique<Renderer>(*m_window, *m_jobs, m_config.window.vsync);
     m_input = std::make_unique<Input>(m_window.get());
     m_assets = std::make_unique<Assets>();
+    setFrameLimit(m_config.frameLimit);
+    setLowLatency(m_config.lowLatency);
     if (m_config.gui) initGui();
     SW_LOG(
         LogEngine, Info, "rendering with Vulkan on {}, {} worker threads", m_renderer->gpuName(),
@@ -46,6 +80,7 @@ void Engine::initGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
+    if (m_config.guiViewports) io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
     // Layout and window state persist in the user's config folder
     // (~/.local/share/Shockwave/<app>/ on Linux), not wherever the app was started from.
@@ -64,6 +99,12 @@ void Engine::initGui() {
 
     ImGui_ImplSDL3_InitForVulkan(m_window->handle());
     m_renderer->initGui();
+    if (m_config.guiViewports && !(io.BackendFlags & ImGuiBackendFlags_PlatformHasViewports)) {
+        io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+        SW_LOG(
+            LogEngine, Warning, "the {} video driver can't place windows: panels stay inside the main window",
+            SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "current");
+    }
 }
 
 namespace {
@@ -144,6 +185,27 @@ void Engine::shutdownGui() {
     ImGui::DestroyContext();
 }
 
+void Engine::setFrameLimit(double fps) {
+    m_limiter.setTargetFps(fps);
+    updatePacingPeriod();
+}
+
+void Engine::setLowLatency(bool lowLatency) {
+    m_lowLatency = lowLatency;
+    m_renderer->setLowLatency(lowLatency);
+}
+
+// The period frames should arrive at, so the smoother can snap to it: the frame cap's, or
+// with vsync the display's, whichever is slower.
+void Engine::updatePacingPeriod() {
+    double period = m_limiter.targetFps() > 0.0 ? 1.0 / m_limiter.targetFps() : 0.0;
+    if (m_renderer && m_renderer->vsync()) {
+        const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(m_window->handle()));
+        if (mode && mode->refresh_rate > 0.0f) period = std::max(period, 1.0 / mode->refresh_rate);
+    }
+    m_smoother.setPeriod(period);
+}
+
 void Engine::run(Application& app) {
     // Fixed-timestep loop: simulation ticks at tickRate, rendering runs as fast as vsync allows.
     const double maxFrameTime = 0.25;   // avoid the "spiral of death" after a long stall
@@ -161,6 +223,16 @@ void Engine::run(Application& app) {
     app.onStart();
 
     while (m_running) {
+        // Pacing first, input right after: the less time between reading input and the
+        // frame reaching the screen, the more responsive it feels.
+        {
+            SW_PROFILE_SCOPE("Frame limiter");
+            m_limiter.wait();
+        }
+        const float presentMs = m_lowLatency ? m_renderer->waitForPresent() : 0.0f;
+        const Uint64 frameStart = SDL_GetPerformanceCounter();
+        SW_PROFILE_SCOPE("Frame");
+
         m_input->beginFrame();
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -173,25 +245,38 @@ void Engine::run(Application& app) {
             case SDL_EVENT_KEY_DOWN:
                 if (m_config.quitOnEscape && event.key.scancode == SDL_SCANCODE_ESCAPE) m_running = false;
                 break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: m_renderer->onResize(); break;
+            // Panels dragged out of the main window are windows too: only the main one's
+            // events concern the engine; Dear ImGui handles the others.
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                // Closing the main window quits, even with panel windows still open.
+                if (event.window.windowID == SDL_GetWindowID(m_window->handle()) && app.onQuitRequested())
+                    m_running = false;
+                break;
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                if (event.window.windowID == SDL_GetWindowID(m_window->handle())) m_renderer->onResize();
+                break;
             default: break;
             }
         }
 
-        const Uint64 now = SDL_GetPerformanceCounter();
-        double frameTime = static_cast<double>(now - previous) / freq;
-        previous = now;
-        if (frameTime > maxFrameTime) frameTime = maxFrameTime;
+        // Start of the previous frame to the start of this one.
+        const double rawFrameTime = static_cast<double>(frameStart - previous) / freq;
+        previous = frameStart;
+        double frameTime = std::min(m_smoother.smooth(rawFrameTime), maxFrameTime);
         accumulator += frameTime;
         m_input->update(frameTime);   // controllers, rumble, and the bindings file
 
         // Read every frame: an editor switching projects can change the tick rate.
         const double dt = 1.0 / m_config.tickRate;
         while (accumulator >= dt) {
+            SW_PROFILE_SCOPE("Fixed tick");
             app.onUpdate(dt);
             accumulator -= dt;
         }
-        app.onFrame(frameTime);
+        {
+            SW_PROFILE_SCOPE("Application frame");
+            app.onFrame(frameTime);
+        }
 
         if (m_renderer->beginFrame()) {
             if (m_config.gui) {
@@ -202,15 +287,31 @@ void Engine::run(Application& app) {
                 app.onGui();
                 ImGui::Render();
             }
-            app.onRender(*m_renderer, accumulator / dt);
-            m_renderer->endFrame();
+            {
+                SW_PROFILE_SCOPE("Gather draws");
+                app.onRender(*m_renderer, accumulator / dt);
+            }
+            {
+                SW_PROFILE_SCOPE("Record and submit");
+                m_renderer->endFrame();
+            }
+            if (m_config.gui) {
+                SW_PROFILE_SCOPE("Detached GUI windows");
+                m_renderer->renderGuiWindows();
+            }
         } else {
             SDL_Delay(10);   // minimized: don't spin the CPU
         }
 
-        fpsTimer += frameTime;
+        const Uint64 frameEnd = SDL_GetPerformanceCounter();
+        m_frameStats.add(
+            {static_cast<float>(static_cast<double>(frameEnd - frameStart) * 1000.0 / freq), m_renderer->gpuFrameMs(),
+             static_cast<float>(rawFrameTime * 1000.0), presentMs});
+
+        fpsTimer += rawFrameTime;
         ++fpsFrames;
         if (fpsTimer >= 0.5) {
+            updatePacingPeriod();   // the window may have moved to another display
             m_fps = fpsFrames / fpsTimer;
             if (m_config.showFpsInTitle) {
                 char title[256];
@@ -227,6 +328,7 @@ void Engine::run(Application& app) {
         if (m_config.maxFrames > 0 && ++frames >= m_config.maxFrames) {
             m_running = false;
         }
+        SW_PROFILE_FRAME();
     }
 
     m_renderer->waitIdle();

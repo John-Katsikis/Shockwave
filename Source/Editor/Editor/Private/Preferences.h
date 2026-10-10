@@ -16,8 +16,12 @@ struct Preferences {
     bool reopenLastProject = true;
 
     std::string theme;   // a .swtheme path; empty uses the project's theme
+    bool detachablePanels = true;   // panels can be dragged out of the main window (applies at startup)
     bool vsync = true;
+    float frameLimit = 0.0f;   // the editor's own frame cap, fps; 0 = none
+    bool lowLatency = false;
     float renderScale = 1.0f;
+    int shadowQuality = 3;   // shockwave::ShadowQuality: 0 off .. 4 ultra
     float masterVolume = 1.0f;
 
     float cameraSpeed = 8.0f;

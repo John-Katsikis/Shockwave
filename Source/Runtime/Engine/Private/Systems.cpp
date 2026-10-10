@@ -57,6 +57,8 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
     lighting.groundAmbient = glm::vec3(environment.groundColor) * environment.ambientIntensity;
     lighting.exposure = environment.exposure;
     lighting.tonemapper = static_cast<LightingDesc::Tonemapper>(environment.tonemapper);
+    lighting.shadowDistance = environment.shadowDistance;
+    lighting.shadowCascades = static_cast<uint32_t>(std::clamp(environment.shadowCascades, 1, 4));
     renderer.setLighting(lighting);
 
     const float a = static_cast<float>(alpha);
@@ -88,6 +90,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             material.roughness = m.roughness;
             material.metallic = m.metallic;
             material.emissive = glm::vec3(m.emissive) * m.emissiveIntensity;
+            material.castShadows = m.castShadows;
             renderer.drawMesh(m.mesh, model, m.texture, m.tint, material);
         },
         256);
@@ -120,6 +123,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         options.roughness = material.roughness;
                         options.metallic = material.metallic;
                         options.emissive = material.emissive;
+                        options.castShadows = instance.castShadows;
                         renderer.drawMesh(
                             asset->meshes[index], model * node.world, texture, material.baseColor * instance.tint,
                             options);
@@ -140,6 +144,10 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
         const float outer = glm::radians(std::clamp(light.spotAngle, 1.0f, 89.0f));
         desc.cosOuter = std::cos(outer);
         desc.cosInner = std::cos(outer * (1.0f - std::clamp(light.spotSoftness, 0.0f, 1.0f)));
+        desc.castShadows = light.castShadows;
+        desc.shadowStrength = light.shadowStrength;
+        desc.shadowSoftness = light.shadowSoftness;
+        desc.shadowBias = light.shadowBias;
         renderer.addLight(desc);
     });
 }

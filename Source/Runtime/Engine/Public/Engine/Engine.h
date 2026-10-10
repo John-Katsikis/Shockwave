@@ -2,6 +2,7 @@
 
 #include <Assets/Assets.h>
 #include <Assets/BuiltinAssets.h>
+#include <Core/FramePacing.h>
 #include <Core/Jobs.h>
 #include <Engine/Camera.h>
 #include <Engine/Components.h>
@@ -70,6 +71,13 @@ struct EngineConfig {
     bool showFpsInTitle = true;
     bool quitOnEscape = true;
     bool gui = false;   // Dear ImGui on top of the scene; see Application::onGui
+    // GUI windows can be dragged out of the main window to anywhere on the desktop, each
+    // becoming a window of its own (Dear ImGui multi-viewports). Needs a platform that can
+    // place windows: on a Wayland session the engine runs through XWayland for this.
+    bool guiViewports = false;
+    // Frame pacing (see Engine::setFrameLimit and setLowLatency).
+    double frameLimit = 0.0;   // frames per second; 0 = no limit beyond vsync
+    bool lowLatency = false;
     // The UI theme, looked for in the working folder, then next to the executable. Saved
     // changes to it apply straight away. Empty, or missing, uses the built-in theme.
     std::string guiTheme = "themes/default.swtheme";
@@ -97,6 +105,21 @@ public:
     const std::string& guiThemePath() const { return m_themePath; }   // empty: built-in theme
 
     double fps() const { return m_fps; }
+
+    // ---- Frame pacing ----
+    // Caps the frame rate precisely (sleep, then spin to the deadline). 0 = no cap beyond
+    // vsync. A cap just under the display rate with vsync off gives steady frames with low
+    // latency. Main thread.
+    void setFrameLimit(double fps);
+    double frameLimit() const { return m_limiter.targetFps(); }
+    // Low latency: before reading input, wait until the previous frame is on screen, so no
+    // frames queue up between input and display (like Nvidia Reflex). Costs some throughput
+    // when the GPU is the bottleneck. Main thread.
+    void setLowLatency(bool lowLatency);
+    bool lowLatency() const { return m_lowLatency; }
+    // The last few thousand frames: CPU, GPU and present timing, with 1% and 0.1% lows.
+    const FrameStats& frameStats() const { return m_frameStats; }
+    FrameStats& frameStats() { return m_frameStats; }   // to clear it, say after loading
     double tickRate() const { return m_config.tickRate; }
     // Changes the simulation rate from the next frame on. Main thread.
     void setTickRate(double ticksPerSecond);
@@ -117,6 +140,11 @@ private:
     std::atomic<float> m_masterVolume{1};
     bool m_running = false;
     double m_fps = 0.0;
+    FrameLimiter m_limiter;
+    FrameTimeSmoother m_smoother;
+    FrameStats m_frameStats;
+    bool m_lowLatency = false;
+    void updatePacingPeriod();
 
     // UI theme hot reload
     std::string m_themePath;
