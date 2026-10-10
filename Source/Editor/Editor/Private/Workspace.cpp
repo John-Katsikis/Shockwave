@@ -163,6 +163,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Look through scene camera", "F8", &m_viewThroughCamera);
             ImGui::EndMenu();
         }
+        drawBuildMenu();
         if (ImGui::BeginMenu("Window")) {
             ImGui::MenuItem("Hierarchy", nullptr, &m_showHierarchy);
             ImGui::MenuItem("Inspector", nullptr, &m_showInspector);
@@ -271,7 +272,7 @@ void Editor::drawCommandBar() {
             ImGui::TextColored(color, "%s", state);
             if (!m_gameModuleMatches) {
                 ImGui::SetItemTooltip(
-                    "The project wants gameplay module \"%s\"; rebuild the editor with its game module",
+                    "The project's game module \"%s\" isn't built. Build > Build and reload game code builds it",
                     m_project.gameModule.c_str());
             }
         }
@@ -467,6 +468,19 @@ void Editor::drawStatsWindow() {
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
 
+    ImGui::SeparatorText("Plugins");
+    ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());
+    if (!renderer.backendFile().empty()) ImGui::SetItemTooltip("%s", renderer.backendFile().string().c_str());
+    if (m_gameModule) {
+        ImGui::Text("Game module: %s", std::string(m_gameModule->id()).c_str());
+        ImGui::SetItemTooltip(
+            "%s", m_gameModule->reloadable() ? m_gameModule->file().string().c_str() : "built into the editor");
+    } else {
+        ImGui::TextColored(
+            gui::semanticColor(gui::currentTheme().warning), "Game module: %s isn't built",
+            m_hasProject ? m_project.gameModule.c_str() : "none");
+    }
+
     ImGui::SeparatorText("Lighting");
     if (renderer.lightCount() == 0) {
         ImGui::TextDisabled("No lights: a default sun is used. Create > Light adds one.");
@@ -611,6 +625,25 @@ void Editor::drawPreferencesWindow() {
         changed = true;
     }
     ImGui::SetItemTooltip("Shadow quality in the editor's viewport. The player uses the project's setting");
+
+    ImGui::SeparatorText("Plugins");
+    if (ImGui::BeginCombo("Renderer", renderer.backendName().c_str())) {
+        for (const std::string& name : shockwave::Renderer::availableBackends()) {
+            if (name == "null") continue;   // headless: can't draw the editor
+            if (ImGui::Selectable(name.c_str(), name == renderer.backendName()) && name != renderer.backendName()) {
+                engine().switchRenderer(name);
+                m_prefs.renderer = name;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("The renderer plugin; switching keeps meshes, textures and settings");
+    changed |= ImGui::Checkbox("Reload game code when rebuilt", &m_prefs.autoReloadGameCode);
+    if (ImGui::Checkbox("Reload renderer when rebuilt", &m_prefs.autoReloadRenderer)) {
+        engine().setAutoReloadRenderer(m_prefs.autoReloadRenderer);
+        changed = true;
+    }
     if (ImGui::SliderFloat("Field of view", &m_prefs.fieldOfView, 20.0f, 140.0f, "%.0f\xc2\xb0")) {
         m_camera.fovY = glm::radians(m_prefs.fieldOfView);
         changed = true;
@@ -682,12 +715,19 @@ void Editor::drawProjectSettingsWindow() {
         ImGui::Combo(
             "##shadow_quality", &m_projectEdit.shadowQuality, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames));
         ImGui::SetItemTooltip("Shadow quality the player starts with; player --shadows overrides it (shadow_quality)");
+        gui::propertyLabel("Player renderer");
+        if (ImGui::BeginCombo("##renderer", m_projectEdit.renderer.c_str())) {
+            for (const std::string& name : shockwave::Renderer::availableBackends())
+                if (ImGui::Selectable(name.c_str(), name == m_projectEdit.renderer)) m_projectEdit.renderer = name;
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("The renderer plugin the player starts with; null runs headless (renderer)");
         gui::propertyLabel("Game module");
         ImGui::BeginDisabled();
         std::string module = m_projectEdit.gameModule;
         ImGui::InputText("##module", &module);
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Matches the game module compiled into the editor; see docs/Projects.md");
+        ImGui::SetItemTooltip("Loaded from bin/modules/game_<id>; see docs/Plugins.md");
         gui::propertyLabel("Assets");
         ImGui::TextDisabled("%s", m_project.relative(m_projectEdit.assetFolder).c_str());
         gui::propertyLabel("Scenes");
@@ -697,12 +737,12 @@ void Editor::drawProjectSettingsWindow() {
     ImGui::TextDisabled("%s", m_project.file.string().c_str());
     ImGui::Spacing();
 
-    const bool changed = m_projectEdit.name != m_project.name || m_projectEdit.startupScene != m_project.startupScene ||
-                         m_projectEdit.tickRate != m_project.tickRate || m_projectEdit.width != m_project.width ||
-                         m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync ||
-                         m_projectEdit.frameLimit != m_project.frameLimit ||
-                         m_projectEdit.lowLatency != m_project.lowLatency ||
-                         m_projectEdit.shadowQuality != m_project.shadowQuality;
+    const bool changed =
+        m_projectEdit.name != m_project.name || m_projectEdit.startupScene != m_project.startupScene ||
+        m_projectEdit.tickRate != m_project.tickRate || m_projectEdit.width != m_project.width ||
+        m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync ||
+        m_projectEdit.frameLimit != m_project.frameLimit || m_projectEdit.lowLatency != m_project.lowLatency ||
+        m_projectEdit.shadowQuality != m_project.shadowQuality || m_projectEdit.renderer != m_project.renderer;
     ImGui::BeginDisabled(!changed || m_projectEdit.name.empty() || playing());
     if (gui::button("Save")) {
         std::string err;

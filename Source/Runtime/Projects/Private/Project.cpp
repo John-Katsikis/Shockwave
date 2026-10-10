@@ -58,8 +58,8 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
             versionSeen = true;
         } else {
             if (!versionSeen) return fail("expected shockwave_project 1 first");
-            if (key == "name" || key == "game_module") {
-                auto& value = key == "name" ? result.name : result.gameModule;
+            if (key == "name" || key == "game_module" || key == "renderer") {
+                auto& value = key == "name" ? result.name : key == "renderer" ? result.renderer : result.gameModule;
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
             } else if (key == "startup_scene" || key == "assets" || key == "scenes" || key == "theme") {
                 std::string value;
@@ -139,6 +139,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.frameLimit > 0) out << "frame_limit " << project.frameLimit << "\n";
     if (project.lowLatency) out << "low_latency true\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";
+    if (project.renderer != "vulkan") out << "renderer " << std::quoted(project.renderer) << "\n";
     const fs::path temp = project.file.string() + ".tmp";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);

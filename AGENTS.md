@@ -31,7 +31,10 @@ The engine is split into modules the way Unreal's is; read `docs/Architecture.md
   `Source/Editor/`, executables in `Source/Programs/`, the sample game in `Games/Sample/`.
 - A module only depends on modules listed before it in `Source/Runtime/CMakeLists.txt`,
   and declares them in its `CMakeLists.txt`. Never include another module's `Private/`
-  headers. Vulkan stays inside RHI and Renderer.
+  headers. Vulkan stays inside RHI and the Vulkan renderer plugin
+  (`Source/Plugins/RendererVulkan`); everything else uses `Renderer`.
+- Renderers are plugins (`shockwave_plugin()`), game code is a game module
+  (`shockwave_game_module()`); both hot reload. See `docs/Plugins.md`.
 - New files go in the module they belong to; a new module gets `shockwave_module()`.
 - Game code uses GameMode/GameInstance/Subsystems on top of the ECS: components hold
   data, systems in a Schedule do the work in parallel. No per-entity virtual Tick.

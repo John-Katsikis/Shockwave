@@ -42,6 +42,7 @@ vsync true
 frame_limit 0      # optional: cap in frames per second, 0 = none
 low_latency false  # optional: wait for each frame to reach the screen before the next
 shadow_quality high  # optional: off, low, medium, high or ultra
+renderer "vulkan"    # optional: the renderer plugin the player starts with
 ```
 
 The version, name, module ID, and existing startup scene are required. The content and
@@ -134,21 +135,30 @@ without a window), and keep run-long services in its `subsystems()`. Leaving
 `createGameInstance` empty gives a plain `GameInstance`, which plays with a `GameMode`
 that runs only the engine's systems.
 
-Select that source and its project at configure time and rebuild both hosts:
+Build it as a game module: a folder with a `CMakeLists.txt` that names the module's id
+and sources, listed in `SHOCKWAVE_GAMES` at configure time (`;`-separated, the sample is
+there by default):
+
+```cmake
+# MyGame/CMakeLists.txt
+shockwave_game_module(my_game SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/Source/MyGame.cpp)
+```
 
 ```sh
-cmake -S . -B build -DSHOCKWAVE_GAME_SOURCE=/absolute/path/to/MyGame.cpp \
+cmake -S . -B build "-DSHOCKWAVE_GAMES=$PWD/Games/Sample;/absolute/path/to/MyGame" \
       -DSHOCKWAVE_GAME_PROJECT=/absolute/path/to/MyGame.swproject
 cmake --build build -j
 ```
 
-The same static `ShockwaveGame` library (`Games/Sample/CMakeLists.txt`) links into
-editor and player. `SHOCKWAVE_GAME_PROJECT` is the project the player runs when it
-finds none. The manifest's `game_module` must match the module's `id`; a mismatch
-fails in the player before creating a window, and turns Play off in the editor.
-This is a compiled C++ workflow: one selected module per build. Runtime loading or
-hot reloading game libraries is a later feature. Add any extra source files to the
-`ShockwaveGame` CMake target as your game grows.
+That builds `build/bin/modules/game_my_game.so`. The editor and the player load the
+module the project's `game_module` names, so one editor opens any project whose module
+is built. A project whose module isn't built still opens for editing, with Play off and
+the build command in the Console; the editor loads the module as soon as it appears.
+`SHOCKWAVE_GAME_PROJECT` is the project the player runs when it finds none.
+
+While the editor runs, rebuild the module (Build > Build and reload game code, Ctrl+Alt+B,
+or `cmake --build build --target game_my_game` from anywhere) and it reloads in place,
+keeping the scene and undo history. See [Plugins](Plugins.md) for what survives a reload.
 
 ## Lifecycle
 

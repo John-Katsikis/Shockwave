@@ -4,7 +4,7 @@
 
 namespace shockwave {
 
-void Renderer::Impl::drawMesh(
+void VulkanRenderer::Impl::drawMesh(
     MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
     const DrawMaterial& material) {
     if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
@@ -49,13 +49,13 @@ void Renderer::Impl::drawMesh(
     }
 }
 
-void Renderer::Impl::clearDrawLists() {
+void VulkanRenderer::Impl::clearDrawLists() {
     for (DrawList& list : drawLists) list.commands.clear();
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
 }
 
-void Renderer::Impl::recreateSwapchain() {
+void VulkanRenderer::Impl::recreateSwapchain() {
     vkDeviceWaitIdle(context->device());
     destroyRenderFinishedSemaphores();
     destroyImage(sceneColor);
@@ -68,7 +68,7 @@ void Renderer::Impl::recreateSwapchain() {
     needsSceneResize = false;
 }
 
-bool Renderer::Impl::beginFrame() {
+bool VulkanRenderer::Impl::beginFrame() {
     clearDrawLists();
     {
         std::lock_guard lock(lightMutex);
@@ -115,7 +115,7 @@ bool Renderer::Impl::beginFrame() {
     return true;
 }
 
-void Renderer::Impl::readTimestamps(Frame& f) {
+void VulkanRenderer::Impl::readTimestamps(Frame& f) {
     if (f.timedPasses.empty()) return;
     std::array<uint64_t, vk::RenderGraph::kMaxTimedPasses + 1> ticks{};
     const uint32_t count = static_cast<uint32_t>(f.timedPasses.size()) + 1;
@@ -133,7 +133,7 @@ void Renderer::Impl::readTimestamps(Frame& f) {
     f.timedPasses.clear();
 }
 
-float Renderer::Impl::waitForPresent() {
+float VulkanRenderer::Impl::waitForPresent() {
     if (frameNumber == 0) return 0.0f;
     SW_PROFILE_SCOPE("Wait for present (low latency)");
     VkDevice device = context->device();
@@ -173,7 +173,7 @@ float Renderer::Impl::waitForPresent() {
     return interval;
 }
 
-void Renderer::Impl::setSceneViewport(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::setSceneViewport(VkCommandBuffer cmd) {
     const VkExtent2D extent = sceneColor.extent;
     // Negative height flips Y so standard Y-up projection matrices work unchanged.
     VkViewport viewport{0.0f,
@@ -187,7 +187,7 @@ void Renderer::Impl::setSceneViewport(VkCommandBuffer cmd) {
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 }
 
-void Renderer::Impl::recordGrid(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::recordGrid(VkCommandBuffer cmd) {
     if (!grid.enabled) return;
     GridPushConstants push;
     push.viewProjection = viewProjection;
@@ -201,7 +201,7 @@ void Renderer::Impl::recordGrid(VkCommandBuffer cmd) {
     vkCmdDraw(cmd, 6, 1, 0, 0);
 }
 
-void Renderer::Impl::prepareDraws(Frame& f) {
+void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     auto& draws = gatheredDraws;
     draws.clear();
     uint32_t total = 0;
@@ -231,7 +231,7 @@ void Renderer::Impl::prepareDraws(Frame& f) {
         "vmaFlushAllocation");
 }
 
-void Renderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
+void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     if (gatheredDraws.empty()) return;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
@@ -257,7 +257,7 @@ void Renderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     }
 }
 
-void Renderer::Impl::endFrame() {
+void VulkanRenderer::Impl::endFrame() {
     Frame& f = frames[frameIndex];
     VkImage image = swapchain->image(imageIndex);
     VkCommandBuffer cmd = f.cmd;
@@ -342,7 +342,7 @@ void Renderer::Impl::endFrame() {
     frameIndex = (frameIndex + 1) % kFramesInFlight;
 }
 
-void Renderer::Impl::writeFrameData(Frame& f) {
+void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     FrameData header{};
     header.cameraPosition = cameraPosition;
     header.skyAmbient = lighting.skyAmbient;
@@ -390,7 +390,7 @@ void Renderer::Impl::writeFrameData(Frame& f) {
         vmaFlushAllocation(context->allocator(), f.frameBuffer.allocation, 0, VK_WHOLE_SIZE), "vmaFlushAllocation");
 }
 
-void Renderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImage) {
+void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImage) {
     graph.reset();
     using vk::ImageUse;
     const auto color =
@@ -447,7 +447,7 @@ void Renderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImag
     graph.addPass("present", {{backbuffer, ImageUse::Present}}, nullptr);
 }
 
-void Renderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
+void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachment.imageView = sceneColor.view;
@@ -478,7 +478,7 @@ void Renderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     vkCmdEndRendering(cmd);
 }
 
-void Renderer::Impl::recordTonemap(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::recordTonemap(VkCommandBuffer cmd) {
     VkRenderingAttachmentInfo target{};
     target.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     target.imageView = displayColor.view;
@@ -513,7 +513,7 @@ void Renderer::Impl::recordTonemap(VkCommandBuffer cmd) {
     vkCmdEndRendering(cmd);
 }
 
-void Renderer::Impl::recordCopyToWindow(VkCommandBuffer cmd, VkImage swapchainImage) {
+void VulkanRenderer::Impl::recordCopyToWindow(VkCommandBuffer cmd, VkImage swapchainImage) {
     // Same size; a blit rather than a copy because the formats differ (RGBA vs BGRA).
     const VkExtent2D out = swapchain->extent();
     VkImageBlit2 region{};

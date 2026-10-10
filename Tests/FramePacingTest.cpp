@@ -110,10 +110,11 @@ static void testProjectSettings(const std::filesystem::path& source) {
     project.frameLimit = 144;
     project.lowLatency = true;
     project.shadowQuality = 1;
+    project.renderer = "null";
     CHECK(saveProject(project, error));
     Project again;
     CHECK(loadProject(copy, again, error));
-    CHECK(again.frameLimit == 144 && again.lowLatency && again.shadowQuality == 1);
+    CHECK(again.frameLimit == 144 && again.lowLatency && again.shadowQuality == 1 && again.renderer == "null");
     CHECK(parseShadowQuality("ultra") == 4 && parseShadowQuality("extreme") < 0);
     std::filesystem::remove(copy);
 }

@@ -54,3 +54,31 @@ target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
 shockwave_warnings(frame_pacing_test)
 add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Plugins: renderer swapping and game code hot reload (modular builds only, where they
+# are libraries).
+if(SHOCKWAVE_MODULAR)
+    foreach(version 1 2)
+        add_library(reload_module_v${version} MODULE fixtures/HotReload/ReloadModule.cpp
+                    ${PROJECT_SOURCE_DIR}/Source/Runtime/GameFramework/Entry/GameModuleEntry.cpp)
+        target_link_libraries(reload_module_v${version} PRIVATE Shockwave::GameFramework)
+        target_compile_definitions(reload_module_v${version} PRIVATE RELOAD_VERSION=${version})
+        set_target_properties(reload_module_v${version} PROPERTIES PREFIX "" DEBUG_POSTFIX ""
+                              LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(reload_module_v${version} PRIVATE -fno-gnu-unique)
+        endif()
+    endforeach()
+    add_executable(hot_reload_test HotReloadTest.cpp)
+    target_link_libraries(hot_reload_test PRIVATE Shockwave::GameFramework)
+    shockwave_warnings(hot_reload_test)
+    add_test(NAME hot_reload COMMAND hot_reload_test $<TARGET_FILE:reload_module_v1> $<TARGET_FILE:reload_module_v2>)
+
+    add_executable(renderer_swap_test RendererSwapTest.cpp)
+    target_link_libraries(renderer_swap_test PRIVATE Shockwave::Engine)
+    shockwave_warnings(renderer_swap_test)
+    shockwave_link_plugins(renderer_swap_test)
+    add_test(NAME renderer_swap COMMAND renderer_swap_test)
+    set_tests_properties(renderer_swap PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                         TIMEOUT 60)
+endif()

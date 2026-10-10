@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 
 // Shockwave Editor.
@@ -17,6 +18,7 @@
 //   --assets folder        import this folder instead of the project's assets
 //   --theme file.swtheme   UI theme for this run (Preferences sets the usual one)
 //   --uncapped             vsync off for this run
+//   --renderer name        renderer plugin to start with (Build > Renderer sets the usual one)
 //   --content-folder path  show a folder inside Content on startup
 //   --preferences          show the Preferences window on startup
 //   --prefs file           preferences file to use instead of the user's (tests)
@@ -35,8 +37,8 @@ int main(int argc, char** argv) {
 
         editor::EditorOptions options;
         options.prefsPath = editor::defaultPreferencesPath();
-        options.gameModule = &shockwave::projectGameModule();
         bool uncapped = false;
+        std::string renderer;   // --renderer
         auto integer = [](const std::string& text, const char* flag, int minimum) {
             int value = 0;
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -69,13 +71,16 @@ int main(int argc, char** argv) {
                 options.selectOnStart = integer(value(), "--select", 0);
             else if (arg == "--uncapped")
                 uncapped = true;
+            else if (arg == "--renderer")
+                renderer = value();
             else if (arg == "--play")
                 options.playOnStart = true;
             else if (arg == "--help") {
                 std::puts(
                     "editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
                     "       [--content-folder path] [--preferences]\n"
-                    "       [--theme file] [--uncapped] [--prefs file] [--play] [--select N] [--frames N]");
+                    "       [--theme file] [--uncapped] [--renderer name] [--prefs file] [--play] [--select N]\n"
+                    "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;
@@ -99,8 +104,22 @@ int main(int argc, char** argv) {
         config.window.vsync = options.prefs.vsync && !uncapped;
         config.guiViewports = options.prefs.detachablePanels;
         if (uncapped) options.prefs.vsync = false, options.prefs.frameLimit = 0;
+        // The renderer can be swapped and reloaded while the editor runs (Build menu).
+        config.swappableRenderer = true;
+        if (!renderer.empty()) options.prefs.renderer = renderer;
+        config.renderer = options.prefs.renderer;
 
-        shockwave::Engine engine(config);
+        std::unique_ptr<shockwave::Engine> started;
+        try {
+            started = std::make_unique<shockwave::Engine>(config);
+        } catch (const std::exception& e) {
+            if (config.renderer == "vulkan") throw;
+            std::fprintf(
+                stderr, "Editor: the %s renderer didn't start (%s); using vulkan\n", config.renderer.c_str(), e.what());
+            config.renderer = options.prefs.renderer = "vulkan";
+            started = std::make_unique<shockwave::Engine>(config);
+        }
+        shockwave::Engine& engine = *started;
         editor::Editor editor(std::move(options));
         engine.run(editor);
     } catch (const std::exception& e) {

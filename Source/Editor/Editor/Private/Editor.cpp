@@ -46,16 +46,12 @@ void Editor::onStart() {
     // ImGuizmo's colors are sRGB like ImGui's; convert them for the sRGB swapchain too.
     for (ImVec4& c : ImGuizmo::GetStyle().Colors) c = gui::color(c.x, c.y, c.z, c.w);
 
-    // Game types first, so scenes and the inspector know them; then the starter assets
-    // the editor and the player share.
-    const shockwave::GameModule* module = m_options.gameModule;
-    if (module && module->registerTypes) module->registerTypes();
+    // The starter assets the editor and the player share. Game code comes with a project
+    // (loadGameModule); until then Play runs the engine's systems only.
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
-    if (module && module->createAssets) module->createAssets(engine());
     m_assetFolder = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
-    m_gameInstance = shockwave::makeGameInstance(module);
-    m_gameInstance->init(&engine());
-    m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_gameInstance, &engine());
+    createGameInstance();
+    engine().setAutoReloadRenderer(m_prefs.autoReloadRenderer);
     shockwave::FlyCamera::bindDefaultControls(engine().input());
     applyViewPreferences();
 
@@ -95,6 +91,10 @@ void Editor::onStart() {
 void Editor::onShutdown() {
     stopAudioPreview();
     m_audioPreview.reset();
+    if (m_build.thread.joinable()) {
+        if (m_build.running) log("Waiting for the game code build to finish");
+        m_build.thread.join();
+    }
     stop();
     m_session.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
@@ -200,6 +200,7 @@ void Editor::onUpdate(double dt) {
 }
 
 void Editor::onFrame(double dt) {
+    pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
 }
 

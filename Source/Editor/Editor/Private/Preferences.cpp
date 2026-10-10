@@ -95,6 +95,12 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             number(loaded.masterVolume);
         else if (key == "render_scale")
             number(loaded.renderScale);
+        else if (key == "renderer")
+            loaded.renderer = value;
+        else if (key == "auto_reload_game_code")
+            loaded.autoReloadGameCode = parseBool(value);
+        else if (key == "auto_reload_renderer")
+            loaded.autoReloadRenderer = parseBool(value);
         else if (key == "shadow_quality") {
             float quality = static_cast<float>(loaded.shadowQuality);
             number(quality);
@@ -147,6 +153,9 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
         << "detachable_panels = " << flag(prefs.detachablePanels) << "\n"
         << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
+        << "renderer = " << prefs.renderer << "\n"
+        << "auto_reload_game_code = " << flag(prefs.autoReloadGameCode) << "\n"
+        << "auto_reload_renderer = " << flag(prefs.autoReloadRenderer) << "\n"
         << "shadow_quality = " << prefs.shadowQuality << "   # 0 off, 1 low, 2 medium, 3 high, 4 ultra\n"
         << "\n# Viewport\n"
         << "camera_speed = " << prefs.cameraSpeed << "\n"

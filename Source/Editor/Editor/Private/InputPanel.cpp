@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <format>
+#include <string>
 
 namespace editor {
 
@@ -34,10 +36,9 @@ const char* typeName(shockwave::GamepadType type) {
 
 // A -1..1 or 0..1 value as a bar with the number on it.
 void axisBar(const char* label, float value, bool centered) {
-    char text[32];
-    std::snprintf(text, sizeof text, "%s %+.2f", label, static_cast<double>(value));
+    const std::string text = std::format("{} {:+.2f}", label, value);
     const float fraction = centered ? (value + 1.0f) * 0.5f : value;
-    ImGui::ProgressBar(std::clamp(fraction, 0.0f, 1.0f), ImVec2(-1.0f, 0.0f), text);
+    ImGui::ProgressBar(std::clamp(fraction, 0.0f, 1.0f), ImVec2(-1.0f, 0.0f), text.c_str());
 }
 
 // A small label that lights up in the accent color while held.

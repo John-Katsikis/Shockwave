@@ -470,6 +470,9 @@ void Editor::handleShortcuts() {
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, global)) playState() == PlayState::Playing ? stop() : play();
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, global)) pause();
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Comma, global)) m_showPreferences = true;
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_B, global)) buildGameCode();
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Alt | ImGuiKey_R, global) && engine().renderer().swappable())
+        engine().reloadRenderer();
 
     // The rest act on the scene, so not while typing.
     if (io.WantTextInput) return;

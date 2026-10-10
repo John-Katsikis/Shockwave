@@ -27,8 +27,7 @@ namespace player {
 
 void Player::onStart() {
     shockwave::registerAudioComponents();
-    const auto& module = shockwave::projectGameModule();
-    if (module.registerTypes) module.registerTypes();
+    const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
     m_instance = shockwave::makeGameInstance(&module);

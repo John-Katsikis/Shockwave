@@ -69,7 +69,7 @@ float filterRadius(float softness) { return 0.75f + std::clamp(softness, 0.0f, 1
 
 }   // namespace
 
-void Renderer::Impl::createShadowMaps() {
+void VulkanRenderer::Impl::createShadowMaps() {
     shadowSettings = shadowConfig(shadowQuality);
     if (shadowQuality == ShadowQuality::Off) return;
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -98,14 +98,14 @@ void Renderer::Impl::createShadowMaps() {
     vkUpdateDescriptorSets(context->device(), 2, writes, 0, nullptr);
 }
 
-void Renderer::Impl::destroyShadowMaps() {
+void VulkanRenderer::Impl::destroyShadowMaps() {
     destroyImage(cascadeAtlas);
     destroyImage(localAtlas);
     cascadePasses.clear();
     localPasses.clear();
 }
 
-void Renderer::Impl::planShadows(
+void VulkanRenderer::Impl::planShadows(
     const std::vector<LightDesc>& descs, LightData* lightData, uint32_t lightCount, ShadowView* views,
     FrameData& header) {
     SW_PROFILE_SCOPE("Plan shadows");
@@ -301,7 +301,7 @@ void Renderer::Impl::planShadows(
     }
 }
 
-void Renderer::Impl::recordShadows(
+void VulkanRenderer::Impl::recordShadows(
     VkCommandBuffer cmd, Frame& f, const std::vector<ShadowPass>& passes, const vk::Image& atlas) {
     VkRenderingAttachmentInfo depth{};
     depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

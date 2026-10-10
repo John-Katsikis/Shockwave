@@ -47,6 +47,15 @@ Entity World::create() {
     return Entity{index, m_generations[index]};
 }
 
+World World::withoutComponents() const {
+    World result;
+    result.m_generations = m_generations;
+    result.m_alive = m_alive;
+    result.m_free = m_free;
+    result.m_count = m_count;
+    return result;
+}
+
 void World::destroy(Entity e) {
     if (!alive(e)) return;
     for (auto& pool : m_pools) {

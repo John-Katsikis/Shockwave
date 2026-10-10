@@ -216,6 +216,10 @@ void addComponentInfo(ComponentInfo info) {
     }
     registry().push_back(std::move(info));
 }
+
+void removeComponentInfo(std::string_view name, uint32_t id) {
+    std::erase_if(registry(), [&](const ComponentInfo& info) { return info.name == name && info.id == id; });
+}
 }   // namespace detail
 
 const std::vector<ComponentInfo>& registeredComponents() {

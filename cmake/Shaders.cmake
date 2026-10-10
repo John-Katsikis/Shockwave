@@ -50,4 +50,7 @@ function(shockwave_compile_shaders target)
     endforeach()
     add_custom_target(${target}_shaders DEPENDS ${outputs})
     add_dependencies(${target} ${target}_shaders)
+    # Relink when a shader changes, so a renderer plugin's file changes with its shaders
+    # and the editor reloads it (docs/Plugins.md).
+    set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${outputs})
 endfunction()

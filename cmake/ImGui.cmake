@@ -17,7 +17,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui imguizmo)
 
-add_library(imgui STATIC
+# Shared in modular builds: the GUI context is global, and every module and plugin that
+# draws or renders UI must see the same one.
+if(SHOCKWAVE_MODULAR)
+    set(imgui_type SHARED)
+else()
+    set(imgui_type STATIC)
+endif()
+add_library(imgui ${imgui_type}
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp

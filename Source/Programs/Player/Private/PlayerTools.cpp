@@ -2,9 +2,9 @@
 // --schema writes the scene format reference.
 #include "Player.h"
 
-#include <Audio/Audio.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
+#include <Audio/Audio.h>
 #include <Engine/Engine.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
@@ -29,6 +29,15 @@ namespace player {
 
 int Player::check(const std::vector<std::string>& importProblems) {
     std::vector<std::string> problems = importProblems;
+    // The project's renderer must be one the player can load.
+    const auto renderers = shockwave::Renderer::availableBackends();
+    if (std::find(renderers.begin(), renderers.end(), m_project.renderer) == renderers.end()) {
+        std::string have;
+        for (const std::string& name : renderers) have += (have.empty() ? "" : ", ") + name;
+        problems.push_back(
+            m_project.relative(m_project.file) + ": renderer \"" + m_project.renderer + "\" isn't available (" + have +
+            ")");
+    }
     std::vector<fs::path> scenes = m_tool.scenes;
     if (scenes.empty()) {
         std::error_code ec;

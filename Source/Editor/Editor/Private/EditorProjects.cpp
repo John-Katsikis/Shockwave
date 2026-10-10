@@ -51,16 +51,8 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     m_prefs.addRecentProject(m_project.file.string());
     savePreferences();
     log("Opened project " + m_project.name + " (" + m_project.root.string() + ")");
-    // Gameplay is compiled in: a project written for another module still opens for
-    // editing, but Play would run the wrong game, so it's switched off.
-    const std::string_view built = m_options.gameModule ? m_options.gameModule->id : std::string_view();
-    m_gameModuleMatches = m_project.gameModule == built;
-    if (!m_gameModuleMatches) {
-        warn(
-            "This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
-            std::string(built) +
-            "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its game module .cpp> to run it.");
-    }
+    // The project's game code, before any scene: its components must be known to load one.
+    loadGameModule(m_project.gameModule);
     engine().setTickRate(m_project.tickRate);
     applyProjectTheme();
     loadProjectInput();
@@ -114,7 +106,8 @@ void Editor::closeProject() {
 bool Editor::createNewProject(const fs::path& folder, const std::string& name) {
     shockwave::Project project;
     std::string err;
-    const std::string module = m_options.gameModule ? std::string(m_options.gameModule->id) : "game";
+    // New projects play with the game module loaded now, if any, so Play works straight away.
+    const std::string module = m_gameModule ? std::string(m_gameModule->id()) : "game";
     if (!shockwave::createProject(folder, name, module, project, err)) {
         m_hubError = err;
         error("Couldn't create the project: " + err);

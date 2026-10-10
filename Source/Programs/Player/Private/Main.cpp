@@ -7,6 +7,7 @@
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
@@ -33,6 +34,8 @@ int main(int argc, char** argv) {
         double fpsOverride = -1;   // --fps
         bool lowLatency = false;   // --low-latency
         int vsyncOverride = -1;   // --vsync on|off
+        std::string renderer;   // --renderer
+        std::filesystem::path gameModuleFile;   // --game-module
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
@@ -48,6 +51,13 @@ int main(int argc, char** argv) {
                 if (ec != std::errc{} || end != value.data() + value.size() || !std::isfinite(audioVolume) ||
                     audioVolume < 0 || audioVolume > 1)
                     throw std::runtime_error("--audio-volume requires a number in 0..1");
+            } else if (arg == "--renderer" && i + 1 < argc) {
+                renderer = argv[++i];
+            } else if (arg == "--renderers") {
+                for (const std::string& name : shockwave::Renderer::availableBackends()) std::puts(name.c_str());
+                return 0;
+            } else if (arg == "--game-module" && i + 1 < argc) {
+                gameModuleFile = argv[++i];
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
             } else if (arg == "--schema" && i + 1 < argc) {
@@ -125,6 +135,8 @@ int main(int argc, char** argv) {
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                           "       [--size WxH] [--view lit|unlit|normals|lighting|cascades] [--print-frame]\n"
                           "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
+                          "       [--renderer vulkan|null] [--game-module file.so]\n"
+                          "player --renderers                  list the renderer plugins that can be loaded\n"
                           "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
                           "                                    play N frames (default 30), save the last, quit\n"
                           "player --benchmark [seconds] [--json file]\n"
@@ -157,8 +169,18 @@ int main(int argc, char** argv) {
         shockwave::Project project;
         std::string error;
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
-        if (project.gameModule != shockwave::projectGameModule().id)
-            throw std::runtime_error("Project game_module does not match the compiled gameplay library");
+        // The project's game code, before any window: a missing module fails fast. It
+        // outlives the engine and the player, which hold what it made.
+        auto gameModule = gameModuleFile.empty() ? shockwave::GameModuleLibrary::load(project.gameModule, error)
+                                                 : shockwave::GameModuleLibrary::loadFile(gameModuleFile, error);
+        if (!gameModule)
+            throw std::runtime_error(
+                "the project's game module \"" + project.gameModule + "\" couldn't load: " + error +
+                ". Build it with: cmake --build build --target game_" + project.gameModule);
+        if (gameModule->id() != project.gameModule)
+            throw std::runtime_error(
+                "the game module is \"" + std::string(gameModule->id()) + "\" but the project wants \"" +
+                project.gameModule + "\"");
         shockwave::EngineConfig config;
         config.window = {project.name, project.width, project.height, project.vsync};
         config.tickRate = project.tickRate;
@@ -184,9 +206,13 @@ int main(int argc, char** argv) {
             config.window.hidden = true;
             config.window.vsync = false;
         }
+        // Tools only read files, so they need no GPU unless asked for one.
+        config.renderer = !renderer.empty()               ? renderer
+                          : tool.mode != Tool::Mode::Play ? std::string("null")
+                                                          : project.renderer;
         shockwave::Engine engine(config);
         engine.setMasterVolume(audioVolume);
-        Player player(std::move(project), std::move(tool));
+        Player player(std::move(project), std::move(tool), gameModule->module());
         engine.run(player);
         if (player.exitCode() != 0) return player.exitCode();
     } catch (const std::exception& e) {
