@@ -44,8 +44,9 @@ module sees only the headers of modules it depends on, directly or through them.
 | UI | `shockwave::gui` controls, themes (Dear ImGui) | Core | Slate |
 | Projects | `.swproject` manifest | Core | Projects |
 | Engine | World, components, systems, hierarchy, scene files, subsystems, engine loop | everything above | Engine |
+| Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics | Engine's GameFramework |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio | Engine's GameFramework |
 
 Vulkan never reaches game or editor code, because only the Renderer links RHI.
 
@@ -65,8 +66,8 @@ This mirrors Unreal's vocabulary, built on the ECS:
   GameMode for each scene.
 - **GameMode** sets the rules of one Play. It adds systems and gets `beginPlay`,
   `fixedUpdate`, `frame` and `endPlay`.
-- **Subsystems** are services found by type (`ctx.subsystem<T>()`). Physics is the
-  first one. Each Play session has its own collection, and the GameInstance has one
+- **Subsystems** are services found by type (`ctx.subsystem<T>()`). Physics and Audio are
+  session services. Each Play session has its own collection, and the GameInstance has one
   that lasts the whole run.
 - **PlaySession** runs a scene the way Play In Editor does. It snapshots the World,
   plays it, and restores it exactly on Stop. The editor and the player use the same
@@ -81,7 +82,8 @@ This mirrors Unreal's vocabulary, built on the ECS:
 2. **Fixed tick** (project `tick_rate`), zero or more times per frame:
    - the GameMode's systems run on the job system;
    - then the physics step;
-   - then `GameMode::fixedUpdate`.
+   - then `GameMode::fixedUpdate`;
+   - audio snapshots the updated listener/sources for the SDL mixing thread.
 3. **Render.** `renderWorld` gathers draws and lights in parallel and interpolates
    between ticks. The Renderer then builds a render graph:
    - the scene pass (HDR);

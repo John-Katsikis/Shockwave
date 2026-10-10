@@ -203,6 +203,20 @@ void Editor::drawComponent(const ComponentInfo& info, Entity e) {
 
 // What a component's fields can't show: physics setup problems, imported materials.
 void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
+    if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
+        const auto& source = *m_world.get<shockwave::AudioSource>(e);
+        for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {
+            ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", problem.c_str());
+        }
+        const bool missing = !engine().assets().audioClip(source.clip);
+        ImGui::BeginDisabled(missing);
+        if (gui::button("Preview")) previewAudio(source.clip, {source.volume, source.pitch, source.loop});
+        ImGui::EndDisabled();
+        gui::toolbarNext(gui::buttonWidth("Stop preview"));
+        if (gui::button("Stop preview")) stopAudioPreview();
+        if (const auto clip = engine().assets().audioClip(source.clip))
+            ImGui::TextDisabled("%.2f s | 48 kHz stereo", clip->duration());
+    }
     const bool physicsPart =
         info.id == shockwave::componentId<shockwave::Collider>() ||
         info.id == shockwave::componentId<shockwave::CharacterController>() ||
@@ -329,6 +343,30 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
             m_euler.rotation = q;
         }
         trackEdit();
+        break;
+    }
+    case FieldType::AudioClip: {
+        auto& value = *static_cast<std::string*>(data);
+        if (ImGui::BeginCombo(label.c_str(), value.empty() ? "none" : value.c_str())) {
+            if (ImGui::Selectable("none", value.empty()) && !value.empty()) {
+                pushUndo(m_world);
+                value.clear();
+            }
+            for (const auto& clip : engine().assets().audioClips()) {
+                if (ImGui::Selectable(clip.c_str(), clip == value) && clip != value) {
+                    pushUndo(m_world);
+                    value = clip;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const auto* payload = ImGui::AcceptDragDropPayload(kAudioPayload)) {
+                pushUndo(m_world);
+                value = static_cast<const char*>(payload->Data);
+            }
+            ImGui::EndDragDropTarget();
+        }
         break;
     }
     case FieldType::String:

@@ -2,6 +2,7 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
+#include <Audio/Audio.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Core/Log.h>
@@ -25,6 +26,7 @@
 namespace player {
 
 void Player::onStart() {
+    shockwave::registerAudioComponents();
     const auto& module = shockwave::projectGameModule();
     if (module.registerTypes) module.registerTypes();
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
@@ -57,6 +59,12 @@ void Player::onStart() {
     if (!shockwave::loadScene(m_world, engine().assets(), m_project.startupScene.string(), error, hooks, &warnings))
         throw std::runtime_error(error);
     if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
+    m_world.each<const shockwave::AudioSource>([&](shockwave::Entity entity, const shockwave::AudioSource& source) {
+        const auto problems = shockwave::validateAudioSource(source, engine().assets());
+        if (!problems.empty()) throw std::runtime_error(problems.front());
+        if (source.spatial && !m_world.has<shockwave::Transform>(entity))
+            throw std::runtime_error("Spatial AudioSource requires Transform");
+    });
     shockwave::FlyCamera::bindDefaultControls(engine().input());
     if (const auto bindings = shockwave::inputBindingsPath(m_project.root); std::filesystem::exists(bindings)) {
         if (!engine().input().loadBindingsFile(bindings, error)) throw std::runtime_error(error);
@@ -82,6 +90,10 @@ void Player::onUpdate(double dt) {
 
 void Player::onFrame(double dt) {
     if (!m_session) return;
+    for (const auto& change : m_assets->poll(dt)) {
+        if (change.what == shockwave::AssetFolder::Change::What::Failed)
+            SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
+    }
     m_session->frame(dt);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();

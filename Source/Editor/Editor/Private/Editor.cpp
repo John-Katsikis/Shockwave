@@ -2,6 +2,7 @@
 // the editor core is in Editor*.cpp and PlayInEditor.cpp; panels in *Panel.cpp.
 #include "Editor.h"
 
+#include <Audio/Audio.h>
 #include <Assets/BuiltinAssets.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -31,6 +32,8 @@ Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m
 // ---- Startup and shutdown -----------------------------------------------------------------
 
 void Editor::onStart() {
+    shockwave::registerAudioComponents();
+    m_audioPreview = std::make_unique<shockwave::AudioMixer>();
     connectConsole();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;   // dragging in the viewport is for the scene
@@ -71,6 +74,18 @@ void Editor::onStart() {
         openProject(m_prefs.recentProjects.front());
     }
 
+    m_showPreferences = m_options.showPreferences;
+    if (m_hasProject && m_options.focusContent) {
+        const std::filesystem::path folder = m_options.contentFolder;
+        if (folder.is_absolute() ||
+            std::any_of(folder.begin(), folder.end(), [](const auto& part) { return part == ".."; }))
+            throw std::runtime_error("--content-folder must be a path inside Content");
+        m_contentFolder = folder.lexically_normal().generic_string();
+        if (m_contentFolder == ".") m_contentFolder.clear();
+        if (!m_contentFolder.empty() &&
+            std::find(m_assetFolders.begin(), m_assetFolders.end(), m_contentFolder) == m_assetFolders.end())
+            throw std::runtime_error("Unknown Content folder: " + m_contentFolder);
+    }
     if (m_hasProject && m_options.selectOnStart >= 0) {
         select(m_world.entityAt(static_cast<size_t>(m_options.selectOnStart)));
     }
@@ -78,6 +93,8 @@ void Editor::onStart() {
 }
 
 void Editor::onShutdown() {
+    stopAudioPreview();
+    m_audioPreview.reset();
     stop();
     m_session.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
@@ -101,6 +118,8 @@ bool Editor::onQuitRequested() {
 }
 
 void Editor::applyViewPreferences() {
+    engine().setMasterVolume(m_prefs.masterVolume);
+    if (m_audioPreview) m_audioPreview->setMasterVolume(m_prefs.masterVolume);
     m_camera.moveSpeed = m_prefs.cameraSpeed;
     m_camera.fovY = glm::radians(std::clamp(m_prefs.fieldOfView, 20.0f, 140.0f));
     engine().renderer().setVsync(m_prefs.vsync);

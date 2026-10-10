@@ -99,3 +99,9 @@ asset references and scene serialization. The GPU smoke test covers actual uploa
 repeated reloads, missing buffers/textures, MTL edits, last-good retention, resource
 recycling and rendering all three material parts. Fixtures are self-authored and
 can be regenerated with `python3 Tests/fixtures/models/generate.py`.
+
+## Audio clips
+
+WAV and Ogg Vorbis files in Content are named assets too. Audio imports/reloads
+decode on the job system and publish immutable PCM between frames; a failed reload
+keeps the last-good version. See [Audio](Audio.md) for authoring and transport.

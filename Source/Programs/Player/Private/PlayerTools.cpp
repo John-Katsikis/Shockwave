@@ -2,6 +2,7 @@
 // --schema writes the scene format reference.
 #include "Player.h"
 
+#include <Audio/Audio.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Engine/Engine.h>
@@ -56,6 +57,14 @@ int Player::check(const std::vector<std::string>& importProblems) {
             continue;
         }
         for (const std::string& warning : warnings) report(warning);
+
+        world.each<const shockwave::AudioSource>([&](shockwave::Entity e, const shockwave::AudioSource& source) {
+            const auto* name = world.get<shockwave::Name>(e);
+            for (const auto& problem : shockwave::validateAudioSource(source, engine().assets()))
+                report(scene.string() + ": entity '" + (name ? name->value : "?") + "': " + problem);
+            if (source.spatial && !world.has<shockwave::Transform>(e))
+                report(scene.string() + ": spatial AudioSource has no Transform");
+        });
 
         int primaries = 0;
         world.each<const shockwave::Camera>([&](const shockwave::Camera& camera) { primaries += camera.primary; });

@@ -26,7 +26,7 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Scene, Other };
+enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, Other };
 
 struct Tile {
     TileKind kind;
@@ -82,6 +82,11 @@ void openInFileManager(const fs::path& folder) {
 // Line drawings for tiles without a picture.
 void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c, float half, ImU32 color) {
     const float r = half * 0.62f;
+    if (kind == TileKind::Audio) {
+        draw->AddCircle(c, half * 0.5f, color, 16, 1.0f);
+        draw->AddLine(ImVec2(c.x - half * 0.25f, c.y), ImVec2(c.x + half * 0.25f, c.y), color, 1.0f);
+        return;
+    }
     if (kind == TileKind::Folder) {
         const ImVec2 lo(c.x - r, c.y - r * 0.6f), hi(c.x + r, c.y + r * 0.75f);
         draw->AddRectFilled(ImVec2(lo.x, lo.y - r * 0.22f), ImVec2(c.x - r * 0.15f, lo.y + 2.0f), color);
@@ -135,6 +140,10 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
 }   // namespace
 
 void Editor::drawContentBrowser() {
+    if (m_options.focusContent) {
+        ImGui::SetNextWindowFocus();
+        if (ImGui::GetFrameCount() > 2) m_options.focusContent = false;
+    }
     if (!ImGui::Begin("Content", &m_showContent)) {
         ImGui::End();
         return;
@@ -231,14 +240,17 @@ void Editor::drawContentItems() {
         actionsWidth += gui::buttonWidth("New folder") + gui::buttonWidth("Open folder") + 2.0f * style.ItemSpacing.x;
         if (canImport) actionsWidth += gui::buttonWidth("Import...") + style.ItemSpacing.x;
     }
-    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - actionsWidth - style.ItemSpacing.x));
+    const float available = ImGui::GetContentRegionAvail().x;
+    ImGui::SetNextItemWidth(
+        available < actionsWidth + 120 * dpi ? available
+                                             : std::max(1.0f, available - actionsWidth - style.ItemSpacing.x));
     ImGui::InputTextWithHint("##search", "Search content", &m_contentFilter);
     gui::alignTrailing(actionsWidth);
     if (canCreate) {
         if (canImport) {
             if (gui::button("Import...")) showImportDialog(folderPath);
             ImGui::SetItemTooltip("Copy files into this folder");
-            ImGui::SameLine();
+            gui::toolbarNext(gui::buttonWidth("New folder"));
         }
         if (gui::button("New folder")) {
             std::error_code ec;
@@ -252,12 +264,12 @@ void Editor::drawContentItems() {
                 scanScenes();
             }
         }
-        ImGui::SameLine();
+        gui::toolbarNext(gui::buttonWidth("Open folder"));
         if (gui::button("Open folder")) openInFileManager(folderPath);
         ImGui::SetItemTooltip("Show this folder in the system file manager");
-        ImGui::SameLine();
+        gui::toolbarNext(sliderWidth);
     }
-    ImGui::SetNextItemWidth(sliderWidth);
+    ImGui::SetNextItemWidth(std::min(sliderWidth, std::max(1.0f, ImGui::GetContentRegionAvail().x)));
     ImGui::SliderFloat("##size", &m_tileSize, 56.0f, 160.0f, "Size");
     ImGui::SetItemTooltip("Tile size");
 
@@ -303,6 +315,7 @@ void Editor::drawContentItems() {
         for (const AssetFolder::File& f : m_assetFolder->files()) {
             if (filter.empty() ? parentOf(f.name) != m_contentFolder : !matches(f.name)) continue;
             const TileKind kind = f.kind == AssetFolder::Kind::Texture ? TileKind::Texture
+                                  : f.kind == AssetFolder::Kind::Audio ? TileKind::Audio
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
                                                                        : TileKind::Other;
             const uint64_t thumb =
@@ -363,6 +376,7 @@ void Editor::drawContentItems() {
         if (i % columns != 0) ImGui::SameLine();
 
         ImGui::PushID(tile.name.c_str());
+        ImGui::BeginGroup();
         const ImVec2 min = ImGui::GetCursorScreenPos();
         ImGui::InvisibleButton("##tile", tileSize);
         const bool hovered = ImGui::IsItemHovered();
@@ -439,6 +453,7 @@ void Editor::drawContentItems() {
             case TileKind::Texture:
                 if (usable) ImGui::TextDisabled("Drag onto an object, or double-click to use it on the selection");
                 break;
+            case TileKind::Audio: ImGui::TextDisabled("Drag into the viewport to place a source"); break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -447,6 +462,7 @@ void Editor::drawContentItems() {
         // Drag sources carry the asset name.
         if (usable && tile.kind != TileKind::Folder && tile.kind != TileKind::Scene && ImGui::BeginDragDropSource()) {
             const char* payload = tile.kind == TileKind::Mesh    ? kMeshPayload
+                                  : tile.kind == TileKind::Audio ? kAudioPayload
                                   : tile.kind == TileKind::Model ? kModelPayload
                                                                  : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
@@ -485,6 +501,9 @@ void Editor::drawContentItems() {
             case TileKind::Texture:
                 if (usable) useTexture();
                 break;
+            case TileKind::Audio:
+                if (usable) previewAudio(tile.name);
+                break;
             case TileKind::Other: break;
             }
         }
@@ -522,6 +541,12 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("Use on the selection", nullptr, false, usable && !selection().empty()))
                     useTexture();
                 break;
+            case TileKind::Audio:
+                if (ImGui::MenuItem("Play", nullptr, false, usable)) previewAudio(tile.name);
+                if (ImGui::MenuItem("Stop preview")) stopAudioPreview();
+                if (ImGui::MenuItem("Place audio source", nullptr, false, usable))
+                    spawnAudio(tile.name, placementPoint());
+                break;
             case TileKind::Other: break;
             }
             if (failed && ImGui::MenuItem("Retry imports")) m_retryAssetImports = true;
@@ -532,6 +557,19 @@ void Editor::drawContentItems() {
             }
             ImGui::EndPopup();
         }
+        if (tile.kind == TileKind::Audio) {
+            const bool active =
+                m_audioPreview && m_previewClip == tile.name && m_audioPreview->isPlaying(m_previewVoice);
+            ImGui::BeginDisabled(!usable);
+            if (gui::button(active ? "Stop" : "Play", ImVec2(side, 0))) {
+                if (active)
+                    stopAudioPreview();
+                else
+                    previewAudio(tile.name);
+            }
+            ImGui::EndDisabled();
+        }
+        ImGui::EndGroup();
         ImGui::PopID();
     }
 

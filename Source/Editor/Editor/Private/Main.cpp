@@ -17,6 +17,8 @@
 //   --assets folder        import this folder instead of the project's assets
 //   --theme file.swtheme   UI theme for this run (Preferences sets the usual one)
 //   --uncapped             vsync off for this run
+//   --content-folder path  show a folder inside Content on startup
+//   --preferences          show the Preferences window on startup
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
 //   --select N             select the Nth entity of the scene (screenshots)
@@ -54,6 +56,11 @@ int main(int argc, char** argv) {
                 options.assetFolder = value();
             else if (arg == "--theme")
                 options.theme = value();
+            else if (arg == "--content-folder") {
+                options.contentFolder = value();
+                options.focusContent = true;
+            } else if (arg == "--preferences")
+                options.showPreferences = true;
             else if (arg == "--prefs")
                 options.prefsPath = value();
             else if (arg == "--frames")
@@ -67,6 +74,7 @@ int main(int argc, char** argv) {
             else if (arg == "--help") {
                 std::puts(
                     "editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
+                    "       [--content-folder path] [--preferences]\n"
                     "       [--theme file] [--uncapped] [--prefs file] [--play] [--select N] [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')

@@ -331,8 +331,9 @@ void Editor::drawStatusBar() {
                 count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
                 fps > 0.0 ? 1000.0 / fps : 0.0);
             const float width = ImGui::CalcTextSize(right).x;
-            ImGui::SameLine(std::max(
-                ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
+            ImGui::SameLine(
+                std::max(
+                    ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
             ImGui::TextDisabled("%s", right);
             ImGui::EndMenuBar();
         }
@@ -479,6 +480,17 @@ void Editor::drawPreferencesWindow() {
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("Themes are .swtheme files in themes/. Edit one while the editor runs to restyle it live.");
+
+    ImGui::SeparatorText("Audio");
+    if (gui::beginPropertyGrid("audio_preferences")) {
+        gui::propertyLabel("Master volume");
+        if (ImGui::SliderFloat("##master_volume", &m_prefs.masterVolume, 0, 1, "%.2f")) {
+            engine().setMasterVolume(m_prefs.masterVolume);
+            if (m_audioPreview) m_audioPreview->setMasterVolume(m_prefs.masterVolume);
+            changed = true;
+        }
+        ImGui::EndTable();
+    }
 
     ImGui::SeparatorText("Viewport");
     if (ImGui::Checkbox("VSync", &m_prefs.vsync)) {

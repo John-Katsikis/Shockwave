@@ -601,6 +601,16 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
         at.y = b ? std::max(-b->min.y, 0.0f) : 0.0f;
         spawnMesh(mesh, at);
     }
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAudioPayload)) {
+        glm::vec3 origin, direction;
+        mouseRay(mouse, pos, size, origin, direction);
+        auto position = origin + direction * 6.0f;
+        if (direction.y < -1e-4f) {
+            const float distance = -origin.y / direction.y;
+            if (distance > 0 && distance < 200) position = origin + direction * distance;
+        }
+        spawnAudio(static_cast<const char*>(payload->Data), position);
+    }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kModelPayload)) {
         const std::string name = static_cast<const char*>(payload->Data);
         glm::vec3 origin, dir;

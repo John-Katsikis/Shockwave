@@ -393,3 +393,11 @@ the bindings live in the project's `Config/Input.swinput` and reload when it cha
 
 A gamepad also flies the editor camera while the viewport has focus: left stick moves, right
 stick looks, triggers go up and down.
+
+### Audio
+
+WAV and Ogg clips in project Content import and reload automatically. AudioSource
+components provide volume, pitch, looping and spatial playback through the primary
+Camera. Preview clips in the inspector or Content browser; set master volume in
+Preferences. The sample loops a CC0 ambient tone and plays a short tone on `pulse`.
+See [Audio](docs/Audio.md) for gameplay APIs, CLI validation and current limits.

@@ -18,6 +18,7 @@ struct Preferences {
     std::string theme;   // a .swtheme path; empty uses the project's theme
     bool vsync = true;
     float renderScale = 1.0f;
+    float masterVolume = 1.0f;
 
     float cameraSpeed = 8.0f;
     float fieldOfView = 70.0f;   // degrees

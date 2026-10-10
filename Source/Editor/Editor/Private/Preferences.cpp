@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -84,6 +85,8 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             loaded.theme = value;
         else if (key == "vsync")
             loaded.vsync = parseBool(value);
+        else if (key == "master_volume")
+            number(loaded.masterVolume);
         else if (key == "render_scale")
             number(loaded.renderScale);
         else if (key == "camera_speed")
@@ -114,6 +117,7 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
     }
     if (loaded.recentProjects.size() > kMaxRecent) loaded.recentProjects.resize(kMaxRecent);
     if (loaded.recentScenes.size() > kMaxRecent) loaded.recentScenes.resize(kMaxRecent);
+    loaded.masterVolume = std::isfinite(loaded.masterVolume) ? std::clamp(loaded.masterVolume, 0.0f, 1.0f) : 1.0f;
     prefs = std::move(loaded);
     return true;
 }
@@ -128,6 +132,7 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
     out << "\n# Appearance and output\n"
         << "theme = " << prefs.theme << "\n"
         << "vsync = " << flag(prefs.vsync) << "\n"
+        << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
         << "\n# Viewport\n"
         << "camera_speed = " << prefs.cameraSpeed << "\n"
