@@ -3,11 +3,11 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
-#include <UI/Gui.h>
 #include <Physics/Physics.h>
+#include <UI/Gui.h>
 
-#include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cmath>
@@ -30,10 +30,11 @@ namespace {
 
 const SDL_DialogFileFilter kSceneFilter[] = {{"Shockwave scenes", "swscene"}};
 const SDL_DialogFileFilter kProjectFilter[] = {{"Shockwave projects", "swproject"}};
-const SDL_DialogFileFilter kImportFilter[] = {{"Images and models", "png;jpg;jpeg;tga;bmp;psd;gif;hdr;pic;pnm;glb;gltf;fbx;obj;dae;stl;ply;blend"},
-                                              {"All files", "*"}};
+const SDL_DialogFileFilter kImportFilter[] = {
+    {"Images and models", "png;jpg;jpeg;tga;bmp;psd;gif;hdr;pic;pnm;glb;gltf;fbx;obj;dae;stl;ply;blend"},
+    {"All files", "*"}};
 
-} // namespace
+}   // namespace
 
 Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m_options.prefs) {}
 
@@ -73,8 +74,9 @@ void Editor::onStart() {
         } else {
             error("No Shockwave project at " + path.string() + ". Create one in the project hub.");
         }
-    } else if (m_prefs.reopenLastProject && !m_prefs.recentProjects.empty() &&
-               fs::exists(m_prefs.recentProjects.front(), ec)) {
+    } else if (
+        m_prefs.reopenLastProject && !m_prefs.recentProjects.empty() &&
+        fs::exists(m_prefs.recentProjects.front(), ec)) {
         openProject(m_prefs.recentProjects.front());
     }
 
@@ -191,7 +193,8 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     renderer.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});   // a scene without an Environment
     const bool sceneCamera = lookingThroughSceneCamera();
     glm::mat4 view = m_camera.view(), proj = projection(renderer.aspectRatio());
-    if (sceneCamera) shockwave::cameraMatrices(m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, proj);
+    if (sceneCamera)
+        shockwave::cameraMatrices(m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, proj);
     renderer.setCamera(view, proj);
 
     shockwave::GridSettings grid;
@@ -200,8 +203,8 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     grid.fadeDistance = std::clamp(m_camera.position.y * 12.0f + 60.0f, 60.0f, 600.0f);
     renderer.setGrid(grid);
     // While editing (or paused) nothing moves on its own, so draw exactly what's there.
-    shockwave::renderWorld(m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0,
-                           &engine().assets());
+    shockwave::renderWorld(
+        m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets());
 }
 
 bool Editor::lookingThroughSceneCamera() const {
@@ -238,12 +241,14 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     const std::string_view built = m_options.gameModule ? m_options.gameModule->id : std::string_view();
     m_gameModuleMatches = m_project.gameModule == built;
     if (!m_gameModuleMatches) {
-        warn("This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
-             std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its Game.cpp> to run it.");
+        warn(
+            "This project's gameplay module is \"" + m_project.gameModule + "\" but the editor was built with \"" +
+            std::string(built) + "\". Play is off; rebuild with -DSHOCKWAVE_GAME_SOURCE=<its Game.cpp> to run it.");
     }
     engine().setTickRate(m_project.tickRate);
     applyProjectTheme();
-    logAssetChanges(m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
+    logAssetChanges(
+        m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
     loadEditorState();
     scanScenes();
 
@@ -342,8 +347,8 @@ void Editor::saveEditorState() {
     out << "# Shockwave Editor state for this project, per user. Safe to delete.\n";
     if (!m_lastScene.empty()) out << "last_scene " << m_lastScene << "\n";
     for (const auto& [scene, c] : m_sceneCameras) {
-        out << "camera " << c.position.x << ' ' << c.position.y << ' ' << c.position.z << ' ' << c.yaw << ' '
-            << c.pitch << ' ' << scene << "\n";
+        out << "camera " << c.position.x << ' ' << c.position.y << ' ' << c.position.z << ' ' << c.yaw << ' ' << c.pitch
+            << ' ' << scene << "\n";
     }
 }
 
@@ -544,7 +549,8 @@ Entity Editor::createEntity(CreateKind kind, Entity parent) {
         // Starts out seeing what the viewport sees.
         m_world.add<Name>(e, {uniqueName("Camera")});
         Transform t = Transform::fromMatrix(glm::inverse(m_camera.view()));
-        if (parent.valid()) t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
+        if (parent.valid())
+            t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
         m_world.add<Transform>(e, t);
         shockwave::Camera camera;
         camera.primary = !shockwave::primaryCamera(m_world).valid();
@@ -578,7 +584,8 @@ Entity Editor::createEntity(CreateKind kind, Entity parent) {
             t.position = placementPoint() + glm::vec3(0.0f, 4.0f, 0.0f);
             t.rotation = shockwave::fromEulerDegrees({-90.0f, 0.0f, 0.0f});
         }
-        if (parent.valid()) t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
+        if (parent.valid())
+            t = Transform::fromMatrix(glm::inverse(shockwave::worldMatrix(m_world, parent)) * t.matrix());
         m_world.add<Transform>(e, t);
         m_world.add<shockwave::Light>(e, light);
         break;
@@ -653,7 +660,8 @@ bool Editor::reparentSelection(Entity dragged, Entity parent) {
     }
     if (moved == 0) return false;
     pushUndo(std::move(before));
-    log((parent.valid() ? "Attached " + std::to_string(moved) + " entities to " + displayName(parent)
+    log(
+        (parent.valid() ? "Attached " + std::to_string(moved) + " entities to " + displayName(parent)
                         : "Detached " + std::to_string(moved) + " entities"));
     return true;
 }
@@ -715,7 +723,8 @@ void Editor::groupSelected() {
     centre /= static_cast<float>(roots.size());
     const Entity group = m_world.create();
     m_world.add<Name>(group, {uniqueName("Group")});
-    const glm::mat4 parentWorld = commonParent.valid() ? shockwave::worldMatrix(m_world, commonParent) : glm::mat4(1.0f);
+    const glm::mat4 parentWorld =
+        commonParent.valid() ? shockwave::worldMatrix(m_world, commonParent) : glm::mat4(1.0f);
     m_world.add<Transform>(group, {glm::vec3(glm::inverse(parentWorld) * glm::vec4(centre, 1.0f))});
     if (commonParent.valid()) m_world.add<Parent>(group, {commonParent});
     for (Entity e : roots) shockwave::setParent(m_world, e, group);
@@ -756,8 +765,8 @@ void Editor::focusSelected() {
             continue;
         }
         for (int i = 0; i < 8; ++i) {
-            const glm::vec3 corner((i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y,
-                                   (i & 4) ? box.max.z : box.min.z);
+            const glm::vec3 corner(
+                (i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y, (i & 4) ? box.max.z : box.min.z);
             grow(glm::vec3(m * glm::vec4(corner, 1.0f)));
         }
     }
@@ -1017,7 +1026,8 @@ bool Editor::saveSceneAs(fs::path path) {
     m_dirty = false;
     m_autosaveTimer = 0.0;
     const std::string relative = m_project.relative(m_scenePath);
-    if (fs::path(relative).is_absolute()) warn(relative + " is outside the project folder; other machines won't find it");
+    if (fs::path(relative).is_absolute())
+        warn(relative + " is outside the project folder; other machines won't find it");
     m_lastScene = relative;
     rememberCamera();
     saveEditorState();
@@ -1062,54 +1072,61 @@ struct PendingDialog {
     std::string* error;
 };
 
-} // namespace
+}   // namespace
 
-#define SW_DIALOG_CALLBACK                                                                            \
-    [](void* user, const char* const* files, int) {                                                   \
-        auto* pending = static_cast<PendingDialog*>(user);                                            \
-        {                                                                                             \
-            std::lock_guard lock(*pending->mutex);                                                    \
-            if (!files) {                                                                             \
-                *pending->error = SDL_GetError();                                                     \
-            } else if (files[0]) {                                                                    \
-                std::vector<std::string> list;                                                        \
-                for (const char* const* f = files; *f; ++f) list.emplace_back(*f);                    \
-                static_cast<std::vector<DialogResult>*>(pending->results)                             \
-                    ->push_back({static_cast<DialogKind>(pending->kind), std::move(list)});           \
-            }                                                                                         \
-        }                                                                                             \
-        delete pending;                                                                               \
+#define SW_DIALOG_CALLBACK                                                                                             \
+    [](void* user, const char* const* files, int) {                                                                    \
+        auto* pending = static_cast<PendingDialog*>(user);                                                             \
+        {                                                                                                              \
+            std::lock_guard lock(*pending->mutex);                                                                     \
+            if (!files) {                                                                                              \
+                *pending->error = SDL_GetError();                                                                      \
+            } else if (files[0]) {                                                                                     \
+                std::vector<std::string> list;                                                                         \
+                for (const char* const* f = files; *f; ++f) list.emplace_back(*f);                                     \
+                static_cast<std::vector<DialogResult>*>(pending->results)                                              \
+                    ->push_back({static_cast<DialogKind>(pending->kind), std::move(list)});                            \
+            }                                                                                                          \
+        }                                                                                                              \
+        delete pending;                                                                                                \
     }
 
 void Editor::showOpenSceneDialog() {
-    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenScene), &m_dialogError};
+    auto* pending =
+        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenScene), &m_dialogError};
     const std::string folder = m_project.sceneFolder.string();
-    SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kSceneFilter, 1, folder.c_str(), false);
+    SDL_ShowOpenFileDialog(
+        SW_DIALOG_CALLBACK, pending, engine().window().handle(), kSceneFilter, 1, folder.c_str(), false);
 }
 
 void Editor::showSaveSceneDialog() {
     if (!m_hasProject) return;
-    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::SaveScene), &m_dialogError};
+    auto* pending =
+        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::SaveScene), &m_dialogError};
     const std::string location =
         m_scenePath.empty() ? (m_project.sceneFolder / "untitled.swscene").string() : m_scenePath.string();
     SDL_ShowSaveFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kSceneFilter, 1, location.c_str());
 }
 
 void Editor::showOpenProjectDialog() {
-    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenProject), &m_dialogError};
-    SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kProjectFilter, 1,
-                           m_newProjectLocation.c_str(), false);
+    auto* pending =
+        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::OpenProject), &m_dialogError};
+    SDL_ShowOpenFileDialog(
+        SW_DIALOG_CALLBACK, pending, engine().window().handle(), kProjectFilter, 1, m_newProjectLocation.c_str(),
+        false);
 }
 
 void Editor::showNewProjectFolderDialog() {
-    auto* pending =
-        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::NewProjectFolder), &m_dialogError};
-    SDL_ShowOpenFolderDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), m_newProjectLocation.c_str(), false);
+    auto* pending = new PendingDialog{
+        &m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::NewProjectFolder), &m_dialogError};
+    SDL_ShowOpenFolderDialog(
+        SW_DIALOG_CALLBACK, pending, engine().window().handle(), m_newProjectLocation.c_str(), false);
 }
 
 void Editor::showImportDialog(const fs::path& folder) {
     m_importFolder = folder;
-    auto* pending = new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::Import), &m_dialogError};
+    auto* pending =
+        new PendingDialog{&m_dialogMutex, &m_dialogResults, static_cast<int>(DialogKind::Import), &m_dialogError};
     SDL_ShowOpenFileDialog(SW_DIALOG_CALLBACK, pending, engine().window().handle(), kImportFilter, 2, nullptr, true);
 }
 
@@ -1196,4 +1213,4 @@ void Editor::updateTitle() {
     }
 }
 
-} // namespace editor
+}   // namespace editor

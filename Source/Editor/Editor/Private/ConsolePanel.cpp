@@ -1,7 +1,6 @@
 // The Console panel: everything the editor reports, with warnings and errors called out,
 // filters per level, search and copy. The newest message also shows in the status bar.
 #include "Editor.h"
-
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -30,7 +29,7 @@ std::string lower(std::string text) {
     return text;
 }
 
-} // namespace
+}   // namespace
 
 void Editor::log(const std::string& message) { addLog(LogLevel::Info, message); }
 void Editor::warn(const std::string& message) { addLog(LogLevel::Warning, message); }
@@ -57,7 +56,8 @@ void Editor::logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& 
     for (const auto& change : changes) {
         switch (change.what) {
         case What::Added:
-            if (const auto* file = m_assetFolder->find(change.name); file && file->imported) log("Imported " + change.name);
+            if (const auto* file = m_assetFolder->find(change.name); file && file->imported)
+                log("Imported " + change.name);
             break;
         case What::Reloaded: log("Reloaded " + change.name); break;
         case What::Failed: error("Couldn't import " + change.name + ": " + change.error); break;
@@ -85,8 +85,10 @@ void Editor::drawConsole() {
     auto levelToggle = [&](const char* name, size_t count, bool& show, ImVec4 color) {
         char label[64];
         std::snprintf(label, sizeof(label), "%s %zu###%s", name, count, name);
-        if (!show) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        else ImGui::PushStyleColor(ImGuiCol_Text, color);
+        if (!show)
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        else
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
         if (gui::button(label)) show = !show;
         ImGui::PopStyleColor();
         ImGui::SetItemTooltip(show ? "Hide these" : "Show these");
@@ -105,7 +107,8 @@ void Editor::drawConsole() {
     const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
     for (size_t i = 0; i < m_log.size(); ++i) {
         const LogEntry& entry = m_log[i];
-        if ((entry.level == LogLevel::Info && !m_logShowInfo) || (entry.level == LogLevel::Warning && !m_logShowWarnings) ||
+        if ((entry.level == LogLevel::Info && !m_logShowInfo) ||
+            (entry.level == LogLevel::Warning && !m_logShowWarnings) ||
             (entry.level == LogLevel::Error && !m_logShowErrors)) {
             continue;
         }
@@ -132,4 +135,4 @@ void Editor::drawConsole() {
     ImGui::End();
 }
 
-} // namespace editor
+}   // namespace editor

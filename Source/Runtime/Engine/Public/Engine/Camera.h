@@ -16,11 +16,11 @@ glm::mat4 perspectiveReverseZ(float fovYRadians, float aspect, float nearPlane);
 class FlyCamera {
 public:
     glm::vec3 position{0.0f, 2.0f, 8.0f};
-    float yaw = 0.0f;     // radians, 0 looks down -Z
+    float yaw = 0.0f;   // radians, 0 looks down -Z
     float pitch = 0.0f;   // radians, positive looks up
     float fovY = glm::radians(70.0f);
     float nearPlane = 0.05f;
-    float moveSpeed = 8.0f;        // units per second
+    float moveSpeed = 8.0f;   // units per second
     float fastMultiplier = 4.0f;
     float lookSensitivity = 0.0025f;   // radians per pixel
 
@@ -38,4 +38,4 @@ public:
     glm::mat4 projection(float aspect) const;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

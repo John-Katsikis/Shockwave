@@ -18,7 +18,7 @@ bool conflicts(const Schedule::Access& a, const Schedule::Access& b) {
     return intersects(a.writes, b.writes) || intersects(a.writes, b.reads) || intersects(b.writes, a.reads);
 }
 
-} // namespace
+}   // namespace
 
 void Schedule::add(std::string name, Access access, SystemFn fn) {
     m_systems.push_back({std::move(name), std::move(access), std::move(fn)});
@@ -71,4 +71,4 @@ std::vector<std::vector<std::string>> Schedule::stages() const {
     return names;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

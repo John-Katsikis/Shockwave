@@ -2,19 +2,19 @@
 
 #include <Assets/Assets.h>
 #include <Assets/BuiltinAssets.h>
+#include <Core/Jobs.h>
 #include <Engine/Camera.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
-#include <Input/Input.h>
-#include <Core/Jobs.h>
-#include <Renderer/Mesh.h>
-#include <Projects/Project.h>
-#include <Renderer/Renderer.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
 #include <Engine/Systems.h>
-#include <Platform/Window.h>
 #include <Engine/World.h>
+#include <Input/Input.h>
+#include <Platform/Window.h>
+#include <Projects/Project.h>
+#include <Renderer/Mesh.h>
+#include <Renderer/Renderer.h>
 
 #include <filesystem>
 #include <memory>
@@ -40,7 +40,10 @@ public:
     virtual void onFrame(double frameDt) { (void)frameDt; }
     // alpha (0..1) is how far we are between the last two ticks; blend previous and
     // current state with it so motion is smooth at any frame rate.
-    virtual void onRender(Renderer& renderer, double alpha) { (void)renderer; (void)alpha; }
+    virtual void onRender(Renderer& renderer, double alpha) {
+        (void)renderer;
+        (void)alpha;
+    }
     // Dear ImGui calls go here when EngineConfig::gui is on. Runs once per rendered
     // frame, before onRender, and the UI is drawn on top of the scene.
     virtual void onGui() {}
@@ -59,12 +62,12 @@ private:
 
 struct EngineConfig {
     WindowDesc window;
-    double tickRate = 60.0;     // simulation updates per second
-    uint32_t workerThreads = 0; // 0 = one per hardware thread, minus the main thread
-    int maxFrames = 0;          // 0 = run until closed; >0 quits after N frames (handy for smoke tests)
+    double tickRate = 60.0;   // simulation updates per second
+    uint32_t workerThreads = 0;   // 0 = one per hardware thread, minus the main thread
+    int maxFrames = 0;   // 0 = run until closed; >0 quits after N frames (handy for smoke tests)
     bool showFpsInTitle = true;
     bool quitOnEscape = true;
-    bool gui = false;           // Dear ImGui on top of the scene; see Game::onGui
+    bool gui = false;   // Dear ImGui on top of the scene; see Game::onGui
     // The UI theme, looked for in the working folder, then next to the executable. Saved
     // changes to it apply straight away. Empty, or missing, uses the built-in theme.
     std::string guiTheme = "themes/default.swtheme";
@@ -119,4 +122,4 @@ private:
     std::unordered_map<std::string, ImFont*> m_fonts;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

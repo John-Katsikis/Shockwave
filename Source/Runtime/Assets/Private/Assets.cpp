@@ -4,9 +4,7 @@
 
 namespace shockwave {
 
-Assets::Assets() {
-    m_textures.emplace_back("white", TextureHandle{});
-}
+Assets::Assets() { m_textures.emplace_back("white", TextureHandle{}); }
 
 void Assets::addMesh(std::string name, MeshHandle mesh, std::shared_ptr<const MeshData> data) {
     std::unique_lock lock(m_mutex);
@@ -34,29 +32,33 @@ void Assets::addTexture(std::string name, TextureHandle texture) {
 
 ModelHandle Assets::addModel(std::string name, std::shared_ptr<const ModelAsset> model) {
     std::unique_lock lock(m_mutex);
-    for (uint32_t i=0;i<m_models.size();++i) {
-        if (m_models[i].first==name) { m_models[i].second=std::move(model); return {i}; }
+    for (uint32_t i = 0; i < m_models.size(); ++i) {
+        if (m_models[i].first == name) {
+            m_models[i].second = std::move(model);
+            return {i};
+        }
     }
-    m_models.emplace_back(std::move(name),std::move(model));
-    return {static_cast<uint32_t>(m_models.size()-1)};
+    m_models.emplace_back(std::move(name), std::move(model));
+    return {static_cast<uint32_t>(m_models.size() - 1)};
 }
 ModelHandle Assets::findModel(std::string_view name) const {
     std::shared_lock lock(m_mutex);
-    for (uint32_t i=0;i<m_models.size();++i) if (m_models[i].first==name) return {i};
+    for (uint32_t i = 0; i < m_models.size(); ++i)
+        if (m_models[i].first == name) return {i};
     return {};
 }
 std::shared_ptr<const ModelAsset> Assets::model(ModelHandle handle) const {
     std::shared_lock lock(m_mutex);
-    return handle.id<m_models.size() ? m_models[handle.id].second : nullptr;
+    return handle.id < m_models.size() ? m_models[handle.id].second : nullptr;
 }
 std::string Assets::modelName(ModelHandle handle) const {
     std::shared_lock lock(m_mutex);
-    return handle.id<m_models.size() ? m_models[handle.id].first : std::string{};
+    return handle.id < m_models.size() ? m_models[handle.id].first : std::string{};
 }
-std::vector<std::pair<std::string,ModelHandle>> Assets::models() const {
+std::vector<std::pair<std::string, ModelHandle>> Assets::models() const {
     std::shared_lock lock(m_mutex);
-    std::vector<std::pair<std::string,ModelHandle>> result;
-    for (uint32_t i=0;i<m_models.size();++i) result.emplace_back(m_models[i].first,ModelHandle{i});
+    std::vector<std::pair<std::string, ModelHandle>> result;
+    for (uint32_t i = 0; i < m_models.size(); ++i) result.emplace_back(m_models[i].first, ModelHandle{i});
     return result;
 }
 
@@ -110,4 +112,4 @@ std::vector<std::pair<std::string, TextureHandle>> Assets::textures() const {
     return m_textures;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

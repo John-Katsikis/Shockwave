@@ -53,4 +53,4 @@ void Swapchain::destroyViews() {
     m_images.clear();
 }
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

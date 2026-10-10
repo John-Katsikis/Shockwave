@@ -65,4 +65,4 @@ private:
     std::vector<Entry> m_entries;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

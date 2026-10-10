@@ -3,6 +3,7 @@
 #include <Assets/Image.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -14,7 +15,7 @@ struct ModelHandle {
 };
 // Bounds comes from Mesh.h (through Renderer.h).
 struct ModelTexture {
-    std::string source; // external path or embedded texture identifier
+    std::string source;   // external path or embedded texture identifier
     Image image;
 };
 struct ModelMaterial {
@@ -37,7 +38,7 @@ struct ModelMesh {
 };
 struct ModelNode {
     std::string name;
-    int parent = -1; // nodes are in parent-first order
+    int parent = -1;   // nodes are in parent-first order
     glm::mat4 local{1.0f}, world{1.0f};
     std::vector<uint32_t> meshes;
 };
@@ -60,13 +61,14 @@ struct ModelAsset {
 };
 
 bool isModelFile(const std::filesystem::path& path);
-std::string modelExtensions(); // formats enabled in this build
+std::string modelExtensions();   // formats enabled in this build
 // Destination changes only on success. Failed imports still return dependencies
 // in attemptedDependencies so saving a missing .bin/.mtl/texture retries the model.
 // .blend: Blender on PATH (or SHOCKWAVE_BLENDER) converts modern files to GLB;
 // without it, the deprecated native reader is tried with an explicit diagnostic.
-bool loadModel(const std::filesystem::path& path, ModelData& model, std::string& error,
-               std::vector<std::filesystem::path>* attemptedDependencies = nullptr);
+bool loadModel(
+    const std::filesystem::path& path, ModelData& model, std::string& error,
+    std::vector<std::filesystem::path>* attemptedDependencies = nullptr);
 // Ray is in model-local space. Tests real triangles, respecting node transforms.
 bool intersectModel(const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance);
-} // namespace shockwave
+}   // namespace shockwave

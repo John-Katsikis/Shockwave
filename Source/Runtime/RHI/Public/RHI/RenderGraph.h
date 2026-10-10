@@ -13,10 +13,10 @@ namespace shockwave::vk {
 enum class ImageUse {
     ColorAttachment,   // rendered into (load or clear, then store)
     DepthAttachment,   // depth tested and written
-    Sampled,           // read in a fragment shader
-    TransferSrc,       // copied or blitted from
-    TransferDst,       // copied or blitted to
-    Present,           // handed to the presentation engine
+    Sampled,   // read in a fragment shader
+    TransferSrc,   // copied or blitted from
+    TransferDst,   // copied or blitted to
+    Present,   // handed to the presentation engine
 };
 
 // Where an image was last left. The owner keeps one per image so the state carries
@@ -71,4 +71,4 @@ private:
     std::string m_description;
 };
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

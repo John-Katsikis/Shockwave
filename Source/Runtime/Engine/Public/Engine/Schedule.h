@@ -102,4 +102,4 @@ private:
     std::vector<Commands> m_commands;   // one per job system thread
 };
 
-} // namespace shockwave
+}   // namespace shockwave

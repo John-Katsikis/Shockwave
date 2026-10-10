@@ -12,7 +12,7 @@ struct Collider {
     Shape shape = Shape::Box;
     glm::vec3 halfExtents{0.5f};
     float radius = 0.5f;
-    float halfHeight = 0.5f; // capsule cylinder; total height = 2 * (halfHeight + radius)
+    float halfHeight = 0.5f;   // capsule cylinder; total height = 2 * (halfHeight + radius)
     glm::vec3 offset{0.0f};
     bool enabled = true;
     bool operator==(const Collider&) const = default;
@@ -22,13 +22,13 @@ struct RigidBody {
     Motion motion = Motion::Dynamic;
     float mass = 1.0f, friction = 0.5f, restitution = 0.0f;
     float linearDamping = 0.05f, angularDamping = 0.05f, gravityFactor = 1.0f;
-    glm::vec3 linearVelocity{0.0f}, angularVelocity{0.0f}; // world units/s, radians/s
-    int collisionLayer = 0, collisionMask = 65535; // 16 gameplay categories
+    glm::vec3 linearVelocity{0.0f}, angularVelocity{0.0f};   // world units/s, radians/s
+    int collisionLayer = 0, collisionMask = 65535;   // 16 gameplay categories
     bool sensor = false, continuous = false, enabled = true;
 };
 struct PhysicsSettings {
-    glm::vec3 gravity{0.0f,-9.81f,0.0f};
-    int collisionSteps = 1; // Jolt substeps per fixed tick, 1..8
+    glm::vec3 gravity{0.0f, -9.81f, 0.0f};
+    int collisionSteps = 1;   // Jolt substeps per fixed tick, 1..8
 };
 // Feet are at Transform.position; capsule is upright in world space. Give gameplay
 // a desired world-space horizontal velocity. Jump is a one-shot runtime request.
@@ -43,4 +43,4 @@ struct CharacterController {
     bool jumpRequested = false, grounded = false;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

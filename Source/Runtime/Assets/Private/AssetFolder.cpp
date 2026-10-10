@@ -1,4 +1,5 @@
 #include <Assets/AssetFolder.h>
+
 #include <Assets/Image.h>
 #include <Core/Jobs.h>
 #include <Renderer/Renderer.h>
@@ -11,21 +12,25 @@ namespace shockwave {
 namespace fs = std::filesystem;
 namespace {
 AssetFolder::Dependency stamp(const fs::path& path) {
-    AssetFolder::Dependency d; d.path=path;
+    AssetFolder::Dependency d;
+    d.path = path;
     std::error_code ec;
-    d.exists=fs::is_regular_file(path,ec);
-    if (d.exists) { d.bytes=fs::file_size(path,ec); d.modified=fs::last_write_time(path,ec); }
+    d.exists = fs::is_regular_file(path, ec);
+    if (d.exists) {
+        d.bytes = fs::file_size(path, ec);
+        d.modified = fs::last_write_time(path, ec);
+    }
     return d;
 }
 bool changed(const AssetFolder::Dependency& old) {
-    const auto now=stamp(old.path);
-    return old.exists!=now.exists || old.bytes!=now.bytes || old.modified!=now.modified;
+    const auto now = stamp(old.path);
+    return old.exists != now.exists || old.bytes != now.bytes || old.modified != now.modified;
 }
-void release(Renderer& renderer,const ModelAsset& model) {
-    for (auto handle:model.meshes) renderer.destroyMesh(handle);
-    for (auto handle:model.textures) renderer.destroyTexture(handle);
+void release(Renderer& renderer, const ModelAsset& model) {
+    for (auto handle : model.meshes) renderer.destroyMesh(handle);
+    for (auto handle : model.textures) renderer.destroyTexture(handle);
 }
-}
+}   // namespace
 
 AssetFolder::AssetFolder(Renderer& renderer, Assets& assets, JobSystem& jobs)
     : m_renderer(renderer), m_assets(assets), m_jobs(jobs) {}
@@ -93,15 +98,15 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         const File* old = find(f.name);
         if (old) {
             const bool needsImport = force || old->modified != f.modified || old->bytes != f.bytes ||
-                std::any_of(old->dependencies.begin(),old->dependencies.end(),changed);
+                                     std::any_of(old->dependencies.begin(), old->dependencies.end(), changed);
             f.imported = old->imported;
             f.error = old->error;
             f.texture = old->texture;
             f.width = old->width;
             f.height = old->height;
-            f.model=old->model;
-            f.dependencies=old->dependencies;
-            f.warnings=old->warnings;
+            f.model = old->model;
+            f.dependencies = old->dependencies;
+            f.warnings = old->warnings;
             if (!needsImport) continue;
         }
         if (f.kind == Kind::Other) {
@@ -119,46 +124,55 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
     // CPU imports run in parallel with one Assimp instance per job. Publication and
     // GPU resource retirement run between frames on the main thread.
     m_jobs.parallelFor(imports.size(), 1, [&](size_t begin, size_t end) {
-        for (size_t i=begin;i<end;++i) {
-            auto& job=imports[i]; const auto& f=found[job.file];
-            if (f.kind==Kind::Model) loadModel(f.path,job.model,job.error,&job.dependencies);
-            else loadImage(f.path,job.image,job.error);
+        for (size_t i = begin; i < end; ++i) {
+            auto& job = imports[i];
+            const auto& f = found[job.file];
+            if (f.kind == Kind::Model)
+                loadModel(f.path, job.model, job.error, &job.dependencies);
+            else
+                loadImage(f.path, job.image, job.error);
         }
     });
 
     for (Import& job : imports) {
         File& f = found[job.file];
         f.dependencies.clear();
-        for (const auto& path:job.dependencies) f.dependencies.push_back(stamp(path));
+        for (const auto& path : job.dependencies) f.dependencies.push_back(stamp(path));
         if (job.error.empty()) {
-            if (f.kind==Kind::Model) {
-                auto uploaded=std::make_shared<ModelAsset>();
-                uploaded->data=std::move(job.model);
+            if (f.kind == Kind::Model) {
+                auto uploaded = std::make_shared<ModelAsset>();
+                uploaded->data = std::move(job.model);
                 uploaded->meshes.reserve(uploaded->data.meshes.size());
                 std::shared_ptr<const ModelAsset> previous;
                 try {
-                    for (const auto& mesh:uploaded->data.meshes) uploaded->meshes.push_back(m_renderer.createMesh(mesh.data));
+                    for (const auto& mesh : uploaded->data.meshes)
+                        uploaded->meshes.push_back(m_renderer.createMesh(mesh.data));
                     // Only base-color maps are currently sampled. Other decoded maps
                     // and PBR factors remain in ModelData for the lighting milestone.
                     uploaded->textures.resize(uploaded->data.textures.size());
-                    for (const auto& material:uploaded->data.materials) {
-                        const int index=material.baseColorTexture;
-                        if (index<0 || uploaded->textures[index].id!=0) continue;
-                        const auto& image=uploaded->data.textures[index].image;
-                        uploaded->textures[index]=m_renderer.createTexture(image.width,image.height,image.rgba);
+                    for (const auto& material : uploaded->data.materials) {
+                        const int index = material.baseColorTexture;
+                        if (index < 0 || uploaded->textures[index].id != 0) continue;
+                        const auto& image = uploaded->data.textures[index].image;
+                        uploaded->textures[index] = m_renderer.createTexture(image.width, image.height, image.rgba);
                     }
-                    previous=m_assets.model(m_assets.findModel(f.name));
-                    f.warnings=uploaded->data.warnings;
-                    f.model=m_assets.addModel(f.name,uploaded);
+                    previous = m_assets.model(m_assets.findModel(f.name));
+                    f.warnings = uploaded->data.warnings;
+                    f.model = m_assets.addModel(f.name, uploaded);
                 } catch (const std::exception& e) {
-                    release(m_renderer,*uploaded); job.error=e.what();
+                    release(m_renderer, *uploaded);
+                    job.error = e.what();
                 }
-                if (job.error.empty() && previous) release(m_renderer,*previous);
+                if (job.error.empty() && previous) release(m_renderer, *previous);
             } else {
                 try {
-                    if (job.reload) m_renderer.updateTexture(f.texture,job.image.width,job.image.height,job.image.rgba);
-                    else f.texture=m_renderer.createTexture(job.image.width,job.image.height,job.image.rgba);
-                } catch (const std::exception& e) { job.error=e.what(); }
+                    if (job.reload)
+                        m_renderer.updateTexture(f.texture, job.image.width, job.image.height, job.image.rgba);
+                    else
+                        f.texture = m_renderer.createTexture(job.image.width, job.image.height, job.image.rgba);
+                } catch (const std::exception& e) {
+                    job.error = e.what();
+                }
             }
         }
         if (!job.error.empty()) {
@@ -171,7 +185,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         f.error.clear();
         f.width = job.image.width;
         f.height = job.image.height;
-        if (f.kind==Kind::Texture && !job.reload) m_assets.addTexture(f.name, f.texture);
+        if (f.kind == Kind::Texture && !job.reload) m_assets.addTexture(f.name, f.texture);
         changes.push_back({job.reload ? Change::What::Reloaded : Change::What::Added, f.name, {}});
         f.imported = true;
     }
@@ -180,4 +194,4 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
     return changes;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

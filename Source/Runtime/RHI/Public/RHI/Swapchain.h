@@ -43,4 +43,4 @@ private:
     std::vector<VkImageView> m_imageViews;
 };
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

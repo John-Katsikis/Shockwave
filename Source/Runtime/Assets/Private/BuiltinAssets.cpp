@@ -1,9 +1,11 @@
 #include <Assets/BuiltinAssets.h>
+
 #include <Assets/Assets.h>
 #include <Renderer/Mesh.h>
+
 #include <algorithm>
-#include <memory>
 #include <cmath>
+#include <memory>
 
 namespace shockwave {
 namespace {
@@ -64,7 +66,7 @@ std::vector<uint8_t> makeGrid(uint32_t size) {
     return pixels;
 }
 
-}
+}   // namespace
 void createBuiltinAssets(Renderer& renderer, Assets& assets) {
     // The CPU copy stays with the name, so editors can pick the actual triangles.
     auto add = [&](const char* name, MeshData data) {
@@ -75,8 +77,9 @@ void createBuiltinAssets(Renderer& renderer, Assets& assets) {
     add("sphere", makeSphere(0.5f));
     add("plane", makePlane(1, 1));
     add("floor", makePlane(1, 40));
-    assets.addTexture("checker", renderer.createTexture(256, 256, makeChecker(256, 8, {0.80f, 0.80f, 0.82f}, {0.55f, 0.56f, 0.6f})));
+    assets.addTexture(
+        "checker", renderer.createTexture(256, 256, makeChecker(256, 8, {0.80f, 0.80f, 0.82f}, {0.55f, 0.56f, 0.6f})));
     assets.addTexture("panel", renderer.createTexture(256, 256, makePanel(256)));
     assets.addTexture("grid", renderer.createTexture(256, 256, makeGrid(256)));
 }
-} // namespace shockwave
+}   // namespace shockwave

@@ -38,4 +38,4 @@ Bounds computeBounds(const MeshData& mesh);
 // triangles, from either side. t is the distance along direction (in its units).
 bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t);
 
-} // namespace shockwave
+}   // namespace shockwave

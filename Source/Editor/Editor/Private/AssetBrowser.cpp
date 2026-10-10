@@ -2,11 +2,10 @@
 // built-in assets, as tiles you can drag onto the viewport, the hierarchy or the
 // inspector. Files saved into Content/ by any program are imported straight away.
 #include "Editor.h"
-
 #include <UI/Gui.h>
 
-#include <SDL3/SDL.h>
 #include <imgui_stdlib.h>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cctype>
@@ -30,11 +29,11 @@ enum class TileKind { Folder, Mesh, Model, Texture, Scene, Other };
 
 struct Tile {
     TileKind kind;
-    std::string name;    // asset name, folder path or scene path: what actions use
+    std::string name;   // asset name, folder path or scene path: what actions use
     std::string label;   // what shows under the tile
     uint64_t texture = 0;
     const AssetFolder::File* file = nullptr;
-    fs::path path;       // on disk, when it's a file or folder
+    fs::path path;   // on disk, when it's a file or folder
 };
 
 std::string lower(std::string text) {
@@ -91,8 +90,11 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
     if (kind == TileKind::Scene) {
         // A little landscape: a frame with a horizon and a sun.
         draw->AddRect(ImVec2(c.x - r, c.y - r * 0.75f), ImVec2(c.x + r, c.y + r * 0.75f), color, 0.0f, 0, 2.0f);
-        const ImVec2 hills[4] = {{c.x - r, c.y + r * 0.45f}, {c.x - r * 0.3f, c.y - r * 0.1f},
-                                 {c.x + r * 0.2f, c.y + r * 0.3f}, {c.x + r, c.y - r * 0.2f}};
+        const ImVec2 hills[4] = {
+            {c.x - r, c.y + r * 0.45f},
+            {c.x - r * 0.3f, c.y - r * 0.1f},
+            {c.x + r * 0.2f, c.y + r * 0.3f},
+            {c.x + r, c.y - r * 0.2f}};
         draw->AddPolyline(hills, 4, color, 0, 2.0f);
         draw->AddCircle(ImVec2(c.x + r * 0.45f, c.y - r * 0.38f), r * 0.14f, color, 0, 2.0f);
         return;
@@ -103,8 +105,11 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
         return;
     }
     if (kind == TileKind::Mesh && (name == "plane" || name == "floor")) {
-        const ImVec2 q[4] = {{c.x - r, c.y + r * 0.35f}, {c.x - r * 0.4f, c.y - r * 0.35f},
-                             {c.x + r, c.y - r * 0.35f}, {c.x + r * 0.4f, c.y + r * 0.35f}};
+        const ImVec2 q[4] = {
+            {c.x - r, c.y + r * 0.35f},
+            {c.x - r * 0.4f, c.y - r * 0.35f},
+            {c.x + r, c.y - r * 0.35f},
+            {c.x + r * 0.4f, c.y + r * 0.35f}};
         draw->AddPolyline(q, 4, color, ImDrawFlags_Closed, 2.0f);
         return;
     }
@@ -126,7 +131,7 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
     draw->AddText(ImVec2(c.x - size.x * 0.5f, c.y - size.y * 0.5f), color, ext.c_str());
 }
 
-} // namespace
+}   // namespace
 
 void Editor::drawContentBrowser() {
     if (!ImGui::Begin("Content", &m_showContent)) {
@@ -153,8 +158,8 @@ void Editor::drawContentBrowser() {
 
 void Editor::drawContentTree() {
     auto rootNode = [&](const char* label, ContentRoot root) {
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow |
-                                   ImGuiTreeNodeFlags_DefaultOpen;
+        ImGuiTreeNodeFlags flags =
+            ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
         if (m_contentRoot == root && m_contentFolder.empty()) flags |= ImGuiTreeNodeFlags_Selected;
         if (root != ContentRoot::Assets || m_assetFolders.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
         const bool open = ImGui::TreeNodeEx(label, flags);
@@ -177,11 +182,14 @@ void Editor::drawContentTree() {
                 stack.pop_back();
             }
             if (!stack.empty() || parent.empty()) {
-                const bool hasChildren = std::any_of(m_assetFolders.begin(), m_assetFolders.end(),
-                                                     [&](const std::string& f) { return parentOf(f) == folder; });
+                const bool hasChildren =
+                    std::any_of(m_assetFolders.begin(), m_assetFolders.end(), [&](const std::string& f) {
+                        return parentOf(f) == folder;
+                    });
                 ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow;
                 if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
-                if (m_contentRoot == ContentRoot::Assets && m_contentFolder == folder) flags |= ImGuiTreeNodeFlags_Selected;
+                if (m_contentRoot == ContentRoot::Assets && m_contentFolder == folder)
+                    flags |= ImGuiTreeNodeFlags_Selected;
                 // Keep the way down to the current folder open.
                 if (m_contentRoot == ContentRoot::Assets && m_contentFolder.starts_with(folder + "/")) {
                     ImGui::SetNextItemOpen(true);
@@ -278,13 +286,16 @@ void Editor::drawContentItems() {
 
     // Gather what's in this folder. A search looks through the whole root instead.
     const std::string filter = lower(m_contentFilter);
-    auto matches = [&](const std::string& text) { return filter.empty() || lower(text).find(filter) != std::string::npos; };
+    auto matches = [&](const std::string& text) {
+        return filter.empty() || lower(text).find(filter) != std::string::npos;
+    };
     std::vector<Tile> tiles;
     if (m_contentRoot == ContentRoot::Assets) {
         if (filter.empty()) {
             for (const std::string& folder : m_assetFolders) {
                 if (parentOf(folder) == m_contentFolder) {
-                    tiles.push_back({TileKind::Folder, folder, leafName(folder), 0, nullptr, m_project.assetFolder / folder});
+                    tiles.push_back(
+                        {TileKind::Folder, folder, leafName(folder), 0, nullptr, m_project.assetFolder / folder});
                 }
             }
         }
@@ -293,7 +304,8 @@ void Editor::drawContentItems() {
             const TileKind kind = f.kind == AssetFolder::Kind::Texture ? TileKind::Texture
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
                                                                        : TileKind::Other;
-            const uint64_t thumb = f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
+            const uint64_t thumb =
+                f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
             tiles.push_back({kind, f.name, leafName(f.name), thumb, &f, f.path});
         }
     } else if (m_contentRoot == ContentRoot::Scenes) {
@@ -309,7 +321,13 @@ void Editor::drawContentItems() {
         for (const char* texture : kBuiltinTextures) {
             if (!matches(texture)) continue;
             const auto handle = engine().assets().findTexture(texture);
-            tiles.push_back({TileKind::Texture, texture, texture, handle ? engine().renderer().guiTexture(*handle) : 0, nullptr, {}});
+            tiles.push_back(
+                {TileKind::Texture,
+                 texture,
+                 texture,
+                 handle ? engine().renderer().guiTexture(*handle) : 0,
+                 nullptr,
+                 {}});
         }
     }
 
@@ -353,9 +371,13 @@ void Editor::drawContentItems() {
         // Background, picture, then the name underneath.
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 max(min.x + tileSize.x, min.y + tileSize.y);
-        draw->AddRectFilled(min, max,
-                            ImGui::GetColorU32(chosen ? ImGuiCol_HeaderActive : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_FrameBg),
-                            style.FrameRounding);
+        draw->AddRectFilled(
+            min, max,
+            ImGui::GetColorU32(
+                chosen    ? ImGuiCol_HeaderActive
+                : hovered ? ImGuiCol_HeaderHovered
+                          : ImGuiCol_FrameBg),
+            style.FrameRounding);
         if (chosen) draw->AddRect(min, max, accentColor, style.FrameRounding);
         const float pad = 6.0f * dpi;
         const ImVec2 picMin(min.x + pad, min.y + pad);
@@ -369,9 +391,10 @@ void Editor::drawContentItems() {
                 const float aspect = float(tile.file->width) / float(tile.file->height);
                 (aspect >= 1.0f ? h : w) = aspect >= 1.0f ? 1.0f / aspect : aspect;
             }
-            draw->AddImageRounded(static_cast<ImTextureID>(tile.texture), ImVec2(centre.x - half * w, centre.y - half * h),
-                                  ImVec2(centre.x + half * w, centre.y + half * h), ImVec2(0, 0), ImVec2(1, 1),
-                                  IM_COL32_WHITE, style.FrameRounding);
+            draw->AddImageRounded(
+                static_cast<ImTextureID>(tile.texture), ImVec2(centre.x - half * w, centre.y - half * h),
+                ImVec2(centre.x + half * w, centre.y + half * h), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE,
+                style.FrameRounding);
         } else {
             const ImU32 iconColor = failed ? errorColor : tile.kind == TileKind::Folder ? dimColor : accentColor;
             drawIcon(draw, tile.kind, tile.name, centre, half, iconColor);
@@ -379,8 +402,9 @@ void Editor::drawContentItems() {
         if (failed) draw->AddText(ImVec2(min.x + pad, min.y + pad), errorColor, "!");
         const std::string label = ellipsize(tile.label, side - pad * 2.0f);
         const float labelWidth = ImGui::CalcTextSize(label.c_str()).x;
-        draw->AddText(ImVec2(min.x + (side - labelWidth) * 0.5f, min.y + side - 2.0f),
-                      usable || tile.kind == TileKind::Folder ? textColor : dimColor, label.c_str());
+        draw->AddText(
+            ImVec2(min.x + (side - labelWidth) * 0.5f, min.y + side - 2.0f),
+            usable || tile.kind == TileKind::Folder ? textColor : dimColor, label.c_str());
 
         // Details on hover.
         if (ImGui::BeginItemTooltip()) {
@@ -388,13 +412,15 @@ void Editor::drawContentItems() {
             if (tile.file) {
                 if (tile.file->width) ImGui::TextDisabled("%u x %u", tile.file->width, tile.file->height);
                 ImGui::TextDisabled("%s", humanSize(tile.file->bytes).c_str());
-                if (failed) ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", tile.file->error.c_str());
+                if (failed)
+                    ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", tile.file->error.c_str());
                 if (tile.kind == TileKind::Other) ImGui::TextDisabled("No importer for this kind of file yet");
                 if (tile.kind == TileKind::Model) {
                     if (const auto model = engine().assets().model(tile.file->model)) {
-                        ImGui::TextDisabled("%zu meshes, %zu nodes, %zu materials, %llu triangles", model->data.meshes.size(),
-                                            model->data.nodes.size(), model->data.materials.size(),
-                                            static_cast<unsigned long long>(model->data.triangles));
+                        ImGui::TextDisabled(
+                            "%zu meshes, %zu nodes, %zu materials, %llu triangles", model->data.meshes.size(),
+                            model->data.nodes.size(), model->data.materials.size(),
+                            static_cast<unsigned long long>(model->data.triangles));
                     }
                 }
                 for (const std::string& warning : tile.file->warnings) {
@@ -419,7 +445,9 @@ void Editor::drawContentItems() {
 
         // Drag sources carry the asset name.
         if (usable && tile.kind != TileKind::Folder && tile.kind != TileKind::Scene && ImGui::BeginDragDropSource()) {
-            const char* payload = tile.kind == TileKind::Mesh ? kMeshPayload : tile.kind == TileKind::Model ? kModelPayload : kTexturePayload;
+            const char* payload = tile.kind == TileKind::Mesh    ? kMeshPayload
+                                  : tile.kind == TileKind::Model ? kModelPayload
+                                                                 : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
                 ImGui::Image(static_cast<ImTextureID>(tile.texture), ImVec2(48.0f * dpi, 48.0f * dpi));
@@ -490,7 +518,8 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("Place in front of the camera", nullptr, false, usable)) placeModel();
                 break;
             case TileKind::Texture:
-                if (ImGui::MenuItem("Use on the selection", nullptr, false, usable && !selection().empty())) useTexture();
+                if (ImGui::MenuItem("Use on the selection", nullptr, false, usable && !selection().empty()))
+                    useTexture();
                 break;
             case TileKind::Other: break;
             }
@@ -506,8 +535,9 @@ void Editor::drawContentItems() {
     }
 
     // Right-click on empty space.
-    if (m_contentRoot != ContentRoot::Engine && ImGui::BeginPopupContextWindow("background", ImGuiPopupFlags_MouseButtonRight |
-                                                                                               ImGuiPopupFlags_NoOpenOverItems)) {
+    if (m_contentRoot != ContentRoot::Engine &&
+        ImGui::BeginPopupContextWindow(
+            "background", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
         if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("Import...")) showImportDialog(folderPath);
         if (ImGui::MenuItem("Show in file manager")) openInFileManager(folderPath);
         ImGui::EndPopup();
@@ -519,4 +549,4 @@ void Editor::drawContentItems() {
     }
 }
 
-} // namespace editor
+}   // namespace editor

@@ -1,11 +1,10 @@
 // The project hub: what the editor shows with no project open. Recent projects, a new
 // project form, and a way to open any project (or the bundled sample).
 #include "Editor.h"
-
 #include <UI/Gui.h>
 
-#include <SDL3/SDL.h>
 #include <imgui_stdlib.h>
+#include <SDL3/SDL.h>
 
 #include <filesystem>
 #include <unordered_map>
@@ -51,14 +50,15 @@ const RecentInfo& recentInfo(const std::string& path) {
     return info;
 }
 
-} // namespace
+}   // namespace
 
 void Editor::drawProjectHub() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDocking;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                   ImGuiWindowFlags_NoDocking;
     if (!ImGui::Begin("##hub", nullptr, flags)) {
         ImGui::End();
         return;
@@ -92,17 +92,22 @@ void Editor::drawProjectHub() {
             ImGui::PushID(path.c_str());
             const float rowHeight = ImGui::GetTextLineHeight() * 2.0f + ImGui::GetStyle().FramePadding.y * 2.0f;
             const ImVec2 rowPos = ImGui::GetCursorScreenPos();
-            if (ImGui::Selectable("##project", false, readable ? 0 : ImGuiSelectableFlags_Disabled,
-                                  ImVec2(ImGui::GetContentRegionAvail().x - 70.0f * dpi, rowHeight))) {
+            if (ImGui::Selectable(
+                    "##project", false, readable ? 0 : ImGuiSelectableFlags_Disabled,
+                    ImVec2(ImGui::GetContentRegionAvail().x - 70.0f * dpi, rowHeight))) {
                 openProject(path);
             }
             ImDrawList* draw = ImGui::GetWindowDrawList();
             const float pad = ImGui::GetStyle().FramePadding.y;
-            draw->AddText(ImVec2(rowPos.x + 8.0f, rowPos.y + pad), ImGui::GetColorU32(readable ? ImGuiCol_Text : ImGuiCol_TextDisabled),
-                          readable ? info.name.c_str() : fs::path(path).stem().string().c_str());
-            const std::string detail = readable ? fs::path(path).parent_path().string() : (exists ? err : "Missing: " + path);
-            draw->AddText(ImVec2(rowPos.x + 8.0f, rowPos.y + pad + ImGui::GetTextLineHeight()),
-                          ImGui::GetColorU32(ImGuiCol_TextDisabled), detail.c_str());
+            draw->AddText(
+                ImVec2(rowPos.x + 8.0f, rowPos.y + pad),
+                ImGui::GetColorU32(readable ? ImGuiCol_Text : ImGuiCol_TextDisabled),
+                readable ? info.name.c_str() : fs::path(path).stem().string().c_str());
+            const std::string detail =
+                readable ? fs::path(path).parent_path().string() : (exists ? err : "Missing: " + path);
+            draw->AddText(
+                ImVec2(rowPos.x + 8.0f, rowPos.y + pad + ImGui::GetTextLineHeight()),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), detail.c_str());
             ImGui::SameLine();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (rowHeight - ImGui::GetFrameHeight()) * 0.5f);
             if (ImGui::SmallButton("Remove")) remove = path;
@@ -138,7 +143,8 @@ void Editor::drawProjectHub() {
         if (gui::button("Create project", ImVec2(-1.0f, 0))) createNewProject(folder, m_newProjectName);
         ImGui::PopStyleColor(3);
         ImGui::EndDisabled();
-        if (!m_hubError.empty()) ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", m_hubError.c_str());
+        if (!m_hubError.empty())
+            ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", m_hubError.c_str());
 
         ImGui::Spacing();
         ImGui::SeparatorText("Open");
@@ -156,11 +162,12 @@ void Editor::drawProjectHub() {
     if (m_errorCount > 0) {
         ImGui::Dummy(ImVec2(0, 12.0f * dpi));
         for (const LogEntry& entry : m_log) {
-            if (entry.level == LogLevel::Error) ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", entry.text.c_str());
+            if (entry.level == LogLevel::Error)
+                ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", entry.text.c_str());
         }
     }
     ImGui::EndGroup();
     ImGui::End();
 }
 
-} // namespace editor
+}   // namespace editor

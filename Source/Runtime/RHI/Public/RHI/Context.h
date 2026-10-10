@@ -41,4 +41,4 @@ private:
     uint32_t m_maxBindlessTextures = 0;
 };
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

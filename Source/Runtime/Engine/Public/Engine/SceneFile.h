@@ -41,17 +41,19 @@ struct SceneFileHooks {
     std::function<void(const std::string& key, std::istream& rest)> readHeader;
 };
 
-bool saveScene(const World& world, const Assets& assets, const std::string& path, std::string& error,
-               const SceneFileHooks& hooks = {});
+bool saveScene(
+    const World& world, const Assets& assets, const std::string& path, std::string& error,
+    const SceneFileHooks& hooks = {});
 
 // Replaces world with the file's contents on success. warnings collects things that
 // loaded with a problem (an unknown mesh name, say).
-bool loadScene(World& world, const Assets& assets, const std::string& path, std::string& error,
-               const SceneFileHooks& hooks = {}, std::vector<std::string>* warnings = nullptr);
+bool loadScene(
+    World& world, const Assets& assets, const std::string& path, std::string& error, const SceneFileHooks& hooks = {},
+    std::vector<std::string>* warnings = nullptr);
 
 // Writes a Markdown reference for authoring scenes: the file layout, every registered
 // component with its fields, value syntax and defaults, and the asset names available.
 // Main thread, after the game's types and assets are registered.
 void writeSceneSchema(std::ostream& out, const Assets& assets);
 
-} // namespace shockwave
+}   // namespace shockwave

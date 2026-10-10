@@ -41,6 +41,7 @@ std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path
 // startup scene is Scenes/main.swscene;
 // writing it is up to the caller, since loadProject wants it to exist. Refuses a folder
 // that already holds a project.
-bool createProject(const std::filesystem::path& folder, const std::string& name, const std::string& gameModule,
-                   Project& project, std::string& error);
-} // namespace shockwave
+bool createProject(
+    const std::filesystem::path& folder, const std::string& name, const std::string& gameModule, Project& project,
+    std::string& error);
+}   // namespace shockwave

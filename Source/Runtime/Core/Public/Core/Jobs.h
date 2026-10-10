@@ -70,4 +70,4 @@ private:
     std::condition_variable m_wake;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

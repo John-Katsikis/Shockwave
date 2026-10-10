@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <fstream>
 #include <climits>
+#include <fstream>
 #include <memory>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -15,7 +15,7 @@ namespace shockwave {
 
 bool isImageFile(const std::filesystem::path& path) {
     static constexpr std::array kExtensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp", ".psd",
-                                               ".gif", ".hdr", ".pnm", ".ppm", ".pgm"};
+                                               ".gif", ".hdr", ".pnm",  ".ppm", ".pgm"};
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
     return std::find(kExtensions.begin(), kExtensions.end(), ext) != kExtensions.end();
@@ -43,7 +43,8 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
     }
     int width = 0, height = 0, channels = 0;
     std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels(
-        stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4), stbi_image_free);
+        stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4),
+        stbi_image_free);
     if (!pixels) {
         const char* reason = stbi_failure_reason();
         error = reason ? reason : "image decoding failed";
@@ -57,4 +58,4 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
     return true;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

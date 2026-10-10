@@ -12,7 +12,7 @@ namespace editor {
 // key = value lines, so it can be read and edited by hand.
 struct Preferences {
     std::vector<std::string> recentProjects;   // .swproject paths, most recent first
-    std::vector<std::string> recentScenes;     // .swscene paths, most recent first
+    std::vector<std::string> recentScenes;   // .swscene paths, most recent first
     bool reopenLastProject = true;
 
     std::string theme;   // a .swtheme path; empty uses the project's theme
@@ -27,8 +27,8 @@ struct Preferences {
     bool playFromSceneCamera = true;   // Play looks through the scene's Camera
 
     bool snap = false;
-    float snapMove = 0.5f;     // units
-    float snapRotate = 15.0f;  // degrees
+    float snapMove = 0.5f;   // units
+    float snapRotate = 15.0f;   // degrees
     float snapScale = 0.1f;
 
     int autosaveMinutes = 5;   // 0 turns autosave off
@@ -43,4 +43,4 @@ std::filesystem::path defaultPreferencesPath();
 bool loadPreferences(const std::filesystem::path& path, Preferences& prefs, std::string& error);
 bool savePreferences(const std::filesystem::path& path, const Preferences& prefs, std::string& error);
 
-} // namespace editor
+}   // namespace editor

@@ -40,4 +40,4 @@ void makeScene(SceneTemplate kind, World& world, const Assets& assets) {
     world.add<MeshRenderer>(ground, renderer);
 }
 
-} // namespace editor
+}   // namespace editor

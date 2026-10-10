@@ -48,32 +48,46 @@ int main(int argc, char** argv) {
                 if (i + 1 >= argc) throw std::runtime_error("Missing value for " + arg);
                 return argv[++i];
             };
-            if (arg == "--project") options.path = value();
-            else if (arg == "--assets") options.assetFolder = value();
-            else if (arg == "--theme") options.theme = value();
-            else if (arg == "--prefs") options.prefsPath = value();
-            else if (arg == "--frames") config.maxFrames = integer(value(), "--frames", 1);
-            else if (arg == "--select") options.selectOnStart = integer(value(), "--select", 0);
-            else if (arg == "--uncapped") uncapped = true;
-            else if (arg == "--play") options.playOnStart = true;
+            if (arg == "--project")
+                options.path = value();
+            else if (arg == "--assets")
+                options.assetFolder = value();
+            else if (arg == "--theme")
+                options.theme = value();
+            else if (arg == "--prefs")
+                options.prefsPath = value();
+            else if (arg == "--frames")
+                config.maxFrames = integer(value(), "--frames", 1);
+            else if (arg == "--select")
+                options.selectOnStart = integer(value(), "--select", 0);
+            else if (arg == "--uncapped")
+                uncapped = true;
+            else if (arg == "--play")
+                options.playOnStart = true;
             else if (arg == "--help") {
-                std::puts("editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
-                          "       [--theme file] [--uncapped] [--prefs file] [--play] [--select N] [--frames N]");
+                std::puts(
+                    "editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
+                    "       [--theme file] [--uncapped] [--prefs file] [--play] [--select N] [--frames N]");
                 return 0;
-            } else if (!arg.empty() && arg[0] != '-') options.path = arg;
-            else throw std::runtime_error("Unknown option: " + arg);
+            } else if (!arg.empty() && arg[0] != '-')
+                options.path = arg;
+            else
+                throw std::runtime_error("Unknown option: " + arg);
         }
         std::error_code ec;
         if (options.path.empty()) {
-            if (const auto found = shockwave::findProjectFile(std::filesystem::current_path(ec))) options.path = found->string();
+            if (const auto found = shockwave::findProjectFile(std::filesystem::current_path(ec)))
+                options.path = found->string();
         }
 
         std::string error;
         if (!editor::loadPreferences(options.prefsPath, options.prefs, error)) {
             std::fprintf(stderr, "Editor: preferences not loaded (using defaults): %s\n", error.c_str());
         }
-        if (!options.theme.empty()) config.guiTheme = options.theme;
-        else if (!options.prefs.theme.empty()) config.guiTheme = options.prefs.theme;
+        if (!options.theme.empty())
+            config.guiTheme = options.theme;
+        else if (!options.prefs.theme.empty())
+            config.guiTheme = options.prefs.theme;
         config.window.vsync = options.prefs.vsync && !uncapped;
         if (uncapped) options.prefs.vsync = false;
 

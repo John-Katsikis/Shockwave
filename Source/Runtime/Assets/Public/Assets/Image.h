@@ -2,8 +2,8 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <string>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace shockwave {
@@ -22,4 +22,4 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
 // Whether loadImage knows the file's extension.
 bool isImageFile(const std::filesystem::path& path);
 
-} // namespace shockwave
+}   // namespace shockwave

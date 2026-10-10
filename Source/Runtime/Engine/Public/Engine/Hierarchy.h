@@ -39,4 +39,4 @@ void destroyWithChildren(World& world, Entity e);
 // the copy of e keeps e's parent. Returns the copy of e.
 Entity cloneWithChildren(World& world, Entity e);
 
-} // namespace shockwave
+}   // namespace shockwave

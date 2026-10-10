@@ -19,10 +19,11 @@ struct ColorPulse {
 };
 
 void registerTypes() {
-    registerComponent<ColorPulse>("ColorPulse", {
-        field("speed", &ColorPulse::speed, 0.1f, 0.0f, 10.0f),
-        field("strength", &ColorPulse::strength, 0.01f, 0.0f, 1.0f),
-    });
+    registerComponent<ColorPulse>(
+        "ColorPulse", {
+                          field("speed", &ColorPulse::speed, 0.1f, 0.0f, 10.0f),
+                          field("strength", &ColorPulse::strength, 0.01f, 0.0f, 1.0f),
+                      });
 }
 
 class SampleGameMode final : public GameMode {
@@ -52,7 +53,7 @@ public:
     void endPlay(GameContext&) override { std::puts("Sample gameplay stopped"); }
 };
 
-} // namespace
+}   // namespace
 
 const GameModule& projectGameModule() {
     static const GameModule module{
@@ -64,4 +65,4 @@ const GameModule& projectGameModule() {
     return module;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

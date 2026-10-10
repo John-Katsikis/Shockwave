@@ -1,8 +1,9 @@
-#include <Engine/Camera.h>
-#include <Renderer/Renderer.h>
-#include <Assets/Assets.h>
-#include <Engine/Hierarchy.h>
 #include <Engine/Systems.h>
+
+#include <Assets/Assets.h>
+#include <Engine/Camera.h>
+#include <Engine/Hierarchy.h>
+#include <Renderer/Renderer.h>
 
 #include <glm/gtc/constants.hpp>
 
@@ -22,8 +23,7 @@ void addBuiltinSystems(Schedule& schedule) {
     // else that moves the entity.
     schedule.each<Transform, Bob>("Bob", [](const SystemContext& ctx, Transform& t, Bob& bob) {
         bob.time += ctx.dt;
-        const float offset =
-            bob.amplitude * std::sin(glm::two_pi<float>() * bob.frequency * bob.time + bob.phase);
+        const float offset = bob.amplitude * std::sin(glm::two_pi<float>() * bob.frequency * bob.time + bob.phase);
         t.position.y += offset - bob.offset;
         bob.offset = offset;
     });
@@ -91,33 +91,41 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             renderer.drawMesh(m.mesh, model, m.texture, m.tint, material);
         },
         256);
-    if (assets) world.parallelEach<const Transform,const ModelRenderer>(jobs,
-        [&](Entity e,const Transform& t,const ModelRenderer& instance) {
-            if (!instance.visible) return;
-            const auto asset=assets->model(instance.model);
-            if (!asset) return;
-            auto model=local(e,t);
-            if (hasParents) {
-                Entity parent=parentOf(world,e);
-                for (int depth=0;parent.valid() && depth<kMaxHierarchyDepth;++depth) {
-                    if (const auto* pt=transforms->find(parent.index)) model=local(parent,*pt)*model;
-                    parent=parentOf(world,parent);
+    if (assets)
+        world.parallelEach<const Transform, const ModelRenderer>(
+            jobs,
+            [&](Entity e, const Transform& t, const ModelRenderer& instance) {
+                if (!instance.visible) return;
+                const auto asset = assets->model(instance.model);
+                if (!asset) return;
+                auto model = local(e, t);
+                if (hasParents) {
+                    Entity parent = parentOf(world, e);
+                    for (int depth = 0; parent.valid() && depth < kMaxHierarchyDepth; ++depth) {
+                        if (const auto* pt = transforms->find(parent.index)) model = local(parent, *pt) * model;
+                        parent = parentOf(world, parent);
+                    }
                 }
-            }
-            for (const auto& node:asset->data.nodes) for (auto index:node.meshes) {
-                const auto& mesh=asset->data.meshes[index];
-                const auto& material=asset->data.materials[mesh.material];
-                const auto texture=material.baseColorTexture<0 ? TextureHandle{} : asset->textures[material.baseColorTexture];
-                DrawMaterial options;
-                options.alphaCutoff=material.alpha==ModelMaterial::Alpha::Mask ? material.alphaCutoff : -1.0f;
-                options.doubleSided=material.doubleSided;
-                options.blend=material.alpha==ModelMaterial::Alpha::Blend;
-                options.roughness=material.roughness;
-                options.metallic=material.metallic;
-                options.emissive=material.emissive;
-                renderer.drawMesh(asset->meshes[index],model*node.world,texture,material.baseColor*instance.tint,options);
-            }
-        },64);
+                for (const auto& node : asset->data.nodes)
+                    for (auto index : node.meshes) {
+                        const auto& mesh = asset->data.meshes[index];
+                        const auto& material = asset->data.materials[mesh.material];
+                        const auto texture = material.baseColorTexture < 0 ? TextureHandle{}
+                                                                           : asset->textures[material.baseColorTexture];
+                        DrawMaterial options;
+                        options.alphaCutoff =
+                            material.alpha == ModelMaterial::Alpha::Mask ? material.alphaCutoff : -1.0f;
+                        options.doubleSided = material.doubleSided;
+                        options.blend = material.alpha == ModelMaterial::Alpha::Blend;
+                        options.roughness = material.roughness;
+                        options.metallic = material.metallic;
+                        options.emissive = material.emissive;
+                        renderer.drawMesh(
+                            asset->meshes[index], model * node.world, texture, material.baseColor * instance.tint,
+                            options);
+                    }
+            },
+            64);
 
     // Lights shine along their entity's forward axis (-Z), wherever the hierarchy puts it.
     world.each<const Transform, const Light>([&](Entity e, const Transform&, const Light& light) {
@@ -165,9 +173,9 @@ bool cameraMatrices(const World& world, Entity e, float aspect, glm::mat4& view,
     }
     rigid[3] = m[3];
     view = glm::inverse(rigid);
-    projection = perspectiveReverseZ(glm::radians(glm::clamp(camera->fov, 1.0f, 170.0f)), aspect,
-                                     std::max(camera->nearPlane, 0.001f));
+    projection = perspectiveReverseZ(
+        glm::radians(glm::clamp(camera->fov, 1.0f, 170.0f)), aspect, std::max(camera->nearPlane, 0.001f));
     return true;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <volk.h>
 #include <vk_mem_alloc.h>
+#include <volk.h>
 
 #include <stdexcept>
 #include <string>
@@ -27,4 +27,4 @@ struct Image {
     VkFormat format = VK_FORMAT_UNDEFINED;
 };
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

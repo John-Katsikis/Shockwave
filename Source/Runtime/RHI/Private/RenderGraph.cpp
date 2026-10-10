@@ -13,30 +13,41 @@ struct UseInfo {
 UseInfo useInfo(ImageUse use) {
     switch (use) {
     case ImageUse::ColorAttachment:
-        return {{VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                 VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT},
-                true, "color attachment"};
+        return {
+            {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+             VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT},
+            true,
+            "color attachment"};
     case ImageUse::DepthAttachment:
-        return {{VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                 VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                 VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
-                true, "depth attachment"};
+        return {
+            {VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+            true,
+            "depth attachment"};
     case ImageUse::Sampled:
-        return {{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT},
-                false, "sampled"};
+        return {
+            {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT},
+            false,
+            "sampled"};
     case ImageUse::TransferSrc:
-        return {{VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                 VK_ACCESS_2_TRANSFER_READ_BIT},
-                false, "transfer source"};
+        return {
+            {VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT},
+            false,
+            "transfer source"};
     case ImageUse::TransferDst:
-        return {{VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                 VK_ACCESS_2_TRANSFER_WRITE_BIT},
-                true, "transfer destination"};
+        return {
+            {VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+             VK_ACCESS_2_TRANSFER_WRITE_BIT},
+            true,
+            "transfer destination"};
     case ImageUse::Present:
         // Ordered before the submit's signal (ALL_COMMANDS), which presentation waits on.
-        return {{VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE}, false,
-                "present"};
+        return {
+            {VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_NONE},
+            false,
+            "present"};
     }
     return {};
 }
@@ -59,15 +70,15 @@ const char* layoutName(VkImageLayout layout) {
     }
 }
 
-} // namespace
+}   // namespace
 
 void RenderGraph::reset() {
     m_images.clear();
     m_passes.clear();
 }
 
-RenderGraph::ImageId RenderGraph::import(std::string name, VkImage image, VkImageAspectFlags aspect,
-                                         ImageState& state, bool discard) {
+RenderGraph::ImageId
+RenderGraph::import(std::string name, VkImage image, VkImageAspectFlags aspect, ImageState& state, bool discard) {
     m_images.push_back({std::move(name), image, aspect, &state, discard});
     return static_cast<ImageId>(m_images.size() - 1);
 }
@@ -128,4 +139,4 @@ void RenderGraph::execute(VkCommandBuffer cmd) {
     }
 }
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

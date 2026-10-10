@@ -1,15 +1,16 @@
-#include <cstring>
-#include <Engine/Components.h>
 #include <Engine/SceneFile.h>
+
+#include <Engine/Components.h>
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <unordered_map>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 
 namespace shockwave {
 
@@ -21,9 +22,7 @@ constexpr int kFormatVersion = 2;
 struct Num {
     float v;
 };
-std::ostream& operator<<(std::ostream& out, Num n) {
-    return out << (n.v == 0.0f ? 0.0f : n.v);
-}
+std::ostream& operator<<(std::ostream& out, Num n) { return out << (n.v == 0.0f ? 0.0f : n.v); }
 
 void writeFloats(std::ostream& out, const float* v, int n) {
     for (int i = 0; i < n; ++i) out << ' ' << Num{v[i]};
@@ -59,8 +58,9 @@ bool parseInt(const std::string& text, int& value) {
 
 // entityRefs maps an entity index to how other entities refer to it in the file.
 
-void writeField(std::ostream& out, const Field& f, const void* data, const Assets& assets, const World& world,
-                const std::vector<std::string>& entityRefs) {
+void writeField(
+    std::ostream& out, const Field& f, const void* data, const Assets& assets, const World& world,
+    const std::vector<std::string>& entityRefs) {
     switch (f.type) {
     case FieldType::Bool: out << ' ' << (*static_cast<const bool*>(data) ? 1 : 0); break;
     case FieldType::Enum: {
@@ -90,8 +90,8 @@ void writeField(std::ostream& out, const Field& f, const void* data, const Asset
         break;
     }
     case FieldType::Model: {
-        const auto name=assets.modelName(*static_cast<const ModelHandle*>(data));
-        writeName(out,name.empty() ? "none" : name);
+        const auto name = assets.modelName(*static_cast<const ModelHandle*>(data));
+        writeName(out, name.empty() ? "none" : name);
         break;
     }
     case FieldType::Texture: {
@@ -114,9 +114,12 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         std::string word;
         if (!(in >> word)) return false;
         word = lower(word);
-        if (word == "1" || word == "true" || word == "yes") *static_cast<bool*>(data) = true;
-        else if (word == "0" || word == "false" || word == "no") *static_cast<bool*>(data) = false;
-        else return false;
+        if (word == "1" || word == "true" || word == "yes")
+            *static_cast<bool*>(data) = true;
+        else if (word == "0" || word == "false" || word == "no")
+            *static_cast<bool*>(data) = false;
+        else
+            return false;
         return true;
     }
     case FieldType::Enum: {
@@ -162,9 +165,9 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
     case FieldType::Model: {
         std::string name;
         if (!(in >> std::quoted(name))) return false;
-        const auto handle=assets.findModel(name);
-        if (!handle.valid() && name!="none") warnings.push_back("unknown model '"+name+"'");
-        *static_cast<ModelHandle*>(data)=handle;
+        const auto handle = assets.findModel(name);
+        if (!handle.valid() && name != "none") warnings.push_back("unknown model '" + name + "'");
+        *static_cast<ModelHandle*>(data) = handle;
         return true;
     }
     case FieldType::Texture: {
@@ -188,7 +191,8 @@ std::string valueSyntax(const Field& f) {
     case FieldType::Enum: {
         std::string text = "one of:";
         for (size_t i = 0; i < f.options.size(); ++i) {
-            text += (i ? ", " : " ") + (f.options[i].find(' ') == std::string::npos ? f.options[i] : "\"" + f.options[i] + "\"");
+            text += (i ? ", " : " ") +
+                    (f.options[i].find(' ') == std::string::npos ? f.options[i] : "\"" + f.options[i] + "\"");
         }
         return text + " (or its number, counting from 0)";
     }
@@ -218,10 +222,11 @@ bool restIsEmpty(std::istream& in) {
     return !(in >> extra);
 }
 
-} // namespace
+}   // namespace
 
-bool saveScene(const World& world, const Assets& assets, const std::string& path, std::string& error,
-               const SceneFileHooks& hooks) {
+bool saveScene(
+    const World& world, const Assets& assets, const std::string& path, std::string& error,
+    const SceneFileHooks& hooks) {
     std::error_code ec;
     const std::filesystem::path parent = std::filesystem::path(path).parent_path();
     if (!parent.empty()) std::filesystem::create_directories(parent, ec);
@@ -292,8 +297,9 @@ bool saveScene(const World& world, const Assets& assets, const std::string& path
     return true;
 }
 
-bool loadScene(World& world, const Assets& assets, const std::string& path, std::string& error,
-               const SceneFileHooks& hooks, std::vector<std::string>* warningsOut) {
+bool loadScene(
+    World& world, const Assets& assets, const std::string& path, std::string& error, const SceneFileHooks& hooks,
+    std::vector<std::string>* warningsOut) {
     std::ifstream in(path);
     if (!in) {
         error = "can't open " + path;
@@ -307,7 +313,7 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
         Entity owner;
         const ComponentInfo* component;
         size_t offset;
-        int ordinal;        // block position, or -1 with a name
+        int ordinal;   // block position, or -1 with a name
         std::string name;   // empty for a block position or none
         int line;
     };
@@ -316,14 +322,16 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
     int version = 0;
     Entity current = kNullEntity;
     const ComponentInfo* component = nullptr;   // the block we're in
-    bool skipping = false;                      // inside an unknown component's block
+    bool skipping = false;   // inside an unknown component's block
     std::string line;
     int lineNumber = 0;
     auto fail = [&](const std::string& what) {
         error = path + ":" + std::to_string(lineNumber) + ": " + what;
         return false;
     };
-    auto warn = [&](const std::string& what) { warnings.push_back(path + ":" + std::to_string(lineNumber) + ": " + what); };
+    auto warn = [&](const std::string& what) {
+        warnings.push_back(path + ":" + std::to_string(lineNumber) + ": " + what);
+    };
 
     while (std::getline(in, line)) {
         ++lineNumber;
@@ -416,9 +424,7 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
             warn("unknown field '" + key + "' in " + component->name + " skipped");
             continue;
         }
-        auto badValue = [&] {
-            return fail("bad " + component->name + "." + key + ": expected " + valueSyntax(*f));
-        };
+        auto badValue = [&] { return fail("bad " + component->name + "." + key + ": expected " + valueSyntax(*f)); };
         if (f->type == FieldType::Entity) {
             std::string target;
             if (!(ls >> std::quoted(target))) return badValue();
@@ -441,7 +447,10 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
             warn("extra values after " + component->name + "." + key + " ignored");
         }
         // Limits are the editor's; out-of-range values still load, but are probably a mistake.
-        const int count = f->type == FieldType::Float ? 1 : f->type == FieldType::Vec2 ? 2 : f->type == FieldType::Vec3 ? 3 : 0;
+        const int count = f->type == FieldType::Float  ? 1
+                          : f->type == FieldType::Vec2 ? 2
+                          : f->type == FieldType::Vec3 ? 3
+                                                       : 0;
         if (f->min != f->max && count > 0) {
             const float* v = reinterpret_cast<const float*>(static_cast<const char*>(data) + f->offset);
             for (int i = 0; i < count; ++i) {
@@ -470,16 +479,18 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
             if (found == byName.end()) {
                 warnings.push_back(at + "no entity named '" + link.name + "'; left empty");
             } else if (found->second.size() > 1) {
-                warnings.push_back(at + std::to_string(found->second.size()) + " entities are named '" + link.name +
-                                   "'; give the target a unique name. Left empty");
+                warnings.push_back(
+                    at + std::to_string(found->second.size()) + " entities are named '" + link.name +
+                    "'; give the target a unique name. Left empty");
             } else {
                 target = found->second.front();
             }
         } else if (link.ordinal >= 0 && size_t(link.ordinal) < created.size()) {
             target = created[size_t(link.ordinal)];
         } else if (link.ordinal >= 0) {
-            warnings.push_back(path + ":" + std::to_string(link.line) + ": entity " + std::to_string(link.ordinal) +
-                               " doesn't exist; left empty");
+            warnings.push_back(
+                path + ":" + std::to_string(link.line) + ": entity " + std::to_string(link.ordinal) +
+                " doesn't exist; left empty");
         }
         *reinterpret_cast<Entity*>(static_cast<char*>(data) + link.offset) = target;
     }
@@ -488,7 +499,6 @@ bool loadScene(World& world, const Assets& assets, const std::string& path, std:
     if (warningsOut) *warningsOut = std::move(warnings);
     return true;
 }
-
 
 void writeSceneSchema(std::ostream& out, const Assets& assets) {
     out << std::setprecision(6);
@@ -593,4 +603,4 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
     list("Models (ModelRenderer.model, Collider convex/triangle shapes)", names);
 }
 
-} // namespace shockwave
+}   // namespace shockwave

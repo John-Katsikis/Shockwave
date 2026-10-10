@@ -56,13 +56,14 @@ public:
 
 protected:
     static constexpr uint32_t kNone = UINT32_MAX;
-    std::vector<uint32_t> m_sparse;    // entity index -> slot, or kNone
-    std::vector<Entity> m_entities;    // slot -> entity
+    std::vector<uint32_t> m_sparse;   // entity index -> slot, or kNone
+    std::vector<Entity> m_entities;   // slot -> entity
 };
 
 template <class T>
 class Pool final : public PoolBase {
-    static_assert(std::is_copy_constructible_v<T>, "components must be copyable (undo, play mode and duplicate copy them)");
+    static_assert(
+        std::is_copy_constructible_v<T>, "components must be copyable (undo, play mode and duplicate copy them)");
 
 public:
     T& set(Entity e, T value) {
@@ -268,7 +269,9 @@ private:
 class Commands {
 public:
     // Creates an entity later and calls init(world, entity) to set it up.
-    void spawn(std::function<void(World&, Entity)> init) { m_commands.push_back([f = std::move(init)](World& w) { f(w, w.create()); }); }
+    void spawn(std::function<void(World&, Entity)> init) {
+        m_commands.push_back([f = std::move(init)](World& w) { f(w, w.create()); });
+    }
     void destroy(Entity e) {
         m_commands.push_back([e](World& w) { w.destroy(e); });
     }
@@ -293,4 +296,4 @@ private:
     std::vector<std::function<void(World&)>> m_commands;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

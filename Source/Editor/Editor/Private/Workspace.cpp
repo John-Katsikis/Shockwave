@@ -1,13 +1,12 @@
 // The frame around the panels: menu bar, toolbar, status bar, dock layout, and the
 // smaller windows (preferences, project settings, stats, controls, about, prompts).
 #include "Editor.h"
-
-#include <UI/Gui.h>
 #include <Physics/Physics.h>
+#include <UI/Gui.h>
 
-#include <SDL3/SDL.h>
-#include <imgui_internal.h>   // DockBuilder and viewport side bars
+#include <imgui_internal.h>
 #include <imgui_stdlib.h>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <chrono>
@@ -41,13 +40,14 @@ std::string fileTime(const fs::path& path) {
     std::error_code ec;
     const auto time = fs::last_write_time(path, ec);
     if (ec) return "an unknown time";
-    const std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::clock_cast<std::chrono::system_clock>(time));
+    const std::time_t t =
+        std::chrono::system_clock::to_time_t(std::chrono::clock_cast<std::chrono::system_clock>(time));
     char text[64];
     std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", std::localtime(&t));
     return text;
 }
 
-} // namespace
+}   // namespace
 
 // ---- Menu bar -----------------------------------------------------------------------------
 
@@ -66,7 +66,8 @@ void Editor::drawCreateMenuItems(Entity parent) {
         ImGui::EndMenu();
     }
     ImGui::SetItemTooltip("Placed where the viewport is looking from");
-    if (ImGui::MenuItem("Environment", nullptr, false, !parent.valid())) createEntity(CreateKind::Environment, kNullEntity);
+    if (ImGui::MenuItem("Environment", nullptr, false, !parent.valid()))
+        createEntity(CreateKind::Environment, kNullEntity);
 }
 
 void Editor::drawMenuBar() {
@@ -91,7 +92,8 @@ void Editor::drawMenuBar() {
             if (ImGui::MenuItem("Empty")) requestAction(PendingAction::NewEmptyScene);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Open scene...", "Ctrl+O", false, m_hasProject)) requestAction(PendingAction::OpenSceneDialog);
+        if (ImGui::MenuItem("Open scene...", "Ctrl+O", false, m_hasProject))
+            requestAction(PendingAction::OpenSceneDialog);
         // Recent scenes from this project only.
         std::vector<std::string> recent;
         if (m_hasProject) {
@@ -106,7 +108,8 @@ void Editor::drawMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::MenuItem("Save scene", "Ctrl+S", false, m_hasProject && !playing())) saveScene();
-        if (ImGui::MenuItem("Save scene as...", "Ctrl+Shift+S", false, m_hasProject && !playing())) showSaveSceneDialog();
+        if (ImGui::MenuItem("Save scene as...", "Ctrl+Shift+S", false, m_hasProject && !playing()))
+            showSaveSceneDialog();
         ImGui::Separator();
         if (ImGui::MenuItem("Project settings...", nullptr, false, m_hasProject)) {
             m_projectEdit = m_project;
@@ -147,7 +150,8 @@ void Editor::drawMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Play")) {
-            if (ImGui::MenuItem(playState() == PlayState::Playing ? "Stop" : "Play", "Ctrl+P", false, m_gameModuleMatches)) {
+            if (ImGui::MenuItem(
+                    playState() == PlayState::Playing ? "Stop" : "Play", "Ctrl+P", false, m_gameModuleMatches)) {
                 playState() == PlayState::Playing ? stop() : play();
             }
             if (ImGui::MenuItem("Pause", "Ctrl+Shift+P", playState() == PlayState::Paused, playing())) pause();
@@ -213,7 +217,8 @@ void Editor::drawCommandBar() {
             ImGui::TextDisabled("SCENE");
             ImGui::SameLine();
             ImGui::TextUnformatted(scene.c_str());
-            ImGui::SetItemTooltip("%s", m_scenePath.empty() ? "Not saved yet" : m_project.relative(m_scenePath).c_str());
+            ImGui::SetItemTooltip(
+                "%s", m_scenePath.empty() ? "Not saved yet" : m_project.relative(m_scenePath).c_str());
             ImGui::SameLine();
             ImGui::BeginDisabled(playing() || (!m_dirty && !m_scenePath.empty()));
             if (gui::button("Save")) saveScene();
@@ -233,8 +238,9 @@ void Editor::drawCommandBar() {
 
         ImGui::SetCursorPos(ImVec2(std::max(centerX, style.WindowPadding.x), rowY));
         ImGui::BeginDisabled(!m_gameModuleMatches);
-        if (gui::toolButton(playLabel, playState() == PlayState::Playing,
-                            "Run the project's gameplay and physics; resumes when paused (Ctrl+P)")) {
+        if (gui::toolButton(
+                playLabel, playState() == PlayState::Playing,
+                "Run the project's gameplay and physics; resumes when paused (Ctrl+P)")) {
             playState() == PlayState::Playing ? stop() : play();
         }
         ImGui::EndDisabled();
@@ -245,7 +251,7 @@ void Editor::drawCommandBar() {
         if (gui::toolButton("Stop", false, "Stop and restore the scene as it was before Play (Ctrl+P)")) stop();
         ImGui::EndDisabled();
 
-        const char* state = !m_gameModuleMatches                 ? "PLAY UNAVAILABLE"
+        const char* state = !m_gameModuleMatches                ? "PLAY UNAVAILABLE"
                             : playState() == PlayState::Playing ? "SIMULATION RUNNING"
                             : playState() == PlayState::Paused  ? "SIMULATION PAUSED"
                                                                 : "EDIT MODE";
@@ -255,13 +261,15 @@ void Editor::drawCommandBar() {
             ImGui::SetCursorPos(ImVec2(right - stateWidth, rowY));
             ImGui::AlignTextToFramePadding();
             const gui::Theme& theme = gui::currentTheme();
-            const ImVec4 color = !m_gameModuleMatches ? gui::semanticColor(theme.warning)
-                                 : playing() ? gui::semanticColor(playState() == PlayState::Paused ? theme.warning : theme.accent)
-                                             : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+            const ImVec4 color =
+                !m_gameModuleMatches ? gui::semanticColor(theme.warning)
+                : playing() ? gui::semanticColor(playState() == PlayState::Paused ? theme.warning : theme.accent)
+                            : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
             ImGui::TextColored(color, "%s", state);
             if (!m_gameModuleMatches) {
-                ImGui::SetItemTooltip("The project wants gameplay module \"%s\"; rebuild the editor with its Game.cpp",
-                                      m_project.gameModule.c_str());
+                ImGui::SetItemTooltip(
+                    "The project wants gameplay module \"%s\"; rebuild the editor with its Game.cpp",
+                    m_project.gameModule.c_str());
             }
         }
     }
@@ -273,17 +281,22 @@ void Editor::drawCommandBar() {
 void Editor::drawStatusBar() {
     const ImGuiStyle& style = ImGui::GetStyle();
     const float height = ImGui::GetFrameHeight();
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
     if (ImGui::BeginViewportSideBar("##status", ImGui::GetMainViewport(), ImGuiDir_Down, height, flags)) {
         if (ImGui::BeginMenuBar()) {
             // Play state, when there is one.
             if (playing()) {
                 const bool paused = playState() == PlayState::Paused;
-                ImGui::TextColored(paused ? gui::semanticColor(gui::currentTheme().warning) : gui::semanticColor(gui::currentTheme().accent), paused ? "PAUSED" : "PLAYING");
+                ImGui::TextColored(
+                    paused ? gui::semanticColor(gui::currentTheme().warning)
+                           : gui::semanticColor(gui::currentTheme().accent),
+                    paused ? "PAUSED" : "PLAYING");
                 ImGui::SameLine(0.0f, 16.0f);
             }
             // The scene and whether it's saved.
-            ImGui::TextUnformatted(m_project.relative(m_scenePath.empty() ? fs::path("Untitled") : m_scenePath).c_str());
+            ImGui::TextUnformatted(
+                m_project.relative(m_scenePath.empty() ? fs::path("Untitled") : m_scenePath).c_str());
             ImGui::SameLine();
             if (m_dirty) {
                 ImGui::TextColored(gui::semanticColor(gui::currentTheme().warning), "unsaved changes");
@@ -298,8 +311,9 @@ void Editor::drawStatusBar() {
                                      : last.level == LogLevel::Warning ? gui::semanticColor(gui::currentTheme().warning)
                                                                        : style.Colors[ImGuiCol_TextDisabled];
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
-                if (ImGui::Selectable(last.text.c_str(), false, ImGuiSelectableFlags_None,
-                                      ImVec2(std::max(ImGui::GetContentRegionAvail().x - 320.0f * style.FontScaleDpi, 50.0f), 0))) {
+                if (ImGui::Selectable(
+                        last.text.c_str(), false, ImGuiSelectableFlags_None,
+                        ImVec2(std::max(ImGui::GetContentRegionAvail().x - 320.0f * style.FontScaleDpi, 50.0f), 0))) {
                     m_showConsole = true;
                     m_focusConsole = true;
                 }
@@ -310,11 +324,13 @@ void Editor::drawStatusBar() {
             char right[128];
             const double fps = engine().fps();
             const size_t count = selection().size();
-            std::snprintf(right, sizeof(right), "%s%zu entities   %.0f fps  %.1f ms",
-                          count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
-                          fps > 0.0 ? 1000.0 / fps : 0.0);
+            std::snprintf(
+                right, sizeof(right), "%s%zu entities   %.0f fps  %.1f ms",
+                count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
+                fps > 0.0 ? 1000.0 / fps : 0.0);
             const float width = ImGui::CalcTextSize(right).x;
-            ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
+            ImGui::SameLine(std::max(
+                ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
             ImGui::TextDisabled("%s", right);
             ImGui::EndMenuBar();
         }
@@ -332,8 +348,8 @@ void Editor::drawDockspace() {
         m_resetLayout = false;
     }
     // Panels close from their own tab; one close button per panel is enough.
-    ImGui::DockSpaceOverViewport(dockspace, ImGui::GetMainViewport(),
-                                 static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoCloseButton));
+    ImGui::DockSpaceOverViewport(
+        dockspace, ImGui::GetMainViewport(), static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoCloseButton));
 }
 
 void Editor::buildDefaultLayout(ImGuiID dockspace) {
@@ -369,11 +385,12 @@ void Editor::drawStatsWindow() {
     ImGui::Text("%.0f fps  (%.2f ms)", fps, fps > 0.0 ? 1000.0 / fps : 0.0);
     float maxTime = 0.0f;
     for (float t : m_frameTimes) maxTime = std::max(maxTime, t);
-    ImGui::PlotLines("##frametimes", m_frameTimes.data(), static_cast<int>(m_frameTimes.size()),
-                     static_cast<int>(m_frameTimeIndex), "frame time (ms)", 0.0f, std::max(maxTime * 1.2f, 1.0f),
-                     ImVec2(-1.0f, 56.0f * ImGui::GetStyle().FontScaleDpi));
-    ImGui::Text("Scene %u x %u at %.2fx, %u draws", renderer.renderWidth(), renderer.renderHeight(),
-                renderer.renderScale(), renderer.drawCount());
+    ImGui::PlotLines(
+        "##frametimes", m_frameTimes.data(), static_cast<int>(m_frameTimes.size()), static_cast<int>(m_frameTimeIndex),
+        "frame time (ms)", 0.0f, std::max(maxTime * 1.2f, 1.0f), ImVec2(-1.0f, 56.0f * ImGui::GetStyle().FontScaleDpi));
+    ImGui::Text(
+        "Scene %u x %u at %.2fx, %u draws", renderer.renderWidth(), renderer.renderHeight(), renderer.renderScale(),
+        renderer.drawCount());
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
 
@@ -384,8 +401,9 @@ void Editor::drawStatsWindow() {
         ImGui::Text("%u of up to %u lights", renderer.lightCount(), shockwave::Renderer::kMaxLights);
     }
     if (renderer.droppedLights() > 0) {
-        ImGui::TextColored(gui::semanticColor(gui::currentTheme().warning), "%u lights over the limit are ignored",
-                           renderer.droppedLights());
+        ImGui::TextColored(
+            gui::semanticColor(gui::currentTheme().warning), "%u lights over the limit are ignored",
+            renderer.droppedLights());
     }
     if (ImGui::TreeNode("Render graph")) {
         // The passes the renderer ran last frame and the barriers it placed between them.
@@ -407,12 +425,14 @@ void Editor::drawStatsWindow() {
 
     ImGui::SeparatorText("Physics (Jolt)");
     if (const auto* physics = m_session->physics()) {
-        ImGui::Text("%u bodies, %u active, %u characters", physics->bodyCount(), physics->activeBodyCount(),
-                    physics->characterCount());
+        ImGui::Text(
+            "%u bodies, %u active, %u characters", physics->bodyCount(), physics->activeBodyCount(),
+            physics->characterCount());
         ImGui::TextDisabled("%zu contacts this tick", physics->contacts().size());
         for (const auto& problem : physics->diagnostics()) {
-            ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s: %s", displayName(problem.entity).c_str(),
-                               problem.message.c_str());
+            ImGui::TextColored(
+                gui::semanticColor(gui::currentTheme().error), "%s: %s", displayName(problem.entity).c_str(),
+                problem.message.c_str());
         }
     } else {
         ImGui::TextDisabled("Starts with Play; runs after gameplay each tick.");
@@ -433,9 +453,10 @@ void Editor::drawPreferencesWindow() {
 
     ImGui::SeparatorText("General");
     changed |= ImGui::Checkbox("Reopen the last project at startup", &m_prefs.reopenLastProject);
-    changed |= ImGui::SliderInt("Autosave every", &m_prefs.autosaveMinutes, 0, 30,
-                                m_prefs.autosaveMinutes == 0 ? "off" : "%d min");
-    ImGui::SetItemTooltip("Unsaved changes are kept in the project's Saved folder and offered back if the editor stops");
+    changed |= ImGui::SliderInt(
+        "Autosave every", &m_prefs.autosaveMinutes, 0, 30, m_prefs.autosaveMinutes == 0 ? "off" : "%d min");
+    ImGui::SetItemTooltip(
+        "Unsaved changes are kept in the project's Saved folder and offered back if the editor stops");
 
     ImGui::SeparatorText("Appearance");
     const std::vector<std::string> themes = findThemes();
@@ -608,7 +629,8 @@ void Editor::drawControlsWindow() {
 
 void Editor::drawAboutWindow() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::Begin("About Shockwave", &m_showAbout, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking)) {
+    if (!ImGui::Begin(
+            "About Shockwave", &m_showAbout, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking)) {
         ImGui::End();
         return;
     }
@@ -693,4 +715,4 @@ void Editor::drawRecoveryModal() {
     ImGui::EndPopup();
 }
 
-} // namespace editor
+}   // namespace editor

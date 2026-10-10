@@ -27,7 +27,7 @@ std::string trim(const std::string& s) {
 
 bool parseBool(const std::string& v) { return v == "true" || v == "1" || v == "yes" || v == "on"; }
 
-} // namespace
+}   // namespace
 
 void Preferences::addRecentProject(const std::string& path) { pushRecent(recentProjects, path); }
 void Preferences::addRecentScene(const std::string& path) { pushRecent(recentScenes, path); }
@@ -36,7 +36,8 @@ fs::path defaultPreferencesPath() {
 #ifdef _WIN32
     if (const char* appData = std::getenv("APPDATA")) return fs::path(appData) / "Shockwave" / "editor.swprefs";
 #endif
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) return fs::path(xdg) / "shockwave" / "editor.swprefs";
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg)
+        return fs::path(xdg) / "shockwave" / "editor.swprefs";
     if (const char* home = std::getenv("HOME"); home && *home) {
 #ifdef __APPLE__
         return fs::path(home) / "Library" / "Application Support" / "Shockwave" / "editor.swprefs";
@@ -73,22 +74,38 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
                 // Keep the default; a bad number shouldn't lock anyone out of the editor.
             }
         };
-        if (key == "recent_project") loaded.recentProjects.push_back(value);
-        else if (key == "recent_scene") loaded.recentScenes.push_back(value);
-        else if (key == "reopen_last_project") loaded.reopenLastProject = parseBool(value);
-        else if (key == "theme") loaded.theme = value;
-        else if (key == "vsync") loaded.vsync = parseBool(value);
-        else if (key == "render_scale") number(loaded.renderScale);
-        else if (key == "camera_speed") number(loaded.cameraSpeed);
-        else if (key == "field_of_view") number(loaded.fieldOfView);
-        else if (key == "show_grid") loaded.showGrid = parseBool(value);
-        else if (key == "show_stats") loaded.showStats = parseBool(value);
-        else if (key == "show_camera_icons") loaded.showCameraIcons = parseBool(value);
-        else if (key == "play_from_scene_camera") loaded.playFromSceneCamera = parseBool(value);
-        else if (key == "snap") loaded.snap = parseBool(value);
-        else if (key == "snap_move") number(loaded.snapMove);
-        else if (key == "snap_rotate") number(loaded.snapRotate);
-        else if (key == "snap_scale") number(loaded.snapScale);
+        if (key == "recent_project")
+            loaded.recentProjects.push_back(value);
+        else if (key == "recent_scene")
+            loaded.recentScenes.push_back(value);
+        else if (key == "reopen_last_project")
+            loaded.reopenLastProject = parseBool(value);
+        else if (key == "theme")
+            loaded.theme = value;
+        else if (key == "vsync")
+            loaded.vsync = parseBool(value);
+        else if (key == "render_scale")
+            number(loaded.renderScale);
+        else if (key == "camera_speed")
+            number(loaded.cameraSpeed);
+        else if (key == "field_of_view")
+            number(loaded.fieldOfView);
+        else if (key == "show_grid")
+            loaded.showGrid = parseBool(value);
+        else if (key == "show_stats")
+            loaded.showStats = parseBool(value);
+        else if (key == "show_camera_icons")
+            loaded.showCameraIcons = parseBool(value);
+        else if (key == "play_from_scene_camera")
+            loaded.playFromSceneCamera = parseBool(value);
+        else if (key == "snap")
+            loaded.snap = parseBool(value);
+        else if (key == "snap_move")
+            number(loaded.snapMove);
+        else if (key == "snap_rotate")
+            number(loaded.snapRotate);
+        else if (key == "snap_scale")
+            number(loaded.snapScale);
         else if (key == "autosave_minutes") {
             float minutes = static_cast<float>(loaded.autosaveMinutes);
             number(minutes);
@@ -144,4 +161,4 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
     return true;
 }
 
-} // namespace editor
+}   // namespace editor

@@ -29,4 +29,4 @@ Entity primaryCamera(const World& world);
 // isn't a camera with a Transform.
 bool cameraMatrices(const World& world, Entity e, float aspect, glm::mat4& view, glm::mat4& projection);
 
-} // namespace shockwave
+}   // namespace shockwave

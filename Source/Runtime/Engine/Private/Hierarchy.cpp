@@ -109,4 +109,4 @@ Entity cloneWithChildren(World& world, Entity e) {
     return copies[e.index];
 }
 
-} // namespace shockwave
+}   // namespace shockwave

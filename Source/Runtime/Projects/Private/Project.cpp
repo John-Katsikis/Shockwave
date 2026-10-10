@@ -1,4 +1,5 @@
 #include <Projects/Project.h>
+
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -11,11 +12,17 @@ namespace shockwave {
 bool loadProject(const std::filesystem::path& path, Project& project, std::string& error) {
     error.clear();
     std::ifstream in(path);
-    if (!in) { error = "can't open project " + path.string(); return false; }
+    if (!in) {
+        error = "can't open project " + path.string();
+        return false;
+    }
     Project result;
     std::error_code ec;
     result.file = std::filesystem::absolute(path, ec).lexically_normal();
-    if (ec) { error = "can't resolve project path: " + ec.message(); return false; }
+    if (ec) {
+        error = "can't resolve project path: " + ec.message();
+        return false;
+    }
     result.root = result.file.parent_path();
     std::set<std::string> seen;
     bool versionSeen = false;
@@ -43,21 +50,26 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
             } else if (key == "startup_scene" || key == "assets" || key == "scenes" || key == "theme") {
                 std::string value;
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
-                auto& target = key == "startup_scene" ? result.startupScene : key == "assets" ? result.assetFolder
-                             : key == "scenes" ? result.sceneFolder : result.theme;
+                auto& target = key == "startup_scene" ? result.startupScene
+                               : key == "assets"      ? result.assetFolder
+                               : key == "scenes"      ? result.sceneFolder
+                                                      : result.theme;
                 target = (result.root / value).lexically_normal();
             } else if (key == "tick_rate") {
-                if (!(row >> result.tickRate) || !std::isfinite(result.tickRate) || result.tickRate < 1 || result.tickRate > 1000)
+                if (!(row >> result.tickRate) || !std::isfinite(result.tickRate) || result.tickRate < 1 ||
+                    result.tickRate > 1000)
                     return fail("tick_rate must be between 1 and 1000");
             } else if (key == "window_size") {
-                if (!(row >> result.width >> result.height) || result.width < 320 || result.height < 240 || result.width > 16384 || result.height > 16384)
+                if (!(row >> result.width >> result.height) || result.width < 320 || result.height < 240 ||
+                    result.width > 16384 || result.height > 16384)
                     return fail("invalid window_size (minimum 320 x 240)");
             } else if (key == "vsync") {
                 std::string value;
                 row >> value;
                 if (value != "true" && value != "false") return fail("vsync must be true or false");
                 result.vsync = value == "true";
-            } else return fail("unknown key '" + key + "'");
+            } else
+                return fail("unknown key '" + key + "'");
         }
         row >> std::ws;
         if (row.peek() != EOF && row.peek() != '#') return fail("unexpected trailing value");
@@ -67,7 +79,8 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
         return fail("project requires version, name, game_module and startup_scene");
     if (result.assetFolder.empty()) result.assetFolder = result.root / "Content";
     if (result.sceneFolder.empty()) result.sceneFolder = result.root / "Scenes";
-    if (!std::filesystem::is_regular_file(result.startupScene, ec)) return fail("startup scene does not exist: " + result.startupScene.string());
+    if (!std::filesystem::is_regular_file(result.startupScene, ec))
+        return fail("startup scene does not exist: " + result.startupScene.string());
     project = std::move(result);
     return true;
 }
@@ -82,7 +95,11 @@ std::string Project::relative(const std::filesystem::path& path) const {
 
 bool saveProject(const Project& project, std::string& error) {
     namespace fs = std::filesystem;
-    auto quotedPath = [&](const fs::path& p) { std::ostringstream q; q << std::quoted(project.relative(p)); return q.str(); };
+    auto quotedPath = [&](const fs::path& p) {
+        std::ostringstream q;
+        q << std::quoted(project.relative(p));
+        return q.str();
+    };
     std::ostringstream out;
     out << "# Paths are relative to this file. Both editor and player load this manifest.\n"
         << "shockwave_project 1\n"
@@ -120,7 +137,8 @@ std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path
     auto inFolder = [&](const fs::path& folder) -> std::optional<fs::path> {
         std::optional<fs::path> found;
         for (const auto& entry : fs::directory_iterator(folder, ec)) {
-            if (entry.path().extension() == ".swproject" && entry.is_regular_file(ec) && (!found || entry.path() < *found))
+            if (entry.path().extension() == ".swproject" && entry.is_regular_file(ec) &&
+                (!found || entry.path() < *found))
                 found = entry.path();
         }
         return found;
@@ -140,13 +158,20 @@ std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path
     return std::nullopt;
 }
 
-bool createProject(const std::filesystem::path& folder, const std::string& name, const std::string& gameModule,
-                   Project& project, std::string& error) {
+bool createProject(
+    const std::filesystem::path& folder, const std::string& name, const std::string& gameModule, Project& project,
+    std::string& error) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    if (name.empty()) { error = "the project needs a name"; return false; }
+    if (name.empty()) {
+        error = "the project needs a name";
+        return false;
+    }
     const fs::path root = fs::absolute(folder, ec).lexically_normal();
-    if (ec) { error = "can't resolve " + folder.string() + ": " + ec.message(); return false; }
+    if (ec) {
+        error = "can't resolve " + folder.string() + ": " + ec.message();
+        return false;
+    }
     if (fs::is_directory(root, ec)) {
         for (const auto& entry : fs::directory_iterator(root, ec)) {
             if (entry.path().extension() == ".swproject") {
@@ -168,7 +193,10 @@ bool createProject(const std::filesystem::path& folder, const std::string& name,
     result.sceneFolder = root / "Scenes";
     for (const fs::path& dir : {root, result.assetFolder, result.sceneFolder}) {
         fs::create_directories(dir, ec);
-        if (ec) { error = "can't create " + dir.string() + ": " + ec.message(); return false; }
+        if (ec) {
+            error = "can't create " + dir.string() + ": " + ec.message();
+            return false;
+        }
     }
     if (!fs::exists(root / ".gitignore", ec)) {
         std::ofstream ignore(root / ".gitignore");
@@ -178,4 +206,4 @@ bool createProject(const std::filesystem::path& folder, const std::string& name,
     project = std::move(result);
     return true;
 }
-} // namespace shockwave
+}   // namespace shockwave

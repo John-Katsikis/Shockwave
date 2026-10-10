@@ -2,7 +2,6 @@
 // controls, picking, the transform gizmo, camera and light icons, shading views,
 // screenshots and drops from the Content panel.
 #include "Editor.h"
-
 #include <UI/Gui.h>
 
 #include <glm/gtc/constants.hpp>
@@ -47,8 +46,9 @@ bool rayBox(const glm::vec3& o, const glm::vec3& d, const glm::vec3& lo, const g
 // Text on a strip of panel background, readable over any scene.
 void overlayText(ImDrawList* draw, ImVec2 at, ImU32 color, const char* text) {
     const ImVec2 size = ImGui::CalcTextSize(text);
-    draw->AddRectFilled(ImVec2(at.x - 4, at.y - 2), ImVec2(at.x + size.x + 4, at.y + size.y + 2),
-                        ImGui::GetColorU32(ImGuiCol_WindowBg, 0.85f));
+    draw->AddRectFilled(
+        ImVec2(at.x - 4, at.y - 2), ImVec2(at.x + size.x + 4, at.y + size.y + 2),
+        ImGui::GetColorU32(ImGuiCol_WindowBg, 0.85f));
     draw->AddText(at, color, text);
 }
 
@@ -58,11 +58,9 @@ ImU32 accentU32(float alpha = 1.0f) {
     return shockwave::gui::semanticColorU32(c);
 }
 
-} // namespace
+}   // namespace
 
-glm::mat4 Editor::projection(float aspect) const {
-    return m_camera.projection(aspect);
-}
+glm::mat4 Editor::projection(float aspect) const { return m_camera.projection(aspect); }
 
 glm::mat4 Editor::gizmoProjection(float aspect) const {
     // ImGuizmo only needs to place handles on screen; it expects a conventional
@@ -97,7 +95,8 @@ const shockwave::Bounds* Editor::meshBounds(shockwave::MeshHandle mesh) {
 
 void Editor::drawViewport() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    const bool open = ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const bool open =
+        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     if (!open) {
         ImGui::End();
@@ -108,12 +107,14 @@ void Editor::drawViewport() {
     shockwave::Renderer& renderer = engine().renderer();
     const ImGuiIO& io = ImGui::GetIO();
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const ImVec2 size(std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
+    const ImVec2 size(
+        std::max(ImGui::GetContentRegionAvail().x, 1.0f), std::max(ImGui::GetContentRegionAvail().y, 1.0f));
 
     // The engine renders the scene at exactly this panel's size, so it stays sharp and
     // undistorted however the panel is docked or resized.
-    renderer.setViewport(static_cast<uint32_t>(size.x * io.DisplayFramebufferScale.x),
-                         static_cast<uint32_t>(size.y * io.DisplayFramebufferScale.y));
+    renderer.setViewport(
+        static_cast<uint32_t>(size.x * io.DisplayFramebufferScale.x),
+        static_cast<uint32_t>(size.y * io.DisplayFramebufferScale.y));
     if (renderer.sceneTexture()) ImGui::Image(static_cast<ImTextureID>(renderer.sceneTexture()), size);
     const bool imageHovered = ImGui::IsItemHovered();
     const bool gameView = lookingThroughSceneCamera();
@@ -138,8 +139,9 @@ void Editor::drawViewport() {
         ImGuizmo::SetDrawlist();
         ImGuizmo::SetRect(pos.x, pos.y, size.x, size.y);
         ImGuizmo::SetGizmoSizeClipSpace(0.14f);
-        ImGuizmo::ViewManipulate(&view[0][0], 8.0f, ImVec2(pos.x + size.x - cubeSize - 8.0f, pos.y + 8.0f),
-                                 ImVec2(cubeSize, cubeSize), IM_COL32(0, 0, 0, 0));
+        ImGuizmo::ViewManipulate(
+            &view[0][0], 8.0f, ImVec2(pos.x + size.x - cubeSize - 8.0f, pos.y + 8.0f), ImVec2(cubeSize, cubeSize),
+            IM_COL32(0, 0, 0, 0));
         if (std::memcmp(&view, &before, sizeof(view)) != 0) {
             const glm::mat4 inv = glm::inverse(view);
             const glm::vec3 forward = -glm::vec3(inv[2]);
@@ -172,8 +174,10 @@ void Editor::drawViewport() {
 
     if (!m_screenshotPath.empty() && !engine().renderer().screenshotPending()) {
         const std::string& result = engine().renderer().screenshotResult();
-        if (result.empty()) log("Saved " + (m_hasProject ? m_project.relative(m_screenshotPath) : m_screenshotPath.string()));
-        else error("Screenshot failed: " + result);
+        if (result.empty())
+            log("Saved " + (m_hasProject ? m_project.relative(m_screenshotPath) : m_screenshotPath.string()));
+        else
+            error("Screenshot failed: " + result);
         m_screenshotPath.clear();
     }
 
@@ -182,8 +186,9 @@ void Editor::drawViewport() {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     if (playing()) {
         const gui::Theme& theme = gui::currentTheme();
-        draw->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                      gui::semanticColorU32(playState() == PlayState::Playing ? theme.accent : theme.warning), 0.0f, 0, 3.0f);
+        draw->AddRect(
+            pos, ImVec2(pos.x + size.x, pos.y + size.y),
+            gui::semanticColorU32(playState() == PlayState::Playing ? theme.accent : theme.warning), 0.0f, 0, 3.0f);
     }
     ImGui::End();
 }
@@ -201,15 +206,18 @@ void Editor::drawViewportToolbar() {
     const float viewWidth = gui::controlGroupWidth({"Grid", cameraLabel, "View"});
     const float inner = std::max(ImGui::GetContentRegionAvail().x - style.WindowPadding.x * 2.0f, 1.0f);
     const int rows = toolsWidth + style.ItemSpacing.x * 3.0f + viewWidth <= inner ? 1 : 2;
-    const float height = rows * ImGui::GetFrameHeight() + (rows - 1) * style.ItemSpacing.y + style.WindowPadding.y * 2.0f;
+    const float height =
+        rows * ImGui::GetFrameHeight() + (rows - 1) * style.ItemSpacing.y + style.WindowPadding.y * 2.0f;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f * dpi, 4.0f * dpi));
-    ImGui::BeginChild("ViewportToolbar", ImVec2(0, height), ImGuiChildFlags_AlwaysUseWindowPadding,
-                      ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild(
+        "ViewportToolbar", ImVec2(0, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleVar();
     const float rowY = ImGui::GetCursorPosY();
-    if (gui::toolButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE, "Move (W)")) m_gizmoOperation = ImGuizmo::TRANSLATE;
+    if (gui::toolButton("Move", m_gizmoOperation == ImGuizmo::TRANSLATE, "Move (W)"))
+        m_gizmoOperation = ImGuizmo::TRANSLATE;
     gui::toolbarNext(gui::buttonWidth("Rotate"));
-    if (gui::toolButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE, "Rotate (E)")) m_gizmoOperation = ImGuizmo::ROTATE;
+    if (gui::toolButton("Rotate", m_gizmoOperation == ImGuizmo::ROTATE, "Rotate (E)"))
+        m_gizmoOperation = ImGuizmo::ROTATE;
     gui::toolbarNext(gui::buttonWidth("Scale"));
     if (gui::toolButton("Scale", m_gizmoOperation == ImGuizmo::SCALE, "Scale (R)")) m_gizmoOperation = ImGuizmo::SCALE;
     ImGui::SameLine(0.0f, style.ItemSpacing.x * 3.0f);
@@ -243,8 +251,9 @@ void Editor::drawViewportToolbar() {
         m_prefsDirty = true;
     }
     gui::toolbarNext(gui::buttonWidth(cameraLabel));
-    if (gui::toolButton(cameraLabel, lookingThroughSceneCamera(),
-                        "Look through the scene's primary Camera, or the editor's free camera (F8)")) {
+    if (gui::toolButton(
+            cameraLabel, lookingThroughSceneCamera(),
+            "Look through the scene's primary Camera, or the editor's free camera (F8)")) {
         m_viewThroughCamera = !m_viewThroughCamera;
         if (m_viewThroughCamera && !shockwave::primaryCamera(m_world).valid()) {
             warn("The scene has no Camera to look through. Add one with Create > Camera.");
@@ -306,7 +315,8 @@ void Editor::drawViewportOverlay(const ImVec2& pos, const ImVec2& size) {
     float y = pos.y + 8.0f;
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     if (lookingThroughSceneCamera()) {
-        const std::string label = "Looking through " + displayName(shockwave::primaryCamera(m_world)) + " (F8: editor camera)";
+        const std::string label =
+            "Looking through " + displayName(shockwave::primaryCamera(m_world)) + " (F8: editor camera)";
         overlayText(draw, ImVec2(pos.x + 10.0f, y), text, label.c_str());
         y += ImGui::GetTextLineHeightWithSpacing() + 4.0f;
     }
@@ -314,8 +324,9 @@ void Editor::drawViewportOverlay(const ImVec2& pos, const ImVec2& size) {
         const double fps = engine().fps();
         char lines[4][96];
         std::snprintf(lines[0], sizeof(lines[0]), "%.0f fps  %.2f ms", fps, fps > 0.0 ? 1000.0 / fps : 0.0);
-        std::snprintf(lines[1], sizeof(lines[1]), "%u x %u (%.2fx)", renderer.renderWidth(), renderer.renderHeight(),
-                      renderer.renderScale());
+        std::snprintf(
+            lines[1], sizeof(lines[1]), "%u x %u (%.2fx)", renderer.renderWidth(), renderer.renderHeight(),
+            renderer.renderScale());
         std::snprintf(lines[2], sizeof(lines[2]), "%u draws", renderer.drawCount());
         std::snprintf(lines[3], sizeof(lines[3]), "%zu entities", m_world.entityCount());
         for (const char* line : lines) {
@@ -345,13 +356,13 @@ void Editor::drawGizmo(const ImVec2& pos, const ImVec2& size) {
     const float snapMove[3] = {m_prefs.snapMove, m_prefs.snapMove, m_prefs.snapMove};
     const float snapRotate[3] = {m_prefs.snapRotate, m_prefs.snapRotate, m_prefs.snapRotate};
     const float snapScale[3] = {m_prefs.snapScale, m_prefs.snapScale, m_prefs.snapScale};
-    const float* snapValues = m_gizmoOperation == ImGuizmo::ROTATE ? snapRotate
+    const float* snapValues = m_gizmoOperation == ImGuizmo::ROTATE  ? snapRotate
                               : m_gizmoOperation == ImGuizmo::SCALE ? snapScale
                                                                     : snapMove;
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetRect(pos.x, pos.y, size.x, size.y);
-    const bool changed = ImGuizmo::Manipulate(&view[0][0], &proj[0][0], m_gizmoOperation, m_gizmoMode, &model[0][0],
-                                              nullptr, snap ? snapValues : nullptr);
+    const bool changed = ImGuizmo::Manipulate(
+        &view[0][0], &proj[0][0], m_gizmoOperation, m_gizmoMode, &model[0][0], nullptr, snap ? snapValues : nullptr);
     const bool using_ = ImGuizmo::IsUsing();
     if (using_ && !m_gizmoWasUsing) m_editStart = m_world;
     if (changed) {
@@ -407,7 +418,8 @@ void Editor::drawOutline(Entity e, const ImVec2& pos, const ImVec2& size, ImU32 
     ImVec2 screen[8];
     bool visible[8];
     for (int i = 0; i < 8; ++i) {
-        const glm::vec3 corner((i & 1) ? b->max.x : b->min.x, (i & 2) ? b->max.y : b->min.y, (i & 4) ? b->max.z : b->min.z);
+        const glm::vec3 corner(
+            (i & 1) ? b->max.x : b->min.x, (i & 2) ? b->max.y : b->min.y, (i & 4) ? b->max.z : b->min.z);
         visible[i] = worldToScreen(glm::vec3(model * glm::vec4(corner, 1.0f)), pos, size, screen[i]);
     }
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -425,13 +437,14 @@ void Editor::drawCameraIcons(const ImVec2& pos, const ImVec2& size) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const float dpi = ImGui::GetStyle().FontScaleDpi;
     const Entity primaryCamera = shockwave::primaryCamera(m_world);
-    m_world.each<const shockwave::Camera, const Transform>([&](Entity e, const shockwave::Camera& camera, const Transform&) {
+    m_world.each<const shockwave::Camera, const Transform>([&](Entity e, const shockwave::Camera& camera,
+                                                               const Transform&) {
         glm::mat4 view, proj;
         if (!shockwave::cameraMatrices(m_world, e, size.x / size.y, view, proj)) return;
         const glm::mat4 world = glm::inverse(view);
         const bool chosen = isSelected(e);
-        const ImU32 color = chosen ? accentU32()
-                                   : ImGui::GetColorU32(e == primaryCamera ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+        const ImU32 color =
+            chosen ? accentU32() : ImGui::GetColorU32(e == primaryCamera ? ImGuiCol_Text : ImGuiCol_TextDisabled);
         if (chosen) {
             // What it sees, out to a couple of units.
             const float d = 2.0f;
@@ -442,7 +455,8 @@ void Editor::drawCameraIcons(const ImVec2& pos, const ImVec2& size) {
             ImVec2 corners[4];
             ImVec2 apexScreen;
             bool ok = worldToScreen(apex, pos, size, apexScreen);
-            for (int i = 0; i < 4; ++i) ok = worldToScreen(glm::vec3(world * glm::vec4(local[i], 1.0f)), pos, size, corners[i]) && ok;
+            for (int i = 0; i < 4; ++i)
+                ok = worldToScreen(glm::vec3(world * glm::vec4(local[i], 1.0f)), pos, size, corners[i]) && ok;
             if (ok) {
                 for (int i = 0; i < 4; ++i) {
                     draw->AddLine(apexScreen, corners[i], color, 1.2f);
@@ -454,10 +468,13 @@ void Editor::drawCameraIcons(const ImVec2& pos, const ImVec2& size) {
         if (!worldToScreen(glm::vec3(world[3]), pos, size, c)) return;
         // A little film camera: body and lens.
         const float s = 7.0f * dpi;
-        draw->AddRectFilled(ImVec2(c.x - s, c.y - s * 0.7f), ImVec2(c.x + s * 0.5f, c.y + s * 0.7f), ImGui::GetColorU32(ImGuiCol_WindowBg, 0.6f));
+        draw->AddRectFilled(
+            ImVec2(c.x - s, c.y - s * 0.7f), ImVec2(c.x + s * 0.5f, c.y + s * 0.7f),
+            ImGui::GetColorU32(ImGuiCol_WindowBg, 0.6f));
         draw->AddRect(ImVec2(c.x - s, c.y - s * 0.7f), ImVec2(c.x + s * 0.5f, c.y + s * 0.7f), color, 0.0f, 0, 1.5f);
-        draw->AddTriangleFilled(ImVec2(c.x + s * 0.5f, c.y), ImVec2(c.x + s * 1.2f, c.y - s * 0.6f),
-                                ImVec2(c.x + s * 1.2f, c.y + s * 0.6f), color);
+        draw->AddTriangleFilled(
+            ImVec2(c.x + s * 0.5f, c.y), ImVec2(c.x + s * 1.2f, c.y - s * 0.6f), ImVec2(c.x + s * 1.2f, c.y + s * 0.6f),
+            color);
     });
 }
 
@@ -488,61 +505,66 @@ Entity Editor::cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2
 void Editor::drawLightIcons(const ImVec2& pos, const ImVec2& size) {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const float dpi = ImGui::GetStyle().FontScaleDpi;
-    m_world.each<const shockwave::Light, const Transform>([&](Entity e, const shockwave::Light& light, const Transform&) {
-        const glm::mat4 world = shockwave::worldMatrix(m_world, e);
-        const glm::vec3 origin(world[3]);
-        const glm::vec3 forward = glm::normalize(-glm::vec3(world[2]));
-        const bool chosen = isSelected(e);
-        const ImU32 outline = chosen ? accentU32() : ImGui::GetColorU32(light.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
-        auto line = [&](const glm::vec3& a, const glm::vec3& b) {
-            ImVec2 sa, sb;
-            if (worldToScreen(a, pos, size, sa) && worldToScreen(b, pos, size, sb)) draw->AddLine(sa, sb, outline, 1.2f);
-        };
-        if (chosen) {
-            using Type = shockwave::Light::Type;
-            if (light.type == Type::Directional) {
-                line(origin, origin + forward * 3.0f);
-            } else {
-                // A ring (point) or the cone's rim (spot), as 32 segments.
-                glm::vec3 side = glm::normalize(glm::cross(forward, std::abs(forward.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
-                glm::vec3 up = glm::cross(side, forward);
-                glm::vec3 center = origin;
-                float radius = light.range;
-                if (light.type == Type::Spot) {
-                    const float angle = glm::radians(std::clamp(light.spotAngle, 1.0f, 89.0f));
-                    center = origin + forward * (light.range * std::cos(angle));
-                    radius = light.range * std::sin(angle);
+    m_world.each<const shockwave::Light, const Transform>(
+        [&](Entity e, const shockwave::Light& light, const Transform&) {
+            const glm::mat4 world = shockwave::worldMatrix(m_world, e);
+            const glm::vec3 origin(world[3]);
+            const glm::vec3 forward = glm::normalize(-glm::vec3(world[2]));
+            const bool chosen = isSelected(e);
+            const ImU32 outline =
+                chosen ? accentU32() : ImGui::GetColorU32(light.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+            auto line = [&](const glm::vec3& a, const glm::vec3& b) {
+                ImVec2 sa, sb;
+                if (worldToScreen(a, pos, size, sa) && worldToScreen(b, pos, size, sb))
+                    draw->AddLine(sa, sb, outline, 1.2f);
+            };
+            if (chosen) {
+                using Type = shockwave::Light::Type;
+                if (light.type == Type::Directional) {
+                    line(origin, origin + forward * 3.0f);
                 } else {
-                    side = glm::vec3(1, 0, 0);   // point lights: a horizontal ring
-                    up = glm::vec3(0, 0, 1);
-                }
-                glm::vec3 previous = center + side * radius;
-                for (int i = 1; i <= 32; ++i) {
-                    const float a = glm::two_pi<float>() * static_cast<float>(i) / 32.0f;
-                    const glm::vec3 next = center + (side * std::cos(a) + up * std::sin(a)) * radius;
-                    line(previous, next);
-                    if (light.type == Type::Spot && i % 8 == 0) line(origin, next);
-                    previous = next;
+                    // A ring (point) or the cone's rim (spot), as 32 segments.
+                    glm::vec3 side = glm::normalize(
+                        glm::cross(forward, std::abs(forward.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
+                    glm::vec3 up = glm::cross(side, forward);
+                    glm::vec3 center = origin;
+                    float radius = light.range;
+                    if (light.type == Type::Spot) {
+                        const float angle = glm::radians(std::clamp(light.spotAngle, 1.0f, 89.0f));
+                        center = origin + forward * (light.range * std::cos(angle));
+                        radius = light.range * std::sin(angle);
+                    } else {
+                        side = glm::vec3(1, 0, 0);   // point lights: a horizontal ring
+                        up = glm::vec3(0, 0, 1);
+                    }
+                    glm::vec3 previous = center + side * radius;
+                    for (int i = 1; i <= 32; ++i) {
+                        const float a = glm::two_pi<float>() * static_cast<float>(i) / 32.0f;
+                        const glm::vec3 next = center + (side * std::cos(a) + up * std::sin(a)) * radius;
+                        line(previous, next);
+                        if (light.type == Type::Spot && i % 8 == 0) line(origin, next);
+                        previous = next;
+                    }
                 }
             }
-        }
-        ImVec2 c;
-        if (!worldToScreen(origin, pos, size, c)) return;
-        const float s = 6.0f * dpi;
-        const glm::vec3 tint = glm::clamp(glm::vec3(light.color), 0.0f, 1.0f);
-        const ImU32 fill = ImGui::GetColorU32(ImVec4(tint.r, tint.g, tint.b, light.enabled ? 1.0f : 0.35f));
-        draw->AddCircleFilled(c, s, fill);
-        draw->AddCircle(c, s, outline, 0, 1.5f);
-        if (light.type == shockwave::Light::Type::Directional) {
-            // Rays round the disc: the sun.
-            for (int i = 0; i < 8; ++i) {
-                const float a = glm::two_pi<float>() * static_cast<float>(i) / 8.0f;
-                const ImVec2 d(std::cos(a), std::sin(a));
-                draw->AddLine(ImVec2(c.x + d.x * s * 1.4f, c.y + d.y * s * 1.4f), ImVec2(c.x + d.x * s * 2.0f, c.y + d.y * s * 2.0f),
-                              outline, 1.5f);
+            ImVec2 c;
+            if (!worldToScreen(origin, pos, size, c)) return;
+            const float s = 6.0f * dpi;
+            const glm::vec3 tint = glm::clamp(glm::vec3(light.color), 0.0f, 1.0f);
+            const ImU32 fill = ImGui::GetColorU32(ImVec4(tint.r, tint.g, tint.b, light.enabled ? 1.0f : 0.35f));
+            draw->AddCircleFilled(c, s, fill);
+            draw->AddCircle(c, s, outline, 0, 1.5f);
+            if (light.type == shockwave::Light::Type::Directional) {
+                // Rays round the disc: the sun.
+                for (int i = 0; i < 8; ++i) {
+                    const float a = glm::two_pi<float>() * static_cast<float>(i) / 8.0f;
+                    const ImVec2 d(std::cos(a), std::sin(a));
+                    draw->AddLine(
+                        ImVec2(c.x + d.x * s * 1.4f, c.y + d.y * s * 1.4f),
+                        ImVec2(c.x + d.x * s * 2.0f, c.y + d.y * s * 2.0f), outline, 1.5f);
+                }
             }
-        }
-    });
+        });
 }
 
 // The viewport as rendered, tonemapped, without icons or gizmos (the grid stays if shown).
@@ -591,9 +613,8 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
         at.y = model ? -model->data.bounds.min.y : 0.0f;
         spawnModel(name, at);
     }
-    if (const ImGuiPayload* payload =
-            ImGui::AcceptDragDropPayload(kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery |
-                                                              ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
+            kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
         const Entity target = pick(mouse, pos, size);
         if (payload->IsDelivery()) {
             applyTexture(target, static_cast<const char*>(payload->Data));
@@ -644,8 +665,8 @@ void Editor::updateCamera(bool hovered) {
     }
 }
 
-void Editor::mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin,
-                      glm::vec3& dir) const {
+void Editor::mouseRay(
+    const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const {
     const glm::vec2 ndc(2.0f * (mouse.x - pos.x) / size.x - 1.0f, 1.0f - 2.0f * (mouse.y - pos.y) / size.y);
     const glm::mat4 invViewProj = glm::inverse(projection(size.x / size.y) * m_camera.view());
     glm::vec4 nearPoint = invViewProj * glm::vec4(ndc, 1.0f, 1.0f);   // reverse-Z: depth 1 is the near plane
@@ -683,24 +704,25 @@ Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) 
             best = e;
         }
     });
-    m_world.each<const Transform, const shockwave::ModelRenderer>([&](Entity e, const Transform&, const shockwave::ModelRenderer& r) {
-        if (!r.visible) return;
-        const auto model = assets.model(r.model);
-        if (!model) return;
-        const glm::mat4 matrix = shockwave::worldMatrix(m_world, e);
-        if (std::abs(glm::determinant(matrix)) < 1e-10f) return;
-        const glm::mat4 inv = glm::inverse(matrix);
-        const glm::vec3 lo = glm::vec3(inv * glm::vec4(origin, 1.0f));
-        const glm::vec3 ld = glm::vec3(inv * glm::vec4(dir, 0.0f));
-        float t = 0.0f;
-        if (!shockwave::intersectModel(model->data, lo, ld, t)) return;
-        const float distance = glm::length(glm::vec3(matrix * glm::vec4(lo + ld * t, 1.0f)) - origin);
-        if (distance < bestDistance) {
-            bestDistance = distance;
-            best = e;
-        }
-    });
+    m_world.each<const Transform, const shockwave::ModelRenderer>(
+        [&](Entity e, const Transform&, const shockwave::ModelRenderer& r) {
+            if (!r.visible) return;
+            const auto model = assets.model(r.model);
+            if (!model) return;
+            const glm::mat4 matrix = shockwave::worldMatrix(m_world, e);
+            if (std::abs(glm::determinant(matrix)) < 1e-10f) return;
+            const glm::mat4 inv = glm::inverse(matrix);
+            const glm::vec3 lo = glm::vec3(inv * glm::vec4(origin, 1.0f));
+            const glm::vec3 ld = glm::vec3(inv * glm::vec4(dir, 0.0f));
+            float t = 0.0f;
+            if (!shockwave::intersectModel(model->data, lo, ld, t)) return;
+            const float distance = glm::length(glm::vec3(matrix * glm::vec4(lo + ld * t, 1.0f)) - origin);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = e;
+            }
+        });
     return best;
 }
 
-} // namespace editor
+}   // namespace editor

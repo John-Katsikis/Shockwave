@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Renderer/Renderer.h>
 #include <Assets/Model.h>
-#include <Engine/World.h>
 #include <Engine/PhysicsComponents.h>
+#include <Engine/World.h>
+#include <Renderer/Renderer.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -49,10 +49,10 @@ struct MeshRenderer {
     glm::vec4 tint{1.0f};
     glm::vec2 tiling{1.0f};   // texture repeats across the surface, per axis
     bool visible = true;
-    float roughness = 0.6f;              // 0 mirror-smooth .. 1 fully matte
-    float metallic = 0.0f;               // 0 plastic, wood, stone .. 1 bare metal
-    glm::vec4 emissive{0, 0, 0, 1};      // light the surface gives off itself (rgb)
-    float emissiveIntensity = 1.0f;      // multiplies emissive; above 1 for bright glows
+    float roughness = 0.6f;   // 0 mirror-smooth .. 1 fully matte
+    float metallic = 0.0f;   // 0 plastic, wood, stone .. 1 bare metal
+    glm::vec4 emissive{0, 0, 0, 1};   // light the surface gives off itself (rgb)
+    float emissiveIntensity = 1.0f;   // multiplies emissive; above 1 for bright glows
 };
 
 // A reusable imported model. Its internal nodes/materials stay in the asset;
@@ -67,9 +67,9 @@ struct ModelRenderer {
 // transform, looking down its -Z axis (see primaryCamera in Systems.h). The editor's
 // Play button looks through it too.
 struct Camera {
-    float fov = 60.0f;          // vertical field of view, degrees
-    float nearPlane = 0.1f;     // units; there is no far plane (reverse-Z, infinite)
-    bool primary = true;        // with several cameras, the first primary one wins
+    float fov = 60.0f;   // vertical field of view, degrees
+    float nearPlane = 0.1f;   // units; there is no far plane (reverse-Z, infinite)
+    bool primary = true;   // with several cameras, the first primary one wins
 };
 
 // Scene-wide settings. Give one entity one; with several, any of them may win.
@@ -93,8 +93,8 @@ struct Light {
     Type type = Type::Point;
     glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
-    float range = 10.0f;         // point and spot: meters
-    float spotAngle = 30.0f;     // spot: half-angle of the cone, degrees
+    float range = 10.0f;   // point and spot: meters
+    float spotAngle = 30.0f;   // spot: half-angle of the cone, degrees
     float spotSoftness = 0.2f;   // spot: 0 hard edge .. 1 fades from the center
     bool enabled = true;
 };
@@ -108,11 +108,11 @@ struct Spin {
 // Floats up and down on a sine wave.
 struct Bob {
     float amplitude = 0.25f;   // units
-    float frequency = 0.5f;    // cycles per second
-    float phase = 0.0f;        // radians
+    float frequency = 0.5f;   // cycles per second
+    float phase = 0.0f;   // radians
     // Runtime state, not saved:
     float time = 0.0f;
-    float offset = 0.0f;       // height currently applied to the Transform
+    float offset = 0.0f;   // height currently applied to the Transform
 };
 
 // The Transform as of the previous tick, kept by storePreviousTransforms so rendering
@@ -137,45 +137,57 @@ struct Field {
     FieldType type;
     size_t offset;
     float speed = 0.0f;   // editor drag speed; 0 picks a default for the type
-    float min = 0.0f;     // editor limits; min == max means none
+    float min = 0.0f;   // editor limits; min == max means none
     float max = 0.0f;
-    std::vector<std::string> options{}; // named values for int-backed enums
+    std::vector<std::string> options{};   // named values for int-backed enums
 };
 
 template <class T>
 constexpr FieldType fieldTypeOf() {
-    if constexpr (std::is_same_v<T, bool>) return FieldType::Bool;
+    if constexpr (std::is_same_v<T, bool>)
+        return FieldType::Bool;
     else if constexpr (std::is_enum_v<T>) {
-        static_assert(std::is_same_v<std::underlying_type_t<T>,int>, "reflected enums must use int storage");
+        static_assert(std::is_same_v<std::underlying_type_t<T>, int>, "reflected enums must use int storage");
         return FieldType::Enum;
-    }
-    else if constexpr (std::is_same_v<T, int>) return FieldType::Int;
-    else if constexpr (std::is_same_v<T, float>) return FieldType::Float;
-    else if constexpr (std::is_same_v<T, glm::vec2>) return FieldType::Vec2;
-    else if constexpr (std::is_same_v<T, glm::vec3>) return FieldType::Vec3;
-    else if constexpr (std::is_same_v<T, glm::vec4>) return FieldType::Color;
-    else if constexpr (std::is_same_v<T, glm::quat>) return FieldType::Rotation;
-    else if constexpr (std::is_same_v<T, std::string>) return FieldType::String;
-    else if constexpr (std::is_same_v<T, MeshHandle>) return FieldType::Mesh;
-    else if constexpr (std::is_same_v<T, TextureHandle>) return FieldType::Texture;
-    else if constexpr (std::is_same_v<T, ModelHandle>) return FieldType::Model;
-    else if constexpr (std::is_same_v<T, Entity>) return FieldType::Entity;
-    else static_assert(sizeof(T) == 0, "unsupported field type");
+    } else if constexpr (std::is_same_v<T, int>)
+        return FieldType::Int;
+    else if constexpr (std::is_same_v<T, float>)
+        return FieldType::Float;
+    else if constexpr (std::is_same_v<T, glm::vec2>)
+        return FieldType::Vec2;
+    else if constexpr (std::is_same_v<T, glm::vec3>)
+        return FieldType::Vec3;
+    else if constexpr (std::is_same_v<T, glm::vec4>)
+        return FieldType::Color;
+    else if constexpr (std::is_same_v<T, glm::quat>)
+        return FieldType::Rotation;
+    else if constexpr (std::is_same_v<T, std::string>)
+        return FieldType::String;
+    else if constexpr (std::is_same_v<T, MeshHandle>)
+        return FieldType::Mesh;
+    else if constexpr (std::is_same_v<T, TextureHandle>)
+        return FieldType::Texture;
+    else if constexpr (std::is_same_v<T, ModelHandle>)
+        return FieldType::Model;
+    else if constexpr (std::is_same_v<T, Entity>)
+        return FieldType::Entity;
+    else
+        static_assert(sizeof(T) == 0, "unsupported field type");
 }
 
 template <class C, class M>
 Field field(std::string name, M C::*member, float speed = 0.0f, float min = 0.0f, float max = 0.0f) {
     const C probe{};
-    const size_t offset = static_cast<size_t>(reinterpret_cast<const char*>(&(probe.*member)) -
-                                              reinterpret_cast<const char*>(&probe));
+    const size_t offset =
+        static_cast<size_t>(reinterpret_cast<const char*>(&(probe.*member)) - reinterpret_cast<const char*>(&probe));
     return Field{std::move(name), fieldTypeOf<M>(), offset, speed, min, max, {}};
 }
 
 template <class C, class E>
 Field enumField(std::string name, E C::*member, std::vector<std::string> options) {
     static_assert(std::is_enum_v<E>);
-    auto result=field(std::move(name),member);
-    result.options=std::move(options);
+    auto result = field(std::move(name), member);
+    result.options = std::move(options);
     return result;
 }
 
@@ -186,9 +198,9 @@ struct ComponentInfo {
     uint32_t id = 0;
     std::vector<Field> fields;
     std::function<bool(const World&, Entity)> has;
-    std::function<void*(World&, Entity)> get;            // nullptr if missing
+    std::function<void*(World&, Entity)> get;   // nullptr if missing
     std::function<const void*(const World&, Entity)> getConst;
-    std::function<void(World&, Entity)> add;             // adds a default-constructed one
+    std::function<void(World&, Entity)> add;   // adds a default-constructed one
     std::function<void(World&, Entity)> remove;
 };
 
@@ -224,4 +236,4 @@ const ComponentInfo* findComponent(std::string_view name);
 glm::vec3 eulerDegrees(const glm::quat& q);
 glm::quat fromEulerDegrees(const glm::vec3& degrees);
 
-} // namespace shockwave
+}   // namespace shockwave

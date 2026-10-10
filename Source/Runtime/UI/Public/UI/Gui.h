@@ -35,22 +35,22 @@ constexpr ImVec4 hex(uint32_t rgb, float alpha = 1.0f) {
 // All colors are sRGB, exactly as a color picker or a design tool shows them.
 struct Theme {
     // ---- Palette ----
-    ImVec4 background = hex(0x06080a);       // window backgrounds: the obsidian void
-    ImVec4 panel = hex(0x0d161c);            // inner panels: child regions, lists, table rows
-    ImVec4 surface = hex(0x0d1616);          // menu bar, title bars, tab bars, popups
-    ImVec4 frame = hex(0x0d1c22);            // buttons, text fields, sliders, checkboxes
+    ImVec4 background = hex(0x06080a);   // window backgrounds: the obsidian void
+    ImVec4 panel = hex(0x0d161c);   // inner panels: child regions, lists, table rows
+    ImVec4 surface = hex(0x0d1616);   // menu bar, title bars, tab bars, popups
+    ImVec4 frame = hex(0x0d1c22);   // buttons, text fields, sliders, checkboxes
     ImVec4 frameHover = hex(0x16222a);
     ImVec4 frameActive = hex(0x0d3542);
-    ImVec4 border = hex(0x223d49);           // the 1px lines around panels and controls
-    ImVec4 header = hex(0x0d1c26);           // collapsing headers, selected list rows
+    ImVec4 border = hex(0x223d49);   // the 1px lines around panels and controls
+    ImVec4 header = hex(0x0d1c26);   // collapsing headers, selected list rows
     ImVec4 headerHover = hex(0x16323d);
     ImVec4 text = hex(0xd4dee6);
     ImVec4 textDisabled = hex(0x5c6875);
-    ImVec4 accent = hex(0x00e5ff);           // active tools, tabs, focused panel, graph lines
+    ImVec4 accent = hex(0x00e5ff);   // active tools, tabs, focused panel, graph lines
     ImVec4 accentHover = hex(0x6cf3ff);
     ImVec4 accentActive = hex(0x00b4cc);
-    ImVec4 secondary = hex(0xffb020);        // secondary data highlights: histograms, hovered plots
-    ImVec4 selection = hex(0x00e5ff, 0.18f); // selected text, the row being clicked
+    ImVec4 secondary = hex(0xffb020);   // secondary data highlights: histograms, hovered plots
+    ImVec4 selection = hex(0x00e5ff, 0.18f);   // selected text, the row being clicked
     ImVec4 scrollbar = hex(0x162632);
     ImVec4 scrollbarHover = hex(0x263d49);
 
@@ -127,4 +127,4 @@ ImVec4 accent();
 // the tool windows and before any modal popups.
 void focusOutline();
 
-} // namespace shockwave::gui
+}   // namespace shockwave::gui

@@ -10,18 +10,17 @@ namespace shockwave::vk {
 
 namespace {
 
-VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-                                             VkDebugUtilsMessageTypeFlagsEXT,
-                                             const VkDebugUtilsMessengerCallbackDataEXT* data,
-                                             void*) {
+VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
     const char* level = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)     ? "ERROR"
-                      : (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? "WARNING"
+                        : (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? "WARNING"
                                                                                        : "INFO";
     std::fprintf(stderr, "[vulkan %s] %s\n", level, data->pMessage);
     return VK_FALSE;
 }
 
-} // namespace
+}   // namespace
 
 Context::Context(SDL_Window* window) {
     check(volkInitialize(), "Loading the Vulkan library (is a Vulkan driver installed?)");
@@ -33,17 +32,15 @@ Context::Context(SDL_Window* window) {
     }
 
     vkb::InstanceBuilder instanceBuilder(vkGetInstanceProcAddr);
-    instanceBuilder.set_app_name("Shockwave")
-        .set_engine_name("Shockwave")
-        .require_api_version(1, 3, 0);
+    instanceBuilder.set_app_name("Shockwave").set_engine_name("Shockwave").require_api_version(1, 3, 0);
     for (Uint32 i = 0; i < extCount; ++i) instanceBuilder.enable_extension(exts[i]);
 #ifdef SHOCKWAVE_VALIDATION
     // Validation layers catch API misuse early. Install them from your distro
     // (vulkan-validation-layers); without them the engine still runs.
     instanceBuilder.request_validation_layers(true)
         .set_debug_callback(debugCallback)
-        .set_debug_messenger_severity(VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                      VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+        .set_debug_messenger_severity(
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
 #endif
     auto instanceResult = instanceBuilder.build();
     if (!instanceResult) {
@@ -94,8 +91,8 @@ Context::Context(SDL_Window* window) {
                               .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
                               .select();
     if (!physicalResult) {
-        throw std::runtime_error("No GPU supports what Shockwave needs (Vulkan 1.3): " +
-                                 physicalResult.error().message());
+        throw std::runtime_error(
+            "No GPU supports what Shockwave needs (Vulkan 1.3): " + physicalResult.error().message());
     }
 
     auto deviceResult = vkb::DeviceBuilder(physicalResult.value()).build();
@@ -143,4 +140,4 @@ Context::~Context() {
     vkb::destroy_instance(m_instance);
 }
 
-} // namespace shockwave::vk
+}   // namespace shockwave::vk

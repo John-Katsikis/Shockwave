@@ -1,7 +1,6 @@
 // The Hierarchy panel: the scene's entities as a tree. Click, Ctrl+click and Shift+click
 // select; drag rows onto each other to attach them; F2 or the context menu renames.
 #include "Editor.h"
-
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -24,7 +23,7 @@ std::string lower(std::string text) {
     return text;
 }
 
-} // namespace
+}   // namespace
 
 void Editor::drawHierarchy() {
     if (!ImGui::Begin("Hierarchy", &m_showHierarchy)) {
@@ -34,7 +33,8 @@ void Editor::drawHierarchy() {
 
     // Search leads the header; creating trails it (docs/UI.md).
     const float createWidth = gui::buttonWidth("+ Add");
-    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - createWidth - ImGui::GetStyle().ItemSpacing.x));
+    ImGui::SetNextItemWidth(
+        std::max(1.0f, ImGui::GetContentRegionAvail().x - createWidth - ImGui::GetStyle().ItemSpacing.x));
     ImGui::InputTextWithHint("##filter", "Search entities", &m_hierarchyFilter);
     gui::alignTrailing(createWidth);
     if (gui::button("+ Add")) ImGui::OpenPopup("CreateEntity");
@@ -126,7 +126,8 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
         trackEdit();
         ImGui::SetItemTooltip("Visible");
     } else {
-        ImGui::Dummy(ImVec2(ImGui::GetTextLineHeight() + 4.0f, ImGui::GetTextLineHeight() + 4.0f));   // keep names lined up
+        ImGui::Dummy(
+            ImVec2(ImGui::GetTextLineHeight() + 4.0f, ImGui::GetTextLineHeight() + 4.0f));   // keep names lined up
     }
     ImGui::SameLine(0.0f, 6.0f);
 
@@ -194,8 +195,9 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
         const float nameEnd = rowMin.x + ImGui::GetTreeNodeToLabelSpacing() + ImGui::CalcTextSize(name.c_str()).x;
         const float x = rowMax.x - width - 6.0f;
         if (x > nameEnd + 12.0f) {
-            ImGui::GetWindowDrawList()->AddText(ImVec2(x, rowMin.y + (rowMax.y - rowMin.y - ImGui::GetTextLineHeight()) * 0.5f),
-                                                ImGui::GetColorU32(ImGuiCol_TextDisabled), kind.c_str());
+            ImGui::GetWindowDrawList()->AddText(
+                ImVec2(x, rowMin.y + (rowMax.y - rowMin.y - ImGui::GetTextLineHeight()) * 0.5f),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), kind.c_str());
         }
     }
 
@@ -207,8 +209,8 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
             m_focusRename = false;
         }
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
-        const bool done = ImGui::InputText("##rename", &m_renameBuffer,
-                                           ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        const bool done = ImGui::InputText(
+            "##rename", &m_renameBuffer, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
         ImGui::PopStyleVar();
         const bool cancelled = ImGui::IsKeyPressed(ImGuiKey_Escape);
         if (cancelled) {
@@ -253,4 +255,4 @@ void Editor::drawEntityContextMenu(Entity e) {
     if (ImGui::MenuItem("Delete", "Del")) deleteSelected();
 }
 
-} // namespace editor
+}   // namespace editor

@@ -1,15 +1,15 @@
-#include <Core/Jobs.h>
 #include <Renderer/Renderer.h>
-#include <Platform/Window.h>
 
+#include <Core/Jobs.h>
+#include <Platform/Window.h>
 #include <RHI/Context.h>
 #include <RHI/Pipeline.h>
 #include <RHI/RenderGraph.h>
 #include <RHI/Swapchain.h>
 
-#include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <array>
@@ -52,9 +52,9 @@ struct DrawData {
     glm::vec3 emissive;
     uint32_t pad;
 };
-static_assert(offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
-                  sizeof(DrawData) == 256,
-              "DrawData must match the shader's scalar layout");
+static_assert(
+    offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 && sizeof(DrawData) == 256,
+    "DrawData must match the shader's scalar layout");
 
 // Must match LightData and FrameBuffer in shaders/mesh.frag.
 struct LightData {
@@ -96,7 +96,7 @@ struct TonemapPushConstants {
 struct GridPushConstants {
     glm::mat4 viewProjection;
     glm::vec4 cameraPosition;   // xyz; w: half the quad's size (the fade distance)
-    glm::vec4 params;           // x: cell size, y: cells per major line, z: opacity
+    glm::vec4 params;   // x: cell size, y: cells per major line, z: opacity
 };
 static_assert(sizeof(GridPushConstants) == 96, "GridPushConstants must match the grid shaders");
 
@@ -121,10 +121,10 @@ struct Mesh {
 };
 
 // Records a layout transition with synchronization2.
-void transitionImage(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from,
-                     VkImageLayout to, VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                     VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess, uint32_t baseMip = 0,
-                     uint32_t mipCount = VK_REMAINING_MIP_LEVELS) {
+void transitionImage(
+    VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
+    VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
+    uint32_t baseMip = 0, uint32_t mipCount = VK_REMAINING_MIP_LEVELS) {
     VkImageMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.srcStageMask = srcStage;
@@ -151,18 +151,18 @@ std::string shaderPath(const char* name) {
     return std::string(SDL_GetBasePath()) + "shaders/" + name + ".spv";
 }
 
-} // namespace
+}   // namespace
 
 struct Renderer::Impl {
     struct Frame {
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         VkSemaphore imageAcquired = VK_NULL_HANDLE;   // binary: swapchain acquire requires it
-        vk::Buffer drawBuffer;                        // this frame's draw table, persistently mapped
+        vk::Buffer drawBuffer;   // this frame's draw table, persistently mapped
         DrawData* drawData = nullptr;
         VkDeviceAddress drawAddress = 0;
         uint32_t drawCapacity = 0;
-        vk::Buffer frameBuffer;                       // lights and camera, persistently mapped
+        vk::Buffer frameBuffer;   // lights and camera, persistently mapped
         uint8_t* frameData = nullptr;
         VkDeviceAddress frameAddress = 0;
     };
@@ -193,7 +193,7 @@ struct Renderer::Impl {
     VkPipeline meshDoubleSidedPipeline = VK_NULL_HANDLE;
     VkPipeline meshBlendPipeline = VK_NULL_HANDLE;
     VkPipeline meshBlendDoubleSidedPipeline = VK_NULL_HANDLE;
-    std::array<VkPipeline,4> mirroredPipelines{};
+    std::array<VkPipeline, 4> mirroredPipelines{};
     VkPipelineLayout gridLayout = VK_NULL_HANDLE;
     VkPipeline gridPipeline = VK_NULL_HANDLE;
     GridSettings grid;
@@ -230,9 +230,9 @@ struct Renderer::Impl {
     std::mutex queueMutex;   // VkQueue access must be externally synchronized
     VkCommandPool uploadPool = VK_NULL_HANDLE;
 
-    std::vector<DrawList> drawLists;        // indexed by JobSystem::threadIndex()
+    std::vector<DrawList> drawLists;   // indexed by JobSystem::threadIndex()
     std::mutex foreignDrawMutex;
-    DrawList foreignDraws;                  // threads the job system doesn't own
+    DrawList foreignDraws;   // threads the job system doesn't own
     uint32_t lastDrawCount = 0;
     std::vector<DrawCommand> gatheredDraws;
 
@@ -310,7 +310,7 @@ struct Renderer::Impl {
         destroyImage(displayColor);
         vkDestroyPipeline(device, tonemapPipeline, nullptr);
         vkDestroyPipelineLayout(device, tonemapLayout, nullptr);
-        for (auto pipeline:mirroredPipelines) vkDestroyPipeline(device,pipeline,nullptr);
+        for (auto pipeline : mirroredPipelines) vkDestroyPipeline(device, pipeline, nullptr);
         vkDestroyPipeline(device, meshPipeline, nullptr);
         vkDestroyPipeline(device, meshDoubleSidedPipeline, nullptr);
         vkDestroyPipeline(device, meshBlendPipeline, nullptr);
@@ -343,8 +343,9 @@ struct Renderer::Impl {
         }
     }
 
-    vk::Image createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect,
-                          uint32_t mipLevels = 1, bool dedicated = false) {
+    vk::Image createImage(
+        VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect, uint32_t mipLevels = 1,
+        bool dedicated = false) {
         vk::Image image;
         image.extent = extent;
         image.format = format;
@@ -363,9 +364,9 @@ struct Renderer::Impl {
         VmaAllocationCreateInfo allocInfo{};
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         if (dedicated) allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-        vk::check(vmaCreateImage(context->allocator(), &imageInfo, &allocInfo, &image.image, &image.allocation,
-                                 nullptr),
-                  "vmaCreateImage");
+        vk::check(
+            vmaCreateImage(context->allocator(), &imageInfo, &allocInfo, &image.image, &image.allocation, nullptr),
+            "vmaCreateImage");
 
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -393,17 +394,18 @@ struct Renderer::Impl {
             std::max(1u, static_cast<uint32_t>(std::lround(out.width * renderScale))),
             std::max(1u, static_cast<uint32_t>(std::lround(out.height * renderScale))),
         };
-        sceneColor = createImage(extent, kSceneColorFormat,
-                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
-                                 VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
-        sceneDepth = createImage(extent, kDepthFormat,
-                                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                 VK_IMAGE_ASPECT_DEPTH_BIT, 1, true);
-        displayColor = createImage(out, kDisplayFormat,
-                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                                   VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        sceneColor = createImage(
+            extent, kSceneColorFormat,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                VK_IMAGE_USAGE_STORAGE_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        sceneDepth = createImage(
+            extent, kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_IMAGE_ASPECT_DEPTH_BIT, 1, true);
+        displayColor = createImage(
+            out, kDisplayFormat,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
         sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
         // The tonemap pass reads the scene through the bindless table like any texture.
@@ -460,7 +462,8 @@ struct Renderer::Impl {
         info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
         info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &guiColorFormat;
         info.CheckVkResultFn = [](VkResult result) { vk::check(result, "Dear ImGui Vulkan backend"); };
-        if (!ImGui_ImplVulkan_Init(&info)) throw std::runtime_error("Initializing the Dear ImGui Vulkan backend failed");
+        if (!ImGui_ImplVulkan_Init(&info))
+            throw std::runtime_error("Initializing the Dear ImGui Vulkan backend failed");
 
         guiEnabled = true;
         registerGuiSceneTexture();
@@ -526,11 +529,9 @@ struct Renderer::Impl {
 
             ensureDrawCapacity(f, 4096);
             VmaAllocationInfo info{};
-            f.frameBuffer = createBuffer(kFrameDataSize,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                             VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                                         &info);
+            f.frameBuffer = createBuffer(
+                kFrameDataSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
             f.frameData = static_cast<uint8_t*>(info.pMappedData);
             f.frameAddress = bufferAddress(f.frameBuffer.buffer);
         }
@@ -554,11 +555,9 @@ struct Renderer::Impl {
         if (f.drawBuffer.buffer) vmaDestroyBuffer(context->allocator(), f.drawBuffer.buffer, f.drawBuffer.allocation);
         VmaAllocationInfo info{};
         // Host-written, GPU-read every frame: lands in BAR/ReBAR memory where the GPU has it.
-        f.drawBuffer = createBuffer(capacity * sizeof(DrawData),
-                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                        VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                                    &info);
+        f.drawBuffer = createBuffer(
+            capacity * sizeof(DrawData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
         f.drawData = static_cast<DrawData*>(info.pMappedData);
         f.drawAddress = bufferAddress(f.drawBuffer.buffer);
         f.drawCapacity = capacity;
@@ -624,8 +623,8 @@ struct Renderer::Impl {
         layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
         layoutInfo.bindingCount = 2;
         layoutInfo.pBindings = bindings;
-        vk::check(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout),
-                  "vkCreateDescriptorSetLayout");
+        vk::check(
+            vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "vkCreateDescriptorSetLayout");
 
         const VkDescriptorPoolSize sizes[2] = {
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, capacity},
@@ -658,8 +657,8 @@ struct Renderer::Impl {
         layoutInfo.pSetLayouts = &bindlessLayout;
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &range;
-        vk::check(vkCreatePipelineLayout(context->device(), &layoutInfo, nullptr, &pipelineLayout),
-                  "vkCreatePipelineLayout");
+        vk::check(
+            vkCreatePipelineLayout(context->device(), &layoutInfo, nullptr, &pipelineLayout), "vkCreatePipelineLayout");
 
         vk::GraphicsPipelineDesc desc;
         desc.vertexShader = shaderPath("mesh.vert");
@@ -675,10 +674,10 @@ struct Renderer::Impl {
         desc.cullMode = VK_CULL_MODE_BACK_BIT;
         meshBlendPipeline = vk::createGraphicsPipeline(context->device(), desc);
         desc.frontFace = VK_FRONT_FACE_CLOCKWISE;
-        for (int i=0;i<4;++i) {
-            desc.alphaBlend = (i & 2)!=0;
+        for (int i = 0; i < 4; ++i) {
+            desc.alphaBlend = (i & 2) != 0;
             desc.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-            mirroredPipelines[i]=vk::createGraphicsPipeline(context->device(),desc);
+            mirroredPipelines[i] = vk::createGraphicsPipeline(context->device(), desc);
         }
 
         // The editor grid: a transparent quad on the ground, depth-tested against the
@@ -690,8 +689,8 @@ struct Renderer::Impl {
         gridLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         gridLayoutInfo.pushConstantRangeCount = 1;
         gridLayoutInfo.pPushConstantRanges = &gridRange;
-        vk::check(vkCreatePipelineLayout(context->device(), &gridLayoutInfo, nullptr, &gridLayout),
-                  "vkCreatePipelineLayout");
+        vk::check(
+            vkCreatePipelineLayout(context->device(), &gridLayoutInfo, nullptr, &gridLayout), "vkCreatePipelineLayout");
         vk::GraphicsPipelineDesc gridDesc;
         gridDesc.vertexShader = shaderPath("grid.vert");
         gridDesc.fragmentShader = shaderPath("grid.frag");
@@ -713,8 +712,9 @@ struct Renderer::Impl {
         tonemapLayoutInfo.pSetLayouts = &bindlessLayout;
         tonemapLayoutInfo.pushConstantRangeCount = 1;
         tonemapLayoutInfo.pPushConstantRanges = &tonemapRange;
-        vk::check(vkCreatePipelineLayout(context->device(), &tonemapLayoutInfo, nullptr, &tonemapLayout),
-                  "vkCreatePipelineLayout");
+        vk::check(
+            vkCreatePipelineLayout(context->device(), &tonemapLayoutInfo, nullptr, &tonemapLayout),
+            "vkCreatePipelineLayout");
         vk::GraphicsPipelineDesc tonemapDesc;
         tonemapDesc.vertexShader = shaderPath("tonemap.vert");
         tonemapDesc.fragmentShader = shaderPath("tonemap.frag");
@@ -726,8 +726,9 @@ struct Renderer::Impl {
 
     // ---- Resources --------------------------------------------------------------------
 
-    vk::Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags,
-                            VmaAllocationInfo* outInfo = nullptr) {
+    vk::Buffer createBuffer(
+        VkDeviceSize size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags,
+        VmaAllocationInfo* outInfo = nullptr) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
@@ -738,9 +739,9 @@ struct Renderer::Impl {
         allocInfo.flags = flags;
 
         vk::Buffer buffer;
-        vk::check(vmaCreateBuffer(context->allocator(), &bufferInfo, &allocInfo, &buffer.buffer,
-                                  &buffer.allocation, outInfo),
-                  "vmaCreateBuffer");
+        vk::check(
+            vmaCreateBuffer(context->allocator(), &bufferInfo, &allocInfo, &buffer.buffer, &buffer.allocation, outInfo),
+            "vmaCreateBuffer");
         return buffer;
     }
 
@@ -753,13 +754,11 @@ struct Renderer::Impl {
 
     vk::Buffer createStaging(const void* data, VkDeviceSize size) {
         VmaAllocationInfo info{};
-        vk::Buffer staging = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                              VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                                          &info);
+        vk::Buffer staging = createBuffer(
+            size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
         std::memcpy(info.pMappedData, data, size);
-        vk::check(vmaFlushAllocation(context->allocator(), staging.allocation, 0, VK_WHOLE_SIZE),
-                  "vmaFlushAllocation");
+        vk::check(vmaFlushAllocation(context->allocator(), staging.allocation, 0, VK_WHOLE_SIZE), "vmaFlushAllocation");
         return staging;
     }
 
@@ -816,66 +815,89 @@ struct Renderer::Impl {
 
     uint32_t reserveSlot(std::vector<uint32_t>& free, std::atomic<uint32_t>& reserved, uint32_t maximum) {
         std::lock_guard lock(resourceMutex);
-        if (!free.empty()) { const auto id=free.back(); free.pop_back(); return id; }
-        if (reserved.load()>=maximum) throw std::runtime_error("GPU asset capacity exhausted");
+        if (!free.empty()) {
+            const auto id = free.back();
+            free.pop_back();
+            return id;
+        }
+        if (reserved.load() >= maximum) throw std::runtime_error("GPU asset capacity exhausted");
         return reserved.fetch_add(1);
     }
     MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
         if (vertices.empty() || indices.empty()) return {};
-        const uint32_t id=reserveSlot(freeMeshes,meshReserved,kMaxMeshes);
-        Mesh& mesh=meshes[id];
+        const uint32_t id = reserveSlot(freeMeshes, meshReserved, kMaxMeshes);
+        Mesh& mesh = meshes[id];
         try {
-            mesh.vertices=uploadBuffer(vertices.data(),vertices.size_bytes(),
+            mesh.vertices = uploadBuffer(
+                vertices.data(), vertices.size_bytes(),
                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-            mesh.indices=uploadBuffer(indices.data(),indices.size_bytes(),VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-            mesh.indexCount=static_cast<uint32_t>(indices.size());
-            mesh.vertexAddress=bufferAddress(mesh.vertices.buffer);
-            meshReady[id].store(true,std::memory_order_release);
+            mesh.indices = uploadBuffer(indices.data(), indices.size_bytes(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            mesh.indexCount = static_cast<uint32_t>(indices.size());
+            mesh.vertexAddress = bufferAddress(mesh.vertices.buffer);
+            meshReady[id].store(true, std::memory_order_release);
             return {id};
         } catch (...) {
-            if (mesh.vertices.buffer) vmaDestroyBuffer(context->allocator(),mesh.vertices.buffer,mesh.vertices.allocation);
-            if (mesh.indices.buffer) vmaDestroyBuffer(context->allocator(),mesh.indices.buffer,mesh.indices.allocation);
-            mesh={};
-            std::lock_guard lock(resourceMutex); freeMeshes.push_back(id); throw;
+            if (mesh.vertices.buffer)
+                vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
+            if (mesh.indices.buffer)
+                vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
+            mesh = {};
+            std::lock_guard lock(resourceMutex);
+            freeMeshes.push_back(id);
+            throw;
         }
     }
     void destroyMesh(MeshHandle handle) {
-        if (handle.id>=kMaxMeshes || !meshReady[handle.id].load()) return;
-        vk::check(vkDeviceWaitIdle(context->device()),"vkDeviceWaitIdle");
-        Mesh& mesh=meshes[handle.id];
-        meshReady[handle.id].store(false,std::memory_order_release);
-        vmaDestroyBuffer(context->allocator(),mesh.vertices.buffer,mesh.vertices.allocation);
-        vmaDestroyBuffer(context->allocator(),mesh.indices.buffer,mesh.indices.allocation);
-        mesh={};
-        std::lock_guard lock(resourceMutex); freeMeshes.push_back(handle.id);
+        if (handle.id >= kMaxMeshes || !meshReady[handle.id].load()) return;
+        vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
+        Mesh& mesh = meshes[handle.id];
+        meshReady[handle.id].store(false, std::memory_order_release);
+        vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
+        vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
+        mesh = {};
+        std::lock_guard lock(resourceMutex);
+        freeMeshes.push_back(handle.id);
     }
     void destroyTexture(TextureHandle handle) {
-        if (!handle.id || handle.id>=std::min(textureReserved.load(),context->maxBindlessTextures()) || !textures[handle.id].image) return;
-        vk::check(vkDeviceWaitIdle(context->device()),"vkDeviceWaitIdle");
-        if (auto it=guiTextures.find(handle.id);it!=guiTextures.end()) {
-            ImGui_ImplVulkan_RemoveTexture(it->second); guiTextures.erase(it);
+        if (!handle.id || handle.id >= std::min(textureReserved.load(), context->maxBindlessTextures()) ||
+            !textures[handle.id].image)
+            return;
+        vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
+        if (auto it = guiTextures.find(handle.id); it != guiTextures.end()) {
+            ImGui_ImplVulkan_RemoveTexture(it->second);
+            guiTextures.erase(it);
         }
         {
             std::lock_guard lock(textureSwapMutex);
-            for (auto& swap:textureSwaps) if (swap.id==handle.id) destroyImage(swap.image);
-            std::erase_if(textureSwaps,[&](const auto& swap) { return swap.id==handle.id; });
+            for (auto& swap : textureSwaps)
+                if (swap.id == handle.id) destroyImage(swap.image);
+            std::erase_if(textureSwaps, [&](const auto& swap) { return swap.id == handle.id; });
         }
         destroyImage(textures[handle.id]);
         // Fill the descriptor with white before recycling; don't own the white image.
-        textures[handle.id]=textures[0]; writeTextureDescriptor(handle.id); textures[handle.id]={};
-        std::lock_guard lock(resourceMutex); freeTextures.push_back(handle.id);
+        textures[handle.id] = textures[0];
+        writeTextureDescriptor(handle.id);
+        textures[handle.id] = {};
+        std::lock_guard lock(resourceMutex);
+        freeTextures.push_back(handle.id);
     }
     TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
-        if (!width || !height || rgba.size()<size_t(width)*height*4)
+        if (!width || !height || rgba.size() < size_t(width) * height * 4)
             throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
-        const uint32_t id=reserveSlot(freeTextures,textureReserved,context->maxBindlessTextures());
+        const uint32_t id = reserveSlot(freeTextures, textureReserved, context->maxBindlessTextures());
         try {
-            textures[id]=uploadTexture(width,height,rgba,srgb); writeTextureDescriptor(id); return {id};
-        } catch (...) { std::lock_guard lock(resourceMutex); freeTextures.push_back(id); throw; }
+            textures[id] = uploadTexture(width, height, rgba, srgb);
+            writeTextureDescriptor(id);
+            return {id};
+        } catch (...) {
+            std::lock_guard lock(resourceMutex);
+            freeTextures.push_back(id);
+            throw;
+        }
     }
 
-    void updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
-                       bool srgb) {
+    void
+    updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
         if (width == 0 || height == 0 || rgba.size() < size_t(width) * height * 4) {
             throw std::runtime_error("updateTexture: pixel data is smaller than width x height x 4");
         }
@@ -948,17 +970,18 @@ struct Renderer::Impl {
     vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
         const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
         const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-        vk::Image image = createImage({width, height}, format,
-                                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                                      VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+        vk::Image image = createImage(
+            {width, height}, format,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 
         vk::Buffer staging = createStaging(rgba.data(), size_t(width) * height * 4);
         immediateSubmit([&](VkCommandBuffer cmd) {
-            transitionImage(cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, 0,
-                            VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
-                            VK_ACCESS_2_TRANSFER_WRITE_BIT);   // level 0 is copied, the rest are blitted
+            transitionImage(
+                cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_NONE, 0,
+                VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT);   // level 0 is copied, the rest are blitted
 
             VkBufferImageCopy copy{};
             copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -968,11 +991,11 @@ struct Renderer::Impl {
             // Build the mip chain on the GPU: each level is a filtered blit of the one above.
             int32_t w = static_cast<int32_t>(width), h = static_cast<int32_t>(height);
             for (uint32_t level = 1; level < mipLevels; ++level) {
-                transitionImage(cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
-                                VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
-                                VK_ACCESS_2_TRANSFER_READ_BIT, level - 1, 1);
+                transitionImage(
+                    cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
+                    VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+                    level - 1, 1);
                 const int32_t nw = std::max(1, w / 2), nh = std::max(1, h / 2);
                 VkImageBlit2 region{};
                 region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
@@ -996,16 +1019,16 @@ struct Renderer::Impl {
 
             // Every level but the last is in TRANSFER_SRC now; the last is in TRANSFER_DST.
             if (mipLevels > 1) {
-                transitionImage(cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT,
-                                0, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                                0, mipLevels - 1);
+                transitionImage(
+                    cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_BLIT_BIT, 0,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, 0, mipLevels - 1);
             }
-            transitionImage(cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
-                            VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                            VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, mipLevels - 1, 1);
+            transitionImage(
+                cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, mipLevels - 1, 1);
         });
         vmaDestroyBuffer(context->allocator(), staging.buffer, staging.allocation);
         return image;
@@ -1013,10 +1036,12 @@ struct Renderer::Impl {
 
     // ---- Per-frame --------------------------------------------------------------------
 
-    void drawMesh(MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint, const DrawMaterial& material) {
+    void drawMesh(
+        MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material) {
         if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
-        const float determinant=glm::determinant(transform);
-        if (!std::isfinite(determinant) || std::abs(determinant)<1e-12f) return;
+        const float determinant = glm::determinant(transform);
+        if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) return;
         const Mesh& mesh = meshes[handle.id];
 
         // The per-draw math runs here, on whichever thread submits the draw.
@@ -1035,8 +1060,8 @@ struct Renderer::Impl {
         command.data.alphaCutoff = material.alphaCutoff;
         command.doubleSided = material.doubleSided;
         command.blend = material.blend;
-        command.mirrored = determinant<0;
-        const auto center = viewProjection * transform * glm::vec4(0,0,0,1);
+        command.mirrored = determinant < 0;
+        const auto center = viewProjection * transform * glm::vec4(0, 0, 0, 1);
         command.depth = center.w != 0 ? center.z / center.w : 0;
         command.indexBuffer = mesh.indices.buffer;
         command.indexCount = mesh.indexCount;
@@ -1097,8 +1122,8 @@ struct Renderer::Impl {
         }
         applyTextureSwaps();
 
-        VkResult acquire = vkAcquireNextImageKHR(device, swapchain->handle(), UINT64_MAX,
-                                                 f.imageAcquired, VK_NULL_HANDLE, &imageIndex);
+        VkResult acquire = vkAcquireNextImageKHR(
+            device, swapchain->handle(), UINT64_MAX, f.imageAcquired, VK_NULL_HANDLE, &imageIndex);
         if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
             needsResize = true;
             return false;
@@ -1110,8 +1135,12 @@ struct Renderer::Impl {
     void setSceneViewport(VkCommandBuffer cmd) {
         const VkExtent2D extent = sceneColor.extent;
         // Negative height flips Y so standard Y-up projection matrices work unchanged.
-        VkViewport viewport{0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
-                            -static_cast<float>(extent.height), 0.0f, 1.0f};
+        VkViewport viewport{0.0f,
+                            static_cast<float>(extent.height),
+                            static_cast<float>(extent.width),
+                            -static_cast<float>(extent.height),
+                            0.0f,
+                            1.0f};
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -1124,11 +1153,12 @@ struct Renderer::Impl {
         GridPushConstants push;
         push.viewProjection = viewProjection;
         push.cameraPosition = glm::vec4(cameraPosition, std::max(grid.fadeDistance, 1.0f));
-        push.params = glm::vec4(std::max(grid.cellSize, 1e-3f), static_cast<float>(std::max(grid.majorEvery, 1)),
-                                std::clamp(grid.opacity, 0.0f, 1.0f), 0.0f);
+        push.params = glm::vec4(
+            std::max(grid.cellSize, 1e-3f), static_cast<float>(std::max(grid.majorEvery, 1)),
+            std::clamp(grid.opacity, 0.0f, 1.0f), 0.0f);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gridPipeline);
-        vkCmdPushConstants(cmd, gridLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), &push);
+        vkCmdPushConstants(
+            cmd, gridLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
@@ -1144,33 +1174,43 @@ struct Renderer::Impl {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
         DrawPushConstants push{f.drawAddress, f.frameAddress};
-        vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), &push);
+        vkCmdPushConstants(
+            cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
 
-        auto& draws=gatheredDraws;
-        draws.clear(); draws.reserve(total);
-        for (const auto& list:drawLists) draws.insert(draws.end(),list.commands.begin(),list.commands.end());
-        { std::lock_guard lock(foreignDrawMutex); draws.insert(draws.end(),foreignDraws.commands.begin(),foreignDraws.commands.end()); }
-        const auto transparent=std::stable_partition(draws.begin(),draws.end(),[](const auto& draw) { return !draw.blend; });
+        auto& draws = gatheredDraws;
+        draws.clear();
+        draws.reserve(total);
+        for (const auto& list : drawLists) draws.insert(draws.end(), list.commands.begin(), list.commands.end());
+        {
+            std::lock_guard lock(foreignDrawMutex);
+            draws.insert(draws.end(), foreignDraws.commands.begin(), foreignDraws.commands.end());
+        }
+        const auto transparent =
+            std::stable_partition(draws.begin(), draws.end(), [](const auto& draw) { return !draw.blend; });
         // Reverse-Z is smaller farther away. Object-level sorting is the basic
         // transparency path; intersecting transparent surfaces need a later solution.
-        std::stable_sort(transparent,draws.end(),[](const auto& a,const auto& b) { return a.depth<b.depth; });
-        uint32_t drawIndex=0;
-        VkBuffer boundIndices=VK_NULL_HANDLE;
-        VkPipeline boundPipeline=meshPipeline;
-        for (const auto& draw:draws) {
-            const auto pipeline=draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0)+(draw.doubleSided ? 1 : 0)] : draw.blend ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
-                                          : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
-            if (pipeline!=boundPipeline) { vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline); boundPipeline=pipeline; }
-            f.drawData[drawIndex]=draw.data;
-            if (draw.indexBuffer!=boundIndices) {
-                vkCmdBindIndexBuffer(cmd,draw.indexBuffer,0,VK_INDEX_TYPE_UINT32); boundIndices=draw.indexBuffer;
+        std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
+        uint32_t drawIndex = 0;
+        VkBuffer boundIndices = VK_NULL_HANDLE;
+        VkPipeline boundPipeline = meshPipeline;
+        for (const auto& draw : draws) {
+            const auto pipeline = draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
+                                  : draw.blend  ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
+                                                : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
+            if (pipeline != boundPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                boundPipeline = pipeline;
             }
-            vkCmdDrawIndexed(cmd,draw.indexCount,1,0,0,drawIndex++);
+            f.drawData[drawIndex] = draw.data;
+            if (draw.indexBuffer != boundIndices) {
+                vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                boundIndices = draw.indexBuffer;
+            }
+            vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, drawIndex++);
         }
-        vk::check(vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0,
-                                     sizeof(DrawData) * drawIndex),
-                  "vmaFlushAllocation");
+        vk::check(
+            vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0, sizeof(DrawData) * drawIndex),
+            "vmaFlushAllocation");
     }
 
     void endFrame() {
@@ -1286,43 +1326,52 @@ struct Renderer::Impl {
         }
         header.lightCount = count;
         std::memcpy(f.frameData, &header, sizeof(header));
-        vk::check(vmaFlushAllocation(context->allocator(), f.frameBuffer.allocation, 0,
-                                     sizeof(FrameData) + sizeof(LightData) * count),
-                  "vmaFlushAllocation");
+        vk::check(
+            vmaFlushAllocation(
+                context->allocator(), f.frameBuffer.allocation, 0, sizeof(FrameData) + sizeof(LightData) * count),
+            "vmaFlushAllocation");
     }
 
     // The frame as a render graph: scene, tonemap, then to the screen (and the GUI).
     void buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImage) {
         graph.reset();
         using vk::ImageUse;
-        const auto color = graph.import("scene color (HDR)", sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT,
-                                        sceneColorState, true);
-        const auto depth = graph.import("scene depth", sceneDepth.image, VK_IMAGE_ASPECT_DEPTH_BIT, sceneDepthState, true);
+        const auto color =
+            graph.import("scene color (HDR)", sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT, sceneColorState, true);
+        const auto depth =
+            graph.import("scene depth", sceneDepth.image, VK_IMAGE_ASPECT_DEPTH_BIT, sceneDepthState, true);
         const auto display = graph.import("display", displayColor.image, VK_IMAGE_ASPECT_COLOR_BIT, displayState, true);
         // Freshly acquired: the acquire semaphore's wait stages stand in for "last use".
-        swapchainState = {VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          VK_ACCESS_2_NONE};
-        const auto backbuffer = graph.import("swapchain", swapchainImage, VK_IMAGE_ASPECT_COLOR_BIT, swapchainState, true);
+        swapchainState = {
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
+        const auto backbuffer =
+            graph.import("swapchain", swapchainImage, VK_IMAGE_ASPECT_COLOR_BIT, swapchainState, true);
 
-        graph.addPass("scene", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
-                      [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); });
-        graph.addPass("tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
-                      [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+        graph.addPass(
+            "scene", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); });
+        graph.addPass(
+            "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
+            [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
         if (screenshotRequested) {
-            graph.addPass("screenshot readback", {{display, ImageUse::TransferSrc}},
-                          [this](VkCommandBuffer cmd) { recordScreenshotCopy(cmd); });
+            graph.addPass("screenshot readback", {{display, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
+                recordScreenshotCopy(cmd);
+            });
         }
         if (viewportMode()) {
             // Editor: the GUI shows the display image inside its viewport panel.
-            graph.addPass("gui", {{display, ImageUse::Sampled}, {backbuffer, ImageUse::ColorAttachment}},
-                          [this](VkCommandBuffer cmd) { recordGui(cmd, swapchain->imageView(imageIndex), true); });
+            graph.addPass(
+                "gui", {{display, ImageUse::Sampled}, {backbuffer, ImageUse::ColorAttachment}},
+                [this](VkCommandBuffer cmd) { recordGui(cmd, swapchain->imageView(imageIndex), true); });
         } else {
-            graph.addPass("copy to window", {{display, ImageUse::TransferSrc}, {backbuffer, ImageUse::TransferDst}},
-                          [this, swapchainImage](VkCommandBuffer cmd) { recordCopyToWindow(cmd, swapchainImage); });
+            graph.addPass(
+                "copy to window", {{display, ImageUse::TransferSrc}, {backbuffer, ImageUse::TransferDst}},
+                [this, swapchainImage](VkCommandBuffer cmd) { recordCopyToWindow(cmd, swapchainImage); });
             if (guiEnabled) {
-                graph.addPass("gui", {{backbuffer, ImageUse::ColorAttachment}},
-                              [this](VkCommandBuffer cmd) { recordGui(cmd, swapchain->imageView(imageIndex), false); });
+                graph.addPass("gui", {{backbuffer, ImageUse::ColorAttachment}}, [this](VkCommandBuffer cmd) {
+                    recordGui(cmd, swapchain->imageView(imageIndex), false);
+                });
             }
         }
         graph.addPass("present", {{backbuffer, ImageUse::Present}}, nullptr);
@@ -1374,7 +1423,8 @@ struct Renderer::Impl {
         rendering.pColorAttachments = &target;
         vkCmdBeginRendering(cmd, &rendering);
         const VkExtent2D extent = displayColor.extent;
-        VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
+        VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
+                            0.0f, 1.0f};
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -1399,8 +1449,8 @@ struct Renderer::Impl {
         VkImageBlit2 region{};
         region.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffsets[1] = {static_cast<int32_t>(displayColor.extent.width),
-                                static_cast<int32_t>(displayColor.extent.height), 1};
+        region.srcOffsets[1] = {
+            static_cast<int32_t>(displayColor.extent.width), static_cast<int32_t>(displayColor.extent.height), 1};
         region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.dstOffsets[1] = {static_cast<int32_t>(out.width), static_cast<int32_t>(out.height), 1};
         VkBlitImageInfo2 blit{};
@@ -1423,15 +1473,14 @@ struct Renderer::Impl {
     void recordScreenshotCopy(VkCommandBuffer cmd) {
         screenshotExtent = displayColor.extent;
         VmaAllocationInfo info{};
-        screenshotBuffer = createBuffer(VkDeviceSize(screenshotExtent.width) * screenshotExtent.height * 4,
-                                        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                        VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
-                                        &info);
+        screenshotBuffer = createBuffer(
+            VkDeviceSize(screenshotExtent.width) * screenshotExtent.height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
         VkBufferImageCopy region{};
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.imageExtent = {screenshotExtent.width, screenshotExtent.height, 1};
-        vkCmdCopyImageToBuffer(cmd, displayColor.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, screenshotBuffer.buffer,
-                               1, &region);
+        vkCmdCopyImageToBuffer(
+            cmd, displayColor.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, screenshotBuffer.buffer, 1, &region);
         // Make the copy visible to the CPU once the frame's timeline value is reached.
         VkMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -1463,10 +1512,9 @@ struct Renderer::Impl {
         vmaGetAllocationInfo(context->allocator(), screenshotBuffer.allocation, &info);
         vmaInvalidateAllocation(context->allocator(), screenshotBuffer.allocation, 0, VK_WHOLE_SIZE);
         // The display image is sRGB-encoded RGBA8: exactly what a PNG stores.
-        SDL_Surface* surface = SDL_CreateSurfaceFrom(static_cast<int>(screenshotExtent.width),
-                                                     static_cast<int>(screenshotExtent.height),
-                                                     SDL_PIXELFORMAT_RGBA32, info.pMappedData,
-                                                     static_cast<int>(screenshotExtent.width * 4));
+        SDL_Surface* surface = SDL_CreateSurfaceFrom(
+            static_cast<int>(screenshotExtent.width), static_cast<int>(screenshotExtent.height), SDL_PIXELFORMAT_RGBA32,
+            info.pMappedData, static_cast<int>(screenshotExtent.width * 4));
         screenshotMessage.clear();
         if (!surface || !SDL_SavePNG(surface, screenshotPath.c_str())) {
             screenshotMessage = std::string("can't save ") + screenshotPath + ": " + SDL_GetError();
@@ -1479,8 +1527,7 @@ struct Renderer::Impl {
     vk::ImageState swapchainState;
 };
 
-Renderer::Renderer(Window& window, JobSystem& jobs, bool vsync)
-    : m_impl(std::make_unique<Impl>(window, jobs, vsync)) {}
+Renderer::Renderer(Window& window, JobSystem& jobs, bool vsync) : m_impl(std::make_unique<Impl>(window, jobs, vsync)) {}
 Renderer::~Renderer() = default;
 
 void Renderer::destroyMesh(MeshHandle handle) { m_impl->destroyMesh(handle); }
@@ -1493,8 +1540,8 @@ TextureHandle Renderer::createTexture(uint32_t width, uint32_t height, std::span
     return m_impl->createTexture(width, height, rgba, srgb);
 }
 
-void Renderer::updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
-                             bool srgb) {
+void Renderer::updateTexture(
+    TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
     m_impl->updateTexture(texture, width, height, rgba, srgb);
 }
 
@@ -1504,9 +1551,7 @@ void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
 }
-void Renderer::setGrid(const GridSettings& grid) {
-    m_impl->grid = grid;
-}
+void Renderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
 void Renderer::addLight(const LightDesc& light) {
     std::lock_guard lock(m_impl->lightMutex);
     m_impl->lights.push_back(light);
@@ -1524,7 +1569,9 @@ void Renderer::requestScreenshot(const std::string& path) {
 bool Renderer::screenshotPending() const { return m_impl->screenshotRequested; }
 const std::string& Renderer::screenshotResult() const { return m_impl->screenshotMessage; }
 std::string Renderer::frameGraph() const { return m_impl->frameGraphText; }
-void Renderer::drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint, const DrawMaterial& material) {
+void Renderer::drawMesh(
+    MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material) {
     m_impl->drawMesh(mesh, transform, texture, tint, material);
 }
 void Renderer::setRenderScale(float scale) {
@@ -1566,4 +1613,4 @@ void Renderer::initGui() { m_impl->initGui(); }
 void Renderer::shutdownGui() { m_impl->shutdownGui(); }
 void Renderer::newGuiFrame() { ImGui_ImplVulkan_NewFrame(); }
 
-} // namespace shockwave
+}   // namespace shockwave

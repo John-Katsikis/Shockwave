@@ -11,7 +11,7 @@ namespace editor {
 // folder (not in the scene file, so moving the view doesn't change what's committed).
 struct EditorCamera {
     glm::vec3 position{6.0f, 4.0f, 8.0f};
-    float yaw = 0.64f;     // radians, same convention as shockwave::FlyCamera
+    float yaw = 0.64f;   // radians, same convention as shockwave::FlyCamera
     float pitch = -0.36f;
 };
 
@@ -23,4 +23,4 @@ enum class SceneTemplate {
 
 void makeScene(SceneTemplate kind, shockwave::World& world, const shockwave::Assets& assets);
 
-} // namespace editor
+}   // namespace editor

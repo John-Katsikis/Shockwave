@@ -1,15 +1,16 @@
-#include <Engine/Engine.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
+#include <Engine/Engine.h>
+#include <Engine/SceneFile.h>
+#include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
-#include <Engine/SceneFile.h>
-#include <Engine/Systems.h>
+
 #include <algorithm>
-#include <cstdio>
 #include <charconv>
+#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -23,13 +24,13 @@ namespace fs = std::filesystem;
 struct Tool {
     enum class Mode { Play, Check, Schema } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check: empty means every scene in the project
-    fs::path schemaOut;             // --schema: "-" is standard output
+    fs::path schemaOut;   // --schema: "-" is standard output
     // Playing, these make runs reproducible and checkable without a person watching.
-    fs::path scene;                 // --scene: instead of the project's startup scene
-    fs::path screenshot;            // --screenshot: save frame N as a PNG, then quit
-    int screenshotFrame = 30;       // --frames with --screenshot
+    fs::path scene;   // --scene: instead of the project's startup scene
+    fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
+    int screenshotFrame = 30;   // --frames with --screenshot
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
-    bool printFrame = false;        // --print-frame: the render graph, at exit
+    bool printFrame = false;   // --print-frame: the render graph, at exit
 };
 
 class Player final : public shockwave::Game {
@@ -48,7 +49,8 @@ public:
         std::vector<std::string> importProblems;
         for (const auto& change : m_assets->open(m_project.assetFolder)) {
             if (change.what == shockwave::AssetFolder::Change::What::Failed)
-                importProblems.push_back(m_project.relative(m_project.assetFolder / change.name) + ": import failed: " + change.error);
+                importProblems.push_back(
+                    m_project.relative(m_project.assetFolder / change.name) + ": import failed: " + change.error);
         }
         if (m_tool.mode != Tool::Mode::Play) {
             m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
@@ -64,7 +66,8 @@ public:
         // Scenes without a Camera entity fall back to the view an older editor saved.
         hooks.readHeader = [&](const std::string& key, std::istream& in) {
             if (key == "editor_camera" || key == "camera")
-                in >> m_camera.position.x >> m_camera.position.y >> m_camera.position.z >> m_camera.yaw >> m_camera.pitch;
+                in >> m_camera.position.x >> m_camera.position.y >> m_camera.position.z >> m_camera.yaw >>
+                    m_camera.pitch;
         };
         if (!shockwave::loadScene(m_world, engine().assets(), m_project.startupScene.string(), error, hooks, &warnings))
             throw std::runtime_error(error);
@@ -73,13 +76,20 @@ public:
         m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
         m_session->start();
         if (!m_session->physics()->diagnostics().empty()) {
-            const auto& problem=m_session->physics()->diagnostics().front();
-            throw std::runtime_error("Physics setup failed for entity "+std::to_string(problem.entity.index)+": "+problem.message);
+            const auto& problem = m_session->physics()->diagnostics().front();
+            throw std::runtime_error(
+                "Physics setup failed for entity " + std::to_string(problem.entity.index) + ": " + problem.message);
         }
-        std::printf("Jolt physics: %u bodies, %u characters\n",m_session->physics()->bodyCount(),m_session->physics()->characterCount());
-        std::printf("Player project: %s; module: %s; startup scene: %s\n", m_project.name.c_str(), m_project.gameModule.c_str(), m_project.startupScene.string().c_str());
+        std::printf(
+            "Jolt physics: %u bodies, %u characters\n", m_session->physics()->bodyCount(),
+            m_session->physics()->characterCount());
+        std::printf(
+            "Player project: %s; module: %s; startup scene: %s\n", m_project.name.c_str(), m_project.gameModule.c_str(),
+            m_project.startupScene.string().c_str());
     }
-    void onUpdate(double dt) override { if (m_session) m_session->update(dt); }
+    void onUpdate(double dt) override {
+        if (m_session) m_session->update(dt);
+    }
     void onFrame(double dt) override {
         if (!m_session) return;
         m_session->frame(dt);
@@ -89,7 +99,8 @@ public:
     void onRender(shockwave::Renderer& renderer, double alpha) override {
         // The game looks through its primary Camera, wherever gameplay has moved it.
         glm::mat4 view, projection;
-        if (shockwave::cameraMatrices(m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, projection)) {
+        if (shockwave::cameraMatrices(
+                m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, projection)) {
             renderer.setCamera(view, projection);
         } else {
             renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
@@ -104,6 +115,7 @@ public:
         }
         if (m_instance) m_instance->shutdown();
     }
+
 private:
     // Asks for frame N, then reports and quits once the renderer has written it.
     void takeScreenshot() {
@@ -116,8 +128,9 @@ private:
             }
         } else if (!renderer.screenshotPending()) {
             if (renderer.screenshotResult().empty()) {
-                std::printf("Wrote %s (%ux%u, %u lights)\n", m_tool.screenshot.string().c_str(), renderer.renderWidth(),
-                            renderer.renderHeight(), renderer.lightCount());
+                std::printf(
+                    "Wrote %s (%ux%u, %u lights)\n", m_tool.screenshot.string().c_str(), renderer.renderWidth(),
+                    renderer.renderHeight(), renderer.lightCount());
             } else {
                 std::fprintf(stderr, "Player: %s\n", renderer.screenshotResult().c_str());
                 m_exitCode = 1;
@@ -177,13 +190,15 @@ private:
                     ++lights;
             });
             if (lights > shockwave::Renderer::kMaxLights)
-                report(scene.string() + ": " + std::to_string(lights) + " enabled lights; only " +
-                       std::to_string(shockwave::Renderer::kMaxLights) + " are drawn");
+                report(
+                    scene.string() + ": " + std::to_string(lights) + " enabled lights; only " +
+                    std::to_string(shockwave::Renderer::kMaxLights) + " are drawn");
             int environments = 0;
             world.each<const shockwave::Environment>([&](shockwave::Entity e, const shockwave::Environment&) {
                 if (++environments == 2)
-                    report(scene.string() + ": entity '" + entityName(e) +
-                           "': more than one Environment; only the first is used");
+                    report(
+                        scene.string() + ": entity '" + entityName(e) +
+                        "': more than one Environment; only the first is used");
             });
 
             // Start the game on it, as Play does, to catch physics setup problems.
@@ -201,8 +216,9 @@ private:
             if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
         }
         for (const std::string& problem : problems) std::printf("%s\n", problem.c_str());
-        std::printf("%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
-                    scenes.size() == 1 ? "" : "s");
+        std::printf(
+            "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
+            scenes.size() == 1 ? "" : "s");
         return problems.empty() ? 0 : 1;
     }
 
@@ -248,7 +264,7 @@ private:
     std::unique_ptr<shockwave::GameInstance> m_instance;
     std::unique_ptr<shockwave::PlaySession> m_session;
 };
-}
+}   // namespace
 int main(int argc, char** argv) {
     try {
         std::filesystem::path manifest;
@@ -257,11 +273,12 @@ int main(int argc, char** argv) {
         std::pair<int, int> size{0, 0};
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
-            if (arg == "--project" && i + 1 < argc) manifest = argv[++i];
+            if (arg == "--project" && i + 1 < argc)
+                manifest = argv[++i];
             else if (arg == "--frames" && i + 1 < argc) {
                 const std::string value = argv[++i];
-                const auto [end, ec] = std::from_chars(value.data(), value.data()+value.size(), frames);
-                if (ec != std::errc{} || end != value.data()+value.size() || frames <= 0)
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), frames);
+                if (ec != std::errc{} || end != value.data() + value.size() || frames <= 0)
                     throw std::runtime_error("--frames requires a positive integer");
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
@@ -274,19 +291,23 @@ int main(int argc, char** argv) {
                 tool.screenshot = argv[++i];
             } else if (arg == "--view" && i + 1 < argc) {
                 const std::string view = argv[++i];
-                if (view == "lit") tool.view = shockwave::DebugView::Lit;
-                else if (view == "unlit") tool.view = shockwave::DebugView::Unlit;
-                else if (view == "normals") tool.view = shockwave::DebugView::Normals;
-                else if (view == "lighting") tool.view = shockwave::DebugView::Lighting;
-                else throw std::runtime_error("--view takes lit, unlit, normals or lighting");
+                if (view == "lit")
+                    tool.view = shockwave::DebugView::Lit;
+                else if (view == "unlit")
+                    tool.view = shockwave::DebugView::Unlit;
+                else if (view == "normals")
+                    tool.view = shockwave::DebugView::Normals;
+                else if (view == "lighting")
+                    tool.view = shockwave::DebugView::Lighting;
+                else
+                    throw std::runtime_error("--view takes lit, unlit, normals or lighting");
             } else if (arg == "--size" && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const size_t x = value.find('x');
                 int w = 0, h = 0;
-                if (x == std::string::npos ||
-                    std::from_chars(value.data(), value.data() + x, w).ec != std::errc{} ||
-                    std::from_chars(value.data() + x + 1, value.data() + value.size(), h).ec != std::errc{} ||
-                    w < 16 || h < 16)
+                if (x == std::string::npos || std::from_chars(value.data(), value.data() + x, w).ec != std::errc{} ||
+                    std::from_chars(value.data() + x + 1, value.data() + value.size(), h).ec != std::errc{} || w < 16 ||
+                    h < 16)
                     throw std::runtime_error("--size takes WIDTHxHEIGHT, like 1280x720");
                 size = {w, h};
             } else if (arg == "--print-frame") {
@@ -302,13 +323,14 @@ int main(int argc, char** argv) {
             } else if (!arg.empty() && arg[0] != '-') {
                 if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")
                     tool.scenes.push_back(std::filesystem::absolute(arg).lexically_normal());
-                else manifest = arg;
-            }
-            else throw std::runtime_error("Unknown or incomplete option: " + arg);
+                else
+                    manifest = arg;
+            } else
+                throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
         if (manifest.empty()) {
             // The project around the scene given, else the working folder's.
-            const std::filesystem::path near = !tool.scenes.empty() ? tool.scenes.front()
+            const std::filesystem::path near = !tool.scenes.empty()  ? tool.scenes.front()
                                                : !tool.scene.empty() ? tool.scene
                                                                      : std::filesystem::current_path();
             const auto found = shockwave::findProjectFile(near);
@@ -341,7 +363,8 @@ int main(int argc, char** argv) {
         engine.run(player);
         if (player.exitCode() != 0) return player.exitCode();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "Player: %s\n", e.what()); return 1;
+        std::fprintf(stderr, "Player: %s\n", e.what());
+        return 1;
     }
     return 0;
 }

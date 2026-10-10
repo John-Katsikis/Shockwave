@@ -32,14 +32,14 @@ public:
     };
 
     struct File {
-        std::string name;              // path inside the folder, forward slashes
-        std::filesystem::path path;    // on disk
+        std::string name;   // path inside the folder, forward slashes
+        std::filesystem::path path;   // on disk
         Kind kind = Kind::Other;
         uintmax_t bytes = 0;
         std::filesystem::file_time_type modified{};
         bool imported = false;
-        std::string error;             // why the last import failed, if it did
-        TextureHandle texture;         // Kind::Texture, once imported
+        std::string error;   // why the last import failed, if it did
+        TextureHandle texture;   // Kind::Texture, once imported
         uint32_t width = 0, height = 0;
         ModelHandle model;
         std::vector<Dependency> dependencies;
@@ -76,4 +76,4 @@ private:
     double m_pollTimer = 0.0;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

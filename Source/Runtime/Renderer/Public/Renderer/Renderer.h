@@ -31,9 +31,9 @@ struct TextureHandle {
 // for editors and debug views. Lines fade out towards fadeDistance from the camera.
 struct GridSettings {
     bool enabled = false;
-    float cellSize = 1.0f;       // units between minor lines
-    int majorEvery = 10;         // a stronger line every this many cells
-    float fadeDistance = 150.0f; // units
+    float cellSize = 1.0f;   // units between minor lines
+    int majorEvery = 10;   // a stronger line every this many cells
+    float fadeDistance = 150.0f;   // units
     float opacity = 1.0f;
 };
 
@@ -45,13 +45,13 @@ struct GridSettings {
 // recording them doesn't contend. setClearColor and setCamera belong to the thread running
 // Game::onRender, and setCamera must come before that frame's drawMesh calls.
 struct DrawMaterial {
-    float alphaCutoff = -1.0f; // negative: opaque/blended, otherwise alpha test
+    float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
     bool blend = false;
     glm::vec2 uvScale{1.0f};   // repeats the texture across the surface (MeshRenderer::tiling)
-    float roughness = 0.6f;    // 0 mirror-smooth .. 1 fully matte
+    float roughness = 0.6f;   // 0 mirror-smooth .. 1 fully matte
     float metallic = 0.0f;
-    glm::vec3 emissive{0.0f};  // linear HDR color the surface emits
+    glm::vec3 emissive{0.0f};   // linear HDR color the surface emits
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of
@@ -61,7 +61,7 @@ struct LightDesc {
     Type type = Type::Point;
     glm::vec3 position{0.0f};
     glm::vec3 direction{0.0f, 0.0f, -1.0f};   // where it shines (directional, spot)
-    glm::vec3 color{1.0f};                    // already multiplied by intensity
+    glm::vec3 color{1.0f};   // already multiplied by intensity
     float range = 10.0f;
     float cosOuter = 0.0f, cosInner = 0.0f;   // spot cone, as cosines of the half-angles
 };
@@ -69,9 +69,9 @@ struct LightDesc {
 // Scene-wide lighting and the HDR-to-display step. Kept until changed.
 struct LightingDesc {
     enum class Tonemapper : uint32_t { ACES, AgX, Reinhard, None };
-    glm::vec3 skyAmbient{0.32f, 0.42f, 0.58f};      // ambient from above, already scaled
+    glm::vec3 skyAmbient{0.32f, 0.42f, 0.58f};   // ambient from above, already scaled
     glm::vec3 groundAmbient{0.18f, 0.16f, 0.14f};   // ambient from below
-    float exposure = 0.0f;                          // stops
+    float exposure = 0.0f;   // stops
     Tonemapper tonemapper = Tonemapper::ACES;
 };
 
@@ -98,8 +98,8 @@ public:
     TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
     // Replaces a texture's pixels (and size, if it changed) for hot reload. Everything
     // using the handle shows the new image from the next frame. Any thread.
-    void updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
-                       bool srgb = true);
+    void updateTexture(
+        TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
     // An ImTextureID for showing a texture in the GUI (an asset browser thumbnail, say);
     // 0 when the GUI is off. Main thread. Valid for the current frame: ask every frame,
     // since a reload hands out a new one.
@@ -110,8 +110,9 @@ public:
     // view: a standard right-handed, Y-up view matrix (glm::lookAt).
     // projection: reverse-Z (see perspectiveReverseZ in Camera.h).
     void setCamera(const glm::mat4& view, const glm::mat4& projection);
-    void drawMesh(MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
-                  const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
+    void drawMesh(
+        MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
+        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
 
@@ -123,7 +124,7 @@ public:
     void setLighting(const LightingDesc& lighting);
     void setDebugView(DebugView view);
     DebugView debugView() const;
-    uint32_t lightCount() const;      // lights used last frame, not counting the default sun
+    uint32_t lightCount() const;   // lights used last frame, not counting the default sun
     uint32_t droppedLights() const;   // lights over kMaxLights last frame
 
     // Saves the next finished frame, tonemapped, as a PNG at output resolution (the
@@ -166,7 +167,7 @@ public:
     void endFrame();
     void onResize();
     void waitIdle();
-    void initGui();       // after ImGui::CreateContext and the SDL3 backend
+    void initGui();   // after ImGui::CreateContext and the SDL3 backend
     void shutdownGui();
     void newGuiFrame();
 
@@ -175,4 +176,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

@@ -1,0 +1,27 @@
+# Shockwave code style. Run `clang-format -i` on changed files (most editors do it on save).
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: All
+AllowShortCaseLabelsOnASingleLine: true
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+SpacesBeforeTrailingComments: 3
+FixNamespaceComments: true
+NamespaceIndentation: None
+IncludeBlocks: Preserve
+SortIncludes: Never
+Cpp11BracedListStyle: true
+AlignTrailingComments: false
+AlignConsecutiveAssignments: None
+AlignAfterOpenBracket: AlwaysBreak
+BinPackArguments: true
+BinPackParameters: true
+InsertBraces: false
+ReflowComments: false

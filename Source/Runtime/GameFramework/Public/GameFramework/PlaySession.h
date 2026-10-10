@@ -23,9 +23,9 @@ public:
 
     void start();   // editing -> playing; paused -> playing; playing: nothing
     void pause();
-    void stop();    // end play, release the session's subsystems, restore the authored world
+    void stop();   // end play, release the session's subsystems, restore the authored world
     void update(double dt);   // one fixed tick
-    void frame(double dt);    // once per rendered frame
+    void frame(double dt);   // once per rendered frame
 
     State state() const { return m_state; }
     bool active() const { return m_state != State::Editing; }
@@ -48,4 +48,4 @@ private:
     uint64_t m_ticks = 0;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

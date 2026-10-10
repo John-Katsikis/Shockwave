@@ -43,9 +43,7 @@ JobSystem::~JobSystem() {
     for (std::thread& t : m_workers) t.join();
 }
 
-uint32_t JobSystem::threadIndex() {
-    return t_threadIndex;
-}
+uint32_t JobSystem::threadIndex() { return t_threadIndex; }
 
 void JobSystem::run(Job job, JobCounter* counter) {
     if (counter) counter->pending.fetch_add(1, std::memory_order_relaxed);
@@ -130,4 +128,4 @@ void JobSystem::parallelFor(size_t count, size_t batchSize, const std::function<
     wait(counter);
 }
 
-} // namespace shockwave
+}   // namespace shockwave

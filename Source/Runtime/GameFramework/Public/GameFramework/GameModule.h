@@ -32,4 +32,4 @@ inline std::unique_ptr<GameInstance> makeGameInstance(const GameModule* module) 
     return std::make_unique<GameInstance>();
 }
 
-} // namespace shockwave
+}   // namespace shockwave

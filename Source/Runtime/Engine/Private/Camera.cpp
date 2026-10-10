@@ -1,4 +1,5 @@
 #include <Engine/Camera.h>
+
 #include <Input/Input.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,8 +14,8 @@ glm::mat4 perspectiveReverseZ(float fovYRadians, float aspect, float nearPlane) 
     glm::mat4 m(0.0f);
     m[0][0] = f / aspect;
     m[1][1] = f;
-    m[2][3] = -1.0f;      // w = -z
-    m[3][2] = nearPlane;  // z = near, so depth = near / -z
+    m[2][3] = -1.0f;   // w = -z
+    m[3][2] = nearPlane;   // z = near, so depth = near / -z
     return m;
 }
 
@@ -65,16 +66,10 @@ glm::vec3 FlyCamera::forward() const {
     return {-std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch)};
 }
 
-glm::vec3 FlyCamera::right() const {
-    return glm::normalize(glm::cross(forward(), glm::vec3(0.0f, 1.0f, 0.0f)));
-}
+glm::vec3 FlyCamera::right() const { return glm::normalize(glm::cross(forward(), glm::vec3(0.0f, 1.0f, 0.0f))); }
 
-glm::mat4 FlyCamera::view() const {
-    return glm::lookAt(position, position + forward(), glm::vec3(0.0f, 1.0f, 0.0f));
-}
+glm::mat4 FlyCamera::view() const { return glm::lookAt(position, position + forward(), glm::vec3(0.0f, 1.0f, 0.0f)); }
 
-glm::mat4 FlyCamera::projection(float aspect) const {
-    return perspectiveReverseZ(fovY, aspect, nearPlane);
-}
+glm::mat4 FlyCamera::projection(float aspect) const { return perspectiveReverseZ(fovY, aspect, nearPlane); }
 
-} // namespace shockwave
+}   // namespace shockwave

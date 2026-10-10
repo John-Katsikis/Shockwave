@@ -13,9 +13,7 @@ namespace {
 
 Theme g_current;
 
-ImVec4 lin(const ImVec4& c) {
-    return color(c.x, c.y, c.z, c.w);
-}
+ImVec4 lin(const ImVec4& c) { return color(c.x, c.y, c.z, c.w); }
 ImVec4 withAlpha(ImVec4 c, float a) {
     c.w = a;
     return c;
@@ -94,7 +92,7 @@ std::string trim(const std::string& s) {
     return s.substr(a, b - a + 1);
 }
 
-} // namespace
+}   // namespace
 
 bool loadTheme(const std::string& path, Theme& theme, std::string& error) {
     std::ifstream in(path);
@@ -171,9 +169,7 @@ bool loadTheme(const std::string& path, Theme& theme, std::string& error) {
     return true;
 }
 
-const Theme& currentTheme() {
-    return g_current;
-}
+const Theme& currentTheme() { return g_current; }
 
 void applyTheme(const Theme& t, float dpiScale) {
     g_current = t;
@@ -239,7 +235,7 @@ void applyTheme(const Theme& t, float dpiScale) {
     c[ImGuiCol_ScrollbarGrab] = lin(t.scrollbar);
     c[ImGuiCol_ScrollbarGrabHovered] = lin(t.scrollbarHover);
     c[ImGuiCol_ScrollbarGrabActive] = accentColor;
-    c[ImGuiCol_CheckMark] = lin(t.onAccent);          // white tick on an accent-filled box
+    c[ImGuiCol_CheckMark] = lin(t.onAccent);   // white tick on an accent-filled box
     c[ImGuiCol_CheckboxSelectedBg] = accentColor;
     c[ImGuiCol_SliderGrab] = accentColor;
     c[ImGuiCol_SliderGrabActive] = accentHover;
@@ -290,4 +286,4 @@ void applyTheme(const Theme& t, float dpiScale) {
     }
 }
 
-} // namespace shockwave::gui
+}   // namespace shockwave::gui

@@ -16,12 +16,14 @@ class PhysicsWorld;
 struct GameContext {
     World& world;
     JobSystem& jobs;
-    Engine* engine;                    // null only in tools and tests that run without a window
+    Engine* engine;   // null only in tools and tests that run without a window
     SubsystemCollection& subsystems;   // this session's: physics, and any the game adds
 
     template <class T>
-    T* subsystem() const { return subsystems.find<T>(); }
-    PhysicsWorld& physics() const;     // always there during Play
+    T* subsystem() const {
+        return subsystems.find<T>();
+    }
+    PhysicsWorld& physics() const;   // always there during Play
 };
 
 class GameMode {
@@ -39,4 +41,4 @@ public:
     virtual void endPlay(GameContext&) {}
 };
 
-} // namespace shockwave
+}   // namespace shockwave

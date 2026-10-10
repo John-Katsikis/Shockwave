@@ -2,9 +2,8 @@
 // the fields each component declared (see shockwave/Components.h), so a game's own
 // components show up here as soon as they're registered.
 #include "Editor.h"
-
-#include <UI/Gui.h>
 #include <Physics/Physics.h>
+#include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
 
@@ -41,7 +40,7 @@ std::string lower(std::string text) {
     return text;
 }
 
-} // namespace
+}   // namespace
 
 void Editor::drawInspector() {
     if (!ImGui::Begin("Inspector", &m_showInspector)) {
@@ -77,13 +76,15 @@ void Editor::drawInspector() {
     const Entity e = all[0];
     // Identity first, with component creation beside it (docs/UI.md).
     const float addWidth = gui::buttonWidth("+ Component");
-    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - addWidth - ImGui::GetStyle().ItemSpacing.x));
+    ImGui::SetNextItemWidth(
+        std::max(1.0f, ImGui::GetContentRegionAvail().x - addWidth - ImGui::GetStyle().ItemSpacing.x));
     if (Name* name = m_world.get<Name>(e)) {
         ImGui::InputText("##name", &name->value);
         trackEdit();
     } else {
         std::string empty;
-        if (ImGui::InputTextWithHint("##name", "Name", &empty, ImGuiInputTextFlags_EnterReturnsTrue) && !empty.empty()) {
+        if (ImGui::InputTextWithHint("##name", "Name", &empty, ImGuiInputTextFlags_EnterReturnsTrue) &&
+            !empty.empty()) {
             pushUndo(m_world);
             m_world.add<Name>(e, {empty});
         }
@@ -135,7 +136,8 @@ void Editor::drawAddComponentPopup(Entity e) {
         }
     }
     // Enter takes the only match.
-    if (!chosen && ImGui::IsKeyPressed(ImGuiKey_Enter) && byCategory.size() == 1 && byCategory.begin()->second.size() == 1) {
+    if (!chosen && ImGui::IsKeyPressed(ImGuiKey_Enter) && byCategory.size() == 1 &&
+        byCategory.begin()->second.size() == 1) {
         chosen = byCategory.begin()->second[0];
     }
     if (chosen) {
@@ -154,8 +156,8 @@ void Editor::drawAddComponentPopup(Entity e) {
 void Editor::drawComponent(const ComponentInfo& info, Entity e) {
     ImGui::PushID(info.name.c_str());
     ImGui::Spacing();
-    const bool open = ImGui::CollapsingHeader(info.name.c_str(),
-                                              ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+    const bool open =
+        ImGui::CollapsingHeader(info.name.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     // A menu button at the right end of the header.
     const float buttonWidth = ImGui::CalcTextSize("...").x + ImGui::GetStyle().FramePadding.x * 2.0f;
     ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonWidth);
@@ -200,9 +202,10 @@ void Editor::drawComponent(const ComponentInfo& info, Entity e) {
 
 // What a component's fields can't show: physics setup problems, imported materials.
 void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
-    const bool physicsPart = info.id == shockwave::componentId<shockwave::Collider>() ||
-                             info.id == shockwave::componentId<shockwave::CharacterController>() ||
-                             (info.id == shockwave::componentId<shockwave::RigidBody>() && !m_world.has<shockwave::Collider>(e));
+    const bool physicsPart =
+        info.id == shockwave::componentId<shockwave::Collider>() ||
+        info.id == shockwave::componentId<shockwave::CharacterController>() ||
+        (info.id == shockwave::componentId<shockwave::RigidBody>() && !m_world.has<shockwave::Collider>(e));
     if (physicsPart) {
         if (const auto* physics = m_session->physics()) {
             for (const auto& problem : physics->diagnostics()) {
@@ -222,15 +225,20 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
             const auto& material = asset->data.materials[i];
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::TreeNode(material.name.empty() ? "Unnamed material" : material.name.c_str())) {
-                ImGui::TextDisabled("Base color %.2f %.2f %.2f %.2f", material.baseColor.r, material.baseColor.g,
-                                    material.baseColor.b, material.baseColor.a);
+                ImGui::TextDisabled(
+                    "Base color %.2f %.2f %.2f %.2f", material.baseColor.r, material.baseColor.g, material.baseColor.b,
+                    material.baseColor.a);
                 if (material.baseColorTexture >= 0) {
                     ImGui::TextWrapped("Texture: %s", asset->data.textures[material.baseColorTexture].source.c_str());
                 }
                 ImGui::TextDisabled("Metallic %.2f, roughness %.2f", material.metallic, material.roughness);
                 using Alpha = shockwave::ModelMaterial::Alpha;
-                ImGui::TextDisabled("%s, %s", material.alpha == Alpha::Mask ? "Cutout" : material.alpha == Alpha::Blend ? "Transparent" : "Opaque",
-                                    material.doubleSided ? "double-sided" : "single-sided");
+                ImGui::TextDisabled(
+                    "%s, %s",
+                    material.alpha == Alpha::Mask    ? "Cutout"
+                    : material.alpha == Alpha::Blend ? "Transparent"
+                                                     : "Opaque",
+                    material.doubleSided ? "double-sided" : "single-sided");
                 ImGui::TreePop();
             }
             ImGui::PopID();
@@ -273,7 +281,8 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
     case FieldType::Enum: {
         int value = 0;
         std::memcpy(&value, data, sizeof(value));
-        const char* preview = value >= 0 && size_t(value) < f.options.size() ? f.options[value].c_str() : "Invalid value";
+        const char* preview =
+            value >= 0 && size_t(value) < f.options.size() ? f.options[value].c_str() : "Invalid value";
         if (ImGui::BeginCombo(label.c_str(), preview)) {
             for (size_t i = 0; i < f.options.size(); ++i) {
                 if (ImGui::Selectable(f.options[i].c_str(), value == int(i)) && value != int(i)) {
@@ -287,8 +296,9 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
         break;
     }
     case FieldType::Int:
-        ImGui::DragInt(label.c_str(), static_cast<int*>(data), speed(0.2f), static_cast<int>(f.min),
-                       static_cast<int>(f.max), "%d", clamp);
+        ImGui::DragInt(
+            label.c_str(), static_cast<int*>(data), speed(0.2f), static_cast<int>(f.min), static_cast<int>(f.max), "%d",
+            clamp);
         trackEdit();
         break;
     case FieldType::Float:
@@ -304,7 +314,8 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
         trackEdit();
         break;
     case FieldType::Color:
-        ImGui::ColorEdit4(label.c_str(), static_cast<float*>(data), ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_AlphaBar);
+        ImGui::ColorEdit4(
+            label.c_str(), static_cast<float*>(data), ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_AlphaBar);
         trackEdit();
         break;
     case FieldType::Rotation: {
@@ -410,4 +421,4 @@ void Editor::drawEntityField(const std::string& label, Entity* value, Entity own
     }
 }
 
-} // namespace editor
+}   // namespace editor

@@ -9,14 +9,14 @@ uint32_t nextComponentId() {
     static std::atomic<uint32_t> next{0};
     return next.fetch_add(1, std::memory_order_relaxed);
 }
-} // namespace detail
+}   // namespace detail
 
 namespace {
 // Freed indices wait in line until this many are free, so a destroyed entity's slot
 // isn't handed straight to the next new one: entity order stays creation order, and
 // stale handles fail the generation check for longer.
 constexpr size_t kMinFreeBeforeReuse = 1024;
-} // namespace
+}   // namespace
 
 World& World::operator=(const World& other) {
     if (this == &other) return *this;
@@ -82,4 +82,4 @@ Entity World::entityAt(size_t n) const {
     return kNullEntity;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

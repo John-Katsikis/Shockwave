@@ -51,7 +51,9 @@ void PlaySession::start() {
     } catch (...) {
         const auto failure = std::current_exception();
         if (m_mode) {
-            try { m_mode->endPlay(m_context); } catch (...) {}
+            try {
+                m_mode->endPlay(m_context);
+            } catch (...) {}
         }
         tearDown();
         std::rethrow_exception(failure);
@@ -97,4 +99,4 @@ void PlaySession::frame(double dt) {
     if (m_state == State::Playing) m_mode->frame(m_context, dt);
 }
 
-} // namespace shockwave
+}   // namespace shockwave

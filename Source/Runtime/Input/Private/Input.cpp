@@ -1,4 +1,5 @@
 #include <Input/Input.h>
+
 #include <Platform/Window.h>
 
 #include <SDL3/SDL.h>
@@ -22,9 +23,7 @@ void Input::bindAction(const std::string& action, MouseButton button) {
     m_actions[action].push_back({true, static_cast<uint16_t>(button)});
 }
 
-void Input::clearAction(const std::string& action) {
-    m_actions.erase(action);
-}
+void Input::clearAction(const std::string& action) { m_actions.erase(action); }
 
 uint8_t Input::bindingState(const Binding& binding) const {
     if (binding.isMouse) return binding.code < m_mouse.size() ? m_mouse[binding.code] : 0;
@@ -84,18 +83,15 @@ void Input::handleEvent(const SDL_Event& event) {
         m_mouseDelta += glm::vec2(event.motion.xrel, event.motion.yrel);
         m_mousePosition = glm::vec2(event.motion.x, event.motion.y);
         break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        m_scrollDelta += event.wheel.y;
-        break;
+    case SDL_EVENT_MOUSE_WHEEL: m_scrollDelta += event.wheel.y; break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
         // Don't leave keys stuck down when the window loses focus mid-press.
         for (uint8_t& k : m_keys) k = (k & Down) ? Released : 0;
         for (uint8_t& b : m_mouse) b = (b & Down) ? Released : 0;
         setMouseCaptured(false);
         break;
-    default:
-        break;
+    default: break;
     }
 }
 
-} // namespace shockwave
+}   // namespace shockwave

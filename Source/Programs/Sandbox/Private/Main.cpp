@@ -1,8 +1,7 @@
 #include <Engine/Engine.h>
 
-#include <imgui.h>
-
 #include <glm/gtc/constants.hpp>
+#include <imgui.h>
 
 #include <algorithm>
 #include <cmath>
@@ -59,7 +58,7 @@ glm::vec4 hueColor(float h) {
     return glm::vec4(glm::clamp(k - 1.0f, 0.0f, 1.0f) * 0.8f + 0.2f, 1.0f);
 }
 
-} // namespace
+}   // namespace
 
 // A 3D scene to fly through: 10,000 entities, moved by the engine's Spin and Bob
 // systems and drawn by renderWorld, all spread across the job system.
@@ -91,9 +90,11 @@ public:
         const glm::vec3 axis = glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f));
         for (int i = 0; i < count; ++i) {
             const Entity e = m_world.create();
-            Bob bob{.amplitude = 1.0f, .frequency = 1.3f / glm::two_pi<float>(), .phase = static_cast<float>(i) * 0.37f};
+            Bob bob{
+                .amplitude = 1.0f, .frequency = 1.3f / glm::two_pi<float>(), .phase = static_cast<float>(i) * 0.37f};
             bob.offset = bob.amplitude * std::sin(bob.phase);   // start mid-wave, with no jump on the first tick
-            m_world.add<Transform>(e, {{(i % m_grid - m_grid / 2) * 3.0f, 1.5f + bob.offset, (i / m_grid - m_grid / 2) * 3.0f}});
+            m_world.add<Transform>(
+                e, {{(i % m_grid - m_grid / 2) * 3.0f, 1.5f + bob.offset, (i / m_grid - m_grid / 2) * 3.0f}});
             m_world.add<MeshRenderer>(e, {cube, cubeTexture, hueColor(static_cast<float>((i * 37) % count) / count)});
             m_world.add<Spin>(e, {axis, glm::degrees(0.3f + static_cast<float>((i * 7919) % 100) / 60.0f)});
             m_world.add<Bob>(e, bob);
@@ -153,7 +154,8 @@ int main(int argc, char** argv) {
         if (std::strcmp(argv[i], "--gui") == 0) config.gui = true;
         if (i + 1 < argc && std::strcmp(argv[i], "--frames") == 0) config.maxFrames = std::atoi(argv[i + 1]);
         if (i + 1 < argc && std::strcmp(argv[i], "--grid") == 0) grid = std::max(1, std::atoi(argv[i + 1]));
-        if (i + 1 < argc && std::strcmp(argv[i], "--scale") == 0) renderScale = static_cast<float>(std::atof(argv[i + 1]));
+        if (i + 1 < argc && std::strcmp(argv[i], "--scale") == 0)
+            renderScale = static_cast<float>(std::atof(argv[i + 1]));
     }
 
     try {

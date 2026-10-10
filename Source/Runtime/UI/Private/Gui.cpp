@@ -1,35 +1,27 @@
 #include <UI/Gui.h>
 
-#include <imgui_internal.h>   // the focused window, for focusOutline
+#include <imgui_internal.h>
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace shockwave::gui {
 
 namespace {
 
-float toLinear(float c) {
-    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
-}
+float toLinear(float c) { return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); }
 
-} // namespace
+}   // namespace
 
-ImVec4 color(float r, float g, float b, float a) {
-    return ImVec4(toLinear(r), toLinear(g), toLinear(b), a);
-}
+ImVec4 color(float r, float g, float b, float a) { return ImVec4(toLinear(r), toLinear(g), toLinear(b), a); }
 
-ImU32 colorU32(float r, float g, float b, float a) {
-    return ImGui::GetColorU32(color(r, g, b, a));
-}
+ImU32 colorU32(float r, float g, float b, float a) { return ImGui::GetColorU32(color(r, g, b, a)); }
 
 ImVec4 semanticColor(const ImVec4& c) { return color(c.x, c.y, c.z, c.w); }
 ImU32 semanticColorU32(const ImVec4& c) { return ImGui::GetColorU32(semanticColor(c)); }
 
-bool button(const char* label, const ImVec2& size) {
-    return ImGui::Button(label, size);
-}
+bool button(const char* label, const ImVec2& size) { return ImGui::Button(label, size); }
 
 bool toolButton(const char* label, bool selected, const char* tooltip) {
     if (selected) {
@@ -44,9 +36,7 @@ bool toolButton(const char* label, bool selected, const char* tooltip) {
     return pressed;
 }
 
-float buttonWidth(const char* label) {
-    return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-}
+float buttonWidth(const char* label) { return ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f; }
 
 void toolbarNext(float nextWidth) {
     const float end = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + nextWidth;
@@ -85,8 +75,9 @@ int toolbarRows(float width, std::initializer_list<const char*> labels) {
 }
 
 bool beginPropertyGrid(const char* id) {
-    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg |
-                          ImGuiTableFlags_SizingStretchProp)) return false;
+    if (!ImGui::BeginTable(
+            id, 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+        return false;
     ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthStretch, 0.38f);
     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 0.62f);
     return true;
@@ -107,13 +98,13 @@ void focusOutline() {
     window = window->RootWindow;   // the panel, not a list or toolbar inside it
     // Popups and tooltips carry their own border; ## windows are bars and hosts, not panels.
     if (!window->Active || window->Hidden || std::strncmp(window->Name, "##", 2) == 0 ||
-        (window->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip))) return;
+        (window->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip)))
+        return;
     const ImVec2 min = window->Pos;
     const ImVec2 max(min.x + window->Size.x, min.y + window->Size.y);
     ImDrawList* draw = window->DrawList;
     draw->PushClipRect(min, max, false);
-    draw->AddRect(min, max, ImGui::GetColorU32(accent()), 0.0f, 0,
-                  ImGui::GetStyle().WindowBorderSize);
+    draw->AddRect(min, max, ImGui::GetColorU32(accent()), 0.0f, 0, ImGui::GetStyle().WindowBorderSize);
     draw->PopClipRect();
 }
 
@@ -122,4 +113,4 @@ ImVec4 accent() {
     return color(a.x, a.y, a.z, a.w);
 }
 
-} // namespace shockwave::gui
+}   // namespace shockwave::gui

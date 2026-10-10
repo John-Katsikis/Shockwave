@@ -35,4 +35,4 @@ public:
     std::unique_ptr<GameMode> createGameMode(const World&) override { return std::make_unique<TGameMode>(); }
 };
 
-} // namespace shockwave
+}   // namespace shockwave

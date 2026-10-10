@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Assets/Model.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
-#include <Assets/Model.h>
+
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -34,7 +35,7 @@ public:
 
     MeshHandle findMesh(std::string_view name) const;   // invalid if unknown
     std::optional<TextureHandle> findTexture(std::string_view name) const;
-    std::string meshName(MeshHandle mesh) const;          // empty if unnamed
+    std::string meshName(MeshHandle mesh) const;   // empty if unnamed
     std::shared_ptr<const MeshData> meshData(MeshHandle mesh) const;   // null if not kept
     std::string textureName(TextureHandle texture) const;
 
@@ -49,4 +50,4 @@ private:
     std::vector<std::pair<std::string, TextureHandle>> m_textures;
 };
 
-} // namespace shockwave
+}   // namespace shockwave

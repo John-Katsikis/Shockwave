@@ -1,10 +1,10 @@
 // Entity/component system tests. No GPU or window needed: ctest --test-dir build
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
-#include <Physics/Physics.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
 #include <Engine/Systems.h>
+#include <Physics/Physics.h>
 
 #include <atomic>
 #include <chrono>
@@ -22,12 +22,12 @@ namespace {
 
 int g_failures = 0;
 
-#define CHECK(cond)                                                                \
-    do {                                                                           \
-        if (!(cond)) {                                                             \
-            std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);             \
-            ++g_failures;                                                          \
-        }                                                                          \
+#define CHECK(cond)                                                                                                    \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                                \
+            ++g_failures;                                                                                              \
+        }                                                                                                              \
     } while (0)
 
 bool near(float a, float b, float eps = 1e-4f) { return std::abs(a - b) <= eps; }
@@ -170,8 +170,8 @@ void commands() {
 void scheduling() {
     Schedule s;
     s.each<Transform, const Spin>("Spin", [](const SystemContext&, Transform&, const Spin&) {});
-    s.each<Transform, Bob>("Bob", [](const SystemContext&, Transform&, Bob&) {});    // writes Transform too
-    s.each<Velocity>("Damping", [](const SystemContext&, Velocity&) {});              // touches neither
+    s.each<Transform, Bob>("Bob", [](const SystemContext&, Transform&, Bob&) {});   // writes Transform too
+    s.each<Velocity>("Damping", [](const SystemContext&, Velocity&) {});   // touches neither
     s.each<const Transform, const Velocity>("Read", [](const SystemContext&, const Transform&, const Velocity&) {});
     const auto stages = s.stages();
     CHECK(stages.size() == 3);
@@ -188,8 +188,7 @@ void scheduling() {
         overlap.add("wait" + std::to_string(i), {}, [&](const SystemContext&) {
             const int now = ++inside;
             int seen = maxInside.load();
-            while (seen < now && !maxInside.compare_exchange_weak(seen, now)) {
-            }
+            while (seen < now && !maxInside.compare_exchange_weak(seen, now)) {}
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             --inside;
         });
@@ -213,7 +212,7 @@ void builtinSystems() {
     }
     const Transform& t = *w.get<Transform>(e);
     CHECK(near(eulerDegrees(t.rotation).y, 90.0f, 0.01f));   // 90 degrees per second for one second
-    CHECK(near(t.position.y, 1.0f, 1e-3f));                  // a quarter cycle of a 1-unit bob
+    CHECK(near(t.position.y, 1.0f, 1e-3f));   // a quarter cycle of a 1-unit bob
     CHECK(w.has<PreviousTransform>(e));
 }
 
@@ -232,8 +231,8 @@ void transforms() {
 }
 
 void sceneFiles() {
-    registerComponent<Health>("Health", {field("current", &Health::current), field("lives", &Health::lives),
-                                         field("tag", &Health::tag)});
+    registerComponent<Health>(
+        "Health", {field("current", &Health::current), field("lives", &Health::lives), field("tag", &Health::tag)});
     Assets assets;
     assets.addMesh("cube", MeshHandle{7});
     assets.addTexture("checker", TextureHandle{3});
@@ -245,11 +244,15 @@ void sceneFiles() {
     const Entity e = w.create();
     w.add<Name>(e, {"Hero \"one\""});
     w.add<Transform>(e, {{1, 2, 3}, fromEulerDegrees({0, 45, 0}), {1, 2, 1}});
-    w.add<MeshRenderer>(e, {.mesh = MeshHandle{7}, .texture = TextureHandle{3}, .tint = {1, 0.5f, 0.25f, 1},
-                            .tiling = {4, 2.5f}, .visible = false});
+    w.add<MeshRenderer>(
+        e, {.mesh = MeshHandle{7},
+            .texture = TextureHandle{3},
+            .tint = {1, 0.5f, 0.25f, 1},
+            .tiling = {4, 2.5f},
+            .visible = false});
     w.add<Health>(e, {42.0f, 2, "boss"});
     w.add<Velocity>(e);   // not registered: not saved
-    w.create();           // bare entity
+    w.create();   // bare entity
 
     std::string error;
     int headerSeen = 0;
@@ -457,7 +460,6 @@ void authoredScenes() {
     CHECK(schema.str().find("- `cube`") != std::string::npos);
 }
 
-
 // Lights, materials and the environment's look are plain fields an author or a tool
 // writes by name; they come back exactly.
 void lighting() {
@@ -515,7 +517,7 @@ void lighting() {
     CHECK(schema.str().find("`tonemapper`") != std::string::npos);
 }
 
-} // namespace
+}   // namespace
 
 // Cameras: which one a game looks through, and the matrices it gets.
 void cameras() {

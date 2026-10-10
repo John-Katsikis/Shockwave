@@ -12,12 +12,8 @@ MeshData makeCube(float size) {
         glm::vec3 normal, u, v;   // u and v span the face so u x v = normal (CCW from outside)
     };
     const Face faces[6] = {
-        {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}},
-        {{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-        {{0, 1, 0}, {1, 0, 0}, {0, 0, -1}},
-        {{0, -1, 0}, {1, 0, 0}, {0, 0, 1}},
-        {{0, 0, 1}, {1, 0, 0}, {0, 1, 0}},
-        {{0, 0, -1}, {-1, 0, 0}, {0, 1, 0}},
+        {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}}, {{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}}, {{0, 1, 0}, {1, 0, 0}, {0, 0, -1}},
+        {{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}, {{0, 0, 1}, {1, 0, 0}, {0, 1, 0}},  {{0, 0, -1}, {-1, 0, 0}, {0, 1, 0}},
     };
 
     MeshData mesh;
@@ -118,4 +114,4 @@ bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& dir
     return hit;
 }
 
-} // namespace shockwave
+}   // namespace shockwave

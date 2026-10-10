@@ -1,8 +1,9 @@
 #include <Engine/Engine.h>
+
 #include <UI/Gui.h>
 
-#include <SDL3/SDL.h>
 #include <imgui_impl_sdl3.h>
+#include <SDL3/SDL.h>
 
 #include <cmath>
 #include <cstdio>
@@ -21,8 +22,8 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_input = std::make_unique<Input>(*m_window);
     m_assets = std::make_unique<Assets>();
     if (m_config.gui) initGui();
-    std::printf("Shockwave: rendering with Vulkan on %s, %u worker threads\n",
-                m_renderer->gpuName(), m_jobs->workerCount());
+    std::printf(
+        "Shockwave: rendering with Vulkan on %s, %u worker threads\n", m_renderer->gpuName(), m_jobs->workerCount());
 }
 
 Engine::~Engine() {
@@ -71,7 +72,7 @@ std::string findFile(const std::string& path) {
     return {};
 }
 
-} // namespace
+}   // namespace
 
 // Loads the theme file over the built-in theme and applies it, along with its font.
 // On a reload, a broken file leaves the current look alone and says what's wrong.
@@ -166,11 +167,8 @@ void Engine::run(Game& game) {
             case SDL_EVENT_KEY_DOWN:
                 if (m_config.quitOnEscape && event.key.scancode == SDL_SCANCODE_ESCAPE) m_running = false;
                 break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-                m_renderer->onResize();
-                break;
-            default:
-                break;
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: m_renderer->onResize(); break;
+            default: break;
             }
         }
 
@@ -209,9 +207,10 @@ void Engine::run(Game& game) {
             m_fps = fpsFrames / fpsTimer;
             if (m_config.showFpsInTitle) {
                 char title[256];
-                std::snprintf(title, sizeof(title), "%s | %.0f fps (%.2f ms) | %ux%u | %u draws",
-                              m_config.window.title.c_str(), m_fps, 1000.0 / m_fps, m_renderer->renderWidth(),
-                              m_renderer->renderHeight(), m_renderer->drawCount());
+                std::snprintf(
+                    title, sizeof(title), "%s | %.0f fps (%.2f ms) | %ux%u | %u draws", m_config.window.title.c_str(),
+                    m_fps, 1000.0 / m_fps, m_renderer->renderWidth(), m_renderer->renderHeight(),
+                    m_renderer->drawCount());
                 m_window->setTitle(title);
             }
             fpsTimer = 0.0;
@@ -227,4 +226,4 @@ void Engine::run(Game& game) {
     game.onShutdown();
 }
 
-} // namespace shockwave
+}   // namespace shockwave
