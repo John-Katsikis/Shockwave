@@ -18,6 +18,7 @@
 #include <GameFramework/GameInstance.h>
 
 #include <functional>
+#include <string>
 #include <memory>
 #include <string_view>
 #include <type_traits>
@@ -56,10 +57,24 @@ struct AutoComponent {
     static AutoComponent*& gameComponents();
 };
 
+// jumpSpeed -> jump_speed: scene files name fields in snake_case, like the built-in ones.
+inline std::string sceneFieldName(std::string_view member) {
+    std::string name;
+    for (const char c : member) {
+        if (c >= 'A' && c <= 'Z') {
+            if (!name.empty() && name.back() != '_') name += '_';
+            name += static_cast<char>(c - 'A' + 'a');
+        } else {
+            name += c;
+        }
+    }
+    return name;
+}
+
 // A field named after its member, with the editor's drag speed worked out from its range.
 template <class C, class M>
-Field autoField(const char* name, M C::*member, float min = 0.0f, float max = 0.0f) {
-    return field(name, member, max > min ? (max - min) / 200.0f : 0.0f, min, max);
+Field autoField(const char* member, M C::*pointer, float min = 0.0f, float max = 0.0f) {
+    return field(sceneFieldName(member), pointer, max > min ? (max - min) / 200.0f : 0.0f, min, max);
 }
 
 template <class T>
@@ -96,10 +111,11 @@ GameModule simpleGameModule(std::string_view id) {
     }};
 
 // A saved field of the component, optionally with the editor's limits:
-// SW_FIELD(speed) or SW_FIELD(speed, 0, 10).
+// SW_FIELD(speed) or SW_FIELD(speed, 0, 10). Scene files spell it in snake_case
+// (SW_FIELD(jumpSpeed) is saved as jump_speed).
 #define SW_FIELD(member, ...) ::shockwave::detail::autoField(#member, &SwComponent::member __VA_OPT__(, ) __VA_ARGS__)
 // An int-backed enum field with a name for each value: SW_ENUM_FIELD(mode, "Walk", "Run").
-#define SW_ENUM_FIELD(member, ...) ::shockwave::enumField(#member, &SwComponent::member, {__VA_ARGS__})
+#define SW_ENUM_FIELD(member, ...) ::shockwave::enumField(::shockwave::detail::sceneFieldName(#member), &SwComponent::member, {__VA_ARGS__})
 
 // Declares the game module: its id (as in the .swproject's game_module) and the GameMode
 // every scene plays with, or your own GameInstance to pick one per scene. Write it once,

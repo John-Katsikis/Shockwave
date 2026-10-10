@@ -165,6 +165,11 @@ int main(int argc, char** argv) {
             const auto found = shockwave::findProjectFile(near);
             // Nothing around: the project whose game module this player was built with.
             manifest = found ? *found : std::filesystem::path(SHOCKWAVE_GAME_PROJECT);
+        } else if (std::error_code ec; std::filesystem::is_directory(manifest, ec)) {
+            // A project folder: the .swproject in it.
+            const auto found = shockwave::findProjectFile(manifest);
+            if (!found) throw std::runtime_error("no .swproject in " + manifest.string());
+            manifest = *found;
         }
         shockwave::Project project;
         std::string error;
