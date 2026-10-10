@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Preferences.h"
+
+#include <Audio/Audio.h>
 #include "SceneTemplates.h"
 
 #include <Assets/AssetFolder.h>
@@ -30,6 +32,7 @@ SW_LOG_CATEGORY(LogEditor);
 inline constexpr const char* kEntityPayload = "SW_ENTITY";
 inline constexpr const char* kMeshPayload = "SW_MESH";
 inline constexpr const char* kModelPayload = "SW_MODEL";
+inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
 
 struct EditorOptions {
@@ -37,6 +40,9 @@ struct EditorOptions {
     Preferences prefs;
     std::filesystem::path prefsPath;   // where prefs are saved back
     std::string assetFolder;   // --assets: imported instead of the project's assets
+    std::string contentFolder;   // --content-folder: inside project Content
+    bool showPreferences = false;   // --preferences: open settings on startup
+    bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     const shockwave::GameModule* gameModule = nullptr;   // the compiled gameplay Play runs
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -120,6 +126,9 @@ private:
     void drawCreateMenuItems(shockwave::Entity parent);
     void drawStatsWindow();
     void drawPreferencesWindow();
+    void previewAudio(const std::string& clip, shockwave::AudioPlayback options = {});
+    void stopAudioPreview();
+    shockwave::Entity spawnAudio(const std::string& clip, const glm::vec3& position);
     void drawProjectSettingsWindow();
     void drawControlsWindow();
     void drawAboutWindow();
@@ -312,6 +321,9 @@ private:
     std::string m_componentFilter;
 
     bool m_showHierarchy = true, m_showInspector = true, m_showContent = true, m_showConsole = true;
+    std::unique_ptr<shockwave::AudioMixer> m_audioPreview;
+    shockwave::AudioVoice m_previewVoice = 0;
+    std::string m_previewClip;
     bool m_showStats = false, m_showPreferences = false, m_showProjectSettings = false;
     bool m_showControls = false, m_showAbout = false, m_showDemo = false, m_showMetrics = false;
     bool m_resetLayout = false;

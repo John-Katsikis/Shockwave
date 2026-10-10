@@ -178,3 +178,15 @@ entity "Spotlight"
     spot_angle 28
     spot_softness 0.3
 end
+
+entity "Ambient sound"
+  AudioSource
+    clip "Audio/ambient.wav"
+    volume 0.25
+    pitch 1
+    loop 1
+    play_on_start 1
+    spatial 0
+    min_distance 1
+    max_distance 30
+end

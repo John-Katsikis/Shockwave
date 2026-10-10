@@ -28,6 +28,7 @@ using shockwave::Transform;
 // ---- Play mode ----------------------------------------------------------------------------
 
 void Editor::play() {
+    stopAudioPreview();
     if (!m_session || playState() == PlayState::Playing) return;
     if (!m_gameModuleMatches) {
         warn("Play is off: this project's gameplay module isn't the one compiled into the editor");
@@ -69,6 +70,7 @@ void Editor::pause() {
 }
 
 void Editor::stop() {
+    stopAudioPreview();
     if (!m_session || !playing()) return;
     try {
         m_session->stop();

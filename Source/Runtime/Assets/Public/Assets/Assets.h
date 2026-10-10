@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Assets/Model.h>
+#include <Assets/AudioClip.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
@@ -21,6 +22,10 @@ namespace shockwave {
 // Thread-safe: register and look up from any thread.
 class Assets {
 public:
+    void addAudioClip(std::string name, std::shared_ptr<const AudioClip> clip);
+    std::shared_ptr<const AudioClip> audioClip(std::string_view name) const;
+    std::vector<std::string> audioClips() const;
+
     Assets();   // "white" (the built-in texture) is always there
 
     // data: the mesh's vertices kept on the CPU, for picking and bounds. Optional.
@@ -44,6 +49,7 @@ public:
 
 private:
     mutable std::shared_mutex m_mutex;
+    std::vector<std::pair<std::string, std::shared_ptr<const AudioClip>>> m_audio;
     std::vector<std::pair<std::string, std::shared_ptr<const ModelAsset>>> m_models;
     std::vector<std::pair<std::string, MeshHandle>> m_meshes;
     std::vector<std::shared_ptr<const MeshData>> m_meshData;   // parallel to m_meshes

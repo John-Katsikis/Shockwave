@@ -70,6 +70,8 @@ FetchContent_MakeAvailable(VulkanHeaders)
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "" FORCE)
 set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(volk vk_bootstrap VulkanMemoryAllocator glm stb_image)
+# volk must use the pinned fetched headers, not an accidental system Vulkan SDK.
+target_link_libraries(volk PUBLIC Vulkan::Headers)
 
 # All Assimp readers are available; exporters, tools and upstream tests aren't
 # needed by the engine. Pin the release tag for reproducible imports.
@@ -112,6 +114,8 @@ FetchContent_Declare(JoltPhysics
     SOURCE_SUBDIR Build
 )
 FetchContent_MakeAvailable(JoltPhysics)
+
+include(cmake/AudioCodecs.cmake)
 
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)

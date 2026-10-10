@@ -32,7 +32,8 @@ headers and expand into available space; secondary actions trail them. Put compo
 creation beside entity identity and destructive actions in the component options
 menu. On narrow panels, move a complete settings group to its own row.
 
-Use `gui::beginPropertyGrid()` and `gui::propertyLabel()` for aligned property rows:
+Use `gui::beginPropertyGrid()` and `gui::propertyLabel()` for aligned property rows.
+Labels wrap within their column in narrow panels rather than disappearing off its edge:
 
 ```cpp
 if (shockwave::gui::beginPropertyGrid("settings")) {

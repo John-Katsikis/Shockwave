@@ -130,7 +130,22 @@ struct PreviousTransform {
 
 // Entity fields refer to another entity in the same world; scene files save them as
 // the position of that entity's block in the file.
-enum class FieldType { Bool, Int, Enum, Float, Vec2, Vec3, Color, Rotation, String, Mesh, Texture, Model, Entity };
+enum class FieldType {
+    Bool,
+    Int,
+    Enum,
+    Float,
+    Vec2,
+    Vec3,
+    Color,
+    Rotation,
+    String,
+    AudioClip,
+    Mesh,
+    Texture,
+    Model,
+    Entity
+};
 
 struct Field {
     std::string name;
@@ -176,7 +191,7 @@ constexpr FieldType fieldTypeOf() {
 }
 
 template <class C, class M>
-Field field(std::string name, M C::*member, float speed = 0.0f, float min = 0.0f, float max = 0.0f) {
+Field field(std::string name, M C::* member, float speed = 0.0f, float min = 0.0f, float max = 0.0f) {
     const C probe{};
     const size_t offset =
         static_cast<size_t>(reinterpret_cast<const char*>(&(probe.*member)) - reinterpret_cast<const char*>(&probe));
@@ -184,7 +199,7 @@ Field field(std::string name, M C::*member, float speed = 0.0f, float min = 0.0f
 }
 
 template <class C, class E>
-Field enumField(std::string name, E C::*member, std::vector<std::string> options) {
+Field enumField(std::string name, E C::* member, std::vector<std::string> options) {
     static_assert(std::is_enum_v<E>);
     auto result = field(std::move(name), member);
     result.options = std::move(options);

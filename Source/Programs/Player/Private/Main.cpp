@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
@@ -26,6 +27,7 @@ int main(int argc, char** argv) {
     try {
         std::filesystem::path manifest;
         int frames = 0;
+        float audioVolume = 1;
         Tool tool;
         std::pair<int, int> size{0, 0};
         for (int i = 1; i < argc; ++i) {
@@ -37,6 +39,12 @@ int main(int argc, char** argv) {
                 const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), frames);
                 if (ec != std::errc{} || end != value.data() + value.size() || frames <= 0)
                     throw std::runtime_error("--frames requires a positive integer");
+            } else if (arg == "--audio-volume" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), audioVolume);
+                if (ec != std::errc{} || end != value.data() + value.size() || !std::isfinite(audioVolume) ||
+                    audioVolume < 0 || audioVolume > 1)
+                    throw std::runtime_error("--audio-volume requires a number in 0..1");
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
             } else if (arg == "--schema" && i + 1 < argc) {
@@ -81,15 +89,17 @@ int main(int argc, char** argv) {
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
             } else if (arg == "--help") {
-                std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
-                          "       [--size WxH] [--view lit|unlit|normals|lighting] [--print-frame]\n"
-                          "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
-                          "                                    play N frames (default 30), save the last, quit\n"
-                          "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
-                          "player --schema file.md             write the scene format reference (- for stdout)\n"
-                          "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
-                          "player --devices [seconds]          list controllers; then print each input pressed\n"
-                          "                                    as binding text, for that many seconds");
+                std::puts(
+                    "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
+                    "       [--size WxH] [--view lit|unlit|normals|lighting] [--print-frame]\n"
+                    "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
+                    "                                    play N frames (default 30), save the last, quit\n"
+                    "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
+                    "player --schema file.md             write the scene format reference (- for stdout)\n"
+                    "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                    "player --audio-volume 0..1          master playback volume (default 1)\n"
+                    "player --devices [seconds]          list controllers; then print each input pressed\n"
+                    "                                    as binding text, for that many seconds");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-') {
                 if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")
@@ -130,6 +140,7 @@ int main(int argc, char** argv) {
             config.window.vsync = false;
         }
         shockwave::Engine engine(config);
+        engine.setMasterVolume(audioVolume);
         Player player(std::move(project), std::move(tool));
         engine.run(player);
         if (player.exitCode() != 0) return player.exitCode();

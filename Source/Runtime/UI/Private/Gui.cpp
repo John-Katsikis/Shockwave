@@ -87,7 +87,7 @@ void propertyLabel(const char* label) {
     ImGui::TableNextRow();
     ImGui::TableSetColumnIndex(0);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
+    ImGui::TextWrapped("%s", label);
     ImGui::TableSetColumnIndex(1);
     ImGui::SetNextItemWidth(-1.0f);
 }

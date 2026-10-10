@@ -1,5 +1,6 @@
 #include <GameFramework/PlaySession.h>
 
+#include <Audio/Audio.h>
 #include <Core/Log.h>
 
 #include <Engine/Engine.h>
@@ -12,6 +13,9 @@
 #include <stdexcept>
 
 namespace shockwave {
+
+AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
+AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }
 
 PhysicsWorld& GameContext::physics() const { return subsystems.get<PhysicsWorld>(); }
 
@@ -33,6 +37,7 @@ PhysicsWorld* PlaySession::physics() const { return m_subsystems.find<PhysicsWor
 void PlaySession::start() {
     if (m_state == State::Playing) return;
     if (m_state == State::Paused) {
+        audio()->mixer().pause(false);
         m_state = State::Playing;
         return;
     }
@@ -41,6 +46,9 @@ void PlaySession::start() {
     m_ticks = 0;
     try {
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
+        m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr);
+        if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
+        audio()->synchronize();
         m_mode = m_instance.createGameMode(world);
         if (!m_mode) throw std::runtime_error("the GameInstance made no GameMode");
         m_schedule = Schedule{};
@@ -48,6 +56,7 @@ void PlaySession::start() {
         m_mode->configureSystems(m_context, m_schedule);
         m_mode->beginPlay(m_context);
         physics()->synchronize();
+        audio()->synchronize();
         storePreviousTransforms(world, m_context.jobs);
         m_state = State::Playing;
     } catch (...) {
@@ -63,7 +72,10 @@ void PlaySession::start() {
 }
 
 void PlaySession::pause() {
-    if (m_state == State::Playing) m_state = State::Paused;
+    if (m_state == State::Playing) {
+        audio()->mixer().pause(true);
+        m_state = State::Paused;
+    }
 }
 
 void PlaySession::stop() {
@@ -94,11 +106,16 @@ void PlaySession::update(double dt) {
     m_schedule.run(m_context.world, m_context.jobs, dt);
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
+    audio()->synchronize();
     ++m_ticks;
 }
 
 void PlaySession::frame(double dt) {
-    if (m_state == State::Playing) m_mode->frame(m_context, dt);
+    if (m_state == State::Playing) {
+        m_mode->frame(m_context, dt);
+        audio()->synchronize();
+    }
+    if (active() && m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
 }
 
 }   // namespace shockwave

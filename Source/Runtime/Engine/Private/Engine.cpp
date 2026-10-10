@@ -37,6 +37,10 @@ Engine::~Engine() {
     SDL_Quit();
 }
 
+void Engine::setMasterVolume(float value) {
+    if (std::isfinite(value)) m_masterVolume.store(std::clamp(value, 0.0f, 1.0f));
+}
+
 void Engine::initGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
