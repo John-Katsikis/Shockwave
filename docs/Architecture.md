@@ -1,12 +1,45 @@
 # Architecture
 
-Shockwave is laid out like Unreal Engine, so the structure feels familiar if you come from
-there. Underneath, it uses an ECS rather than Unreal's object model, so game code runs
-across all cores by default.
+This page shows how Shockwave's code is organized, so you know where to find things and
+where new code should go. The layout follows Unreal Engine, so it will feel familiar if
+you come from there.
 
-## Repository
+Underneath, Shockwave uses an ECS (entity component system) instead of Unreal's object
+model. Your game's data lives in small components, and systems process them in parallel,
+so game code uses all CPU cores by default.
 
+If you just want to make a game, start with
+[Tutorial: your first game in Shockwave](Tutorial.md) and [Projects](Projects.md).
+
+## Where things go
+
+The most common changes, and where they belong:
+
+| You want to add | Put it here |
+|---|---|
+| Game code | The project's `Source/`, next to its `.swproject`. It's built by `shockwave_game_module(<id> ...)`. See [Projects](Projects.md). |
+| A new component | A struct in the module that owns the data. Register it with `registerComponent` in engine code, or `SW_COMPONENT` in a game module. Then regenerate `docs/SceneSchema.md`, and add a `player --check` rule if mistakes are likely. |
+| A new engine service | A Subsystem in its own module. |
+| A new editor panel | A `*Panel.cpp` in `Source/Editor/Editor/Private`, built from the `shockwave::gui` controls. See [UI](UI.md). |
+| A new render pass | The frame graph in `Source/Plugins/RendererVulkan/Private/RendererFrame.cpp`. Declare which images it uses. |
+| A new renderer | A plugin that implements `RenderBackend` (`Renderer/RenderBackend.h`). `Source/Plugins/RendererNull` is the smallest example. See [Plugins](Plugins.md). |
+
+To regenerate the scene schema after adding a component:
+
+```sh
+build/bin/player --schema docs/SceneSchema.md
 ```
+
+To try a new render pass without restarting the editor, build `renderer_vulkan`, then use
+Build > Reload renderer:
+
+```sh
+cmake --build build --target renderer_vulkan
+```
+
+## Find your way around the repository
+
+```text
 Source/
   Runtime/     modules that ship with games
   Plugins/     code loaded at runtime: the renderers (Vulkan, headless)
@@ -15,26 +48,64 @@ Source/
 Games/Sample/  the sample project: Sample.swproject, Content/, Scenes/, Source/ (its game module)
 Tests/         CTest suites and fixtures
 themes/        editor UI themes (.swtheme)
-docs/          guides; SceneSchema.md is generated
+docs/          guides; SceneSchema.md and InputSchema.md are generated
 cmake/         dependency, shader and module helpers
 ```
 
+## Gameplay model
+
+Shockwave borrows Unreal's names, but builds them on the ECS. Here is how the terms map:
+
+| Shockwave | Unreal | Unity | What it is |
+|---|---|---|---|
+| Entity with a `Transform` | Actor | GameObject | A thing in the scene. |
+| Component | Component | Component | Plain data, with no behavior of its own. |
+| System | Tick | `Update` | A function that runs on every entity with certain components. |
+| GameModule | Primary game module | | How a project's C++ plugs in. |
+| GameInstance | GameInstance | | Lives for the whole run. |
+| GameMode | GameMode | | The rules for one Play. |
+| Subsystem | Subsystem | | A service you look up by type. |
+| PlaySession | Play In Editor | Play mode | Runs a scene and restores it on Stop. |
+
+In more detail:
+
+- **Entities and components.** Components are plain structs, registered once with
+  `registerComponent`, or `SW_COMPONENT` in game code. That registration drives the
+  Inspector, scene files, `player --schema` and `player --check`.
+- **Systems** do the work. A `Schedule` runs them in parallel stages. It works out the
+  stages from the components each system reads and writes. There's no per-entity
+  virtual `Tick`.
+- **GameModule** registers the game's components, creates its assets and makes its
+  GameInstance. It's a plugin the editor loads for the open project, and reloads when
+  you rebuild it.
+- **GameInstance** lives for the whole run of the editor or player. It picks the
+  GameMode for each scene.
+- **GameMode** sets the rules of one Play. It adds systems and gets `beginPlay`,
+  `fixedUpdate`, `frame` and `endPlay` calls.
+- **Subsystems** are services you find by type with `ctx.subsystem<T>()`. Physics and
+  Audio are session services. Each Play session has its own set, and the GameInstance
+  has one that lasts the whole run.
+- **PlaySession** runs a scene the way Play In Editor does. It takes a snapshot of the
+  World, plays it, and restores it exactly on Stop. The editor and the player use the
+  same class.
+
 ## Modules
 
-Each folder in `Source/Runtime` is one module, built as its own library
-(`Shockwave::<Module>`) by `shockwave_module()` in `cmake/ShockwaveModule.cmake`. In
-modular builds (the default on Linux and macOS, `SHOCKWAVE_MODULAR`) each module is a
-shared library in `build/bin`; otherwise they're static and linked into each executable.
+Each folder in `Source/Runtime` is one module, built as its own library named
+`Shockwave::<Module>`. The CMake function `shockwave_module()` in
+`cmake/ShockwaveModule.cmake` builds it.
 
-```
+A module looks like this:
+
+```text
 Source/Runtime/Renderer/
   CMakeLists.txt          shockwave_module(Renderer PUBLIC_DEPS ... PRIVATE_DEPS ...)
   Public/Renderer/*.h     the API, included as <Renderer/Renderer.h>
   Private/*.cpp           the implementation
 ```
 
-Modules depend only on those above them in the table below. CMake enforces this: a
-module sees only the headers of modules it depends on, directly or through them.
+A module may only depend on modules above it in the table below. CMake enforces this: a
+module can only see the headers of modules it depends on, directly or through them.
 
 | Module | What it holds | Depends on | Unreal counterpart |
 |---|---|---|---|
@@ -51,12 +122,18 @@ module sees only the headers of modules it depends on, directly or through them.
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
 | GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio | Engine's GameFramework |
 
-Vulkan never reaches game or editor code: only the Vulkan renderer plugin links RHI.
+Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
+plugin links RHI.
+
+In modular builds, each module is a shared library in `build/bin`. Modular builds are
+the default on Linux and macOS, controlled by `SHOCKWAVE_MODULAR`. Otherwise modules are
+static libraries, linked into each program.
 
 ## Plugins
 
-Some code is loaded at runtime rather than linked in, so it can be swapped or rebuilt and
-reloaded while the editor runs ([Plugins](Plugins.md)):
+Some code is loaded while the program runs instead of being built in. You can then swap
+it, or rebuild and reload it while the editor runs. [Plugins](Plugins.md) has the
+details.
 
 | Plugin | Built as | What it is |
 |---|---|---|
@@ -64,51 +141,33 @@ reloaded while the editor runs ([Plugins](Plugins.md)):
 | `renderer_null` | `bin/plugins/renderer_null.so` (`Source/Plugins/RendererNull`) | headless: draws nothing, for servers and tools |
 | `game_<id>` | `bin/modules/game_<id>.so` (a project's `Source/`) | a project's game module |
 
-`Renderer` is the stable face games use; a `RenderBackend` plugin does the drawing.
+Games use `Renderer`, which stays the same. A `RenderBackend` plugin behind it does the
+drawing.
 
-## Gameplay model
+## How a frame runs
 
-This mirrors Unreal's vocabulary, built on the ECS:
+This section and the next are for the curious.
 
-- **Entities and components** take the place of Actors and their components. An entity
-  with a `Transform` is what Unreal calls an Actor. Components are plain structs,
-  registered once (`registerComponent`, or `SW_COMPONENT` in game code). That registration drives the inspector, the
-  scene files, `player --schema` and `player --check`.
-- **Systems** do the work. A `Schedule` runs them in parallel stages worked out from the
-  components each system reads and writes. There's no per-entity virtual `Tick`.
-- **GameModule** is how a project's C++ plugs in, like Unreal's primary game module.
-  It registers the game's components, creates its assets and makes its GameInstance.
-  It's a plugin the editor loads for the open project and reloads when it's rebuilt.
-- **GameInstance** lives for the whole run of the editor or player. It picks the
-  GameMode for each scene.
-- **GameMode** sets the rules of one Play. It adds systems and gets `beginPlay`,
-  `fixedUpdate`, `frame` and `endPlay`.
-- **Subsystems** are services found by type (`ctx.subsystem<T>()`). Physics and Audio are
-  session services. Each Play session has its own collection, and the GameInstance has one
-  that lasts the whole run.
-- **PlaySession** runs a scene the way Play In Editor does. It snapshots the World,
-  plays it, and restores it exactly on Stop. The editor and the player use the same
-  class.
+`Engine::run` drives a fixed simulation tick and a render loop. The render loop runs as
+fast as it can, unless VSync or a frame limit slows it down:
 
-## A frame
-
-`Engine::run` drives a fixed simulation tick and an uncapped render loop:
-
-1. **Events.** Window events and input are handled, along with the UI on the main
+1. **Events.** Window events and input are handled, along with the UI, on the main
    thread.
-2. **Fixed tick** (project `tick_rate`), zero or more times per frame:
+2. **Fixed tick.** This runs zero or more times per frame, at the project's `tick_rate`:
    - the GameMode's systems run on the job system;
    - then the physics step;
    - then `GameMode::fixedUpdate`;
-   - audio snapshots the updated listener/sources for the SDL mixing thread.
-3. **Render.** `renderWorld` gathers draws and lights in parallel and interpolates
-   between ticks. The Renderer then builds a render graph:
-   - the scene pass (HDR);
-   - tonemapping;
+   - then audio takes a snapshot of the updated listener and sources for the SDL mixing
+     thread.
+3. **Render.** `renderWorld` gathers what to draw and the lights, in parallel. It blends
+   positions between ticks so motion looks smooth. The Renderer then builds a render
+   graph:
+   - the scene pass, in HDR (high dynamic range);
+   - tonemapping, which maps HDR colors to the screen;
    - the editor UI, or a copy to the window;
-   - present.
+   - present, which shows the frame.
 
-   The graph places all the Vulkan barriers.
+   The render graph places all the Vulkan barriers, the sync points between GPU passes.
 
 ## Threads
 
@@ -116,20 +175,5 @@ This mirrors Unreal's vocabulary, built on the ECS:
   Play.
 - Systems, draw gathering, asset decoding and physics run on the job system
   (`Core/Jobs.h`). A system may only touch the components it declares.
-- `Renderer::drawMesh`, `Renderer::addLight` and `SW_LOG` are safe from any thread.
-
-## Where things go
-
-- **A new component:** a struct in the module that owns the data, registered with
-  `registerComponent` (engine) or `SW_COMPONENT` (game modules). Then regenerate `docs/SceneSchema.md` and add a `player --check`
-  rule if mistakes are likely.
-- **A new engine service:** a Subsystem in its own module.
-- **A new render pass:** add it to the frame graph in
-  `Source/Plugins/RendererVulkan/Private/RendererFrame.cpp` and declare its image uses.
-  Build `renderer_vulkan` and use Build > Reload renderer to see it without restarting.
-- **A new renderer:** a plugin implementing `RenderBackend` (`Renderer/RenderBackend.h`);
-  `Source/Plugins/RendererNull` is the smallest example.
-- **A new editor panel:** a `*Panel.cpp` in `Source/Editor/Editor/Private`, built
-  from the `shockwave::gui` controls (`docs/UI.md`).
-- **Game code:** goes in the project's `Source/`, next to its `.swproject`, built by
-  `shockwave_game_module(<id> ...)` (see [Projects](Projects.md)).
+- `Renderer::drawMesh`, `Renderer::addLight` and `SW_LOG` are safe to call from any
+  thread.

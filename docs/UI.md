@@ -1,44 +1,37 @@
-# Shockwave tool UI
+# Editor and tool UI
 
-The tools use a shared engineering-panel design system in `UI/Gui.h`
-(`Source/Runtime/UI/Public/UI/Gui.h`). New standard ImGui widgets automatically inherit
-it. Keep all ImGui work on the main thread, inside `Application::onGui()`.
+This is the guide to follow when you add a panel, button or option to the editor or the
+other tools. All of them share one look, defined in `UI/Gui.h`
+(`Source/Runtime/UI/Public/UI/Gui.h`). Follow the rules below so new UI matches and
+keeps working on narrow panels, in other themes and on high-DPI screens.
 
-## Geometry and layout
+The tools are built with Dear ImGui, an immediate-mode UI library: you draw your
+widgets every frame in code. Standard ImGui widgets you add pick up the shared look
+automatically.
 
-Panels can leave the editor's main window (Dear ImGui multi-viewports), so never assume a
-window sits inside the main viewport: position relative to `ImGui::GetMainViewport()` or
-the current window, never at absolute `(0, 0)`, and mouse positions are desktop
-coordinates.
+## The basic rules
 
-`gui::applyTheme()` enforces zero rounding and one logical pixel borders for windows,
-children, inputs, popups, tabs, and dock separators. HiDPI scales the logical pixel.
-Legacy rounding/border theme keys remain readable, but cannot change this geometry.
-Themes control density, typography, and colors. Avoid local geometry overrides,
-drop shadows, floating cards, and hardcoded colors.
+- Do all ImGui work on the main thread, inside `Application::onGui()`.
+- Keep widget IDs stable and unique. Use `PushID` around repeated objects and fields.
+- After a widget that edits the scene, call the editor's existing undo tracking.
+- Keep drag and drop and keyboard behavior working.
+- Put toolbars in space reserved in the layout, never on top of scene content.
+- Never position anything at fixed screen coordinates.
+- Never hardcode colors. Use theme colors (see [Use colors](#use-colors)).
 
-The default look is a telemetry console: an obsidian `background` void, matte slate
-`panel` fill for inner regions (child windows, lists, table rows), electric cyan
-`accent` for anything active and amber `secondary` for secondary data such as
-histograms. The focused panel gets a 1px accent outline from `gui::focusOutline()`,
-which the editor calls once per frame after its tool windows. Text uses the monospaced
-Cousine font that ships with Dear ImGui (`build/bin/fonts`).
+## Add a button or tool
 
-Use `gui::button()` for ordinary actions and `gui::toolButton()` for selected tools.
-Selected tools use the theme accent and `on_accent` text. Use `gui::toolbarNext()`
-between toolbar items so narrow panels wrap instead of overlapping.
+| Use | For |
+|---|---|
+| `gui::button()` | Ordinary actions |
+| `gui::toolButton()` | Tools that can be selected. A selected tool uses the theme's accent color with `on_accent` text. |
+| `gui::toolbarNext()` | Call it between toolbar items, so a narrow panel wraps them onto a new row instead of overlapping |
 
-Keep application-wide actions in the workspace command bar (scene context left,
-playback centered, mode status right). Keep viewport editing tools left and viewport
-settings right. Group related actions and reserve spacing between groups. Measure
-with `controlGroupWidth()`/`toolbarRows()` and use `alignTrailing()` for panel actions;
-never position controls with fixed screen coordinates. Search fields lead panel
-headers and expand into available space; secondary actions trail them. Put component
-creation beside entity identity and destructive actions in the component options
-menu. On narrow panels, move a complete settings group to its own row.
+## Add an editable setting
 
-Use `gui::beginPropertyGrid()` and `gui::propertyLabel()` for aligned property rows.
-Labels wrap within their column in narrow panels rather than disappearing off its edge:
+Use `gui::beginPropertyGrid()` and `gui::propertyLabel()` to line up label and value
+rows. On a narrow panel the labels wrap inside their column, instead of running off its
+edge.
 
 ```cpp
 if (shockwave::gui::beginPropertyGrid("settings")) {
@@ -50,31 +43,120 @@ if (shockwave::gui::beginPropertyGrid("settings")) {
 }
 ```
 
-Keep IDs stable and unique; use `PushID` around repeated objects/fields. Call the
-editor's existing undo tracking after editable scene widgets. Keep drag/drop and
-keyboard behavior intact. Put toolbars in reserved layout space, not over scene content.
+The `##` in a widget name hides the text and keeps only the ID, since the property grid
+draws the label.
 
-## Themes
+## Where controls go
 
-Copy `themes/default.swtheme` and pass `--theme path/to/theme.swtheme` to the editor.
-Colors are authored in sRGB hex and converted centrally for the Vulkan sRGB output.
-ImGui stores them as 8-bit linear values, so near-black colors snap to a few sRGB steps
-(0, 13, 22, 28, 34, 38...); keep dark tones on those steps to see them exactly.
-The engine reloads saved themes automatically. Missing keys retain built-in defaults;
-the ember file is a partial theme over built-in defaults, not over default.swtheme.
+Put each kind of control in its usual place:
 
-Semantic keys include `button`, `button_hover`, `button_active`, `on_accent`,
-`accent`, `accent_hover`, `accent_active`, `secondary`, `panel`, `warning`, and `error`. Standard ImGui
-color names can also override mapped colors. For custom drawing use
-`ImGui::GetColorU32(ImGuiCol_...)`, or `gui::semanticColorU32()` for semantic colors.
-For `TextColored` use `gui::semanticColor()`. Never pass sRGB values directly to ImGui.
-If a feature needs another semantic color, add it to Theme, the loader key table,
-and the example theme together. Do not embed the feature's palette in panel code.
+| Control | Where |
+|---|---|
+| Actions for the whole application | The workspace command bar. Scene context on the left, playback in the center, mode status on the right. |
+| Viewport editing tools | Left side of the viewport toolbar |
+| Viewport settings | Right side of the viewport toolbar |
+| Search field | First in a panel's header, stretching to fill the free space. Secondary actions come after it. |
+| Adding a component | Next to the entity's name |
+| Destructive actions on a component | The component's options menu |
 
-## Verification
+Layout rules:
 
-Build editor and tests, then run CTest. Inspect the default and an alternate theme,
-a selected entity, play/pause states, and narrow panel layouts. Check labels fit,
-controls do not overlap, selection stays readable, and scene editing still supports
-undo. The UI theme test runs without a GPU and checks file parsing, palette changes,
-geometry invariants, and repeated application at different display scales.
+- Group related actions, and leave space between groups.
+- Measure groups with `controlGroupWidth()` and `toolbarRows()`.
+- Use `alignTrailing()` to push panel actions to the right edge.
+- On a narrow panel, move a whole settings group to its own row. Don't split it.
+
+## Panels outside the main window
+
+Panels can be dragged out of the editor's main window, using Dear ImGui's
+multi-viewports feature. So never assume a window is inside the main viewport:
+
+- Position things relative to `ImGui::GetMainViewport()` or the current window.
+- Never position at absolute `(0, 0)`.
+- Mouse positions are in desktop coordinates, not window coordinates.
+
+## Shape and spacing
+
+`gui::applyTheme()` forces square corners and borders one logical pixel wide. This
+covers windows, child windows, inputs, popups, tabs and dock separators. On high-DPI
+screens the logical pixel scales up.
+
+Older theme keys for rounding and borders still load, but they can't change this shape.
+Themes control density, fonts and colors only.
+
+Don't override this shape locally. Don't add drop shadows, floating cards or hardcoded
+colors.
+
+## The default look
+
+The default theme looks like a telemetry console:
+
+| Theme key | Color | Used for |
+|---|---|---|
+| `background` | Obsidian | Window backgrounds |
+| `panel` | Matte slate | Inner regions: child windows, lists, table rows |
+| `accent` | Electric cyan | Anything active |
+| `secondary` | Amber | Secondary data, such as histograms |
+
+The focused panel gets a 1 pixel accent outline from `gui::focusOutline()`. The editor
+calls it once per frame, after drawing its tool windows.
+
+Text uses Cousine, a monospaced font that ships with Dear ImGui. The build copies it to
+`build/bin/fonts`.
+
+## Use colors
+
+- For custom drawing, use `ImGui::GetColorU32(ImGuiCol_...)`, or
+  `gui::semanticColorU32()` for a semantic color.
+- For `TextColored`, use `gui::semanticColor()`.
+- Never pass sRGB values straight to ImGui.
+
+Semantic colors are the named roles in a theme: `button`, `button_hover`,
+`button_active`, `on_accent`, `accent`, `accent_hover`, `accent_active`, `secondary`,
+`panel`, `warning` and `error`, among others. A theme can also override standard ImGui
+color names directly.
+
+If your feature needs a new semantic color, add it in three places together: the
+`Theme` struct, the loader's key table and the example theme. Don't put the feature's
+own palette in panel code.
+
+## Make or try a theme
+
+Copy `themes/default.swtheme`, edit it, and start the editor with it:
+
+```sh
+./build/bin/editor --theme path/to/theme.swtheme
+```
+
+The engine reloads a theme file automatically when you save it. Keys you leave out keep the built-in
+defaults. The ember theme is a partial theme on top of the built-in defaults, not on top
+of `default.swtheme`.
+
+Write colors as sRGB hex, the usual web color codes. They are converted in one central
+place for Vulkan's sRGB output.
+
+ImGui stores colors as 8-bit linear values. Because of that, very dark colors snap to a
+few sRGB steps: 0, 13, 22, 28, 34, 38 and so on. Keep dark tones on those steps if you
+want them shown exactly.
+
+## Check your change
+
+Build the editor and the tests, then run CTest:
+
+```sh
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+Then look at your change in the editor:
+
+- with the default theme and one other theme
+- with an entity selected
+- while playing and while paused
+- with narrow panels
+
+Check that labels fit, controls don't overlap, the selection stays readable and scene
+edits can still be undone.
+
+The UI theme test runs without a GPU. It checks theme file parsing, palette changes,
+the shape rules, and applying the theme again at different display scales.
