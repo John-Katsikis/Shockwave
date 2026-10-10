@@ -1,5 +1,6 @@
 // Entity/component system tests. No GPU or window needed: ctest --test-dir build
 #include <Engine/Components.h>
+#include <Engine/EntityRef.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
@@ -546,6 +547,28 @@ void cameras() {
     CHECK(!cameraMatrices(w, rig, 1.0f, view, projection));
 }
 
+// EntityRef and findEntity: what game code uses to work with one named entity.
+void entityRefs() {
+    World w;
+    const Entity crate = w.create();
+    w.add(crate, Name{"Crate"});
+    w.add(crate, Transform{});
+    const Entity child = w.create();
+    w.add(child, Parent{crate});
+
+    CHECK(!findEntity(w, "Nothing"));
+    EntityRef ref = findEntity(w, "Crate");
+    CHECK(ref && ref.entity() == crate);
+    CHECK(ref.has<Transform>() && !ref.has<Spin>() && ref.find<Spin>() == nullptr);
+    ref.add(Spin{.speed = 2.0f});
+    CHECK(ref.get<Spin>().speed == 2.0f);
+    ref.remove<Spin>();
+    CHECK(!ref.has<Spin>());
+    ref.destroy();
+    CHECK(!ref && !w.alive(child) && w.entityCount() == 0);
+    CHECK(!EntityRef() && !EntityRef().has<Transform>());
+}
+
 int main() {
     entities();
     recycling();
@@ -563,6 +586,7 @@ int main() {
     authoredScenes();
     lighting();
     cameras();
+    entityRefs();
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);
         return 1;

@@ -72,7 +72,7 @@ This mirrors Unreal's vocabulary, built on the ECS:
 
 - **Entities and components** take the place of Actors and their components. An entity
   with a `Transform` is what Unreal calls an Actor. Components are plain structs,
-  registered once (`registerComponent`). That registration drives the inspector, the
+  registered once (`registerComponent`, or `SW_COMPONENT` in game code). That registration drives the inspector, the
   scene files, `player --schema` and `player --check`.
 - **Systems** do the work. A `Schedule` runs them in parallel stages worked out from the
   components each system reads and writes. There's no per-entity virtual `Tick`.
@@ -121,7 +121,7 @@ This mirrors Unreal's vocabulary, built on the ECS:
 ## Where things go
 
 - **A new component:** a struct in the module that owns the data, registered with
-  `registerComponent`. Then regenerate `docs/SceneSchema.md` and add a `player --check`
+  `registerComponent` (engine) or `SW_COMPONENT` (game modules). Then regenerate `docs/SceneSchema.md` and add a `player --check`
   rule if mistakes are likely.
 - **A new engine service:** a Subsystem in its own module.
 - **A new render pass:** add it to the frame graph in

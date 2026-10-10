@@ -133,10 +133,12 @@ goes through `ctx.commands()`, and those changes apply when the tick ends.
 frame rate.
 
 Registering a component adds it to scene files and gives it an editor inspector, with no
-UI code:
+UI code. In a game module that's one line next to the struct (see
+[the project guide](docs/Projects.md)):
 
 ```cpp
-shockwave::registerComponent<Velocity>("Velocity", {shockwave::field("value", &Velocity::value)});
+struct Velocity { glm::vec3 value{0}; };
+SW_COMPONENT(Velocity, SW_FIELD(value))
 ```
 
 Built-in components: `Name`, `Transform`, `Parent`, `MeshRenderer`, `Environment` (sky

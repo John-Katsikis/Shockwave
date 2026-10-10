@@ -1,17 +1,43 @@
 // Compiled into every game module (shockwave_game_module in CMake): makes the module's
-// projectGameModule() loadable as the plugin game_<id>.
+// projectGameModule() loadable as the plugin game_<id>, and registers its SW_COMPONENTs
+// along with whatever its own registerTypes does.
 
 #include <Core/Plugin.h>
 #include <GameFramework/GameModule.h>
 
+#include <vector>
+
 namespace shockwave {
+
+detail::AutoComponent*& detail::AutoComponent::gameComponents() {
+    static AutoComponent* head = nullptr;
+    return head;
+}
+
 namespace {
+
+const GameModule& entryModule() {
+    static const GameModule module = [] {
+        GameModule result = projectGameModule();
+        result.registerTypes = [own = result.registerTypes] {
+            // The list is newest first; register in the order they appear in the code.
+            std::vector<void (*)()> components;
+            for (auto* c = detail::AutoComponent::gameComponents(); c; c = c->next) components.push_back(c->registerFn);
+            for (auto it = components.rbegin(); it != components.rend(); ++it) (*it)();
+            if (own) own();
+        };
+        return result;
+    }();
+    return module;
+}
+
 const PluginDesc plugin{
     .kind = "game",
-    .name = projectGameModule().id.data(),   // ids are string literals, so this ends in a NUL
+    .name = entryModule().id.data(),   // ids are string literals, so this ends in a NUL
     .description = "game module",
-    .api = &projectGameModule(),
+    .api = &entryModule(),
 };
+
 }   // namespace
 }   // namespace shockwave
 

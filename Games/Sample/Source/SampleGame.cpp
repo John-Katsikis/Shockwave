@@ -1,87 +1,53 @@
-// The sample project's game module: a ColorPulse component and a GameMode that gives
-// the Crate one during Play, so you can see gameplay code running in the editor.
-// Pressing "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and
-// rumbles the pad; the binding lives in Config/Input.swinput.
+// The sample project's game code: a ColorPulse component and a GameMode that gives the
+// Crate one during Play, so you can see gameplay code running in the editor. Pressing
+// "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and rumbles the
+// pad; the binding lives in Config/Input.swinput.
 
-#include <Audio/Audio.h>
-#include <Core/Log.h>
-#include <Engine/Components.h>
-#include <Engine/Engine.h>
-#include <GameFramework/GameModule.h>
+#include <Shockwave/Game.h>
 
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
+using namespace shockwave;
 
-namespace shockwave {
-namespace {
-
-// Scales an entity's tint up and down over time.
+// Scales an entity's tint up and down over time. speed and strength are saved in scenes
+// and shown in the Inspector; the rest is runtime state.
 struct ColorPulse {
-    float speed = 1.5f, strength = 0.15f;
+    float speed = 1.5f;
+    float strength = 0.15f;
+    glm::vec4 base{1};   // the tint before pulsing
     float time = 0;
     float flash = 0;   // 1 right after "pulse" is pressed, fading to 0
-    glm::vec4 base{1};
-    bool initialized = false;
 };
+SW_COMPONENT(ColorPulse, SW_FIELD(speed, 0, 10), SW_FIELD(strength, 0, 1))
 
-void registerTypes() {
-    registerComponent<ColorPulse>(
-        "ColorPulse", {
-                          field("speed", &ColorPulse::speed, 0.1f, 0.0f, 10.0f),
-                          field("strength", &ColorPulse::strength, 0.01f, 0.0f, 1.0f),
-                      });
-}
-
-class SampleGameMode final : public GameMode {
+class SampleGame final : public GameMode {
 public:
+    // Runs every tick for each entity with both components, in parallel with other systems.
     void configureSystems(GameContext&, Schedule& schedule) override {
         schedule.each<MeshRenderer, ColorPulse>(
             "ColorPulse", [](const SystemContext& ctx, MeshRenderer& mesh, ColorPulse& pulse) {
-                if (!pulse.initialized) {
-                    pulse.base = mesh.tint;
-                    pulse.initialized = true;
-                }
                 pulse.time += ctx.dt;
                 pulse.flash = std::max(0.0f, pulse.flash - ctx.dt * 3.0f);
-                const float value =
-                    1.0f - pulse.strength * (0.5f + 0.5f * std::sin(pulse.time * pulse.speed)) + pulse.flash;
+                const float wave = 0.5f + 0.5f * std::sin(pulse.time * pulse.speed);
+                const float value = 1.0f - pulse.strength * wave + pulse.flash;
                 mesh.tint = glm::vec4(glm::vec3(pulse.base) * value, pulse.base.a);
             });
     }
 
-    // Give the sample Crate a game-owned behavior only during Play.
-    void beginPlay(GameContext& ctx) override {
-        ctx.world.each<const Name>([&](Entity e, const Name& name) {
-            if (name.value == "Crate" && ctx.world.has<MeshRenderer>(e) && !ctx.world.has<ColorPulse>(e))
-                ctx.world.add<ColorPulse>(e);
-        });
-        SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", ctx.world.entityCount());
+    // Give the Crate a game-owned behavior only during Play.
+    void beginPlay(GameContext& game) override {
+        if (EntityRef crate = game.find("Crate"); crate.has<MeshRenderer>())
+            crate.add(ColorPulse{.base = crate.get<MeshRenderer>().tint});
+        SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", game.world.entityCount());
     }
 
-    // Input is read once per frame; rumble is safe from any thread.
-    void frame(GameContext& ctx, double) override {
-        if (!ctx.engine) return;
-        Input& input = ctx.engine->input();
-        if (!input.wasActionPressed("pulse")) return;
-        ctx.world.each<ColorPulse>([](Entity, ColorPulse& pulse) { pulse.flash = 1.0f; });
-        input.rumble(0.3f, 0.8f, 0.2);
-        ctx.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
+    // Once per frame on the main thread.
+    void frame(GameContext& game, double) override {
+        if (!game.input().wasActionPressed("pulse")) return;
+        game.world.each<ColorPulse>([](ColorPulse& pulse) { pulse.flash = 1.0f; });
+        game.input().rumble(0.3f, 0.8f, 0.2);
+        game.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
     }
 
     void endPlay(GameContext&) override { SW_LOG(LogGame, Info, "Sample gameplay stopped"); }
 };
 
-}   // namespace
-
-const GameModule& projectGameModule() {
-    static const GameModule module{
-        .id = "sample",
-        .registerTypes = registerTypes,
-        .createAssets = {},
-        .createGameInstance = [] { return std::make_unique<SimpleGameInstance<SampleGameMode>>(); },
-    };
-    return module;
-}
-
-}   // namespace shockwave
+SW_GAME("sample", SampleGame)
