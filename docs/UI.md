@@ -6,6 +6,11 @@ it. Keep all ImGui work on the main thread, inside `Application::onGui()`.
 
 ## Geometry and layout
 
+Panels can leave the editor's main window (Dear ImGui multi-viewports), so never assume a
+window sits inside the main viewport: position relative to `ImGui::GetMainViewport()` or
+the current window, never at absolute `(0, 0)`, and mouse positions are desktop
+coordinates.
+
 `gui::applyTheme()` enforces zero rounding and one logical pixel borders for windows,
 children, inputs, popups, tabs, and dock separators. HiDPI scales the logical pixel.
 Legacy rounding/border theme keys remain readable, but cannot change this geometry.

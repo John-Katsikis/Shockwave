@@ -20,6 +20,11 @@ void Renderer::Impl::initGui() {
     info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
     info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &guiColorFormat;
+    // Windows of panels dragged out of the main one: the backend makes their swapchains,
+    // preferring the main window's format so colors match.
+    info.PipelineInfoForViewports.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    info.PipelineInfoForViewports.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    info.PipelineInfoForViewports.PipelineRenderingCreateInfo.pColorAttachmentFormats = &guiColorFormat;
     info.CheckVkResultFn = [](VkResult result) { vk::check(result, "Dear ImGui Vulkan backend"); };
     if (!ImGui_ImplVulkan_Init(&info)) throw std::runtime_error("Initializing the Dear ImGui Vulkan backend failed");
 
@@ -37,6 +42,15 @@ void Renderer::Impl::shutdownGui() {
     ImGui_ImplVulkan_Shutdown();
     guiEnabled = false;
     if (viewportSize.width) needsSceneResize = true;   // back to window-sized output
+}
+
+void Renderer::Impl::renderGuiWindows() {
+    if (!guiEnabled || !(ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) return;
+    // The backend creates swapchains (waiting for the device idle), submits and presents on
+    // the graphics queue for each window.
+    std::lock_guard lock(queueMutex);
+    ImGui::UpdatePlatformWindows();
+    ImGui::RenderPlatformWindowsDefault();
 }
 
 void Renderer::Impl::recordGui(VkCommandBuffer cmd, VkImageView target, bool clear) {

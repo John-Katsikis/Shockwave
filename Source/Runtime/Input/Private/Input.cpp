@@ -249,7 +249,13 @@ float Input::axis(const std::string& negative, const std::string& positive, uint
 
 void Input::setMouseCaptured(bool captured) {
     if (captured == m_mouseCaptured || !m_window) return;
-    SDL_SetWindowRelativeMouseMode(m_window->handle(), captured);
+    if (captured) {
+        // The window under the mouse: an editor panel may live in a window of its own.
+        m_capturedWindow = SDL_GetMouseFocus();
+        if (!m_capturedWindow) m_capturedWindow = m_window->handle();
+    }
+    if (m_capturedWindow) SDL_SetWindowRelativeMouseMode(m_capturedWindow, captured);
+    if (!captured) m_capturedWindow = nullptr;
     m_mouseCaptured = captured;
 }
 

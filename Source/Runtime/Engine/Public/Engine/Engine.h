@@ -71,6 +71,10 @@ struct EngineConfig {
     bool showFpsInTitle = true;
     bool quitOnEscape = true;
     bool gui = false;   // Dear ImGui on top of the scene; see Application::onGui
+    // GUI windows can be dragged out of the main window to anywhere on the desktop, each
+    // becoming a window of its own (Dear ImGui multi-viewports). Needs a platform that can
+    // place windows: on a Wayland session the engine runs through XWayland for this.
+    bool guiViewports = false;
     // Frame pacing (see Engine::setFrameLimit and setLowLatency).
     double frameLimit = 0.0;   // frames per second; 0 = no limit beyond vsync
     bool lowLatency = false;

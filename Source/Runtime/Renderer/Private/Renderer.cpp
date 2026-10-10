@@ -106,5 +106,6 @@ void Renderer::waitIdle() { vkDeviceWaitIdle(m_impl->context->device()); }
 void Renderer::initGui() { m_impl->initGui(); }
 void Renderer::shutdownGui() { m_impl->shutdownGui(); }
 void Renderer::newGuiFrame() { ImGui_ImplVulkan_NewFrame(); }
+void Renderer::renderGuiWindows() { m_impl->renderGuiWindows(); }
 
 }   // namespace shockwave

@@ -89,6 +89,8 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             number(loaded.frameLimit);
         else if (key == "low_latency")
             loaded.lowLatency = parseBool(value);
+        else if (key == "detachable_panels")
+            loaded.detachablePanels = parseBool(value);
         else if (key == "master_volume")
             number(loaded.masterVolume);
         else if (key == "render_scale")
@@ -138,6 +140,7 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
         << "vsync = " << flag(prefs.vsync) << "\n"
         << "frame_limit = " << prefs.frameLimit << "\n"
         << "low_latency = " << flag(prefs.lowLatency) << "\n"
+        << "detachable_panels = " << flag(prefs.detachablePanels) << "\n"
         << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
         << "\n# Viewport\n"

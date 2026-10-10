@@ -16,6 +16,7 @@
 union SDL_Event;
 struct SDL_Gamepad;
 struct SDL_Joystick;
+struct SDL_Window;
 
 namespace shockwave {
 
@@ -230,6 +231,7 @@ private:
     glm::vec2 m_mousePosition{0.0f};
     float m_scrollDelta = 0.0f;
     bool m_mouseCaptured = false;
+    SDL_Window* m_capturedWindow = nullptr;   // the window holding the captured mouse
 
     std::map<std::string, std::vector<InputBinding>> m_builtIn, m_actions;
     InputBindings m_file;

@@ -314,6 +314,7 @@ struct Renderer::Impl {
 
     // Draws this frame's ImGui output into the swapchain image, which must be in
     // COLOR_ATTACHMENT_OPTIMAL. clear: start from a blank image instead of the scene.
+    void renderGuiWindows();
     void recordGui(VkCommandBuffer cmd, VkImageView target, bool clear);
 
     // ---- Frames, descriptors and pipelines ---------------------------------------------

@@ -191,6 +191,9 @@ public:
     void initGui();   // after ImGui::CreateContext and the SDL3 backend
     void shutdownGui();
     void newGuiFrame();
+    // Creates, moves and draws the windows of GUI panels dragged out of the main window.
+    // After endFrame, on the main thread; nothing to do unless multi-viewports are on.
+    void renderGuiWindows();
 
 private:
     struct Impl;

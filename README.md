@@ -222,8 +222,14 @@ What gets saved where:
   changes are autosaved there; reopening offers to recover them.
 - Preferences (theme, autosave interval, camera speed, grid) go in
   `$XDG_CONFIG_HOME/shockwave/editor.swprefs` (usually `~/.config`), shared by all projects.
-- The dock layout goes in `editor-layout.ini` next to the preferences; Window > Reset
-  layout restores the default.
+- Any panel can be docked anywhere, stacked as tabs, or dragged out of the editor by its
+  tab or title bar into a window of its own, on any monitor. Drag it back onto the editor
+  to dock it again. Turn this off with Preferences > Panels can leave the main window
+  (`detachable_panels = false`). Wayland can't let programs place windows, so on a Wayland
+  desktop the editor runs through XWayland while this is on (set `SDL_VIDEO_DRIVER=wayland`
+  to force native Wayland, with panels kept inside).
+- The dock layout, detached windows included, goes in `editor-layout.ini` next to the
+  preferences; Window > Reset layout restores the default.
 
 Editor controls (Help > Controls, or F1, lists them too):
 

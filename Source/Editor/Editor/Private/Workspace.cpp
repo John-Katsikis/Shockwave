@@ -550,6 +550,10 @@ void Editor::drawPreferencesWindow() {
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("Themes are .swtheme files in themes/. Edit one while the editor runs to restyle it live.");
+    changed |= ImGui::Checkbox("Panels can leave the main window", &m_prefs.detachablePanels);
+    ImGui::SetItemTooltip("Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
+                          "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
+                          "desktop the editor then runs through XWayland, since Wayland can't place windows.");
 
     ImGui::SeparatorText("Audio");
     if (gui::beginPropertyGrid("audio_preferences")) {

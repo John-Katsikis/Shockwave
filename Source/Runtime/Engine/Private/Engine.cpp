@@ -15,8 +15,38 @@
 
 namespace shockwave {
 
+namespace {
+
+// Wayland doesn't let programs place their own windows, so Dear ImGui can't put a panel
+// where it was dropped. When windows must leave the main one, use X11 through XWayland
+// instead, unless the user picked a video driver themselves.
+bool preferX11ForGuiViewports() {
+#ifdef __linux__
+    if (SDL_getenv("SDL_VIDEO_DRIVER") || !SDL_getenv("WAYLAND_DISPLAY") || !SDL_getenv("DISPLAY")) return false;
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+    return true;
+#else
+    return false;
+#endif
+}
+
+}   // namespace
+
 Engine::Engine(const EngineConfig& config) : m_config(config) {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    // Closing the main window is handled as a quit request below; SDL's own quit is left
+    // for signals (Ctrl+C), so the request isn't made twice.
+    SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
+    bool initialized = false;
+    if (m_config.gui && m_config.guiViewports && preferX11ForGuiViewports()) {
+        initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+        if (initialized) {
+            SW_LOG(LogEngine, Info, "Wayland session: using XWayland so panels can be dragged out of the main window");
+        } else {   // no XWayland, or SDL built without X11: stay on Wayland
+            SW_LOG(LogEngine, Warning, "XWayland unavailable ({}): panels stay inside the main window", SDL_GetError());
+            SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+        }
+    }
+    if (!initialized && !SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     }
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
@@ -50,6 +80,7 @@ void Engine::initGui() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
+    if (m_config.guiViewports) io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
     // Layout and window state persist in the user's config folder
     // (~/.local/share/Shockwave/<app>/ on Linux), not wherever the app was started from.
@@ -68,6 +99,12 @@ void Engine::initGui() {
 
     ImGui_ImplSDL3_InitForVulkan(m_window->handle());
     m_renderer->initGui();
+    if (m_config.guiViewports && !(io.BackendFlags & ImGuiBackendFlags_PlatformHasViewports)) {
+        io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+        SW_LOG(
+            LogEngine, Warning, "the {} video driver can't place windows: panels stay inside the main window",
+            SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "current");
+    }
 }
 
 namespace {
@@ -208,7 +245,16 @@ void Engine::run(Application& app) {
             case SDL_EVENT_KEY_DOWN:
                 if (m_config.quitOnEscape && event.key.scancode == SDL_SCANCODE_ESCAPE) m_running = false;
                 break;
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: m_renderer->onResize(); break;
+            // Panels dragged out of the main window are windows too: only the main one's
+            // events concern the engine; Dear ImGui handles the others.
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                // Closing the main window quits, even with panel windows still open.
+                if (event.window.windowID == SDL_GetWindowID(m_window->handle()) && app.onQuitRequested())
+                    m_running = false;
+                break;
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                if (event.window.windowID == SDL_GetWindowID(m_window->handle())) m_renderer->onResize();
+                break;
             default: break;
             }
         }
@@ -248,6 +294,10 @@ void Engine::run(Application& app) {
             {
                 SW_PROFILE_SCOPE("Record and submit");
                 m_renderer->endFrame();
+            }
+            if (m_config.gui) {
+                SW_PROFILE_SCOPE("Detached GUI windows");
+                m_renderer->renderGuiWindows();
             }
         } else {
             SDL_Delay(10);   // minimized: don't spin the CPU

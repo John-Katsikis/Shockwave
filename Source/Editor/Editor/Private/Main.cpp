@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
         else if (!options.prefs.theme.empty())
             config.guiTheme = options.prefs.theme;
         config.window.vsync = options.prefs.vsync && !uncapped;
+        config.guiViewports = options.prefs.detachablePanels;
         if (uncapped) options.prefs.vsync = false, options.prefs.frameLimit = 0;
 
         shockwave::Engine engine(config);
