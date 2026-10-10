@@ -4,12 +4,16 @@
 // systems to the schedule, and gets BeginPlay/EndPlay and per-tick hooks. A fresh
 // GameMode is made for every Play, by the project's GameInstance.
 
+#include <Engine/EntityRef.h>
 #include <Engine/Schedule.h>
 #include <Engine/Subsystem.h>
+
+#include <string_view>
 
 namespace shockwave {
 
 class Engine;
+class Input;
 class PhysicsWorld;
 class AudioWorld;
 
@@ -26,6 +30,11 @@ struct GameContext {
     }
     AudioWorld& audio() const;   // always there during Play
     PhysicsWorld& physics() const;   // always there during Play
+    // The engine's input. In tools and tests without a window it's one where nothing is
+    // ever pressed, so game code doesn't need to check.
+    Input& input() const;
+    // The first entity with this Name, or an empty EntityRef (false) when there's none.
+    EntityRef find(std::string_view name) const { return findEntity(world, name); }
 };
 
 class GameMode {

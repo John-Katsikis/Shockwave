@@ -2,7 +2,6 @@
 
 #include <Audio/Audio.h>
 #include <Core/Log.h>
-
 #include <Engine/Engine.h>
 #include <Engine/Systems.h>
 #include <Physics/Physics.h>
@@ -18,6 +17,12 @@ AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
 AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }
 
 PhysicsWorld& GameContext::physics() const { return subsystems.get<PhysicsWorld>(); }
+
+Input& GameContext::input() const {
+    if (engine) return engine->input();
+    static Input none;   // never polled, so nothing is ever pressed
+    return none;
+}
 
 PlaySession::PlaySession(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine)
     : m_instance(instance), m_context{world, jobs, engine, m_subsystems} {}

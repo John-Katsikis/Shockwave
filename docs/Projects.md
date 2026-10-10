@@ -89,59 +89,96 @@ sample Crate gets that component and its tint pulses. Stop removes runtime addit
 and restores its original tint. The component also appears in the inspector's Add
 Component menu and can be authored and serialized like built-in components.
 
-Define `shockwave::projectGameModule()` in your game's source:
+A whole game module can be one file. Put it anywhere under your project's `Source/`:
 
 ```cpp
-#include <GameFramework/GameModule.h>
+#include <Shockwave/Game.h>   // everything game code normally needs
 
-namespace shockwave {
-namespace {
+using namespace shockwave;
+
+// A component: plain data. The fields listed in SW_COMPONENT are saved in scenes and
+// shown in the Inspector (with the editor's limits); the rest is runtime state.
+struct Health {
+    float current = 100;
+    float max = 100;
+    float hurtTimer = 0;   // runtime only
+};
+SW_COMPONENT(Health, SW_FIELD(current, 0, 1000), SW_FIELD(max, 1, 1000))
 
 class MyGameMode final : public GameMode {
 public:
-    void configureSystems(GameContext& ctx, Schedule& schedule) override {
-        // Register read/write-declared fixed-tick systems here.
+    // Systems run every fixed tick, in parallel, on every entity with the components.
+    void configureSystems(GameContext&, Schedule& schedule) override {
+        schedule.each<Health>("Regenerate", [](const SystemContext& ctx, Health& health) {
+            health.current = std::min(health.max, health.current + 5.0f * ctx.dt);
+        });
     }
-    void beginPlay(GameContext& ctx) override {
-        // Spawn runtime entities, add subsystems, initialize session-owned state.
+    // The scene is loaded: find things by name, add components, spawn.
+    void beginPlay(GameContext& game) override {
+        if (EntityRef player = game.find("Player")) player.add(Health{.max = 150});
     }
-    void fixedUpdate(GameContext& ctx, double dt) override {
-        // Main thread, every fixed tick after the systems and the physics step.
-    }
-    void endPlay(GameContext& ctx) override {
-        // Release any non-ECS resources owned by this session.
+    // Main thread, once per rendered frame: input, audio, one-off events.
+    void frame(GameContext& game, double) override {
+        if (game.input().wasActionPressed("jump")) game.audio().playClip("Audio/jump.wav");
     }
 };
 
-}   // namespace
+SW_GAME("my_game", MyGameMode)   // the id the .swproject's game_module names
+```
 
+What the pieces do:
+
+- `SW_COMPONENT(Type, fields...)` registers a component when the module loads. List each
+  saved field once with `SW_FIELD(name)` or `SW_FIELD(name, min, max)`; int-backed enums
+  use `SW_ENUM_FIELD(name, "First", "Second")`. `SW_COMPONENT_IN("Category", Type, ...)`
+  files it under another heading of the Add Component menu. Registered components work
+  everywhere built-in ones do: scene files, the Inspector, undo, `player --schema` and
+  `--check`.
+- `SW_GAME("id", Type)` declares the module, at global scope (outside any namespace).
+  `Type` is the `GameMode` every scene plays with, or your own `GameInstance` (below).
+- `GameContext` (`game` above) reaches the `world`, `find("Name")`, `input()`, `audio()`,
+  `physics()`, the `engine` (null in tools and tests) and the session's subsystems.
+  `input()` works without a window too; nothing is ever pressed there.
+- `EntityRef` (from `find`) is an entity with its world: `has<T>()`, `get<T>()`,
+  `find<T>()` (null when missing), `add(T{...})`, `remove<T>()` and `destroy()`. It's
+  false when nothing was found. Use `world.each` or a system for many entities at once.
+
+`GameMode` hooks: `configureSystems`, `beginPlay`, `fixedUpdate(game, dt)` (main thread,
+every fixed tick after the systems and physics), `frame(game, frameDt)` and `endPlay`.
+
+For full control, define `shockwave::projectGameModule()` yourself instead of `SW_GAME`.
+It also lets you add `createAssets` (persistent named assets made once the engine exists)
+and a `registerTypes` that runs after the SW_COMPONENTs:
+
+```cpp
+namespace shockwave {
 const GameModule& projectGameModule() {
     static const GameModule module{
         .id = "my_game",
-        .registerTypes = [] { /* registerComponent the game's types before any scene loads. */ },
-        .createAssets = [](Engine& engine) { /* Create persistent named assets. */ },
+        .registerTypes = [] { /* registerComponent<T>(...) by hand, if you prefer */ },
+        .createAssets = [](Engine& engine) { /* create persistent named assets */ },
         .createGameInstance = [] { return std::make_unique<SimpleGameInstance<MyGameMode>>(); },
     };
     return module;
 }
-
 }   // namespace shockwave
 ```
 
-`SimpleGameInstance<TGameMode>` plays every scene with the same `GameMode`. For more,
-derive from `GameInstance`: override `createGameMode(scene)` to pick a mode per scene,
+`SimpleGameInstance<TGameMode>` (what `SW_GAME` uses for a `GameMode`) plays every scene
+with the same `GameMode`. For more, derive from `GameInstance` and pass it to `SW_GAME`: override `createGameMode(scene)` to pick a mode per scene,
 `init(engine)` and `shutdown()` for run-long setup (`engine` is null in tools and tests
 without a window), and keep run-long services in its `subsystems()`. Leaving
 `createGameInstance` empty gives a plain `GameInstance`, which plays with a `GameMode`
 that runs only the engine's systems.
 
-Build it as a game module: a folder with a `CMakeLists.txt` that names the module's id
-and sources, listed in `SHOCKWAVE_GAMES` at configure time (`;`-separated, the sample is
-there by default):
+Build it as a game module: a folder with a one-line `CMakeLists.txt` naming the module's
+id, listed in `SHOCKWAVE_GAMES` at configure time (`;`-separated, the sample is there by
+default). Every `.cpp` under the folder's `Source/` is built, and new files are picked up
+on the next build without touching CMake (pass `SOURCES` to list them yourself instead):
 
 ```cmake
 # MyGame/CMakeLists.txt
-shockwave_game_module(my_game SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/Source/MyGame.cpp)
+shockwave_game_module(my_game)
 ```
 
 ```sh

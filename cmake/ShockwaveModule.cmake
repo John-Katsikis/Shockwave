@@ -86,13 +86,20 @@ endfunction()
 
 # A project's C++ game module (GameFramework/GameModule.h).
 #
-# shockwave_game_module(<Id> SOURCES <files...> [DEPS <targets...>])
+# shockwave_game_module(<Id> [SOURCES <files...>] [DEPS <targets...>])
 #
-# Builds bin/modules/game_<id>.so in modular builds, which the editor and player load
+# Without SOURCES it builds every .cpp under the project's Source/ folder, and new files
+# are picked up on the next build with no CMake edit. Builds bin/modules/game_<id>.so in modular builds, which the editor and player load
 # for projects whose .swproject says `game_module "<id>"`, and the editor reloads when
 # it's rebuilt. Otherwise a static library linked into the editor and player.
 function(shockwave_game_module id)
     cmake_parse_arguments(ARG "" "" "SOURCES;DEPS" ${ARGN})
+    if(NOT ARG_SOURCES)
+        file(GLOB_RECURSE ARG_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp)
+        if(NOT ARG_SOURCES)
+            message(FATAL_ERROR "game module ${id}: no .cpp files in ${CMAKE_CURRENT_SOURCE_DIR}/Source")
+        endif()
+    endif()
     set(target game_${id})
     set(entry ${PROJECT_SOURCE_DIR}/Source/Runtime/GameFramework/Entry/GameModuleEntry.cpp)
     if(SHOCKWAVE_MODULAR)

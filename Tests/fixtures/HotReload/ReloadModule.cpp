@@ -1,8 +1,9 @@
 // A tiny game module built twice (RELOAD_VERSION 1 and 2) for HotReloadTest: version 2
 // adds a field to its component and changes what its GameMode does, as an edit would.
+// Version 1 is written the long way (projectGameModule, registerComponent) and version 2
+// with SW_COMPONENT and SW_GAME, so reloading also covers switching between the two.
 
-#include <Engine/Components.h>
-#include <GameFramework/GameModule.h>
+#include <Shockwave/Game.h>
 
 namespace shockwave {
 namespace {
@@ -22,18 +23,13 @@ public:
     }
 };
 
-void registerTypes() {
-    registerComponent<ReloadProbe>(
-        "ReloadProbe", {
-                           field("a", &ReloadProbe::a),
-#if RELOAD_VERSION >= 2
-                           field("b", &ReloadProbe::b),
+#if RELOAD_VERSION == 1
+void registerTypes() { registerComponent<ReloadProbe>("ReloadProbe", {field("a", &ReloadProbe::a)}); }
 #endif
-                       });
-}
 
 }   // namespace
 
+#if RELOAD_VERSION == 1
 const GameModule& projectGameModule() {
     static const GameModule module{
         .id = "reload_test",
@@ -43,5 +39,13 @@ const GameModule& projectGameModule() {
     };
     return module;
 }
+#endif
 
 }   // namespace shockwave
+
+#if RELOAD_VERSION >= 2
+using shockwave::ProbeMode;
+using shockwave::ReloadProbe;
+SW_COMPONENT(ReloadProbe, SW_FIELD(a), SW_FIELD(b, 0, 10))
+SW_GAME("reload_test", ProbeMode)
+#endif
