@@ -2,6 +2,7 @@
 
 #include <Animation/AnimationWorld.h>
 #include <Audio/Audio.h>
+#include <Circuits/CircuitWorld.h>
 #include <Core/Log.h>
 #include <Effects/EffectsWorld.h>
 #include <Engine/Engine.h>
@@ -30,6 +31,7 @@ UIWorld& GameContext::ui() const { return subsystems.get<UIWorld>(); }
 UIWorld* PlaySession::ui() const { return m_subsystems.find<UIWorld>(); }
 NavigationWorld& GameContext::navigation() const { return subsystems.get<NavigationWorld>(); }
 NavigationWorld* PlaySession::navigation() const { return m_subsystems.find<NavigationWorld>(); }
+CircuitWorld* PlaySession::circuits() const { return m_subsystems.find<CircuitWorld>(); }
 
 Input& GameContext::input() const {
     if (engine) return engine->input();
@@ -86,6 +88,11 @@ void PlaySession::start() {
             world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr, m_saveFolder, m_saveScene);
         saves.beforeSave = [this] {
             if (m_mode) m_mode->beforeSave(m_context);
+            // The game circuit's variables go into the save's values, after the GameMode's.
+            if (CircuitWorld* circuits = this->circuits())
+                circuits->beforeSave([this](const std::string& key, const std::string& value) {
+                    this->saves()->set(key, std::string_view(value));
+                });
         };
         m_mode = m_instance.createGameMode(world);
         if (!m_mode) throw std::runtime_error("the GameInstance made no GameMode");
@@ -93,6 +100,14 @@ void PlaySession::start() {
         addBuiltinSystems(m_schedule);
         m_mode->configureSystems(m_context, m_schedule);
         m_mode->beginPlay(m_context);
+        // Circuits run after the C++ GameMode's hooks, from here on.
+        CircuitHost host;
+        host.input = &m_context.input();
+        host.audio = audio();
+        host.ui = ui();
+        host.physics = physics();
+        host.assets = m_context.engine ? &m_context.engine->assets() : nullptr;
+        m_subsystems.add<CircuitWorld>(world, host, m_gameCircuit).beginPlay();
         physics()->synchronize();
         navigation()->synchronize();
         audio()->synchronize();
@@ -122,6 +137,7 @@ void PlaySession::stop() {
     std::exception_ptr failure;
     try {
         m_mode->endPlay(m_context);
+        if (CircuitWorld* circuits = this->circuits()) circuits->endPlay();
     } catch (...) {
         failure = std::current_exception();
     }
@@ -147,6 +163,7 @@ void PlaySession::update(double dt) {
     navigation()->step(dt);   // agents steer first, so physics moves their characters
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
+    circuits()->fixedTick(dt);
     audio()->update(dt);
     audio()->synchronize();
     saves()->addPlayTime(dt);
@@ -157,6 +174,7 @@ void PlaySession::frame(double dt) {
     if (active()) applyLoadedSave();   // a load from a pause menu goes in while paused
     if (m_state == State::Playing) {
         m_mode->frame(m_context, dt);
+        circuits()->frame(dt);
         animation()->update(dt);   // after game code, so a clip it picks shows this frame
         audio()->synchronize();
     }
@@ -178,6 +196,11 @@ void PlaySession::applyLoadedSave() {
     audio()->synchronize();
     storePreviousTransforms(world, m_context.jobs);
     m_mode->afterLoad(m_context);
+    circuits()->afterLoad([saves](const std::string& key, std::string& value) {
+        if (!saves->has(key)) return false;
+        value = saves->get(key);
+        return true;
+    });
 }
 
 }   // namespace shockwave

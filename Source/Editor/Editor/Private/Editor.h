@@ -43,6 +43,7 @@ inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
 inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
 inline constexpr const char* kPrefabPayload = "SW_PREFAB";   // path inside Content
+inline constexpr const char* kCircuitPayload = "SW_CIRCUIT";   // path inside Content
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
@@ -57,6 +58,7 @@ struct EditorOptions {
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
     bool playOnStart = false;   // press Play straight away (tests)
+    std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
 };
 
 // The Shockwave Editor: projects, scenes and a live viewport in a docked Dear ImGui UI.
@@ -230,6 +232,15 @@ private:
     void loadProjectInput();   // on project open and Revert
     void applyInputEdit();   // m_inputEdit goes live, unsaved
     void saveInputBindings();
+    // CircuitEditorPanel.cpp: the Circuits graph editor (docs/Circuits.md).
+    void drawCircuitsWindow();
+    void openCircuit(const std::string& path);   // inside Content
+    std::string newCircuit(const std::string& folder);   // makes and opens one; its path, or "" on failure
+    void saveCircuit();
+    void attachCircuit(const std::string& path);   // a Circuit component on each selected entity, with undo
+    bool attachCircuit(shockwave::Entity e, const std::string& path);
+    bool m_showCircuits = false;
+    std::shared_ptr<struct CircuitEditorState> m_circuitEditor;   // created when the window first opens
     // SaveGamesPanel.cpp: the project's save slots; save and load during Play.
     void drawSaveGamesWindow();
     std::filesystem::path saveGamesFolder() const { return m_project.statePath() / "SaveGames"; }

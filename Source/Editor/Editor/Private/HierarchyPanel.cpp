@@ -191,6 +191,9 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
             if (!part) applyTexture(e, static_cast<const char*>(payload->Data));
         }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kCircuitPayload)) {
+            if (!part) attachCircuit(e, static_cast<const char*>(payload->Data));
+        }
         ImGui::EndDragDropTarget();
     }
     if (ImGui::BeginPopupContextItem("row")) {

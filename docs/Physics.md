@@ -237,8 +237,8 @@ The editor and player can also do short smoke runs with `--frames N`.
 
 ## Not supported yet
 
-Joints, vehicles, ragdolls, character animation, a collision debug view and saved,
-precomputed collision data.
+Joints, vehicles, ragdolls, a collision debug view and saved, precomputed collision
+data. Character animation is its own module: see [Animation](Animation.md).
 
 ## How it works
 

@@ -1,0 +1,51 @@
+shockwave_circuit 1
+# Turns its entity around the up axis at speed degrees a second. The pulse action (Space,
+# or a gamepad's South button) switches between fast and slow.
+
+var speed Float 45
+
+node tick Event.FixedTick
+
+node spin Component.Transform.Set.rotation
+  exec tick.then
+  in rotation = turned.result
+
+node turned Rotation.Combine
+  in first = now.rotation
+  in second = step.result
+
+node now Component.Transform.Get.rotation
+
+node step Rotation.AroundY
+  in degrees = angle.result
+
+node angle Math.Multiply
+  in a = tick.dt
+  in b = speed
+
+node pulse Event.ActionPressed
+  in action = "pulse"
+
+node toggle Flow.FlipFlop
+  exec pulse.then
+
+node fast Set.speed
+  exec toggle.a
+  in value = 180
+
+node slow Set.speed
+  exec toggle.b
+  in value = 45
+
+editor
+  tick -560 0
+  now -560 140
+  angle -560 260
+  step -320 260
+  turned -100 140
+  spin 140 0
+  pulse -560 420
+  toggle -320 420
+  fast -100 380
+  slow -100 500
+end

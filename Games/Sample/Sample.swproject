@@ -4,6 +4,7 @@ name "Shockwave Sample"
 game_module "sample"
 startup_scene "Scenes/main.swscene"
 assets "Content"
+game_circuit "Content/Circuits/Game.swcircuit"
 tick_rate 60
 window_size 1280 720
 vsync true

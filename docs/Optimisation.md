@@ -176,7 +176,8 @@ Everything above is text, so scripts and AI tools can do it too:
 
 ## Limits
 
-- Only base colour textures are drawn today, so they're the only ones compressed.
+- A model's normal, metallic-roughness and occlusion maps are compressed as data
+  (linear), and its base color and emissive maps as colour (sRGB).
 - A GPU that can't sample BC7 draws textures uncompressed. The cache still holds the
   compressed copy. The Optimisation window and `--optimise` tell you when this happens.
 - Levels switch from one frame to the next, without blending. At the default of 1 pixel

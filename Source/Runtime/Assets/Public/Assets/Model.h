@@ -6,6 +6,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <array>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -20,6 +21,9 @@ struct ModelHandle {
 struct ModelTexture {
     std::string source;   // external path or embedded texture identifier
     Image image;
+    // Colour (base color, emissive) or data (normal, metallic-roughness, occlusion). An
+    // image used both ways is imported twice, once for each.
+    bool srgb = true;
 };
 struct ModelMaterial {
     std::string name;
@@ -28,11 +32,17 @@ struct ModelMaterial {
     float metallic = 0.0f, roughness = 1.0f;
     int baseColorTexture = -1, normalTexture = -1, metallicRoughnessTexture = -1;
     int emissiveTexture = -1, occlusionTexture = -1;
+    float normalScale = 1.0f, occlusionStrength = 1.0f;
     enum class Alpha { Opaque, Mask, Blend };
     Alpha alpha = Alpha::Opaque;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
 };
+// Every texture a material samples (base color, normal, metallic-roughness, emissive,
+// occlusion), as indices into ModelData::textures; -1 where it has none.
+inline std::array<int, 5> materialTextures(const ModelMaterial& m) {
+    return {m.baseColorTexture, m.normalTexture, m.metallicRoughnessTexture, m.emissiveTexture, m.occlusionTexture};
+}
 // A joint that bends a skinned mesh: a node of the model, and the matrix that takes the
 // mesh as modelled into that node's space (its inverse bind matrix).
 struct ModelBone {

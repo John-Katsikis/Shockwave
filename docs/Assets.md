@@ -66,6 +66,11 @@ The renderer currently shows:
 
 - base color, from a color value or a texture
 - vertex colors
+- metallic and roughness, from values and glTF's metallic-roughness map (green is
+  roughness, blue is metallic)
+- normal maps, in tangent space (glTF's convention, green pointing up the texture)
+- emissive color, from a value and an emissive map, and glTF's emissive strength
+- occlusion maps (the red channel), which darken ambient light only
 - opaque surfaces, alpha cutouts and basic alpha blending
 - double-sided surfaces
 
@@ -80,14 +85,25 @@ Some limits apply:
 - All textures use one shared sampler that repeats and filters linearly. Per-texture
   sampler settings and texture transforms are not applied.
 
-Some material data is stored but not drawn yet. Metallic and roughness values, and
-normal, metallic-roughness, emissive and occlusion maps, are kept in `ModelData`. Full
-PBR shading (physically based lighting), normal mapping, emissive light and occlusion
-come with a later lighting update. Until then, the import prints a warning when a model
-uses them.
+Base color and emissive maps are colour, so they load as sRGB. Normal,
+metallic-roughness and occlusion maps are data, so they load as linear, and texture
+compression keeps them linear too (see [Optimisation](Optimisation.md)). An image used
+both ways is loaded once for each.
 
-Skinned meshes and animated scenes show their static pose, and the import reports that
-playback isn't supported. Skeletal animation is not part of this asset support.
+Normal maps need tangents. The import keeps a file's own (glTF's `TANGENT`) and works
+out the rest from the texture coordinates, mirrored ones included. A mesh with texture
+maps but no texture coordinates gets a warning, since there's nowhere to put the maps.
+
+The sample's `Scenes/materials.swscene` shows every map on `models/pbr-maps.glb`. To
+see the normal maps on their own, pick Normals in the viewport's Shading menu, or run:
+
+```sh
+build/bin/player --scene Games/Sample/Scenes/materials.swscene --view normals --screenshot out.png
+```
+
+Skinned meshes and the animation clips inside a model play through the Animation
+module. See [Animation](Animation.md). Morph targets (blend shapes) are imported but not
+played yet, and the import says so.
 
 ## Use Blender files
 

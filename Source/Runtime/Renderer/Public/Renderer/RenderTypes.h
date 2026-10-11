@@ -43,6 +43,14 @@ struct DrawMaterial {
     float metallic = 0.0f;
     glm::vec3 emissive{0.0f};   // linear HDR color the surface emits
     bool castShadows = true;   // blended (transparent) surfaces never cast
+    // Material maps (glTF's), read through the same UVs as the base color texture. 0, the
+    // white texture, leaves the factors above as they are.
+    TextureHandle normalTexture;   // tangent space, linear (srgb = false); 0: none
+    TextureHandle metallicRoughnessTexture;   // linear: green scales roughness, blue metallic
+    TextureHandle emissiveTexture;   // sRGB, scales emissive
+    TextureHandle occlusionTexture;   // linear: red darkens ambient light only
+    float normalScale = 1.0f;   // how strongly the normal map tilts the surface
+    float occlusionStrength = 1.0f;   // 0 ignores the occlusion map .. 1 full
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of

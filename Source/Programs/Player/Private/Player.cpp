@@ -6,6 +6,7 @@
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
+#include <Circuits/Circuit.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/Prefab.h>
@@ -38,6 +39,7 @@ void Player::onStart() {
          .hrtfBilinear = m_project.audioHrtfHigh});
     shockwave::registerEffectsComponents();
     shockwave::registerAnimationComponents();
+    shockwave::registerCircuitComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -66,6 +68,8 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
                      : m_tool.mode == Tool::Mode::AudioMix    ? audioMix()
                      : m_tool.mode == Tool::Mode::Animations  ? listAnimations()
+                     : m_tool.mode == Tool::Mode::NodeSchema  ? nodeSchema()
+                     : m_tool.mode == Tool::Mode::CircuitDump ? dumpCircuit()
                                                               : schema();
         engine().quit();
         return;
@@ -115,6 +119,7 @@ void Player::onStart() {
     m_ui->setPreview(m_tool.uiPreview);
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->setSaveFolder(saveFolder(), m_project.relative(m_project.startupScene));
+    m_session->setGameCircuit(m_project.gameCircuitPath());
     m_session->start();
     if (!loadFile.empty()) {
         // Read now; the world is swapped in before the first tick.

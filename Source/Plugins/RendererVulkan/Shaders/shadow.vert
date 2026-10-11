@@ -8,6 +8,7 @@ struct Vertex {
     vec3 normal;
     vec2 uv;
     vec4 color;
+    vec4 tangent;   // xyz along +u; w: handedness of the bitangent
 };
 
 layout(buffer_reference, scalar) readonly buffer VertexBuffer {
@@ -27,6 +28,12 @@ struct DrawData {
     float roughness;
     float metallic;
     vec3 emissive;
+    uint normalTexture;   // 0: none
+    uint metallicRoughnessTexture;
+    uint emissiveTexture;
+    uint occlusionTexture;
+    float normalScale;
+    float occlusionStrength;
     uint pad;
 };
 

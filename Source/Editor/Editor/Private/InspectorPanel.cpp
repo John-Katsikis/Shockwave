@@ -3,6 +3,7 @@
 // components show up here as soon as they're registered.
 #include "Editor.h"
 
+#include <Circuits/Circuit.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -214,6 +215,19 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     drawSpatialAudioNotes(info, e);
     if (info.id == shockwave::componentId<shockwave::ParticleEffect>()) drawParticleEffectNotes(e);
     if (info.id == shockwave::componentId<shockwave::Animator>()) drawAnimatorNotes(e);
+    if (info.id == shockwave::componentId<shockwave::Circuit>()) {
+        const auto& circuit = *m_world.get<shockwave::Circuit>(e);
+        const bool exists =
+            !circuit.circuit.empty() && std::filesystem::is_regular_file(m_project.assetFolder / circuit.circuit);
+        if (!circuit.circuit.empty() && !exists)
+            ImGui::TextColored(
+                gui::semanticColor(gui::currentTheme().error), "%s isn't in Content", circuit.circuit.c_str());
+        ImGui::BeginDisabled(!exists);
+        if (gui::button("Edit circuit")) openCircuit(circuit.circuit);
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(
+            "Open it in the Circuits window. Drop a .swcircuit from Content on the entity to change it.");
+    }
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {
@@ -255,10 +269,18 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
                 ImGui::TextDisabled(
                     "Base color %.2f %.2f %.2f %.2f", material.baseColor.r, material.baseColor.g, material.baseColor.b,
                     material.baseColor.a);
-                if (material.baseColorTexture >= 0) {
-                    ImGui::TextWrapped("Texture: %s", asset->data.textures[material.baseColorTexture].source.c_str());
-                }
                 ImGui::TextDisabled("Metallic %.2f, roughness %.2f", material.metallic, material.roughness);
+                if (material.emissive != glm::vec3(0.0f))
+                    ImGui::TextDisabled(
+                        "Emissive %.2f %.2f %.2f", material.emissive.r, material.emissive.g, material.emissive.b);
+                const std::pair<const char*, int> maps[] = {
+                    {"Base color", material.baseColorTexture},
+                    {"Normal", material.normalTexture},
+                    {"Metallic-roughness", material.metallicRoughnessTexture},
+                    {"Occlusion", material.occlusionTexture},
+                    {"Emissive", material.emissiveTexture}};
+                for (const auto& [label, index] : maps)
+                    if (index >= 0) ImGui::TextWrapped("%s map: %s", label, asset->data.textures[index].source.c_str());
                 using Alpha = shockwave::ModelMaterial::Alpha;
                 ImGui::TextDisabled(
                     "%s, %s",

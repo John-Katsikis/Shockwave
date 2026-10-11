@@ -130,11 +130,13 @@ bool transcodeKtx2(std::span<const uint8_t> ktx2, bool bc7, TextureData& texture
     return true;
 }
 
-uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode) {
+uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode, bool srgb) {
     uint64_t hash = 0xcbf29ce484222325ull;
     hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>(kEncoderVersion.data()), kEncoderVersion.size()});
     const std::string_view name = textureCompressionName(mode);
     hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>(name.data()), name.size()});
+    // Colour keeps the keys it always had, so existing caches stay valid.
+    if (!srgb) hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>("linear"), 6});
     return hashBytes(hash, source);
 }
 

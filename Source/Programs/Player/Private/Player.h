@@ -25,9 +25,19 @@ namespace fs = std::filesystem;
 // What the player was asked to do. Tools run in a hidden window and quit before the
 // first frame; they need the renderer only to import assets the way the game does.
 struct Tool {
-    enum class Mode { Play, Check, Schema, BakeNavMesh, AudioMix, Animations } mode = Mode::Play;
+    enum class Mode {
+        Play,
+        Check,
+        Schema,
+        BakeNavMesh,
+        AudioMix,
+        Animations,
+        NodeSchema,
+        CircuitDump
+    } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
-    fs::path schemaOut;   // --schema: "-" is standard output
+    fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
+    std::string circuit;   // --circuit file --dump: a .swcircuit, inside Content or a path to one
     std::vector<std::string> animationModels;   // --animations: models inside Content; empty: all
     // Save games (docs/SaveGames.md).
     bool listSaves = false;   // --saves, with --json for a file
@@ -120,6 +130,16 @@ private:
     // --audio-mix: plays the scene with an offline mixer, writes a .wav and prints levels
     // per channel and what each spatial source sounds like (PlayerAudio.cpp).
     int audioMix();
+
+    // Circuits (PlayerCircuits.cpp): --check compiles every .swcircuit in Content and checks
+    // the scenes' Circuit components; --node-schema writes the node reference; --circuit
+    // file --dump prints a circuit's bytecode.
+    void checkCircuits(
+        shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
+        std::vector<std::string>& usedCircuits);
+    void checkAllCircuits(const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems);
+    int nodeSchema();
+    int dumpCircuit();
 
     // --check for particle effects (PlayerEffects.cpp): a scene's ParticleEffects, then
     // every .efkefc in Content. Warnings (parts that aren't drawn yet) don't fail it.

@@ -61,6 +61,17 @@ struct Theme {
     ImVec4 onAccent = hex(0x02090c);
     ImVec4 warning = hex(0xffd23f);
     ImVec4 error = hex(0xff3d5a);
+    // The Circuits graph (docs/Circuits.md): exec wires and each kind of data pin, and
+    // the header of event nodes.
+    ImVec4 circuitExec = hex(0xd4dee6);
+    ImVec4 circuitBool = hex(0xff5c7a);
+    ImVec4 circuitNumber = hex(0x4be38a);   // Int and Float
+    ImVec4 circuitVector = hex(0xffb020);   // Vec2, Vec3 and Color
+    ImVec4 circuitRotation = hex(0xb58cff);
+    ImVec4 circuitText = hex(0xff7ad9);
+    ImVec4 circuitEntity = hex(0x4aa8ff);
+    ImVec4 circuitAsset = hex(0x2ec4b6);   // meshes, textures, models
+    ImVec4 circuitEvent = hex(0x3a1d0d);
 
     // ---- Shape and spacing, in pixels at 100% display scale ----
     float windowRounding = 0.0f;

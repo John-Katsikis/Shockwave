@@ -10,6 +10,7 @@ struct Vertex {
     vec3 normal;
     vec2 uv;
     vec4 color;
+    vec4 tangent;   // xyz along +u; w: handedness of the bitangent
 };
 
 layout(buffer_reference, scalar) readonly buffer VertexBuffer {
@@ -29,6 +30,12 @@ struct DrawData {
     float roughness;
     float metallic;
     vec3 emissive;
+    uint normalTexture;   // 0: none
+    uint metallicRoughnessTexture;
+    uint emissiveTexture;
+    uint occlusionTexture;
+    float normalScale;
+    float occlusionStrength;
     uint pad;
 };
 
@@ -48,6 +55,9 @@ layout(location = 4) flat out float vAlphaCutoff;
 layout(location = 5) out vec3 vWorldPosition;
 layout(location = 6) flat out vec2 vRoughnessMetallic;
 layout(location = 7) flat out vec3 vEmissive;
+layout(location = 8) out vec4 vTangent;   // world space; w: bitangent handedness
+layout(location = 9) flat out uvec4 vMaps;   // normal, metallic-roughness, emissive, occlusion
+layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion strength
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
@@ -62,4 +72,9 @@ void main() {
     vWorldPosition = (draw.model * vec4(v.position, 1.0)).xyz;
     vRoughnessMetallic = vec2(draw.roughness, draw.metallic);
     vEmissive = draw.emissive;
+    // A mirroring transform flips which way the bitangent points.
+    mat3 linear = mat3(draw.model);
+    vTangent = vec4(linear * v.tangent.xyz, determinant(linear) < 0.0 ? -v.tangent.w : v.tangent.w);
+    vMaps = uvec4(draw.normalTexture, draw.metallicRoughnessTexture, draw.emissiveTexture, draw.occlusionTexture);
+    vMapScales = vec2(draw.normalScale, draw.occlusionStrength);
 }

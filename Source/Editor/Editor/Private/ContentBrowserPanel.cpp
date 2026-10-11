@@ -26,7 +26,7 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Other };
+enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Circuit, Other };
 
 struct Tile {
     TileKind kind;
@@ -111,6 +111,16 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
         draw->AddRect(ImVec2(c.x - r, c.y), ImVec2(c.x - r + 2 * s, c.y + r), color, 0.0f, 0, 2.0f);
         draw->AddRect(ImVec2(c.x + r - 2 * s, c.y), ImVec2(c.x + r, c.y + r), color, 0.0f, 0, 2.0f);
         draw->AddRect(ImVec2(c.x - s, c.y - r), ImVec2(c.x + s, c.y), color, 0.0f, 0, 2.0f);
+        return;
+    }
+    if (kind == TileKind::Circuit) {
+        // Two nodes and a wire between them.
+        const float s = r * 0.42f;
+        draw->AddRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r + 2 * s, c.y - r + 1.4f * s), color, 0.0f, 0, 2.0f);
+        draw->AddRect(ImVec2(c.x + r - 2 * s, c.y + r - 1.4f * s), ImVec2(c.x + r, c.y + r), color, 0.0f, 0, 2.0f);
+        draw->AddBezierCubic(
+            ImVec2(c.x - r + 2 * s, c.y - r + 0.7f * s), ImVec2(c.x + r * 0.2f, c.y - r + 0.7f * s),
+            ImVec2(c.x - r * 0.2f, c.y + r - 0.7f * s), ImVec2(c.x + r - 2 * s, c.y + r - 0.7f * s), color, 2.0f);
         return;
     }
     if (kind == TileKind::Mesh && name == "sphere") {
@@ -327,6 +337,7 @@ void Editor::drawContentItems() {
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
                                   : f.path.extension() == ".rml"       ? TileKind::UIDocument
                                   : f.path.extension() == ".swprefab"  ? TileKind::Prefab
+                                  : f.path.extension() == ".swcircuit" ? TileKind::Circuit
                                                                        : TileKind::Other;
             const uint64_t thumb =
                 f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
@@ -383,6 +394,7 @@ void Editor::drawContentItems() {
         const Tile& tile = tiles[i];
         const bool failed = tile.file && !tile.file->error.empty();
         const bool usable = tile.kind == TileKind::UIDocument || tile.kind == TileKind::Prefab ||
+                            tile.kind == TileKind::Circuit ||
                             (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
         if (i % columns != 0) ImGui::SameLine();
 
@@ -474,6 +486,9 @@ void Editor::drawContentItems() {
             case TileKind::Prefab:
                 ImGui::TextDisabled("Prefab. Drag into the viewport to place a copy, or double-click to edit it");
                 break;
+            case TileKind::Circuit:
+                ImGui::TextDisabled("Circuit. Drag onto an object to run it there, or double-click to edit it");
+                break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -486,6 +501,7 @@ void Editor::drawContentItems() {
                                   : tile.kind == TileKind::Model      ? kModelPayload
                                   : tile.kind == TileKind::UIDocument ? kUIDocumentPayload
                                   : tile.kind == TileKind::Prefab     ? kPrefabPayload
+                                  : tile.kind == TileKind::Circuit    ? kCircuitPayload
                                                                       : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
@@ -528,6 +544,7 @@ void Editor::drawContentItems() {
                 break;
             case TileKind::UIDocument: createUIDocument(tile.name); break;
             case TileKind::Prefab: editPrefab(tile.name); break;
+            case TileKind::Circuit: openCircuit(tile.name); break;
             case TileKind::Other: break;
             }
         }
@@ -582,6 +599,13 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("Open in text editor"))
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;
+            case TileKind::Circuit:
+                if (ImGui::MenuItem("Edit")) openCircuit(tile.name);
+                if (ImGui::MenuItem("Run on the selection", nullptr, false, !selection().empty()))
+                    attachCircuit(tile.name);
+                if (ImGui::MenuItem("Open in text editor"))
+                    SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
+                break;
             case TileKind::Other: break;
             }
             if (failed && ImGui::MenuItem("Retry imports")) m_retryAssetImports = true;
@@ -613,6 +637,7 @@ void Editor::drawContentItems() {
         ImGui::BeginPopupContextWindow(
             "background", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
         if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("Import...")) showImportDialog(folderPath);
+        if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("New circuit")) newCircuit(m_contentFolder);
         if (ImGui::MenuItem("Show in file manager")) openInFileManager(folderPath);
         ImGui::EndPopup();
     }

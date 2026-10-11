@@ -55,10 +55,18 @@ struct DrawData {
     float roughness;
     float metallic;
     glm::vec3 emissive;
+    uint32_t normalTexture;   // 0: none
+    uint32_t metallicRoughnessTexture;
+    uint32_t emissiveTexture;
+    uint32_t occlusionTexture;
+    float normalScale;
+    float occlusionStrength;
     uint32_t pad;
 };
 static_assert(
-    offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 && sizeof(DrawData) == 256,
+    offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
+        offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
+        sizeof(DrawData) == 280,
     "DrawData must match the shader's scalar layout");
 
 // Shadow maps hold reverse-Z depth, like the scene: cleared to 0, closer is greater.

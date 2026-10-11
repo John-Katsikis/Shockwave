@@ -79,6 +79,7 @@ game_module "my_game"
 startup_scene "Scenes/main.swscene"
 assets "Content"
 theme "Config/Editor.swtheme"
+game_circuit "Content/Circuits/Game.swcircuit"  # optional: a circuit for the whole game
 tick_rate 60
 window_size 1280 720
 vsync true
@@ -100,6 +101,7 @@ renderer "vulkan"    # optional: the renderer plugin the player starts with
 | `assets` | no | `Content` | The content folder. Scenes name assets relative to it. |
 | `scenes` | no | `Scenes` | Where the editor lists and saves scenes, for example `scenes "levels"`. |
 | `theme` | no | | An editor theme. Used when neither `--theme` nor Preferences picks one. |
+| `game_circuit` | no | | A `.swcircuit` inside the content folder that runs for the whole game, next to the GameMode. The file must exist. See [Circuits](Circuits.md). |
 | `tick_rate` | no | `60` | Simulation ticks per second, 1 to 1000. |
 | `window_size` | no | `1280 720` | The player's window size. At least 320 x 240. |
 | `vsync` | no | `true` | Wait for the screen's refresh before showing a frame. |
@@ -411,11 +413,11 @@ For a quick test on the GPU, run the editor and the player against the same proj
 Both should report the same sample gameplay starting and shutting down, with simulation
 ticks run. `--frames N` stops after N frames, which keeps smoke tests short.
 
-## What's not done yet
+## Good to know
 
-Projects so far give you project settings, shared C++ gameplay and a standalone player.
-There's no release exporter or new asset pipeline yet. Game menus and save data are
-future work.
+Menus and HUDs, save games and packaging have their own guides:
+[Game UI](GameUI.md), [Save games](SaveGames.md) and [Packaging your game](Packaging.md).
+A few things about how projects run:
 
 - The player renders through the scene's primary Camera entity. Play in the editor
   looks through the same camera, and F8 switches to the editor camera.

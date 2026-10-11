@@ -165,6 +165,19 @@ No fields; the component's presence is what matters.
 | `fourth` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
 | `wait` | number; range 0 to 60 | `1` |
 
+#### Circuit
+
+| Field | Value | Default |
+|---|---|---|
+| `circuit` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### CircuitVars
+
+| Field | Value | Default |
+|---|---|---|
+| `values` | quoted text | `""` |
+
 ### Motion
 
 #### Spin
@@ -379,6 +392,7 @@ Names a scene can use, built-in and from this project's asset folder.
 
 - `models/Fox.glb`
 - `models/material-demo.glb`
+- `models/pbr-maps.glb`
 
 ### Audio clips (AudioSource.clip)
 
@@ -403,6 +417,7 @@ startup_scene "Scenes/main.swscene"   # must exist
 assets "Content"                      # optional, default Content
 scenes "Scenes"                       # optional, default Scenes
 theme "Config/Editor.swtheme"         # optional editor theme for this project
+game_circuit "Content/Circuits/Game.swcircuit"   # optional; runs for the whole game (docs/Circuits.md)
 tick_rate 60                           # simulation updates per second
 window_size 1280 720
 vsync true

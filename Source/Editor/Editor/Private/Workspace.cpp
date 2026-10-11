@@ -185,6 +185,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Stats", nullptr, &m_showStats);
             ImGui::MenuItem("Input", nullptr, &m_showInput);
             ImGui::MenuItem("Save Games", nullptr, &m_showSaveGames);
+            ImGui::MenuItem("Circuits", nullptr, &m_showCircuits);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
             ImGui::EndMenu();
@@ -714,6 +715,23 @@ void Editor::drawProjectSettingsWindow() {
             ImGui::EndCombo();
         }
         ImGui::SetItemTooltip("The scene the player starts in");
+        gui::propertyLabel("Game circuit");
+        {
+            const std::string current =
+                m_projectEdit.gameCircuit.empty() ? std::string("None") : m_project.relative(m_projectEdit.gameCircuit);
+            if (ImGui::BeginCombo("##game_circuit", current.c_str())) {
+                if (ImGui::Selectable("None", m_projectEdit.gameCircuit.empty())) m_projectEdit.gameCircuit.clear();
+                if (m_assetFolder)
+                    for (const auto& f : m_assetFolder->files()) {
+                        if (f.path.extension() != ".swcircuit") continue;
+                        const fs::path file = (m_project.assetFolder / f.name).lexically_normal();
+                        if (ImGui::Selectable(f.name.c_str(), file == m_projectEdit.gameCircuit))
+                            m_projectEdit.gameCircuit = file;
+                    }
+                ImGui::EndCombo();
+            }
+            ImGui::SetItemTooltip("A circuit that runs for the whole game, after the GameMode (docs/Circuits.md)");
+        }
         gui::propertyLabel("Tick rate");
         ImGui::InputDouble("##tick", &m_projectEdit.tickRate, 10.0, 30.0, "%.0f per second");
         m_projectEdit.tickRate = std::clamp(m_projectEdit.tickRate, 1.0, 1000.0);

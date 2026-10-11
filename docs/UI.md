@@ -113,8 +113,10 @@ Text uses Cousine, a monospaced font that ships with Dear ImGui. The build copie
 
 Semantic colors are the named roles in a theme: `button`, `button_hover`,
 `button_active`, `on_accent`, `accent`, `accent_hover`, `accent_active`, `secondary`,
-`panel`, `warning` and `error`, among others. A theme can also override standard ImGui
-color names directly.
+`panel`, `warning` and `error`, among others. The Circuits graph has its own:
+`circuit_exec`, `circuit_bool`, `circuit_number`, `circuit_vector`, `circuit_rotation`,
+`circuit_text`, `circuit_entity`, `circuit_asset` and `circuit_event`. A theme can also
+override standard ImGui color names directly.
 
 If your feature needs a new semantic color, add it in three places together: the
 `Theme` struct, the loader's key table and the example theme. Don't put the feature's

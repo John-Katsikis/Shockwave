@@ -123,6 +123,47 @@ bpy.ops.export_scene.gltf(filepath=output, export_format='GLB', use_selection=Fa
     }
     return true;
 }
+// Tangents for normal maps. The file's own (glTF's TANGENT) are kept where it has them;
+// the rest come from the texture coordinates, summed over each vertex's triangles. The
+// sign in w makes cross(normal, tangent) * w point up the texture (towards smaller v,
+// since v runs down the image), which also covers mirrored texture coordinates.
+void readTangents(const aiMesh& src, ModelMesh& mesh) {
+    auto& vertices = mesh.data.vertices;
+    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f)), down(vertices.size(), glm::vec3(0.0f));
+    const auto& indices = mesh.data.indices;
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const Vertex &a = vertices[indices[i]], &b = vertices[indices[i + 1]], &c = vertices[indices[i + 2]];
+        const glm::vec3 e1 = b.position - a.position, e2 = c.position - a.position;
+        const glm::vec2 d1 = b.uv - a.uv, d2 = c.uv - a.uv;
+        const float det = d1.x * d2.y - d2.x * d1.y;
+        if (std::abs(det) < 1e-12f) continue;
+        // Weighted by the triangle's area in the texture's space: dP/du and dP/dv times det.
+        const float sign = det > 0 ? 1.0f : -1.0f;
+        const glm::vec3 t = (e1 * d2.y - e2 * d1.y) * sign, v = (e2 * d1.x - e1 * d2.x) * sign;
+        for (int k = 0; k < 3; ++k) {
+            tangents[indices[i + k]] += t;
+            down[indices[i + k]] += v;
+        }
+    }
+    const bool fromFile = src.HasTangentsAndBitangents();
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        Vertex& vertex = vertices[i];
+        const float length = glm::length(vertex.normal);
+        const glm::vec3 n = length > 1e-12f ? vertex.normal / length : glm::vec3(0, 1, 0);
+        glm::vec3 t = fromFile ? vector(src.mTangents[i]) : tangents[i];
+        t -= n * glm::dot(n, t);   // at right angles to the normal
+        if (!(glm::dot(t, t) > 1e-20f)) {
+            // No usable texture coordinates here: any direction across the surface will do.
+            t = glm::cross(std::abs(n.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0), n);
+            if (!(glm::dot(t, t) > 1e-20f)) t = glm::vec3(1, 0, 0);
+        }
+        t = glm::normalize(t);
+        // Up the texture: the file's bitangent where it has one, else against dP/dv.
+        const glm::vec3 up = fromFile ? vector(src.mBitangents[i]) : -down[i];
+        vertex.tangent = glm::vec4(t, glm::dot(glm::cross(n, t), up) < 0.0f ? -1.0f : 1.0f);
+    }
+}
+
 // Up to four joints per vertex (aiProcess_LimitBoneWeights keeps the strongest), weights
 // normalized to add up to 1. Bone names are resolved to nodes once the hierarchy is read.
 void readSkin(const aiMesh& src, ModelMesh& mesh, std::vector<std::string>& boneNames) {
@@ -319,17 +360,20 @@ bool loadModel(
                 std::string(importer.GetErrorString()) +
                 (blend ? ". " + blendDiagnostic + "; export glTF/GLB from Blender as an alternative" : ""));
         std::unordered_map<std::string, int> textureCache;
-        auto texture = [&](const aiMaterial& material, aiTextureType type) -> int {
+        // Colour maps are sRGB, data maps linear; an image used both ways is read twice.
+        auto texture = [&](const aiMaterial& material, aiTextureType type, bool srgb) -> int {
             aiString source;
             unsigned uv = 0;
             if (material.GetTexture(type, 0, &source, nullptr, &uv) != AI_SUCCESS) return -1;
             const std::string key = source.C_Str();
-            if (auto it = textureCache.find(key); it != textureCache.end()) return it->second;
+            const std::string cacheKey = key + (srgb ? "" : "\n(linear)");
+            if (auto it = textureCache.find(cacheKey); it != textureCache.end()) return it->second;
             if (uv != 0)
                 model.warnings.emplace_back(
                     "Texture " + key + " uses a UV channel other than UV0; UV0 is used by the current renderer");
             ModelTexture tex;
             tex.source = key;
+            tex.srgb = srgb;
             std::string reason;
             if (const aiTexture* embedded = scene->GetEmbeddedTexture(source.C_Str())) {
                 if (embedded->mHeight == 0) {
@@ -357,7 +401,7 @@ bool loadModel(
             }
             const int index = static_cast<int>(model.textures.size());
             model.textures.push_back(std::move(tex));
-            textureCache.emplace(key, index);
+            textureCache.emplace(cacheKey, index);
             return index;
         };
         std::vector<bool> usedMaterial(scene->mNumMaterials, false);
@@ -382,7 +426,9 @@ bool loadModel(
             if (!pbr && src.Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) m.baseColor.a *= opacity;
             aiColor3D emission(0, 0, 0);
             src.Get(AI_MATKEY_COLOR_EMISSIVE, emission);
-            m.emissive = {emission.r, emission.g, emission.b};
+            float emissiveStrength = 1;   // glTF's KHR_materials_emissive_strength
+            src.Get(AI_MATKEY_EMISSIVE_INTENSITY, emissiveStrength);
+            m.emissive = glm::vec3(emission.r, emission.g, emission.b) * std::max(emissiveStrength, 0.0f);
             src.Get(AI_MATKEY_METALLIC_FACTOR, m.metallic);
             src.Get(AI_MATKEY_ROUGHNESS_FACTOR, m.roughness);
             int doubleSided = 0;
@@ -395,16 +441,20 @@ bool loadModel(
             else if (std::string(alpha.C_Str()) == "BLEND" || (alpha.length == 0 && m.baseColor.a < 0.999f))
                 m.alpha = ModelMaterial::Alpha::Blend;
             src.Get(AI_MATKEY_GLTF_ALPHACUTOFF, m.alphaCutoff);
-            m.baseColorTexture = texture(src, aiTextureType_BASE_COLOR);
-            if (m.baseColorTexture < 0) m.baseColorTexture = texture(src, aiTextureType_DIFFUSE);
-            m.normalTexture = texture(src, aiTextureType_NORMALS);
-            m.metallicRoughnessTexture = texture(src, aiTextureType_GLTF_METALLIC_ROUGHNESS);
-            m.emissiveTexture = texture(src, aiTextureType_EMISSIVE);
-            m.occlusionTexture = texture(src, aiTextureType_AMBIENT_OCCLUSION);
-            if (m.normalTexture >= 0 || m.metallicRoughnessTexture >= 0 || m.emissiveTexture >= 0 ||
-                m.occlusionTexture >= 0 || m.metallic > 0 || glm::length(m.emissive) > 0)
-                model.warnings.emplace_back(
-                    "Material '" + m.name + "': PBR factors/maps are retained; full PBR lighting is a later milestone");
+            m.baseColorTexture = texture(src, aiTextureType_BASE_COLOR, true);
+            if (m.baseColorTexture < 0) m.baseColorTexture = texture(src, aiTextureType_DIFFUSE, true);
+            m.normalTexture = texture(src, aiTextureType_NORMALS, false);
+            m.metallicRoughnessTexture = texture(src, aiTextureType_GLTF_METALLIC_ROUGHNESS, false);
+            m.emissiveTexture = texture(src, aiTextureType_EMISSIVE, true);
+            m.occlusionTexture = texture(src, aiTextureType_AMBIENT_OCCLUSION, false);
+            // Assimp hands glTF's occlusion map over as a light map, with its strength.
+            if (m.occlusionTexture < 0 &&
+                src.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), m.occlusionStrength) == AI_SUCCESS)
+                m.occlusionTexture = texture(src, aiTextureType_LIGHTMAP, false);
+            else
+                src.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_AMBIENT_OCCLUSION, 0), m.occlusionStrength);
+            src.Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), m.normalScale);
+            m.occlusionStrength = std::clamp(m.occlusionStrength, 0.0f, 1.0f);
             model.materials[i] = std::move(m);
         }
         if (model.materials.empty()) model.materials.emplace_back();
@@ -446,6 +496,14 @@ bool loadModel(
                 }
                 ++model.triangles;
             }
+            readTangents(src, mesh);
+            const ModelMaterial& material = model.materials[mesh.material];
+            if (!src.HasTextureCoords(0) && (material.baseColorTexture >= 0 || material.normalTexture >= 0 ||
+                                             material.metallicRoughnessTexture >= 0 || material.emissiveTexture >= 0 ||
+                                             material.occlusionTexture >= 0))
+                model.warnings.emplace_back(
+                    "Mesh '" + mesh.name + "' has no texture coordinates, so material '" + material.name +
+                    "' can't place its texture maps on it");
         }
         // Assimp sometimes appends an unused fallback material. Keep only actual
         // triangle materials so the browser/inspector represent source parts.

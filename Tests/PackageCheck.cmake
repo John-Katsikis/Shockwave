@@ -40,6 +40,7 @@ endif()
 set(project_copy "${TEMP}/Project")
 get_filename_component(project_dir "${PROJECT}" DIRECTORY)
 file(COPY "${project_dir}/Sample.swproject" "${project_dir}/Scenes" DESTINATION "${project_copy}")
+file(COPY "${project_dir}/Content/Circuits" DESTINATION "${project_copy}/Content")   # game_circuit must exist
 file(WRITE "${project_copy}/Config/Package.swpackage" "shockwave_package 1\nicon \"x.png\"\n")
 execute_process(COMMAND "${PLAYER}" --package --project "${project_copy}/Sample.swproject" --no-build
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)

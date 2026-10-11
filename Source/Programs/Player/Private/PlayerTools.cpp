@@ -54,6 +54,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
     std::vector<std::string> checkedEffects;   // .efkefc files a scene's ParticleEffect validated
     std::vector<std::string> usedPrefabs;   // by the scenes checked
+    std::vector<std::string> usedCircuits;   // .swcircuit files the scenes' Circuit components name
     if (scenes.empty()) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(m_project.sceneFolder, ec)) {
@@ -135,6 +136,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
         checkAnimators(world, scene.string(), problems);
+        checkCircuits(world, scene.string(), problems, usedCircuits);
 
         // Navigation: a saved mesh that no longer matches the scene gets baked again on
         // every Play, which is slow and easy to miss.
@@ -169,6 +171,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
     checkPrefabs(usedPrefabs, problems);
+    checkAllCircuits(usedCircuits, problems);
     // Save games: they must read back the way a load would, entity handles and all.
     for (const fs::path& file : saves) {
         const std::string shown = m_project.relative(file);
@@ -323,6 +326,7 @@ int Player::schema() {
         << "assets \"Content\"                      # optional, default Content\n"
         << "scenes \"Scenes\"                       # optional, default Scenes\n"
         << "theme \"Config/Editor.swtheme\"         # optional editor theme for this project\n"
+        << "game_circuit \"Content/Circuits/Game.swcircuit\"   # optional; runs for the whole game (docs/Circuits.md)\n"
         << "tick_rate 60                           # simulation updates per second\n"
         << "window_size 1280 720\n"
         << "vsync true\n"

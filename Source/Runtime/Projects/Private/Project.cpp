@@ -61,13 +61,16 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
             if (key == "name" || key == "game_module" || key == "renderer") {
                 auto& value = key == "name" ? result.name : key == "renderer" ? result.renderer : result.gameModule;
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
-            } else if (key == "startup_scene" || key == "assets" || key == "scenes" || key == "theme") {
+            } else if (
+                key == "startup_scene" || key == "assets" || key == "scenes" || key == "theme" ||
+                key == "game_circuit") {
                 std::string value;
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
-                auto& target = key == "startup_scene" ? result.startupScene
-                               : key == "assets"      ? result.assetFolder
-                               : key == "scenes"      ? result.sceneFolder
-                                                      : result.theme;
+                auto& target = key == "startup_scene"  ? result.startupScene
+                               : key == "assets"       ? result.assetFolder
+                               : key == "scenes"       ? result.sceneFolder
+                               : key == "game_circuit" ? result.gameCircuit
+                                                       : result.theme;
                 target = (result.root / value).lexically_normal();
             } else if (key == "tick_rate") {
                 if (!(row >> result.tickRate) || !std::isfinite(result.tickRate) || result.tickRate < 1 ||
@@ -126,8 +129,22 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
     if (result.sceneFolder.empty()) result.sceneFolder = result.root / "Scenes";
     if (!std::filesystem::is_regular_file(result.startupScene, ec))
         return fail("startup scene does not exist: " + result.startupScene.string());
+    if (!result.gameCircuit.empty()) {
+        if (result.gameCircuit.extension() != ".swcircuit")
+            return fail("game_circuit must be a .swcircuit file: " + result.gameCircuit.string());
+        const auto inside = result.gameCircuit.lexically_relative(result.assetFolder.lexically_normal());
+        if (inside.empty() || *inside.begin() == "..")
+            return fail("game_circuit must be inside the assets folder: " + result.gameCircuit.string());
+        if (!std::filesystem::is_regular_file(result.gameCircuit, ec))
+            return fail("game circuit does not exist: " + result.gameCircuit.string());
+    }
     project = std::move(result);
     return true;
+}
+
+std::string Project::gameCircuitPath() const {
+    if (gameCircuit.empty()) return {};
+    return gameCircuit.lexically_normal().lexically_relative(assetFolder.lexically_normal()).generic_string();
 }
 
 std::string Project::relative(const std::filesystem::path& path) const {
@@ -155,6 +172,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (!project.sceneFolder.empty() && project.sceneFolder != project.root / "Scenes")
         out << "scenes " << quotedPath(project.sceneFolder) << "\n";
     if (!project.theme.empty()) out << "theme " << quotedPath(project.theme) << "\n";
+    if (!project.gameCircuit.empty()) out << "game_circuit " << quotedPath(project.gameCircuit) << "\n";
     out << "tick_rate " << project.tickRate << "\n"
         << "window_size " << project.width << " " << project.height << "\n"
         << "vsync " << (project.vsync ? "true" : "false") << "\n";

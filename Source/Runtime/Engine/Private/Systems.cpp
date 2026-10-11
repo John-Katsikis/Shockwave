@@ -121,8 +121,11 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                     for (auto index : node.meshes) {
                         const auto& mesh = asset->data.meshes[index];
                         const auto& material = asset->data.materials[mesh.material];
-                        const auto texture = material.baseColorTexture < 0 ? TextureHandle{}
-                                                                           : asset->textures[material.baseColorTexture];
+                        auto map = [&](int index) {
+                            return index < 0 || size_t(index) >= asset->textures.size() ? TextureHandle{}
+                                                                                        : asset->textures[index];
+                        };
+                        const auto texture = map(material.baseColorTexture);
                         DrawMaterial options;
                         options.alphaCutoff =
                             material.alpha == ModelMaterial::Alpha::Mask ? material.alphaCutoff : -1.0f;
@@ -131,6 +134,12 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         options.roughness = material.roughness;
                         options.metallic = material.metallic;
                         options.emissive = material.emissive;
+                        options.normalTexture = map(material.normalTexture);
+                        options.metallicRoughnessTexture = map(material.metallicRoughnessTexture);
+                        options.emissiveTexture = map(material.emissiveTexture);
+                        options.occlusionTexture = map(material.occlusionTexture);
+                        options.normalScale = material.normalScale;
+                        options.occlusionStrength = material.occlusionStrength;
                         options.castShadows = instance.castShadows;
                         if (mesh.skinned()) {
                             // Skinned vertices end up in the model's space, whatever node holds the mesh.

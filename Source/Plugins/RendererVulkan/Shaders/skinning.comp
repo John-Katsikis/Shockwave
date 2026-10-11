@@ -9,6 +9,7 @@ struct Vertex {
     vec3 normal;
     vec2 uv;
     vec4 color;
+    vec4 tangent;   // xyz along +u; w: handedness of the bitangent
 };
 
 // Must match VertexSkin in Renderer/Mesh.h: four 16-bit joint indices, four weights.
@@ -57,5 +58,8 @@ void main() {
     const vec3 n = mat3(m) * v.normal;
     const float len = length(n);
     if (len > 1e-8) v.normal = n / len;
+    const vec3 t = mat3(m) * v.tangent.xyz;
+    const float tangentLength = length(t);
+    if (tangentLength > 1e-8) v.tangent.xyz = t / tangentLength;
     pc.target.vertices[i] = v;
 }

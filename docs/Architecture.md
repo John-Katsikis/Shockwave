@@ -18,6 +18,8 @@ The most common changes, and where they belong:
 | You want to add | Put it here |
 |---|---|
 | Game code | The project's `Source/`, next to its `.swproject`. It's built by `shockwave_game_module(<id> ...)`. See [Projects](Projects.md). |
+| Game logic without C++ | A circuit: a `.swcircuit` in Content, on an entity's `Circuit` component or as the project's `game_circuit`. See [Circuits](Circuits.md). |
+| A node for circuits | `SW_NODE` in game code, or a built-in in `Source/Runtime/Circuits/Private/CircuitNodes.cpp`. Then regenerate `docs/CircuitNodes.md`. |
 | A new component | A struct in the module that owns the data. Register it with `registerComponent` in engine code, or `SW_COMPONENT` in a game module. Then regenerate `docs/SceneSchema.md`, and add a `player --check` rule if mistakes are likely. |
 | A new engine service | A Subsystem in its own module. |
 | A new editor panel | A `*Panel.cpp` in `Source/Editor/Editor/Private`, built from the `shockwave::gui` controls. See [UI](UI.md). |
@@ -125,7 +127,8 @@ module can only see the headers of modules it depends on, directly or through th
 | Navigation | navmesh baking, paths and crowds (Recast & Detour), `NavAgent`, `game.navigation()` | Engine | NavigationSystem |
 | Effects | particle effects from `.efkefc` files (Effekseer), `ParticleEffect`, `game.effects()` | Engine | Niagara |
 | Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Navigation, Effects, Animation | Engine's GameFramework |
+| Circuits | visual scripting: `.swcircuit` node graphs compiled to bytecode, the `Circuit` component, the game circuit | Engine | Blueprints (Kismet) |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.

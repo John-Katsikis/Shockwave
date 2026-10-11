@@ -37,6 +37,12 @@ shockwave_warnings(save_game_test)
 add_test(NAME save_games COMMAND save_game_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(save_games PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
 
+# Circuits (visual scripting): format, compiler checks and circuits running without a window.
+add_executable(circuit_test CircuitTest.cpp)
+target_link_libraries(circuit_test PRIVATE Shockwave::Circuits)
+shockwave_warnings(circuit_test)
+add_test(NAME circuits COMMAND circuit_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
 add_executable(model_test ModelTest.cpp)
 target_link_libraries(model_test PRIVATE Shockwave::Engine)
 add_test(NAME model_import COMMAND model_test ${CMAKE_SOURCE_DIR}

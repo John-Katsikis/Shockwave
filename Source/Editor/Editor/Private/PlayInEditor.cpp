@@ -41,8 +41,10 @@ void Editor::play() {
     if (!resuming) restartEffects();   // effects play from their first frame, as in the game
     if (!resuming) restartAnimation();
     try {
-        if (!resuming)   // game.saves() works in Saved/SaveGames
+        if (!resuming) {   // game.saves() works in Saved/SaveGames
             m_session->setSaveFolder(saveGamesFolder(), m_scenePath.empty() ? "" : m_project.relative(m_scenePath));
+            m_session->setGameCircuit(m_project.gameCircuitPath());
+        }
         m_session->start();
     } catch (const std::exception& e) {
         error(std::string("Couldn't start gameplay: ") + e.what());

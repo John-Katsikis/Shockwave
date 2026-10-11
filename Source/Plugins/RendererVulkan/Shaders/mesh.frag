@@ -68,6 +68,9 @@ layout(location = 4) flat in float vAlphaCutoff;
 layout(location = 5) in vec3 vWorldPosition;
 layout(location = 6) flat in vec2 vRoughnessMetallic;
 layout(location = 7) flat in vec3 vEmissive;
+layout(location = 8) in vec4 vTangent;
+layout(location = 9) flat in uvec4 vMaps;   // normal, metallic-roughness, emissive, occlusion; 0: none
+layout(location = 10) flat in vec2 vMapScales;   // normal scale, occlusion strength
 
 layout(location = 0) out vec4 outColor;
 
@@ -182,13 +185,37 @@ float lightShadow(FrameBuffer frame, LightData l, vec3 worldPos, vec3 n, vec3 to
     return mix(1.0, result, fade);
 }
 
+vec4 sampleMap(uint map) {
+    return texture(sampler2D(textures[nonuniformEXT(map)], linearSampler), vUv);
+}
+
+// The surface normal, tilted by the normal map (tangent space, glTF's convention: green
+// points up the texture), and turned around on back faces.
+vec3 surfaceNormal() {
+    vec3 n = normalize(vNormal);
+    if (vMaps.x != 0u) {
+        vec3 t = vTangent.xyz - n * dot(n, vTangent.xyz);
+        float t2 = dot(t, t);
+        if (t2 > 1e-12) {
+            t *= inversesqrt(t2);
+            vec3 b = cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0);
+            vec3 m = sampleMap(vMaps.x).xyz * 2.0 - 1.0;
+            m.xy *= vMapScales.x;
+            n = normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
+        }
+    }
+    return gl_FrontFacing ? n : -n;
+}
+
 void main() {
     vec4 albedo = texture(sampler2D(textures[nonuniformEXT(vTexture)], linearSampler), vUv) * vColor;
     if (vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
 
     FrameBuffer frame = pc.frame;
-    vec3 n = normalize(vNormal) * (gl_FrontFacing ? 1.0 : -1.0);
-    if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + vEmissive, albedo.a); return; }
+    vec3 n = surfaceNormal();
+    vec3 emissive = vEmissive;
+    if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z).rgb;
+    if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
     if (frame.debugView >= 3u) albedo.rgb = vec3(0.8);
     uint cascade = 99u;
@@ -198,8 +225,10 @@ void main() {
         if (depth < frame.shadowDistance) cascade = c;
     }
 
-    float roughness = clamp(vRoughnessMetallic.x, 0.03, 1.0);
-    float metallic = clamp(vRoughnessMetallic.y, 0.0, 1.0);
+    vec2 roughnessMetallic = vRoughnessMetallic;
+    if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y).gb;   // glTF: green roughness, blue metallic
+    float roughness = clamp(roughnessMetallic.x, 0.03, 1.0);
+    float metallic = clamp(roughnessMetallic.y, 0.0, 1.0);
     float a = roughness * roughness;
     vec3 v = normalize(frame.cameraPosition - vWorldPosition);
     float nDotV = max(dot(n, v), 1e-4);
@@ -242,13 +271,15 @@ void main() {
     }
 
     // Hemisphere ambient: sky from above, ground from below.
+    // The occlusion map only darkens this: direct light has shadows of its own.
     vec3 ambient = mix(frame.groundAmbient, frame.skyAmbient, n.y * 0.5 + 0.5);
-    light += ambient * (diffuseColor + f0 * 0.25);
+    float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w).r - 1.0) : 1.0;
+    light += ambient * (diffuseColor + f0 * 0.25) * occlusion;
 
     if (frame.debugView == 4u) {
         // Which sun cascade each pixel reads: red, green, blue, yellow from near to far.
         const vec3 tints[4] = vec3[](vec3(1.0, 0.35, 0.35), vec3(0.35, 1.0, 0.35), vec3(0.4, 0.5, 1.0), vec3(1.0, 1.0, 0.3));
         if (cascade < 4u) light *= tints[cascade];
     }
-    outColor = vec4(light + vEmissive, albedo.a);
+    outColor = vec4(light + emissive, albedo.a);
 }

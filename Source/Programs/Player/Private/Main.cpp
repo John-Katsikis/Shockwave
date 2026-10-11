@@ -84,6 +84,14 @@ int main(int argc, char** argv) {
             } else if (arg == "--animations") {
                 tool.mode = Tool::Mode::Animations;
                 while (i + 1 < argc && argv[i + 1][0] != '-') tool.animationModels.push_back(argv[++i]);
+            } else if (arg == "--node-schema" && i + 1 < argc) {
+                tool.mode = Tool::Mode::NodeSchema;
+                tool.schemaOut = argv[++i];
+            } else if (arg == "--circuit" && i + 1 < argc) {
+                tool.circuit = argv[++i];
+                if (tool.mode == Tool::Mode::Play) tool.mode = Tool::Mode::CircuitDump;
+            } else if (arg == "--dump") {
+                tool.mode = Tool::Mode::CircuitDump;
             } else if (arg == "--input-schema" && i + 1 < argc) {
                 return player::writeInputSchema(argv[i + 1]);
             } else if (arg == "--devices") {
@@ -206,41 +214,44 @@ int main(int argc, char** argv) {
             } else if (arg == "--help") {
                 std::puts("player --package [--output folder] [--no-build] [--no-archive]\n"
                           "                                    make a game folder for players (docs/Packaging.md)");
-                std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
-                          "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
-                          "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
-                          "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
-                          "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
-                          "                                    warnings (like rendering on a GPU the screen isn't on)\n"
-                          "player --renderers                  list the renderer plugins that can be loaded\n"
-                          "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
-                          "                                    play N frames (default 30), save the last, quit\n"
-                          "       [--ui-preview] [--ui-nav down,down,confirm]\n"
-                          "                                    show UI preview values; step through menus first\n"
-                          "player --benchmark [seconds] [--json file]\n"
-                          "                                    run the scene for that long (default 10) and report\n"
-                          "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
-                          "player --optimise [--json file]     compress every texture into the cache now and report\n"
-                          "                                    texture memory and mesh levels of detail\n"
-                          "player --lod-colors                 tint each level of detail its own colour\n"
-                          "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
-                          "player --bake-navmesh [scene.swscene...]\n"
-                          "                                    bake and save each scene's navigation mesh; print its\n"
-                          "                                    tiles, polygons, bake time and crowd cost per tick\n"
-                          "player --schema file.md             write the scene format reference (- for stdout)\n"
-                          "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
-                          "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
-                          "player --load slot|file.swsave      start Play from a save game (add --screenshot to see it)\n"
-                          "player --check file.swsave          check a save game; --check alone checks them all\n"
-                          "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
-                          "player --animations [model...]      list models' skeletons and animation clips\n"
-                          "player --audio-volume 0..1          master playback volume (default 1)\n"
-                          "player --audio-hrtf on|off          headphone (HRTF) or speaker spatial audio\n"
-                          "player --audio-mix out.wav [--seconds N] [--scene file]\n"
-                          "                                    play the scene N seconds (default 3) with no audio\n"
-                          "                                    device, write the mix and print per-channel levels\n"
-                          "player --devices [seconds]          list controllers; then print each input pressed\n"
-                          "                                    as binding text, for that many seconds");
+                std::puts(
+                    "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
+                    "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
+                    "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
+                    "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
+                    "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
+                    "                                    warnings (like rendering on a GPU the screen isn't on)\n"
+                    "player --renderers                  list the renderer plugins that can be loaded\n"
+                    "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
+                    "                                    play N frames (default 30), save the last, quit\n"
+                    "       [--ui-preview] [--ui-nav down,down,confirm]\n"
+                    "                                    show UI preview values; step through menus first\n"
+                    "player --benchmark [seconds] [--json file]\n"
+                    "                                    run the scene for that long (default 10) and report\n"
+                    "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
+                    "player --optimise [--json file]     compress every texture into the cache now and report\n"
+                    "                                    texture memory and mesh levels of detail\n"
+                    "player --lod-colors                 tint each level of detail its own colour\n"
+                    "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
+                    "player --bake-navmesh [scene.swscene...]\n"
+                    "                                    bake and save each scene's navigation mesh; print its\n"
+                    "                                    tiles, polygons, bake time and crowd cost per tick\n"
+                    "player --schema file.md             write the scene format reference (- for stdout)\n"
+                    "player --node-schema file.md        write the circuit node reference (- for stdout)\n"
+                    "player --circuit file --dump        compile a .swcircuit and print its bytecode\n"
+                    "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
+                    "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
+                    "player --load slot|file.swsave      start Play from a save game (add --screenshot to see it)\n"
+                    "player --check file.swsave          check a save game; --check alone checks them all\n"
+                    "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                    "player --animations [model...]      list models' skeletons and animation clips\n"
+                    "player --audio-volume 0..1          master playback volume (default 1)\n"
+                    "player --audio-hrtf on|off          headphone (HRTF) or speaker spatial audio\n"
+                    "player --audio-mix out.wav [--seconds N] [--scene file]\n"
+                    "                                    play the scene N seconds (default 3) with no audio\n"
+                    "                                    device, write the mix and print per-channel levels\n"
+                    "player --devices [seconds]          list controllers; then print each input pressed\n"
+                    "                                    as binding text, for that many seconds");
                 return 0;
             } else if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swsave") {
                 tool.scenes.push_back(std::filesystem::absolute(arg).lexically_normal());

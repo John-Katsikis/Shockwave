@@ -47,6 +47,17 @@ on_accent       = #02090c   # text on accent fills: near-black on cyan
 warning         = #ffd23f
 error           = #ff3d5a
 
+# The Circuits graph: exec wires, data pins by type, and event node headers.
+circuit_exec     = #d4dee6
+circuit_bool     = #ff5c7a
+circuit_number   = #4be38a   # Int and Float
+circuit_vector   = #ffb020   # Vec2, Vec3 and Color
+circuit_rotation = #b58cff
+circuit_text     = #ff7ad9
+circuit_entity   = #4aa8ff
+circuit_asset    = #2ec4b6   # meshes, textures, models
+circuit_event    = #3a1d0d
+
 # Geometry is fixed by the tools design system. Legacy keys are accepted on load,
 # but corners stay square and borders stay 1 logical pixel (scaled on HiDPI).
 [shape]

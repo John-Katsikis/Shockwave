@@ -14,6 +14,8 @@
 
 namespace shockwave {
 
+class CircuitWorld;
+
 class PlaySession {
 public:
     enum class State { Editing, Playing, Paused };
@@ -48,6 +50,11 @@ public:
         m_saveScene = std::move(scene);
     }
     UIWorld* ui() const;   // null while editing
+    // Circuits (docs/Circuits.md): entity circuits and the game circuit. Null while editing.
+    CircuitWorld* circuits() const;
+    // The project's game circuit, inside Content ("Circuits/Game.swcircuit"), or empty for
+    // none. Set before start().
+    void setGameCircuit(std::string path) { m_gameCircuit = std::move(path); }
     NavigationWorld* navigation() const;   // null while editing
     // Before start: false mixes into AudioWorld::mixer().render() instead of a device,
     // for offline tools such as player --audio-mix.
@@ -64,6 +71,7 @@ private:
     std::optional<World> m_snapshot;
     std::filesystem::path m_saveFolder;   // setSaveFolder
     std::string m_saveScene;
+    std::string m_gameCircuit;   // setGameCircuit
     Schedule m_schedule;
     State m_state = State::Editing;
     uint64_t m_ticks = 0;

@@ -319,12 +319,13 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         job.meshes = optimiseModel(job.model, meshSettings);
         job.modelTextures.resize(job.model.textures.size());
         if (job.settings.compression == TextureCompression::Off) return;
-        for (const ModelMaterial& material : job.model.materials) {
-            const int index = material.baseColorTexture;   // the only maps the renderer samples
-            if (index < 0 || job.modelTextures[index].valid()) continue;
-            const uint64_t key = textureCacheKey(job.model.textures[index].image.rgba, job.settings.compression);
-            cached(f.name + "#" + std::to_string(index), key, job.modelTextures[index], job.compressedFileBytes);
-        }
+        for (const ModelMaterial& material : job.model.materials)
+            for (const int index : materialTextures(material)) {
+                if (index < 0 || job.modelTextures[index].valid()) continue;
+                const ModelTexture& texture = job.model.textures[index];
+                const uint64_t key = textureCacheKey(texture.image.rgba, job.settings.compression, texture.srgb);
+                cached(f.name + "#" + std::to_string(index), key, job.modelTextures[index], job.compressedFileBytes);
+            }
     };
 
     // CPU imports run in parallel with one Assimp instance per job. Publication and
@@ -362,7 +363,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             f.gpuBytes += ready.valid() ? ready.gpuBytes() : rgbaBytes(width, height);
             f.compressedTextures += ready.valid() && ready.format == TextureFormat::BC7;
         };
-        auto compress = [&](Image image, int modelTexture, std::shared_ptr<const void> owner,
+        auto compress = [&](Image image, bool srgb, int modelTexture, std::shared_ptr<const void> owner,
                             const std::string& cacheName, uint64_t key) {
             if (!m_renderer || !m_backgroundCompression || mode == TextureCompression::Off || !image.width) return;
             auto task = std::make_shared<TextureCompressor::Task>();
@@ -373,6 +374,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             task->owner = std::move(owner);
             task->image = std::move(image);
             task->mode = mode;
+            task->srgb = srgb;
             task->bc7 = bc7;
             if (!m_cacheFolder.empty()) task->cacheFile = textureCachePath(m_cacheFolder, cacheName, key);
             if (!m_compressor) m_compressor = std::make_unique<TextureCompressor>();
@@ -381,19 +383,20 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         };
         if (f.kind == Kind::Texture) {
             account(job.texture, f.width, f.height);
-            if (!job.texture.valid()) compress(std::move(job.image), -1, nullptr, f.name, job.cacheKey);
+            if (!job.texture.valid()) compress(std::move(job.image), true, -1, nullptr, f.name, job.cacheKey);
             return;
         }
         const auto model = m_assets.model(f.model);
         if (!model) return;
         for (size_t i = 0; i < model->textures.size(); ++i) {
             if (model->textures[i].id == 0) continue;   // not sampled, so never uploaded
-            const Image& image = model->data.textures[i].image;
+            const ModelTexture& texture = model->data.textures[i];
             const TextureData& ready = job.modelTextures[i];
-            account(ready, image.width, image.height);
+            account(ready, texture.image.width, texture.image.height);
             if (!ready.valid())
-                compress(image, static_cast<int>(i), model, f.name + "#" + std::to_string(i),
-                         textureCacheKey(image.rgba, mode));
+                compress(
+                    texture.image, texture.srgb, static_cast<int>(i), model, f.name + "#" + std::to_string(i),
+                    textureCacheKey(texture.image.rgba, mode, texture.srgb));
         }
     };
 
@@ -418,18 +421,18 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                         uploaded->meshes.push_back(
                             mesh.skinned() ? m_renderer->createSkinnedMesh(mesh.data.vertices, mesh.data.indices, mesh.skin)
                                            : m_renderer->createMesh(mesh.data));
-                    // Only base-color maps are currently sampled. Other decoded maps
-                    // and PBR factors remain in ModelData for the lighting milestone.
+                    // Every map a material samples: colour maps as sRGB, data maps linear.
                     uploaded->textures.resize(uploaded->data.textures.size());
-                    for (const auto& material : uploaded->data.materials) {
-                        const int index = material.baseColorTexture;
-                        if (index < 0 || uploaded->textures[index].id != 0) continue;
-                        const auto& image = uploaded->data.textures[index].image;
-                        uploaded->textures[index] =
-                            job.modelTextures[index].valid()
-                                ? m_renderer->createTexture(job.modelTextures[index])
-                                : m_renderer->createTexture(image.width, image.height, image.rgba);
-                    }
+                    for (const auto& material : uploaded->data.materials)
+                        for (const int index : materialTextures(material)) {
+                            if (index < 0 || uploaded->textures[index].id != 0) continue;
+                            const auto& texture = uploaded->data.textures[index];
+                            uploaded->textures[index] =
+                                job.modelTextures[index].valid()
+                                    ? m_renderer->createTexture(job.modelTextures[index])
+                                    : m_renderer->createTexture(
+                                          texture.image.width, texture.image.height, texture.image.rgba, texture.srgb);
+                        }
                     // Simpler versions of each mesh for distant draws (MeshOptimise.h).
                     for (size_t i = 0; i < uploaded->meshes.size(); ++i) {
                         const MeshData& mesh = uploaded->data.meshes[i].data;

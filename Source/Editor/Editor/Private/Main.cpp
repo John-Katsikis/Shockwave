@@ -25,6 +25,7 @@
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
 //   --select N             select the Nth entity of the scene (screenshots)
+//   --circuit path         open a .swcircuit (inside Content) in the Circuits window
 //   --frames N             quit after N frames (smoke tests)
 int main(int argc, char** argv) {
     try {
@@ -79,12 +80,15 @@ int main(int argc, char** argv) {
                 gpu = value();
             else if (arg == "--play")
                 options.playOnStart = true;
+            else if (arg == "--circuit")
+                options.circuitOnStart = value();
             else if (arg == "--help") {
-                std::puts("editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
-                          "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
-                          "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
-                          "       [--play] [--select N]\n"
-                          "       [--frames N]");
+                std::puts(
+                    "editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
+                    "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
+                    "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
+                    "       [--play] [--select N] [--circuit path]\n"
+                    "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;

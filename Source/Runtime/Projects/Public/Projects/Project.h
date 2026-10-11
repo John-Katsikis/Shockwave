@@ -16,6 +16,9 @@ namespace shockwave {
 //     Saved/                per-user editor state, autosaves, screenshots; not versioned
 struct Project {
     std::filesystem::path file, root, startupScene, assetFolder, sceneFolder, theme;
+    // The game circuit (docs/Circuits.md): a .swcircuit inside the assets folder that runs
+    // for the whole game, alongside the C++ GameMode. Empty for none (game_circuit).
+    std::filesystem::path gameCircuit;
     std::string name, gameModule;
     double tickRate = 60;
     int width = 1280, height = 720;
@@ -36,6 +39,9 @@ struct Project {
     // Project-relative with forward slashes ("Scenes/main.swscene"); paths outside the
     // project come back absolute.
     std::string relative(const std::filesystem::path& path) const;
+    // gameCircuit as circuits name it, inside the assets folder ("Circuits/Game.swcircuit");
+    // empty when there's none.
+    std::string gameCircuitPath() const;
 };
 // "off", "low", "medium", "high", "ultra" for 0..4; parse returns -1 for anything else.
 const char* shadowQualityName(int quality);

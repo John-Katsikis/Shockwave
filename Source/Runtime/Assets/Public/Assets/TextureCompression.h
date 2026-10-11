@@ -32,7 +32,8 @@ bool isKtx2File(const std::filesystem::path& path);
 // ---- The texture cache: compressed copies of a project's textures between runs ----
 // Files are named after the asset and a key made from its source bytes and how it's
 // compressed, so an edited texture or a changed setting never picks up a stale copy.
-uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode);
+// srgb: whether it's encoded as colour or data (encodeKtx2).
+uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode, bool srgb = true);
 // <folder>/<asset name with / as _>-<key>.ktx2. Model textures pass "model.glb#2".
 std::filesystem::path textureCachePath(const std::filesystem::path& folder, std::string_view asset, uint64_t key);
 // Writes through a temporary file, then removes the asset's older copies.

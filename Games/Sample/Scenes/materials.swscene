@@ -1,0 +1,60 @@
+# Shockwave scene
+shockwave_scene 2
+
+# Material maps: models/pbr-maps.glb has normal, metallic-roughness, occlusion and
+# emissive maps (bevelled tiles, polished metal next to rough clay, a glowing row of
+# grooves), a gold ball that only uses factors, and a wall with mirrored texture
+# coordinates. Normals in the viewport's Shading menu shows the normal maps alone.
+
+entity "Environment"
+  Environment
+    sky_color 0.32 0.4 0.55 1
+    ground_color 0.2 0.17 0.14 1
+    ambient_intensity 0.5
+end
+
+entity "Floor"
+  Transform
+    scale 30 1 30
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.7 0.7 0.7 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 2.4 6.2
+    rotation -14 0 0
+  Camera
+    fov 55
+    near_plane 0.1
+    primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -38 -35 0
+  Light
+    type Directional
+    color 1 0.92 0.8 1
+    intensity 2.5
+    shadow_softness 0.3
+end
+
+entity "Fill light"
+  Transform
+    position -1.5 2.5 2.5
+  Light
+    type Point
+    color 0.6 0.75 1 1
+    intensity 6
+    range 8
+end
+
+entity "Material demo"
+  Transform
+  ModelRenderer
+    model models/pbr-maps.glb
+end

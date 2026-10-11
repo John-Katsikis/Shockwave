@@ -1,0 +1,44 @@
+shockwave_circuit 1
+# The sample's game circuit (game_circuit in Sample.swproject). It runs once for the whole
+# game, after the C++ GameMode's hooks, and counts pulses. pulses goes into save games.
+
+var pulses Int 0
+
+node start Event.BeginPlay
+
+node hello Debug.Print
+  exec start.then
+  in text = "Game circuit running"
+
+node pulse Event.ActionPressed
+  in action = "pulse"
+
+node count Set.pulses
+  exec pulse.then
+  in value = next.result
+
+node next Math.AddInt
+  in a = pulses
+  in b = 1
+
+node report Debug.Print
+  exec count.then
+  in text = message.result
+
+node message Text.Append
+  in a = "Pulses: "
+  in b = number.result
+
+node number Text.FromInt
+  in value = pulses
+
+editor
+  start -420 0
+  hello -160 0
+  pulse -420 160
+  next -420 280
+  count -160 160
+  number -160 320
+  message 60 320
+  report 300 160
+end

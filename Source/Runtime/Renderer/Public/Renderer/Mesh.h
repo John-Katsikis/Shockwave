@@ -9,14 +9,17 @@
 namespace shockwave {
 
 // The engine's standard vertex. Shaders read it straight from GPU memory (vertex pulling),
-// so its layout here is the layout in the shader: tightly packed, 48 bytes.
+// so its layout here is the layout in the shader: tightly packed, 64 bytes.
 struct Vertex {
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
     glm::vec2 uv{0.0f};
     glm::vec4 color{1.0f};
+    // For normal maps: xyz points along +u, w is +1 or -1 so that cross(normal, xyz) * w
+    // points up the texture (glTF's convention). Model import fills it in.
+    glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 };
-static_assert(sizeof(Vertex) == 48, "Vertex must match the shader's scalar layout");
+static_assert(sizeof(Vertex) == 64, "Vertex must match the shader's scalar layout");
 
 // Which joints move a vertex of a skinned mesh, and how much (Renderer::createSkinnedMesh).
 // Joints index the mesh's own joint list, the matrices given to drawSkinnedMesh. Weights

@@ -663,6 +663,14 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
         spawnModel(name, at);
     }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
+            kCircuitPayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+        const Entity target = pick(mouse, pos, size);
+        if (payload->IsDelivery())
+            attachCircuit(target, static_cast<const char*>(payload->Data));
+        else
+            drawOutline(target, pos, size, accentU32());
+    }
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
             kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
         const Entity target = pick(mouse, pos, size);
         if (payload->IsDelivery()) {

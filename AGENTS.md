@@ -46,6 +46,24 @@ When you write or edit `.swscene` or `.swproject` files:
 `docs/Projects.md` (section "Authoring with tools and AI") explains this workflow in
 more detail.
 
+## Edit circuits
+
+Circuits are visual scripts: `.swcircuit` files in Content (`docs/Circuits.md`). An entity
+runs one through its `Circuit` component; the `.swproject`'s `game_circuit` runs for the
+whole game. Nodes are listed in `docs/CircuitNodes.md`; regenerate it after adding nodes or
+components:
+
+```sh
+build/bin/player --node-schema docs/CircuitNodes.md
+```
+
+`build/bin/player --check` compiles every circuit and reports problems as file:line. To see
+what a circuit compiles to:
+
+```sh
+build/bin/player --circuit Circuits/Spinner.swcircuit --dump
+```
+
 ## Edit controls
 
 Controls live in `Config/Input.swinput`. Follow `docs/InputSchema.md`, and regenerate it

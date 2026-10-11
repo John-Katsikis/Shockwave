@@ -46,6 +46,70 @@ void imported(const fs::path& root, const char* filename) {
     check(instances == 2 && near(m.bounds.max.y, 3), "repeated mesh instances preserved");
     check(near(m.meshes[0].data.vertices[0].uv.y, 0), "glTF texture orientation");
 }
+// pbr-maps.glb (generate_pbr.py): every glTF map, with tangents made on import for the
+// cube and taken from the file for the wall, whose texture is mirrored.
+void materialMaps(const fs::path& root) {
+    ModelData m;
+    std::string error;
+    check(loadModel(root / "pbr-maps.glb", m, error), error.c_str());
+    if (!error.empty()) return;
+    const ModelMaterial* tiles = nullptr;
+    const ModelMaterial* gold = nullptr;
+    for (const auto& material : m.materials) {
+        if (material.name == "Tiles") tiles = &material;
+        if (material.name == "Polished gold") gold = &material;
+    }
+    check(tiles && gold, "material names");
+    if (!tiles || !gold) return;
+    check(
+        tiles->baseColorTexture >= 0 && tiles->normalTexture >= 0 && tiles->metallicRoughnessTexture >= 0 &&
+            tiles->emissiveTexture >= 0 && tiles->occlusionTexture >= 0,
+        "every material map imported, occlusion included");
+    check(
+        tiles->occlusionTexture == tiles->metallicRoughnessTexture,
+        "a shared occlusion-metallic-roughness image is read once");
+    if (tiles->baseColorTexture >= 0 && tiles->normalTexture >= 0 && tiles->emissiveTexture >= 0 &&
+        tiles->metallicRoughnessTexture >= 0)
+        check(
+            m.textures[tiles->baseColorTexture].srgb && m.textures[tiles->emissiveTexture].srgb &&
+                !m.textures[tiles->normalTexture].srgb && !m.textures[tiles->metallicRoughnessTexture].srgb,
+            "colour maps are sRGB, data maps linear");
+    check(
+        near(tiles->normalScale, 1) && near(tiles->occlusionStrength, 1) && near(tiles->emissive.x, 1), "map factors");
+    check(near(gold->metallic, 1) && near(gold->roughness, .25f) && gold->normalTexture < 0, "factor-only material");
+    for (const auto& warning : m.warnings) check(warning.find("later milestone") == std::string::npos, warning.c_str());
+
+    bool orthonormal = true, cubeFront = false, wall = false;
+    for (const auto& mesh : m.meshes)
+        for (const auto& v : mesh.data.vertices) {
+            const glm::vec3 t(v.tangent);
+            orthonormal &= near(glm::length(t), 1) && std::abs(glm::dot(t, v.normal)) < 1e-3f &&
+                           std::abs(std::abs(v.tangent.w) - 1) < 1e-6f;
+            // The cube's +Z face runs u along +X; the wall's texture runs along -X.
+            if (mesh.name == "Tile cube" && near(v.normal.z, 1))
+                cubeFront = near(v.tangent.x, 1) && near(v.tangent.w, 1);
+            if (mesh.name == "Mirrored wall") wall = near(v.tangent.x, -1) && near(v.tangent.w, -1);
+        }
+    check(orthonormal, "tangents are unit length, across the surface, with a handedness of 1 or -1");
+    check(cubeFront, "tangents made from texture coordinates");
+    check(wall, "the file's tangents and their handedness are kept");
+    // Bitangents point up the texture: towards smaller v.
+    for (const auto& mesh : m.meshes) {
+        if (mesh.name != "Tile cube") continue;
+        const auto& v = mesh.data.vertices;
+        bool up = true;
+        for (size_t i = 0; i + 2 < mesh.data.indices.size(); i += 3) {
+            const Vertex& a = v[mesh.data.indices[i]];
+            const glm::vec3 b = glm::cross(a.normal, glm::vec3(a.tangent)) * a.tangent.w;
+            for (int k = 1; k < 3; ++k) {
+                const Vertex& c = v[mesh.data.indices[i + k]];
+                const float along = glm::dot(c.position - a.position, b), dv = c.uv.y - a.uv.y;
+                if (std::abs(dv) > 1e-4f) up &= (along > 0) == (dv < 0);
+            }
+        }
+        check(up, "bitangents point up the texture");
+    }
+}
 void scenes(const fs::path& file) {
     Assets assets;
     auto first = std::make_shared<ModelAsset>();
@@ -85,6 +149,7 @@ int main(int argc, char** argv) {
     check(!isModelFile("a.bin") && !isModelFile("a.png") && !isModelFile("a.mtl"), "dependencies are not model assets");
     imported(root, "parts.gltf");
     imported(root, "parts.glb");
+    materialMaps(root);
     ModelData quad;
     std::string error;
     check(loadModel(root / "quad.obj", quad, error), error.c_str());

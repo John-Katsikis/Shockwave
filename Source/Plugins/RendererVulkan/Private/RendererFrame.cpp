@@ -20,6 +20,12 @@ void VulkanRenderer::Impl::drawMesh(
     command.data.roughness = material.roughness;
     command.data.metallic = material.metallic;
     command.data.emissive = material.emissive;
+    command.data.normalTexture = material.normalTexture.id;
+    command.data.metallicRoughnessTexture = material.metallicRoughnessTexture.id;
+    command.data.emissiveTexture = material.emissiveTexture.id;
+    command.data.occlusionTexture = material.occlusionTexture.id;
+    command.data.normalScale = material.normalScale;
+    command.data.occlusionStrength = material.occlusionStrength;
     command.data.pad = 0;
     command.data.tint = tint;
     command.data.uvScale = material.uvScale;

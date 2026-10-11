@@ -4,6 +4,7 @@
 
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
+#include <Circuits/Circuit.h>
 #include <Engine/Prefab.h>
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
@@ -39,6 +40,7 @@ void Editor::onStart() {
     shockwave::registerGameUIComponents();
     shockwave::registerNavigationComponents();
     shockwave::registerAnimationComponents();
+    shockwave::registerCircuitComponents();
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
     shockwave::registerEffectsComponents();
     m_effects = std::make_unique<shockwave::Effects>(&engine());
@@ -97,6 +99,7 @@ void Editor::onStart() {
         select(m_world.entityAt(static_cast<size_t>(m_options.selectOnStart)));
     }
     if (m_hasProject && m_options.playOnStart) play();
+    if (m_hasProject && !m_options.circuitOnStart.empty()) openCircuit(m_options.circuitOnStart);
 }
 
 void Editor::onShutdown() {
@@ -199,6 +202,7 @@ void Editor::onGui() {
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();
+    if (m_showCircuits) drawCircuitsWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
