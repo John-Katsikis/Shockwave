@@ -2,7 +2,15 @@
 
 #include <RHI/Context.h>
 
+#include <Core/Log.h>
+
+#include <string>
+
 namespace shockwave::vk {
+
+namespace {
+SW_LOG_CATEGORY(LogVulkan);
+}   // namespace
 
 Swapchain::Swapchain(const Context& context, uint32_t width, uint32_t height, bool vsync)
     : m_context(context), m_vsync(vsync) {
@@ -40,14 +48,28 @@ void Swapchain::build(uint32_t width, uint32_t height) {
             .add_fallback_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             .add_fallback_present_mode(VK_PRESENT_MODE_FIFO_KHR);
     }
-    if (m_context.presentWait() == Context::PresentWait::Version2) {
+    const bool presentWait2 = m_context.presentWait() == Context::PresentWait::Version2;
+    if (presentWait2) {
         builder.set_create_flags(static_cast<VkSwapchainCreateFlagBitsKHR>(
             VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR | VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR));
     }
 
     auto result = builder.build();
+    if (!result && presentWait2) {
+        // The surface said it supports present wait 2, but the driver refused it. Frame
+        // pacing falls back to CPU timing rather than failing to start.
+        SW_LOG(
+            LogVulkan, Warning,
+            "the driver refused a swapchain with present wait 2 (VkResult {}); pacing from CPU timing instead",
+            static_cast<int>(result.vk_result()));
+        m_context.disablePresentWait();
+        builder.set_create_flags(static_cast<VkSwapchainCreateFlagBitsKHR>(0));
+        result = builder.build();
+    }
     if (!result) {
-        throw std::runtime_error("Creating the swapchain failed: " + result.error().message());
+        throw std::runtime_error(
+            "Creating the swapchain failed: " + result.error().message() + " (VkResult " +
+            std::to_string(static_cast<int>(result.vk_result())) + ")");
     }
     vkb::destroy_swapchain(m_swapchain);
     m_swapchain = result.value();
