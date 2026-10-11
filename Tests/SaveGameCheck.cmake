@@ -1,0 +1,28 @@
+# The save game command line, end to end: --save, --saves, --check and --load on the
+# sample project, with the null renderer so no GPU is needed. Xvfb is installed in CI.
+set(slot "ctest-save-check")
+get_filename_component(root "${PROJECT}" DIRECTORY)
+set(file "${root}/Saved/SaveGames/${slot}.swsave")
+function(run expected message)
+    execute_process(COMMAND "${XVFB}" -a "${PLAYER}" "${PROJECT}" --renderer null ${ARGN}
+        RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)
+    if(NOT result EQUAL expected)
+        file(REMOVE "${file}")
+        message(FATAL_ERROR "player ${ARGN}: expected exit ${expected}, got ${result}: ${output}\n${errors}")
+    endif()
+    if(NOT "${output}${errors}" MATCHES "${message}")
+        file(REMOVE "${file}")
+        message(FATAL_ERROR "player ${ARGN}: missing '${message}' in: ${output}\n${errors}")
+    endif()
+endfunction()
+run(0 "Wrote Saved/SaveGames/${slot}.swsave" --save ${slot} --frames 10)
+run(0 "${slot} " --saves)
+run(0 "ok Saved/SaveGames/${slot}.swsave" --check "${file}")
+run(0 "started from save" --load ${slot} --frames 5)
+# A broken file is reported by --check and refused by --load.
+file(READ "${file}" text)
+string(REPLACE "entity_ids 0 " "entity_ids 0 0 " text "${text}")
+file(WRITE "${file}" "${text}")
+run(1 "entity_ids lists" --check "${file}")
+run(1 "entity_ids lists" --load ${slot} --frames 5)
+file(REMOVE "${file}")

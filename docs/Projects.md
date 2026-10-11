@@ -193,6 +193,7 @@ In `SW_GAME`, `Type` is either the `GameMode` every scene plays with, or your ow
 | `input()` | The engine's input. It works without a window too, where nothing is ever pressed. |
 | `audio()` | The session's audio. |
 | `physics()` | The session's physics. |
+| `saves()` | Saving and loading the game. See [Save games](SaveGames.md). |
 | `ui()` | The session's menus and HUDs. See [Game UI](GameUI.md). |
 | `effects()` | The session's particle effects. See [Particle effects](Effects.md). |
 | `animation()` | Switch a character's animation clip, find its joints. See [Animation](Animation.md). |

@@ -13,6 +13,7 @@
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <GameFramework/SaveGame.h>
 #include <Input/InputBinding.h>
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
@@ -65,6 +66,18 @@ void Player::onStart() {
     }
     if (!importProblems.empty()) throw std::runtime_error("Asset " + importProblems.front());
     if (!m_tool.scene.empty()) m_project.startupScene = m_tool.scene;
+    // --load: a slot, or a file. Play starts in the scene the save came from, so its
+    // GameMode runs, unless --scene says otherwise.
+    fs::path loadFile;
+    if (!m_tool.load.empty()) {
+        loadFile = fs::path(m_tool.load).extension() == ".swsave" ? fs::absolute(m_tool.load)
+                                                                  : saveFolder() / (m_tool.load + ".swsave");
+        shockwave::SaveInfo info;
+        std::string error;
+        if (!shockwave::readSaveInfo(loadFile, info, error)) throw std::runtime_error(error);
+        if (m_tool.scene.empty() && !info.scene.empty() && fs::exists(m_project.root / info.scene))
+            m_project.startupScene = m_project.root / info.scene;
+    }
     engine().renderer().setDebugView(m_tool.view);
     engine().renderer().setShadowQuality(
         static_cast<shockwave::ShadowQuality>(m_tool.shadows >= 0 ? m_tool.shadows : m_project.shadowQuality));
@@ -95,7 +108,17 @@ void Player::onStart() {
     m_ui->setInputEnabled(true);
     m_ui->setPreview(m_tool.uiPreview);
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
+    m_session->setSaveFolder(saveFolder(), m_project.relative(m_project.startupScene));
     m_session->start();
+    if (!loadFile.empty()) {
+        // Read now; the world is swapped in before the first tick.
+        shockwave::SaveGames& saves = *m_session->saves();
+        saves.loadFile(loadFile);
+        saves.wait();
+        if (!saves.lastError().empty()) throw std::runtime_error(saves.lastError());
+        m_session->frame(0);
+        SW_LOG(shockwave::LogGame, Info, "started from save {}", m_project.relative(loadFile));
+    }
     if (!m_session->physics()->diagnostics().empty()) {
         const auto& problem = m_session->physics()->diagnostics().front();
         throw std::runtime_error(
@@ -130,6 +153,21 @@ void Player::onFrame(double dt) {
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
+    if (!m_tool.save.empty() && ++m_saveFrames == m_tool.saveFrame) saveAndQuit();
+}
+
+void Player::saveAndQuit() {
+    shockwave::SaveGames& saves = *m_session->saves();
+    if (saves.save(m_tool.save)) saves.wait();
+    if (const std::string error = saves.lastError(); !error.empty()) {
+        std::fprintf(stderr, "Player: %s\n", error.c_str());
+        m_exitCode = 1;
+    } else {
+        std::printf(
+            "Wrote %s (%zu entities, frame %d)\n", m_project.relative(saves.fileFor(m_tool.save)).c_str(),
+            m_world.entityCount(), m_saveFrames);
+    }
+    engine().quit();
 }
 
 void Player::benchmark(double dt) {

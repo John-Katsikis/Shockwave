@@ -15,6 +15,7 @@
 namespace shockwave {
 
 class Engine;
+class SaveGames;
 class Input;
 class PhysicsWorld;
 class AudioWorld;
@@ -55,6 +56,8 @@ struct GameContext {
     // prefab puts it or at position. An empty EntityRef (false) if it can't be loaded.
     EntityRef spawn(std::string_view prefab) const;
     EntityRef spawn(std::string_view prefab, const glm::vec3& position) const;
+    // Saving and loading the game (docs/SaveGames.md). Always there during Play.
+    SaveGames& saves() const;
 };
 
 class GameMode {
@@ -70,6 +73,12 @@ public:
     virtual void frame(GameContext&, double frameDt) { (void)frameDt; }
     // Play is stopping; the authored scene is restored right after.
     virtual void endPlay(GameContext&) {}
+    // Main thread, just before a save game snapshots the world: put state that isn't in
+    // components into game.saves().set(...).
+    virtual void beforeSave(GameContext&) {}
+    // Main thread, right after a save game replaced the world (physics is rebuilt
+    // already): read back game.saves() values, refresh UI.
+    virtual void afterLoad(GameContext&) {}
 };
 
 }   // namespace shockwave

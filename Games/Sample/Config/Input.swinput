@@ -5,6 +5,8 @@ deadzone 0.15
 
 bind pulse key Space
 bind pulse pad south
+bind quick_save key F5
+bind quick_load key F9
 
 # Flight sticks, wheels and pedals bind by part of their name (see `player --devices`):
 # bind pulse joy "T.16000M" button 0

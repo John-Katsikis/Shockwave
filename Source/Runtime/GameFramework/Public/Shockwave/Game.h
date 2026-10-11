@@ -19,6 +19,7 @@
 #include <Engine/Prefab.h>
 #include <Engine/Schedule.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/SaveGame.h>
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
 #include <Navigation/Navigation.h>

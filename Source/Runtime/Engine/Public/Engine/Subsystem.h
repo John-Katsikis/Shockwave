@@ -52,6 +52,21 @@ public:
         throw std::logic_error(std::string("no subsystem ") + typeid(T).name());
     }
 
+    // Destroys the T there is and creates a new one in its place, keeping its spot in
+    // the destruction order. Adds T when there's none yet.
+    template <class T, class... Args>
+    T& replace(Args&&... args) {
+        for (Entry& entry : m_entries) {
+            if (entry.type != std::type_index(typeid(T))) continue;
+            entry.subsystem.reset();   // the old one goes before the new one is built
+            auto owned = std::make_unique<T>(std::forward<Args>(args)...);
+            T& result = *owned;
+            entry.subsystem = std::move(owned);
+            return result;
+        }
+        return add<T>(std::forward<Args>(args)...);
+    }
+
     void clear() {
         while (!m_entries.empty()) m_entries.pop_back();   // newest first
     }

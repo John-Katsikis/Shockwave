@@ -29,6 +29,11 @@ struct Tool {
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema: "-" is standard output
     std::vector<std::string> animationModels;   // --animations: models inside Content; empty: all
+    // Save games (docs/SaveGames.md).
+    bool listSaves = false;   // --saves, with --json for a file
+    std::string load;   // --load: a slot name or a .swsave file, loaded as Play starts
+    std::string save;   // --save: play --frames N (default 30), save to this slot, quit
+    int saveFrame = 30;
     // Playing, these make runs reproducible and checkable without a person watching.
     fs::path scene;   // --scene: instead of the project's startup scene
     fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
@@ -51,6 +56,8 @@ int writeInputSchema(const fs::path& out);   // docs/InputSchema.md; "-" for std
 // Lists connected controllers, then for `seconds` prints each input pressed as the
 // binding text that would bind it ("pad south", "joy \"G29\" axis 2 full").
 int listDevices(double seconds);
+// --saves: the project's save games, newest first; json, when set, gets them as JSON too.
+int listSaves(const shockwave::Project& project, const fs::path& json);
 
 class Player final : public shockwave::Application {
 public:
@@ -70,6 +77,9 @@ private:
     // --benchmark: warms up, measures, prints the frame statistics and quits.
     void benchmark(double dt);
     void reportBenchmark();
+    // --save: saves to the slot, waits for the file, reports and quits.
+    void saveAndQuit();
+    fs::path saveFolder() const { return m_project.statePath() / "SaveGames"; }
 
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);
@@ -107,6 +117,7 @@ private:
     size_t m_uiNavFrame = 0;
     bool m_screenshotRequested = false;
     double m_benchmarkTime = 0;
+    int m_saveFrames = 0;   // frames played, for --save
     bool m_benchmarkMeasuring = false;
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;

@@ -6,7 +6,9 @@
 // exactly, so nothing done while playing sticks. The player uses the same class.
 
 #include <GameFramework/GameInstance.h>
+#include <GameFramework/SaveGame.h>
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 
@@ -37,6 +39,14 @@ public:
     EffectsWorld* effects() const;   // null while editing
     AnimationWorld* animation() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
+    SaveGames* saves() const;   // null while editing
+    // Where game.saves() keeps its slots (usually <project>/Saved/SaveGames), and the
+    // scene's project-relative name to note in them. Set before start(); without it
+    // saving is off.
+    void setSaveFolder(std::filesystem::path folder, std::string scene = {}) {
+        m_saveFolder = std::move(folder);
+        m_saveScene = std::move(scene);
+    }
     UIWorld* ui() const;   // null while editing
     NavigationWorld* navigation() const;   // null while editing
     // Before start: false mixes into AudioWorld::mixer().render() instead of a device,
@@ -45,12 +55,15 @@ public:
 
 private:
     void tearDown();
+    void applyLoadedSave();
 
     GameInstance& m_instance;
     SubsystemCollection m_subsystems;
     GameContext m_context;
     std::unique_ptr<GameMode> m_mode;
     std::optional<World> m_snapshot;
+    std::filesystem::path m_saveFolder;   // setSaveFolder
+    std::string m_saveScene;
     Schedule m_schedule;
     State m_state = State::Editing;
     uint64_t m_ticks = 0;

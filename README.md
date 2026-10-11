@@ -112,6 +112,8 @@ Each item links to the guide that covers it in detail.
 - **Use any controller.** Gamepads, flight sticks, wheels and more, bound to named
   actions. See [Controllers](#use-controllers) below and the
   [input schema](docs/InputSchema.md).
+- **Save the game.** Save and load the whole running world to slots, from game code, the
+  editor or the command line. See [Save games](docs/SaveGames.md).
 - **Keep frames smooth.** A precise frame limiter, a low-latency mode and frame
   statistics. See [Frame pacing](docs/FramePacing.md).
 - **Use the right GPU.** Shockwave says which GPU it picked and why, warns when your screen
