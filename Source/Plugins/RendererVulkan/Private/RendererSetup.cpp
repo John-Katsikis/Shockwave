@@ -44,8 +44,11 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroyCommandPool(device, uploadPool, nullptr);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
+    destroyDisplayUiView();
     destroyImage(displayColor);
     destroyShadowMaps();
+    destroyUiPipeline();
+    for (Frame& f : frames) destroyUiBuffers(f);
     vkDestroyPipeline(device, shadowPipeline, nullptr);
     vkDestroyPipelineLayout(device, shadowLayout, nullptr);
     vkDestroySampler(device, shadowSampler, nullptr);
@@ -85,13 +88,14 @@ void VulkanRenderer::Impl::checkBlitSupport() {
 
 vk::Image VulkanRenderer::Impl::createImage(
     VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect, uint32_t mipLevels,
-    bool dedicated) {
+    bool dedicated, VkImageCreateFlags flags) {
     vk::Image image;
     image.extent = extent;
     image.format = format;
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = flags;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
     imageInfo.extent = {extent.width, extent.height, 1};
@@ -141,7 +145,8 @@ void VulkanRenderer::Impl::createRenderTargets() {
     displayColor = createImage(
         out, kDisplayFormat,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+        VK_IMAGE_ASPECT_COLOR_BIT, 1, true, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
+    createDisplayUiView();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
     // The tonemap pass reads the scene through the bindless table like any texture.
@@ -171,6 +176,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     vkDeviceWaitIdle(context->device());
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
+    destroyDisplayUiView();
     destroyImage(displayColor);
     createRenderTargets();
     needsSceneResize = false;

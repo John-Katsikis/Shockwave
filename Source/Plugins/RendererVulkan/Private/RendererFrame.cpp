@@ -60,6 +60,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyRenderFinishedSemaphores();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
+    destroyDisplayUiView();
     destroyImage(displayColor);
     swapchain->recreate(window.pixelWidth(), window.pixelHeight());
     createRenderTargets();
@@ -70,6 +71,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
 
 bool VulkanRenderer::Impl::beginFrame() {
     clearDrawLists();
+    uiCommands.clear();
     {
         std::lock_guard lock(lightMutex);
         lights.clear();
@@ -424,6 +426,10 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
     graph.addPass(
         "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
         [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+    if (!uiCommands.empty()) {
+        graph.addPass(
+            "ui", {{display, ImageUse::ColorAttachment}}, [this, &f](VkCommandBuffer cmd) { recordUi(cmd, f); });
+    }
     if (screenshotRequested) {
         graph.addPass("screenshot readback", {{display, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
             recordScreenshotCopy(cmd);

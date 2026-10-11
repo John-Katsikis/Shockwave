@@ -181,6 +181,13 @@ public:
     // The current backend's library, to watch for rebuilds; empty when it's built in.
     const std::filesystem::path& backendFile() const;
 
+    // ---- Game UI overlay (GameUI module, RenderTypes.h) ----
+    // The size in pixels UI draws at: the editor viewport, or the window. Main thread.
+    glm::uvec2 uiOutputSize() const;
+    // Draws this frame's UI over the tonemapped scene; screenshots include it. Call from
+    // Application::onRender, on the main thread. The list is copied before it returns.
+    void drawUi(const UiDrawList& list);
+
 private:
     struct State;
     std::unique_ptr<State> m;

@@ -4,6 +4,7 @@
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/Systems.h>
+#include <GameUI/UIWorld.h>
 #include <Physics/Physics.h>
 
 #include <cmath>
@@ -17,6 +18,8 @@ AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
 AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }
 
 PhysicsWorld& GameContext::physics() const { return subsystems.get<PhysicsWorld>(); }
+UIWorld& GameContext::ui() const { return subsystems.get<UIWorld>(); }
+UIWorld* PlaySession::ui() const { return m_subsystems.find<UIWorld>(); }
 
 Input& GameContext::input() const {
     if (engine) return engine->input();
@@ -54,6 +57,7 @@ void PlaySession::start() {
         m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr);
         if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
         audio()->synchronize();
+        m_subsystems.add<UIWorld>(world, GameUI::forEngine(m_context.engine));
         m_mode = m_instance.createGameMode(world);
         if (!m_mode) throw std::runtime_error("the GameInstance made no GameMode");
         m_schedule = Schedule{};

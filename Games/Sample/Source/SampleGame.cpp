@@ -1,7 +1,8 @@
 // The sample project's game code: a ColorPulse component and a GameMode that gives the
 // Crate one during Play, so you can see gameplay code running in the editor. Pressing
 // "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and rumbles the
-// pad; the binding lives in Config/Input.swinput.
+// pad; the binding lives in Config/Input.swinput. The HUD (Content/UI/hud.rml) counts the
+// pulses and has a Pulse button that does the same.
 
 #include <Shockwave/Game.h>
 
@@ -36,18 +37,29 @@ public:
     void beginPlay(GameContext& game) override {
         if (EntityRef crate = game.find("Crate"); crate.has<MeshRenderer>())
             crate.add(ColorPulse{.base = crate.get<MeshRenderer>().tint});
+        // The HUD's {{pulses}}, and its Pulse button (onclick="pulse").
+        m_pulses = 0;
+        game.ui().set("pulses", m_pulses);
+        game.ui().on("pulse", [this, &game](const UIEvent&) { pulse(game); });
         SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", game.world.entityCount());
     }
 
     // Once per frame on the main thread.
     void frame(GameContext& game, double) override {
-        if (!game.input().wasActionPressed("pulse")) return;
-        game.world.each<ColorPulse>([](ColorPulse& pulse) { pulse.flash = 1.0f; });
-        game.input().rumble(0.3f, 0.8f, 0.2);
-        game.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
+        if (game.input().wasActionPressed("pulse") && !game.ui().capturesInput()) pulse(game);
     }
 
     void endPlay(GameContext&) override { SW_LOG(LogGame, Info, "Sample gameplay stopped"); }
+
+private:
+    void pulse(GameContext& game) {
+        game.world.each<ColorPulse>([](ColorPulse& pulse) { pulse.flash = 1.0f; });
+        game.input().rumble(0.3f, 0.8f, 0.2);
+        game.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
+        game.ui().set("pulses", ++m_pulses);
+    }
+
+    int m_pulses = 0;
 };
 
 SW_GAME("sample", SampleGame)

@@ -1,0 +1,16 @@
+<rml>
+<head>
+    <title>Sample HUD</title>
+    <link type="text/rcss" href="hud.rcss"/>
+</head>
+<!-- data-model="game" binds {{name}} to values game code sets with game.ui().set(). -->
+<body data-model="game">
+    <div class="panel">
+        <h1>SHOCKWAVE SAMPLE</h1>
+        <span id="pulses">{{pulses}}</span>
+        <span class="hint" id="hint">pulses. Press Space or click:</span>
+        <!-- onclick names a command; the game reacts with game.ui().on("pulse", ...). -->
+        <button id="pulse" onclick="pulse">Pulse</button>
+    </div>
+</body>
+</rml>

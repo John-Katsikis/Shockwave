@@ -27,6 +27,7 @@ namespace player {
 
 void Player::onStart() {
     shockwave::registerAudioComponents();
+    shockwave::registerGameUIComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -39,6 +40,8 @@ void Player::onStart() {
             importProblems.push_back(
                 m_project.relative(m_project.assetFolder / change.name) + ": import failed: " + change.error);
     }
+    m_ui = std::make_unique<shockwave::GameUI>(&engine());
+    m_ui->setContentFolder(m_project.assetFolder);
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
         engine().quit();
@@ -70,6 +73,7 @@ void Player::onStart() {
     if (const auto bindings = shockwave::inputBindingsPath(m_project.root); std::filesystem::exists(bindings)) {
         if (!engine().input().loadBindingsFile(bindings, error)) throw std::runtime_error(error);
     }
+    m_ui->setInputEnabled(true);
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->start();
     if (!m_session->physics()->diagnostics().empty()) {
@@ -96,6 +100,7 @@ void Player::onFrame(double dt) {
             SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
     }
     m_session->frame(dt);
+    m_ui->update(m_world, dt);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
@@ -108,6 +113,12 @@ void Player::benchmark(double dt) {
         engine().frameStats().clear();
         m_benchmarkMeasuring = true;
         m_benchmarkTime = 0;
+    }
+    if (m_benchmarkMeasuring) {
+        const shockwave::UIStats ui = m_ui->stats();   // the previous frame's
+        m_uiUpdateMs += ui.updateMs;
+        m_uiLayoutMs += ui.layoutMs;
+        ++m_uiFrames;
     }
     if (m_benchmarkMeasuring && m_benchmarkTime >= m_tool.benchmarkSeconds) {
         reportBenchmark();
@@ -137,6 +148,11 @@ void Player::reportBenchmark() {
         s.cpuMs, s.gpuMs);
     for (const auto& pass : renderer.passTimings())
         std::printf("  pass %-24s %.3f ms\n", pass.name.c_str(), static_cast<double>(pass.gpuMs));
+    const double frames = static_cast<double>(std::max<size_t>(m_uiFrames, 1));
+    const shockwave::UIStats ui = m_ui->stats();
+    std::printf(
+        "game ui cpu:  %.3f ms update + %.3f ms layout (%u documents, %u draws, %u vertices)\n", m_uiUpdateMs / frames,
+        m_uiLayoutMs / frames, ui.visible, ui.drawCommands, ui.vertices);
     if (m_tool.benchmarkJson.empty()) return;
     std::ofstream json(m_tool.benchmarkJson, std::ios::trunc);
     auto escape = [](const std::string& text) {
@@ -163,6 +179,8 @@ void Player::reportBenchmark() {
          << "  \"jitter_ms\": " << s.jitterMs << ",\n"
          << "  \"cpu_ms\": " << s.cpuMs << ",\n"
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"
+         << "  \"ui_update_ms\": " << m_uiUpdateMs / frames << ",\n"
+         << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
          << "  \"passes\": [";
     const auto& passes = renderer.passTimings();
     for (size_t i = 0; i < passes.size(); ++i) {
@@ -183,6 +201,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
         renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
     }
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
+    if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
 }
 
 void Player::onShutdown() {
@@ -191,7 +210,9 @@ void Player::onShutdown() {
         SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());
         m_session->stop();
     }
+    m_session.reset();
     if (m_instance) m_instance->shutdown();
+    m_ui.reset();
 }
 
 void Player::takeScreenshot() {

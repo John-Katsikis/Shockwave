@@ -82,3 +82,10 @@ if(SHOCKWAVE_MODULAR)
     set_tests_properties(renderer_swap PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                          TIMEOUT 60)
 endif()
+
+# Game UI (RmlUi, FreeType, HarfBuzz) without a GPU: layout, shaping, data binding,
+# problems, hot reload and events.
+add_executable(game_ui_test GameUITest.cpp)
+target_link_libraries(game_ui_test PRIVATE Shockwave::GameUI)
+shockwave_warnings(game_ui_test)
+add_test(NAME game_ui COMMAND game_ui_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

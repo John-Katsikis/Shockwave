@@ -1,0 +1,56 @@
+/* The sample's HUD. Sizes in dp scale with the display's DPI; text is drawn at native
+   resolution, so it stays sharp at any window size. */
+body {
+    font-family: "Noto Sans";
+    font-size: 18dp;
+    color: #f2f4f8;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;   /* clicks go through to the game, except on .panel */
+}
+
+.panel {
+    position: absolute;
+    left: 24dp;
+    top: 24dp;
+    width: 280dp;
+    padding: 14dp 18dp;
+    background-color: #12161ccc;
+    border-left: 3dp #ff8c33;
+    pointer-events: auto;
+}
+
+h1 {
+    display: block;
+    font-size: 13dp;
+    font-weight: bold;
+    letter-spacing: 1.5dp;
+    color: #ff8c33;
+    margin-bottom: 6dp;
+}
+
+#pulses {
+    display: block;
+    font-size: 40dp;
+    font-weight: bold;
+    line-height: 1.1;
+}
+
+.hint {
+    display: block;
+    font-size: 14dp;
+    color: #aab3c0;
+    margin: 4dp 0 12dp;
+}
+
+button {
+    display: inline-block;
+    padding: 6dp 16dp;
+    font-size: 15dp;
+    font-weight: bold;
+    background-color: #ff8c33;
+    color: #12161c;
+    cursor: pointer;
+}
+button:hover { background-color: #ffa95e; }
+button:active { background-color: #e0731c; }

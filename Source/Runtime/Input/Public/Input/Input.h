@@ -11,6 +11,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 union SDL_Event;
@@ -96,6 +97,22 @@ enum class MouseButton : uint8_t { Left = 1, Middle = 2, Right = 3, X1 = 4, X2 =
 enum InputSources : uint8_t { KeyboardMouse = 1, Gamepads = 2, Joysticks = 4, AllInputSources = 7 };
 
 enum class GamepadType : uint8_t { Unknown, Xbox, PlayStation5, PlayStation4, PlayStation3, Switch, Steam, Other };
+
+// One raw keyboard, mouse or text event, in the order they happened this frame: for UI
+// that needs exact clicks, key repeat and typed text (GameUI). Games use actions instead.
+struct InputEvent {
+    enum class Type : uint8_t { KeyDown, KeyUp, Text, MouseDown, MouseUp, MouseMove, Wheel };
+    // Modifier keys held at the time.
+    enum Modifier : uint16_t { Shift = 1, Ctrl = 2, Alt = 4, Super = 8, CapsLock = 16, NumLock = 32 };
+    Type type = Type::KeyDown;
+    bool repeat = false;   // KeyDown: the key is held and repeating
+    uint16_t code = 0;   // KeyDown, KeyUp: a Key (USB HID code); MouseDown, MouseUp: a MouseButton
+    uint16_t modifiers = 0;
+    uint32_t window = 0;   // the SDL window id it came from (editor panels can be windows)
+    glm::vec2 position{0.0f};   // mouse events: in that window's coordinates (points)
+    float wheel = 0.0f;   // Wheel: positive is away from the user
+    uint32_t textOffset = 0, textSize = 0;   // Text: the UTF-8 text, see Input::eventText
+};
 
 // A connected controller. Gamepads are anything SDL knows the layout of (PlayStation,
 // Xbox, Switch, Steam and most third-party pads); everything else is a joystick: flight
@@ -192,6 +209,16 @@ public:
     void setMouseCaptured(bool captured);
     bool isMouseCaptured() const { return m_mouseCaptured; }
 
+    // This frame's raw events, oldest first (InputEvent). Main thread.
+    const std::vector<InputEvent>& events() const { return m_events; }
+    std::string_view eventText(const InputEvent& event) const {
+        return std::string_view(m_eventText).substr(event.textOffset, event.textSize);
+    }
+    // Text input: turns on the OS's typing support (dead keys, IME) for the window, so
+    // Text events arrive. UI turns it on while a text field has focus. Main thread.
+    void setTextInput(bool enabled);
+    bool textInput() const { return m_textInput; }
+
     // Called by the engine: beginFrame, then handleEvent for each event, then update.
     void beginFrame();
     void handleEvent(const SDL_Event& event);
@@ -249,6 +276,12 @@ private:
 
     std::mutex m_feedbackMutex;
     std::vector<Feedback> m_feedback;
+
+    // Raw events (InputEvents.cpp); cleared each frame, keeping their capacity.
+    void recordEvent(const SDL_Event& event);
+    std::vector<InputEvent> m_events;
+    std::string m_eventText;
+    bool m_textInput = false;
 };
 
 }   // namespace shockwave

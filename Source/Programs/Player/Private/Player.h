@@ -7,6 +7,7 @@
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <GameUI/GameUI.h>
 #include <Projects/Project.h>
 
 #include <filesystem>
@@ -64,6 +65,10 @@ private:
     int check(const std::vector<std::string>& importProblems);
 
     int schema();
+    // --check for game UI: a scene's UIDocuments, then every .rml in Content.
+    void checkUIDocuments(
+        shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
+        std::vector<std::string>& checkedDocuments);
 
     shockwave::Project m_project;
     Tool m_tool;
@@ -73,10 +78,13 @@ private:
     bool m_screenshotRequested = false;
     double m_benchmarkTime = 0;
     bool m_benchmarkMeasuring = false;
+    double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
+    size_t m_uiFrames = 0;
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
+    std::unique_ptr<shockwave::GameUI> m_ui;   // before the session, whose UIWorld uses it
     std::unique_ptr<shockwave::PlaySession> m_session;
 };
 

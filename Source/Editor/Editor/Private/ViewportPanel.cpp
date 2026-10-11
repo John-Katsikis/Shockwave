@@ -119,6 +119,7 @@ void Editor::drawViewport() {
     if (renderer.sceneTexture()) ImGui::Image(static_cast<ImTextureID>(renderer.sceneTexture()), size);
     const bool imageHovered = ImGui::IsItemHovered();
     const bool gameView = lookingThroughSceneCamera();
+    feedGameUIPointer(pos, size, imageHovered);
     acceptViewportDrop(pos, size);
     updateCamera(imageHovered);
 
@@ -160,7 +161,7 @@ void Editor::drawViewport() {
     // Click to select (Ctrl toggles, Shift adds). Clicks on the overlay, gizmo or view
     // cube don't count.
     if (!gameView && imageHovered && !m_looking && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-        !ImGui::IsAnyItemHovered() && !ImGuizmo::IsOver() && !ImGuizmo::IsUsingAny() &&
+        !m_gameUI->wantsMouse() && !ImGui::IsAnyItemHovered() && !ImGuizmo::IsOver() && !ImGuizmo::IsUsingAny() &&
         !ImGuizmo::IsViewManipulateHovered()) {
         Entity hit = m_prefs.showCameraIcons ? cameraIconAt(io.MousePos, pos, size) : kNullEntity;
         if (!hit.valid()) hit = pick(io.MousePos, pos, size);
@@ -268,6 +269,8 @@ void Editor::drawViewportToolbar() {
         ImGui::SeparatorText("Show");
         if (ImGui::MenuItem("Grid", "G", &m_prefs.showGrid)) m_prefsDirty = true;
         if (ImGui::MenuItem("Camera and light icons", nullptr, &m_prefs.showCameraIcons)) m_prefsDirty = true;
+        ImGui::MenuItem("Game UI", nullptr, &m_showGameUI);
+        ImGui::SetItemTooltip("The scene's UIDocuments, drawn over it as the game shows them");
         if (ImGui::MenuItem("Stats", nullptr, &m_prefs.showStats)) m_prefsDirty = true;
         ImGui::SeparatorText("Editor camera");
         ImGui::SetNextItemWidth(160.0f * dpi);
@@ -608,6 +611,8 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
         at.y = b ? std::max(-b->min.y, 0.0f) : 0.0f;
         spawnMesh(mesh, at);
     }
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kUIDocumentPayload))
+        createUIDocument(static_cast<const char*>(payload->Data));
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAudioPayload)) {
         glm::vec3 origin, direction;
         mouseRay(mouse, pos, size, origin, direction);

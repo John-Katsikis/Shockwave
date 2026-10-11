@@ -4,6 +4,7 @@
 
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
+#include <GameUI/GameUI.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -33,6 +34,8 @@ Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m
 
 void Editor::onStart() {
     shockwave::registerAudioComponents();
+    shockwave::registerGameUIComponents();
+    m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
     m_audioPreview = std::make_unique<shockwave::AudioMixer>();
     connectConsole();
     ImGuiIO& io = ImGui::GetIO();
@@ -98,6 +101,7 @@ void Editor::onShutdown() {
     stop();
     m_session.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
+    m_gameUI.reset();
     if (m_hasProject) {
         rememberCamera();
         saveEditorState();
@@ -202,6 +206,7 @@ void Editor::onUpdate(double dt) {
 void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
+    updateGameUI(dt);
 }
 
 void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
@@ -225,6 +230,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     // While editing (or paused) nothing moves on its own, so draw exactly what's there.
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets());
+    if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too
 }
 
 bool Editor::lookingThroughSceneCamera() const {

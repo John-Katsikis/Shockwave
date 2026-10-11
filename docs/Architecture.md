@@ -120,7 +120,8 @@ module can only see the headers of modules it depends on, directly or through th
 | Engine | World, components, systems, hierarchy, scene files, subsystems, engine loop | everything above | Engine |
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio | Engine's GameFramework |
+| GameUI | menus and HUDs from `.rml`/`.rcss` (RmlUi, FreeType, HarfBuzz), `UIDocument`, `game.ui()` | Engine | UMG, Slate |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.
@@ -164,6 +165,7 @@ fast as it can, unless VSync or a frame limit slows it down:
    graph:
    - the scene pass, in HDR (high dynamic range);
    - tonemapping, which maps HDR colors to the screen;
+   - the game UI, drawn at the output's own resolution (see [Game UI](GameUI.md));
    - the editor UI, or a copy to the window;
    - present, which shows the frame.
 

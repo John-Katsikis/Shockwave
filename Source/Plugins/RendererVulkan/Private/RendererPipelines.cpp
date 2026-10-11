@@ -266,6 +266,8 @@ void VulkanRenderer::Impl::createPipelines() {
     shadowDesc.cullMode = VK_CULL_MODE_NONE;
     shadowDesc.dynamicDepthBias = true;
     shadowPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
+
+    createUiPipeline();
 }
 
 }   // namespace shockwave

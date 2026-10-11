@@ -26,7 +26,7 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, Other };
+enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Other };
 
 struct Tile {
     TileKind kind;
@@ -317,6 +317,7 @@ void Editor::drawContentItems() {
             const TileKind kind = f.kind == AssetFolder::Kind::Texture ? TileKind::Texture
                                   : f.kind == AssetFolder::Kind::Audio ? TileKind::Audio
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
+                                  : f.path.extension() == ".rml"       ? TileKind::UIDocument
                                                                        : TileKind::Other;
             const uint64_t thumb =
                 f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
@@ -372,7 +373,8 @@ void Editor::drawContentItems() {
     for (size_t i = 0; i < tiles.size(); ++i) {
         const Tile& tile = tiles[i];
         const bool failed = tile.file && !tile.file->error.empty();
-        const bool usable = tile.kind != TileKind::Other && (!tile.file || tile.file->imported);
+        const bool usable =
+            tile.kind == TileKind::UIDocument || (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
         if (i % columns != 0) ImGui::SameLine();
 
         ImGui::PushID(tile.name.c_str());
@@ -429,7 +431,10 @@ void Editor::drawContentItems() {
                 ImGui::TextDisabled("%s", humanSize(tile.file->bytes).c_str());
                 if (failed)
                     ImGui::TextColored(gui::semanticColor(gui::currentTheme().error), "%s", tile.file->error.c_str());
-                if (tile.kind == TileKind::Other) ImGui::TextDisabled("No importer for this kind of file yet");
+                if (tile.kind == TileKind::Other && tile.path.extension() == ".rcss")
+                    ImGui::TextDisabled("Game UI stylesheet; documents using it reload when it's saved");
+                else if (tile.kind == TileKind::Other)
+                    ImGui::TextDisabled("No importer for this kind of file yet");
                 if (tile.kind == TileKind::Model) {
                     if (const auto model = engine().assets().model(tile.file->model)) {
                         ImGui::TextDisabled(
@@ -454,6 +459,9 @@ void Editor::drawContentItems() {
                 if (usable) ImGui::TextDisabled("Drag onto an object, or double-click to use it on the selection");
                 break;
             case TileKind::Audio: ImGui::TextDisabled("Drag into the viewport to place a source"); break;
+            case TileKind::UIDocument:
+                ImGui::TextDisabled("Game UI document. Drag into the viewport, or double-click to show it");
+                break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -461,10 +469,11 @@ void Editor::drawContentItems() {
 
         // Drag sources carry the asset name.
         if (usable && tile.kind != TileKind::Folder && tile.kind != TileKind::Scene && ImGui::BeginDragDropSource()) {
-            const char* payload = tile.kind == TileKind::Mesh    ? kMeshPayload
-                                  : tile.kind == TileKind::Audio ? kAudioPayload
-                                  : tile.kind == TileKind::Model ? kModelPayload
-                                                                 : kTexturePayload;
+            const char* payload = tile.kind == TileKind::Mesh         ? kMeshPayload
+                                  : tile.kind == TileKind::Audio      ? kAudioPayload
+                                  : tile.kind == TileKind::Model      ? kModelPayload
+                                  : tile.kind == TileKind::UIDocument ? kUIDocumentPayload
+                                                                      : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
                 ImGui::Image(static_cast<ImTextureID>(tile.texture), ImVec2(48.0f * dpi, 48.0f * dpi));
@@ -504,6 +513,7 @@ void Editor::drawContentItems() {
             case TileKind::Audio:
                 if (usable) previewAudio(tile.name);
                 break;
+            case TileKind::UIDocument: createUIDocument(tile.name); break;
             case TileKind::Other: break;
             }
         }
@@ -546,6 +556,11 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("Stop preview")) stopAudioPreview();
                 if (ImGui::MenuItem("Place audio source", nullptr, false, usable))
                     spawnAudio(tile.name, placementPoint());
+                break;
+            case TileKind::UIDocument:
+                if (ImGui::MenuItem("Show in the scene")) createUIDocument(tile.name);
+                if (ImGui::MenuItem("Open in text editor"))
+                    SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;
             case TileKind::Other: break;
             }
