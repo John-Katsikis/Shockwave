@@ -281,6 +281,8 @@ problem with its file and line.
 
 ## Where to go next
 
+- [The Shockwave Book](Book/README.md): a longer, gentle guide that builds a whole game
+  and explains how every part of the engine works.
 - [Projects](Projects.md): everything about game code, including GameInstance, systems
   that run on all cores, and every project setting.
 - [Physics](Physics.md): real rigid bodies and character controllers instead of the

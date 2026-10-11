@@ -74,6 +74,10 @@ Press Ctrl+P to play the scene and Ctrl+P again to stop. Press F1 to see every c
 Follow [Tutorial: your first game in Shockwave](docs/Tutorial.md). It walks you through
 making a project, building a scene and writing your first game code.
 
+Then, to understand how the whole engine works, read [The Shockwave Book](docs/Book/README.md).
+It's a longer, step-by-step guide that builds a small game while explaining every part
+of the engine, from entities and systems to the renderer, the editor and packaging.
+
 ### Run the tests
 
 The unit tests need no GPU. They cover entities, scheduling, parenting and scene files:
