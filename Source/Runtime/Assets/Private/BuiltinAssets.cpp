@@ -1,6 +1,7 @@
 #include <Assets/BuiltinAssets.h>
 
 #include <Assets/Assets.h>
+#include <Assets/MeshOptimise.h>
 #include <Renderer/Mesh.h>
 
 #include <algorithm>
@@ -70,8 +71,11 @@ std::vector<uint8_t> makeGrid(uint32_t size) {
 void createBuiltinAssets(Renderer& renderer, Assets& assets) {
     // The CPU copy stays with the name, so editors can pick the actual triangles.
     auto add = [&](const char* name, MeshData data) {
+        optimiseMesh(data);   // reordered; the sphere also gets levels of detail
         auto shared = std::make_shared<const MeshData>(std::move(data));
-        assets.addMesh(name, renderer.createMesh(*shared), shared);
+        const MeshHandle mesh = renderer.createMesh(*shared);
+        if (!shared->lods.empty()) renderer.setMeshLods(mesh, shared->lods, shared->lodIndices);
+        assets.addMesh(name, mesh, shared);
     };
     add("cube", makeCube(1));
     add("sphere", makeSphere(0.5f));

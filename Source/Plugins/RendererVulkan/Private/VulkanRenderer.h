@@ -26,6 +26,13 @@ public:
     void destroyTexture(TextureHandle id) override;
     uint64_t guiTexture(TextureHandle id) override;
 
+    void setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) override;
+    bool supportsTextureFormat(TextureFormat format) const override;
+    void createTextureData(TextureHandle id, const TextureData& data) override;
+    void updateTextureData(TextureHandle id, const TextureData& data) override;
+    void setLodSettings(const LodSettings& settings) override;
+    LodStats lodStats() const override;
+
     void setClearColor(const Color& color) override;
     void setCamera(const glm::mat4& view, const glm::mat4& projection) override;
     void drawMesh(

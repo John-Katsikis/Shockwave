@@ -31,6 +31,11 @@ static_assert(sizeof(VertexSkin) == 24, "VertexSkin must match the skinning shad
 struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;   // counter-clockwise triangles are front faces
+    // Simpler levels of detail (optimiseMesh in Assets/MeshOptimise.h), each a range of
+    // lodIndices, most detailed first. indices stays the full mesh, which is all that
+    // picking, physics and navigation read. Renderer::setMeshLods sends them to the GPU.
+    std::vector<uint32_t> lodIndices{};
+    std::vector<struct MeshLod> lods{};
 };
 
 // Built-in shapes, centred on the origin.
@@ -47,5 +52,28 @@ Bounds computeBounds(const MeshData& mesh);
 // Nearest hit of a ray (origin, direction, both in the mesh's own space) with the mesh's
 // triangles, from either side. t is the distance along direction (in its units).
 bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t);
+
+// A simpler version of a mesh, drawn instead of it when it's far enough away that nobody
+// can tell. Every level uses the mesh's vertices; only the triangles differ.
+struct MeshLod {
+    uint32_t firstIndex = 0;   // into MeshData::lodIndices
+    uint32_t indexCount = 0;
+    float error = 0.0f;   // how far this level strays from the full mesh, in the mesh's own units
+};
+constexpr uint32_t kMaxMeshLods = 7;   // simpler levels a mesh can have, besides itself
+
+// How the renderer picks levels of detail (Renderer::setLodSettings).
+struct LodSettings {
+    // The largest difference from the full mesh allowed on screen, in pixels at the render
+    // resolution. 0 always draws full detail. 1 is invisible in practice.
+    float maxErrorPixels = 1.0f;
+    bool showLevels = false;   // tint each level its own colour, to see where they switch
+};
+// What levels of detail saved last frame.
+struct LodStats {
+    uint64_t triangles = 0;   // triangles drawn
+    uint64_t fullTriangles = 0;   // what they would have been with full detail everywhere
+    uint32_t reducedDraws = 0;   // draws that used a simpler level
+};
 
 }   // namespace shockwave

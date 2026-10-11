@@ -181,6 +181,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Inspector", nullptr, &m_showInspector);
             ImGui::MenuItem("Content", nullptr, &m_showContent);
             ImGui::MenuItem("Console", nullptr, &m_showConsole);
+            ImGui::MenuItem("Optimisation", nullptr, &m_showOptimisation);
             ImGui::MenuItem("Stats", nullptr, &m_showStats);
             ImGui::MenuItem("Input", nullptr, &m_showInput);
             ImGui::MenuItem("Save Games", nullptr, &m_showSaveGames);
@@ -480,6 +481,7 @@ void Editor::drawStatsWindow() {
     ImGui::Text(
         "Scene %u x %u at %.2fx, %u draws", renderer.renderWidth(), renderer.renderHeight(), renderer.renderScale(),
         renderer.drawCount());
+    drawOptimisationStats();
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
     drawGameUIStats();

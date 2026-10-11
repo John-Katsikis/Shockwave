@@ -61,6 +61,19 @@ To see which controllers are plugged in and how their inputs are named:
 build/bin/player --devices
 ```
 
+## Optimise assets
+
+Texture compression and levels of detail are set by `texture_compression`, `mesh_lods`
+and `lod_error_pixels` in the `.swproject`, and per asset by a `<asset>.swimport` file
+next to it. Check them with:
+
+```sh
+build/bin/player --check
+build/bin/player --optimise --renderer vulkan --json out.json
+```
+
+See `docs/Optimisation.md`.
+
 ## Measure performance
 
 Run the benchmark before and after a change, and compare:

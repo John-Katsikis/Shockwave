@@ -58,6 +58,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     applyAudioSettings(m_project);
     applyProjectTheme();
     loadProjectInput();
+    applyOptimisationSettings();   // before open(), so assets import once
     logAssetChanges(
         m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
     m_gameUI->setContentFolder(m_project.assetFolder);

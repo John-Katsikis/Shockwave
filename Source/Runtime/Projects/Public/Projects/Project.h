@@ -21,6 +21,11 @@ struct Project {
     int width = 1280, height = 720;
     bool vsync = true;
     double frameLimit = 0;   // frames per second, 0 = no cap beyond vsync
+    // Asset optimisation (docs/Optimisation.md). A .swimport file next to an asset
+    // overrides the first two for it.
+    std::string textureCompression = "high";   // high, small or off (texture_compression)
+    int meshLods = 4;   // simpler levels of detail per mesh, 0..7 (mesh_lods)
+    double lodErrorPixels = 1.0;   // how far a level may stray on screen, 0 = always full detail (lod_error_pixels)
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)
     int shadowQuality = 3;   // 0 off, 1 low, 2 medium, 3 high, 4 ultra (Renderer's ShadowQuality)
     std::string renderer = "vulkan";   // the renderer plugin the player starts with

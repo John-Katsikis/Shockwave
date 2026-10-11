@@ -28,6 +28,19 @@ void VulkanRenderer::updateTexture(
 }
 
 uint64_t VulkanRenderer::guiTexture(TextureHandle texture) { return m_impl->guiTexture(texture); }
+
+void VulkanRenderer::setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) {
+    m_impl->setMeshLods(id, lods, lodIndices);
+}
+bool VulkanRenderer::supportsTextureFormat(TextureFormat format) const { return m_impl->supportsTextureFormat(format); }
+void VulkanRenderer::createTextureData(TextureHandle id, const TextureData& data) {
+    m_impl->createTextureData(id, data);
+}
+void VulkanRenderer::updateTextureData(TextureHandle id, const TextureData& data) {
+    m_impl->updateTextureData(id, data);
+}
+void VulkanRenderer::setLodSettings(const LodSettings& settings) { m_impl->lodSettings = settings; }
+LodStats VulkanRenderer::lodStats() const { return m_impl->lastLodStats; }
 void VulkanRenderer::setClearColor(const Color& color) { m_impl->clearColor = color; }
 void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;

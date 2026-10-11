@@ -444,6 +444,17 @@ private:
     bool m_resetLayout = false;
     bool m_focusConsole = false;
 
+    // Optimisation window (OptimisationPanel.cpp): texture compression and levels of detail.
+    void drawOptimisationWindow();
+    void drawOptimisationStats();   // last frame's triangles, also in Stats
+    void applyOptimisationSettings();   // the project's settings to the asset folder and renderer
+    void saveOptimisationSettings();   // writes them to the .swproject, then applies them
+    bool m_showOptimisation = false;
+    bool m_showLodColors = false;
+    float m_lodErrorEdit = 1.0f;
+    int m_importLodsEdit = 4;
+    bool m_lodErrorActive = false, m_importLodsActive = false;
+
     // Input window
     bool m_showInput = false;
     shockwave::InputBindings m_inputEdit;

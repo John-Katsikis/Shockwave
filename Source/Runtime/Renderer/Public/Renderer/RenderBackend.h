@@ -24,9 +24,11 @@
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/TextureData.h>
 
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -52,6 +54,27 @@ public:
     updateTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) = 0;
     virtual void destroyTexture(TextureHandle id) = 0;
     virtual uint64_t guiTexture(TextureHandle id) = 0;
+
+    // ---- Optimised assets (docs/Optimisation.md); the defaults suit a simple backend ----
+    // Right after createMesh: its simpler levels of detail, ranges of lodIndices. Ignoring
+    // them always draws full detail.
+    virtual void setMeshLods(MeshHandle, std::span<const MeshLod>, std::span<const uint32_t> /*lodIndices*/) {}
+    virtual bool supportsTextureFormat(TextureFormat format) const { return format == TextureFormat::RGBA8; }
+    // Only formats supportsTextureFormat accepts. The defaults use RGBA8's largest level.
+    virtual void createTextureData(TextureHandle id, const TextureData& data) {
+        if (data.format != TextureFormat::RGBA8 || data.levels.empty())
+            throw std::runtime_error("this renderer can't load compressed textures");
+        const auto& level = data.levels[0];
+        createTexture(id, level.width, level.height, {data.bytes.data() + level.offset, level.size}, data.srgb);
+    }
+    virtual void updateTextureData(TextureHandle id, const TextureData& data) {
+        if (data.format != TextureFormat::RGBA8 || data.levels.empty())
+            throw std::runtime_error("this renderer can't load compressed textures");
+        const auto& level = data.levels[0];
+        updateTexture(id, level.width, level.height, {data.bytes.data() + level.offset, level.size}, data.srgb);
+    }
+    virtual void setLodSettings(const LodSettings&) {}
+    virtual LodStats lodStats() const { return {}; }
 
     // ---- Per frame ----
     virtual void setClearColor(const Color& color) = 0;

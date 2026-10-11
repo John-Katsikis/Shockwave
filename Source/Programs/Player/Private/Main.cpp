@@ -141,6 +141,10 @@ int main(int argc, char** argv) {
                 const std::string value = argv[++i];
                 if (value != "on" && value != "off") throw std::runtime_error("--vsync takes on or off");
                 vsyncOverride = value == "on" ? 1 : 0;
+            } else if (arg == "--optimise" || arg == "--optimize") {
+                tool.optimise = true;
+            } else if (arg == "--lod-colors") {
+                tool.lodColors = true;
             } else if (arg == "--benchmark") {
                 tool.benchmarkSeconds = 10;
                 if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -216,6 +220,9 @@ int main(int argc, char** argv) {
                           "player --benchmark [seconds] [--json file]\n"
                           "                                    run the scene for that long (default 10) and report\n"
                           "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
+                          "player --optimise [--json file]     compress every texture into the cache now and report\n"
+                          "                                    texture memory and mesh levels of detail\n"
+                          "player --lod-colors                 tint each level of detail its own colour\n"
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
                           "player --bake-navmesh [scene.swscene...]\n"
                           "                                    bake and save each scene's navigation mesh; print its\n"
@@ -323,13 +330,13 @@ int main(int argc, char** argv) {
             config.window.hidden = true;
             if (vsyncOverride < 0) config.window.vsync = false;
         }
-        if (tool.mode != Tool::Mode::Play) {
+        if (tool.mode != Tool::Mode::Play || tool.optimise) {
             config.window.hidden = true;
             config.window.vsync = false;
         }
         // Tools only read files, so they need no GPU unless asked for one.
         config.renderer = !renderer.empty()               ? renderer
-                          : tool.mode != Tool::Mode::Play ? std::string("null")
+                          : tool.mode != Tool::Mode::Play || tool.optimise ? std::string("null")
                                                           : project.renderer;
         shockwave::Engine engine(config);
         engine.setMasterVolume(audioVolume);

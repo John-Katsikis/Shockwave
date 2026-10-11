@@ -44,11 +44,17 @@ void Player::onStart() {
     m_instance = shockwave::makeGameInstance(&module);
     m_instance->init(&engine());
     m_assets = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
+    applyOptimisationSettings();   // before importing (docs/Optimisation.md)
     std::vector<std::string> importProblems;
     for (const auto& change : m_assets->open(m_project.assetFolder)) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
             importProblems.push_back(
                 m_project.relative(m_project.assetFolder / change.name) + ": import failed: " + change.error);
+    }
+    if (m_tool.optimise) {   // --optimise
+        m_exitCode = optimise();
+        engine().quit();
+        return;
     }
     m_ui = std::make_unique<shockwave::GameUI>(&engine());
     m_ui->setContentFolder(m_project.assetFolder);

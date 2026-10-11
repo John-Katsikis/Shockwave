@@ -195,6 +195,7 @@ void Editor::onGui() {
     if (m_showInspector) drawInspector();
     if (m_showContent) drawContentBrowser();
     if (m_showConsole) drawConsole();
+    if (m_showOptimisation) drawOptimisationWindow();
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();

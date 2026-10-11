@@ -18,7 +18,7 @@ small model with three materials, made for this project.
 
 | Kind | Formats |
 |---|---|
-| Images | PNG, JPEG, TGA, BMP, PSD, GIF, HDR, PNM |
+| Images | PNG, JPEG, TGA, BMP, PSD, GIF, HDR, PNM, and Basis Universal `.ktx2` |
 | Models | glTF and GLB, FBX, OBJ with MTL, Collada, STL, PLY, Blender `.blend` (see below), and the rest of Assimp's default readers |
 | Audio | WAV and Ogg Vorbis (see [Audio](Audio.md)) |
 
@@ -189,6 +189,12 @@ python3 Tests/fixtures/models/generate.py
 WAV and Ogg Vorbis files in the content folder are named assets too. They import and
 reload in the background, like models, and a failed reload keeps the last working
 version. See [Audio](Audio.md) for how to use them.
+
+## Make textures and meshes cheaper
+
+Textures are compressed to BC7 and model meshes get simpler levels of detail as they
+import, with no setup. Open **Window > Optimisation** to see what it saves, or to change
+it for one asset. See [Optimisation](Optimisation.md).
 
 ## How it works
 

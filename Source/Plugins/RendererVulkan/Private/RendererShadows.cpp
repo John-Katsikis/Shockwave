@@ -344,7 +344,7 @@ void VulkanRenderer::Impl::recordShadows(
                 vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                 boundIndices = draw.indexBuffer;
             }
-            vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, draw.drawIndex);
+            vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
         }
     }
     vkCmdEndRendering(cmd);
