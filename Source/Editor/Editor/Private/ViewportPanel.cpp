@@ -3,6 +3,7 @@
 // screenshots and drops from the Content panel.
 #include "Editor.h"
 
+#include <Engine/Prefab.h>
 #include <UI/Gui.h>
 
 #include <glm/gtc/constants.hpp>
@@ -166,6 +167,9 @@ void Editor::drawViewport() {
         !ImGuizmo::IsViewManipulateHovered()) {
         Entity hit = m_prefs.showCameraIcons ? cameraIconAt(io.MousePos, pos, size) : kNullEntity;
         if (!hit.valid()) hit = pick(io.MousePos, pos, size);
+        // A click on a prefab copy picks the whole copy; a second click, the part.
+        const Entity copy = shockwave::prefabRootOf(m_world, hit);
+        if (copy.valid() && !isSelected(hit) && !isSelected(copy)) hit = copy;
         if (io.KeyCtrl) {
             toggleSelected(hit);
         } else if (io.KeyShift) {
@@ -356,7 +360,7 @@ void Editor::drawViewportOverlay(const ImVec2& pos, const ImVec2& size) {
 void Editor::drawGizmo(const ImVec2& pos, const ImVec2& size) {
     const Entity primary = selected();
     Transform* t = m_world.get<Transform>(primary);
-    if (!t) {
+    if (!t || isPrefabPart(primary)) {   // parts follow their prefab
         m_gizmoWasUsing = false;
         return;
     }
@@ -620,6 +624,16 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
     }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kUIDocumentPayload))
         createUIDocument(static_cast<const char*>(payload->Data));
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kPrefabPayload)) {
+        glm::vec3 origin, dir;
+        mouseRay(mouse, pos, size, origin, dir);
+        glm::vec3 at = origin + dir * 6.0f;
+        if (dir.y < -1e-4f) {
+            const float t = -origin.y / dir.y;
+            if (t > 0.0f && t < 200.0f) at = origin + dir * t;
+        }
+        placePrefab(static_cast<const char*>(payload->Data), at);
+    }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kAudioPayload)) {
         glm::vec3 origin, direction;
         mouseRay(mouse, pos, size, origin, direction);

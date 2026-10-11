@@ -7,6 +7,7 @@
 #include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
+#include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
@@ -50,6 +51,7 @@ void Player::onStart() {
     m_ui->setContentFolder(m_project.assetFolder);
     m_effects = std::make_unique<shockwave::Effects>(&engine());
     m_effects->setContentFolder(m_project.assetFolder);
+    shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check         ? check(importProblems)
                      : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
@@ -114,6 +116,8 @@ void Player::onFrame(double dt) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
             SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
     }
+    // Prefab files saved while the game runs update every copy (hot reload).
+    if (!shockwave::prefabs().poll(dt).empty()) shockwave::updatePrefabInstances(m_world);
     m_session->frame(dt);
     m_ui->update(m_world, dt);
     // --ui-nav: one menu step a frame, once documents have loaded and shown.

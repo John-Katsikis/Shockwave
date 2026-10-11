@@ -3,6 +3,7 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <Engine/Prefab.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -28,7 +29,7 @@ using shockwave::Transform;
 
 namespace {
 
-const SDL_DialogFileFilter kSceneFilter[] = {{"Shockwave scenes", "swscene"}};
+const SDL_DialogFileFilter kSceneFilter[] = {{"Shockwave scenes", "swscene"}, {"Shockwave prefabs", "swprefab"}};
 const SDL_DialogFileFilter kProjectFilter[] = {{"Shockwave projects", "swproject"}};
 const SDL_DialogFileFilter kImportFilter[] = {
     {"Images and models", "png;jpg;jpeg;tga;bmp;psd;gif;hdr;pic;pnm;glb;gltf;fbx;obj;dae;stl;ply;blend"},
@@ -129,16 +130,20 @@ bool Editor::saveSceneAs(fs::path path) {
         warn("Stop playing before saving: the scene is mid-simulation");
         return false;
     }
-    if (path.extension() != ".swscene") path += ".swscene";
+    const bool prefab = path.extension() == ".swprefab";   // a prefab opened for editing
+    if (path.extension() != ".swscene" && !prefab) path += ".swscene";
     path = fs::absolute(path).lexically_normal();
     std::error_code ec;
     fs::create_directories(path.parent_path(), ec);
     const fs::path oldAutosave = autosavePath();
     std::string err;
-    if (!shockwave::saveScene(m_world, engine().assets(), path.string(), err)) {
+    shockwave::SceneFileHooks hooks;
+    hooks.prefab = prefab;
+    if (!shockwave::saveScene(m_world, engine().assets(), path.string(), err, hooks)) {
         error("Couldn't save: " + err);
         return false;
     }
+    if (prefab) shockwave::prefabs().reload(shockwave::prefabs().pathOf(path));   // copies follow
     fs::remove(oldAutosave, ec);
     m_scenePath = path;
     fs::remove(autosavePath(), ec);
@@ -156,7 +161,7 @@ bool Editor::saveSceneAs(fs::path path) {
     log("Saved " + relative);
 
     // A project without a working startup scene gets this one.
-    if (!fs::is_regular_file(m_project.startupScene, ec)) {
+    if (!prefab && !fs::is_regular_file(m_project.startupScene, ec)) {
         m_project.startupScene = m_scenePath;
         m_projectEdit.startupScene = m_scenePath;
         if (shockwave::saveProject(m_project, err)) log("Startup scene set to " + relative);

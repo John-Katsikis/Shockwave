@@ -34,7 +34,10 @@ When you write or edit `.swscene` or `.swproject` files:
    build/bin/player --check
    ```
 
-3. To see a scene, render it to an image:
+3. Reusable groups of entities are prefabs (`.swprefab` in Content). A scene entity with
+   a `Prefab` component lists only what it changes. See `docs/Prefabs.md`.
+
+4. To see a scene, render it to an image:
 
    ```sh
    build/bin/player --scene <file> --screenshot out.png

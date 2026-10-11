@@ -118,6 +118,8 @@ Each item links to the guide that covers it in detail.
   write them, and you can check them from the command line. See
   [Authoring with tools and AI](docs/Projects.md#authoring-with-tools-and-ai) and the
   [scene schema](docs/SceneSchema.md).
+- **Reuse things with prefabs.** Build a lamp or an enemy once, place copies anywhere,
+  nest prefabs inside prefabs, and change every copy at once. See [Prefabs](docs/Prefabs.md).
 - **Restyle the tools.** The editor's look comes from plain text theme files that reload
   as you save. See [The tool UI](docs/UI.md).
 

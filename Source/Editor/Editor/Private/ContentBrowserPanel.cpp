@@ -26,7 +26,7 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Other };
+enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Other };
 
 struct Tile {
     TileKind kind;
@@ -103,6 +103,14 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
             {c.x + r, c.y - r * 0.2f}};
         draw->AddPolyline(hills, 4, color, 0, 2.0f);
         draw->AddCircle(ImVec2(c.x + r * 0.45f, c.y - r * 0.38f), r * 0.14f, color, 0, 2.0f);
+        return;
+    }
+    if (kind == TileKind::Prefab) {
+        // Three stacked boxes: a group of things kept together.
+        const float s = r * 0.5f;
+        draw->AddRect(ImVec2(c.x - r, c.y), ImVec2(c.x - r + 2 * s, c.y + r), color, 0.0f, 0, 2.0f);
+        draw->AddRect(ImVec2(c.x + r - 2 * s, c.y), ImVec2(c.x + r, c.y + r), color, 0.0f, 0, 2.0f);
+        draw->AddRect(ImVec2(c.x - s, c.y - r), ImVec2(c.x + s, c.y), color, 0.0f, 0, 2.0f);
         return;
     }
     if (kind == TileKind::Mesh && name == "sphere") {
@@ -318,6 +326,7 @@ void Editor::drawContentItems() {
                                   : f.kind == AssetFolder::Kind::Audio ? TileKind::Audio
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
                                   : f.path.extension() == ".rml"       ? TileKind::UIDocument
+                                  : f.path.extension() == ".swprefab"  ? TileKind::Prefab
                                                                        : TileKind::Other;
             const uint64_t thumb =
                 f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
@@ -373,8 +382,8 @@ void Editor::drawContentItems() {
     for (size_t i = 0; i < tiles.size(); ++i) {
         const Tile& tile = tiles[i];
         const bool failed = tile.file && !tile.file->error.empty();
-        const bool usable =
-            tile.kind == TileKind::UIDocument || (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
+        const bool usable = tile.kind == TileKind::UIDocument || tile.kind == TileKind::Prefab ||
+                            (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
         if (i % columns != 0) ImGui::SameLine();
 
         ImGui::PushID(tile.name.c_str());
@@ -462,6 +471,9 @@ void Editor::drawContentItems() {
             case TileKind::UIDocument:
                 ImGui::TextDisabled("Game UI document. Drag into the viewport, or double-click to show it");
                 break;
+            case TileKind::Prefab:
+                ImGui::TextDisabled("Prefab. Drag into the viewport to place a copy, or double-click to edit it");
+                break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -473,6 +485,7 @@ void Editor::drawContentItems() {
                                   : tile.kind == TileKind::Audio      ? kAudioPayload
                                   : tile.kind == TileKind::Model      ? kModelPayload
                                   : tile.kind == TileKind::UIDocument ? kUIDocumentPayload
+                                  : tile.kind == TileKind::Prefab     ? kPrefabPayload
                                                                       : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
@@ -514,6 +527,7 @@ void Editor::drawContentItems() {
                 if (usable) previewAudio(tile.name);
                 break;
             case TileKind::UIDocument: createUIDocument(tile.name); break;
+            case TileKind::Prefab: editPrefab(tile.name); break;
             case TileKind::Other: break;
             }
         }
@@ -559,6 +573,12 @@ void Editor::drawContentItems() {
                 break;
             case TileKind::UIDocument:
                 if (ImGui::MenuItem("Show in the scene")) createUIDocument(tile.name);
+                if (ImGui::MenuItem("Open in text editor"))
+                    SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
+                break;
+            case TileKind::Prefab:
+                if (ImGui::MenuItem("Place in front of the camera")) placePrefab(tile.name, placementPoint());
+                if (ImGui::MenuItem("Edit")) editPrefab(tile.name);
                 if (ImGui::MenuItem("Open in text editor"))
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;

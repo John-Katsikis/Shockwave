@@ -1,6 +1,9 @@
 #include <Engine/SceneFile.h>
 
+#include "PrefabDetail.h"
+
 #include <Engine/Components.h>
+#include <Engine/Hierarchy.h>
 
 #include <algorithm>
 #include <charconv>
@@ -11,6 +14,7 @@
 #include <iomanip>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace shockwave {
 
@@ -230,9 +234,51 @@ bool restIsEmpty(std::istream& in) {
 
 }   // namespace
 
+namespace detail {
+
+std::string fieldText(const Field& f, const void* data, const Assets* assets) {
+    static const Assets none;
+    static const World noWorld;
+    std::ostringstream out;
+    out << std::setprecision(6);
+    writeField(out, f, data, assets ? *assets : none, noWorld, {});
+    return out.str();
+}
+
+void copyFieldValue(const Field& f, void* to, const void* from, const Assets* assets) {
+    switch (f.type) {
+    case FieldType::Bool: *static_cast<bool*>(to) = *static_cast<const bool*>(from); return;
+    case FieldType::Int:
+    case FieldType::Enum: std::memcpy(to, from, sizeof(int)); return;
+    case FieldType::Float: *static_cast<float*>(to) = *static_cast<const float*>(from); return;
+    case FieldType::Vec2: *static_cast<glm::vec2*>(to) = *static_cast<const glm::vec2*>(from); return;
+    case FieldType::Vec3: *static_cast<glm::vec3*>(to) = *static_cast<const glm::vec3*>(from); return;
+    case FieldType::Color: *static_cast<glm::vec4*>(to) = *static_cast<const glm::vec4*>(from); return;
+    case FieldType::Rotation: *static_cast<glm::quat*>(to) = *static_cast<const glm::quat*>(from); return;
+    case FieldType::String:
+    case FieldType::AudioClip:
+    case FieldType::UIDocument: *static_cast<std::string*>(to) = *static_cast<const std::string*>(from); return;
+    case FieldType::Mesh: *static_cast<MeshHandle*>(to) = *static_cast<const MeshHandle*>(from); return;
+    case FieldType::Texture: *static_cast<TextureHandle*>(to) = *static_cast<const TextureHandle*>(from); return;
+    case FieldType::Model: *static_cast<ModelHandle*>(to) = *static_cast<const ModelHandle*>(from); return;
+    case FieldType::Entity: *static_cast<Entity*>(to) = *static_cast<const Entity*>(from); return;
+    default: break;
+    }
+    // A field type added later: through its text, as a file would carry it.
+    static const Assets none;
+    std::istringstream in(fieldText(f, from, assets));
+    std::vector<std::string> ignored;
+    readField(in, f, to, assets ? *assets : none, ignored);
+}
+
+}   // namespace detail
+
 void writeScene(std::ostream& out, const World& world, const Assets& assets, const SceneFileHooks& hooks) {
     const uint32_t nameId = componentId<Name>();
+    const uint32_t instanceId = componentId<PrefabInstance>();
     const std::vector<ComponentInfo>& components = registeredComponents();
+    // Prefab parts aren't written: loading makes them again from the prefab.
+    auto written = [&](Entity e) { return hooks.exact || !world.has<PrefabPart>(e); };
     // Other entities are referred to by name when it's unique, so links survive blocks
     // being added, removed or reordered; otherwise by block position.
     std::unordered_map<std::string, int> nameCounts;
@@ -248,18 +294,27 @@ void writeScene(std::ostream& out, const World& world, const Assets& assets, con
             std::ostringstream quoted;
             quoted << std::quoted(name->value);
             refs[e.index] = quoted.str();
-        } else {
+        } else if (written(e)) {
             refs[e.index] = std::to_string(ordinal);
         }
-        ++ordinal;
+        if (written(e)) ++ordinal;
     });
 
     out << std::setprecision(6);
-    out << "# Shockwave scene\n";
-    out << "shockwave_scene " << kFormatVersion << "\n";
+    if (hooks.prefab) {
+        out << "# Shockwave prefab: the first entity is the root, the rest hang under it\n";
+        out << "shockwave_prefab 1\n";
+    } else {
+        out << "# Shockwave scene\n";
+        out << "shockwave_scene " << kFormatVersion << "\n";
+    }
     if (hooks.writeHeader) hooks.writeHeader(out);
 
     world.forEachEntity([&](Entity e) {
+        if (!written(e)) return;
+        // A prefab copy writes only what differs from its prefab.
+        const PrefabInstance* instance = world.get<PrefabInstance>(e);
+        const PrefabAsset* prefab = instance && !hooks.exact ? instance->source.get() : nullptr;
         out << "\nentity";
         if (const Name* name = world.get<Name>(e)) out << ' ' << std::quoted(name->value);
         out << '\n';
@@ -267,13 +322,19 @@ void writeScene(std::ostream& out, const World& world, const Assets& assets, con
             if (info.id == nameId) continue;   // already on the entity line
             const void* data = info.getConst(world, e);
             if (!data) continue;
-            out << "  " << info.name << '\n';
+            const bool partial = prefab && info.id != instanceId && info.has(prefab->world, prefab->root);
+            bool header = false;
             for (const Field& f : info.fields) {
+                if (partial && !detail::differsFromPrefab(world, e, info, f, *prefab, &assets)) continue;
+                if (!header) out << "  " << info.name << '\n';
+                header = true;
                 out << "    " << f.name;
                 writeField(out, f, static_cast<const char*>(data) + f.offset, assets, world, refs);
                 out << '\n';
             }
+            if (!header && !partial) out << "  " << info.name << '\n';
         }
+        if (hooks.exact && world.has<PrefabPart>(e)) out << "  PrefabPart\n";
         out << "end\n";
     });
 }
@@ -335,6 +396,10 @@ bool readScene(
     };
     std::vector<EntityLink> links;
     std::vector<Entity> created;   // by block position
+    // Per block: the fields the file set ("Transform.position"), which a prefab copy keeps
+    // over the prefab's values, and the line the block starts on.
+    std::vector<std::unordered_set<std::string>> setFields;
+    std::vector<int> blockLines;
     int version = 0;
     Entity current = kNullEntity;
     const ComponentInfo* component = nullptr;   // the block we're in
@@ -362,16 +427,27 @@ bool readScene(
             if (!(ls >> version) || version < 1 || version > kFormatVersion) return fail("unsupported scene version");
             continue;
         }
+        if (key == "shockwave_prefab" && !indented) {   // a prefab: scene format 2 under its own name
+            int prefabVersion = 0;
+            if (!(ls >> prefabVersion) || prefabVersion != 1) return fail("unsupported prefab version");
+            version = kFormatVersion;
+            continue;
+        }
         if (version == 0) return fail("not a Shockwave scene");
 
         if (key == "entity" && !indented) {
             if (hooks.entities && created.size() >= existing.size()) return fail("more entities than expected");
             current = hooks.entities ? existing[created.size()] : result.create();
             created.push_back(current);
+            setFields.emplace_back();
+            blockLines.push_back(lineNumber);
             component = nullptr;
             skipping = false;
             std::string name;
-            if (ls >> std::quoted(name)) result.add<Name>(current, {name});
+            if (ls >> std::quoted(name)) {
+                result.add<Name>(current, {name});
+                setFields.back().insert("Name.value");
+            }
             if (version == 1) {   // version 1 entities always had a transform and a mesh
                 result.add<Transform>(current);
                 result.add<MeshRenderer>(current);
@@ -425,6 +501,12 @@ bool readScene(
         std::string word;
         peek >> word;
         if (restIsEmpty(peek)) {
+            if (key == "PrefabPart") {   // written by exact round trips only
+                result.add<PrefabPart>(current);
+                component = nullptr;
+                skipping = true;
+                continue;
+            }
             component = findComponent(key);
             skipping = component == nullptr;
             if (component) {
@@ -451,12 +533,14 @@ bool readScene(
             } else {
                 links.push_back({current, component, f->offset, -1, target, lineNumber});
             }
+            setFields.back().insert(component->name + "." + key);
             if (!restIsEmpty(ls)) warn("extra values after " + component->name + "." + key + " ignored");
             continue;
         }
         void* data = component->get(result, current);
         const size_t before = warnings.size();
         if (!readField(ls, *f, static_cast<char*>(data) + f->offset, assets, warnings)) return badValue();
+        setFields.back().insert(component->name + "." + key);
         for (size_t i = before; i < warnings.size(); ++i) {   // asset lookups don't know the line
             warnings[i] = path + ":" + std::to_string(lineNumber) + ": " + warnings[i];
         }
@@ -482,10 +566,38 @@ bool readScene(
     }
     if (version == 0) return fail("not a Shockwave scene");
 
+    // Prefab copies: each block with a Prefab gets the prefab's root values under its own,
+    // and the prefab's other entities as parts. In an exact round trip the parts were
+    // written out, so they only need to know their prefab.
+    for (size_t i = 0; i < created.size(); ++i) {
+        PrefabInstance* instance = result.get<PrefabInstance>(created[i]);
+        if (!instance || instance->path.empty()) continue;
+        std::string prefabError;
+        auto prefab = prefabs().load(instance->path, assets, &prefabError);
+        if (hooks.exact) {
+            instance->source = std::move(prefab);
+            continue;
+        }
+        if (!prefab) {
+            warnings.push_back(
+                path + ":" + std::to_string(blockLines[i]) + ": prefab \"" + instance->path + "\": " + prefabError);
+            continue;
+        }
+        if (result.has<PrefabPart>(created[i])) continue;
+        detail::expandPrefab(result, created[i], std::move(prefab), &setFields[i], &assets);
+    }
+
     std::unordered_map<std::string, std::vector<Entity>> byName;
     for (Entity e : created) {
         if (const Name* name = result.get<Name>(e)) byName[name->value].push_back(e);
     }
+    // Entities added under a prefab part link to it by name; blocks with the name win.
+    std::unordered_map<std::string, std::vector<Entity>> partsByName;
+    result.each<const PrefabPart>([&](Entity e, const PrefabPart&) {
+        if (const Name* name = result.get<Name>(e); name && !byName.count(name->value))
+            partsByName[name->value].push_back(e);
+    });
+    byName.merge(partsByName);
     for (const EntityLink& link : links) {
         void* data = link.component->get(result, link.owner);
         if (!data) continue;
@@ -558,6 +670,26 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
         << "  (`--view normals|lighting|unlit` to isolate a problem).\n"
         << "- Check a file with `player --check path/to/scene.swscene` (no path: every scene in the\n"
         << "  project). It prints one `file:line: problem` per issue and exits non-zero on any.\n\n"
+        << "## Prefabs\n\n"
+        << "A prefab is a reusable group of entities in a `.swprefab` file inside Content. It's\n"
+        << "written like a scene with `shockwave_prefab 1` as its header line. Its first entity is\n"
+        << "the root. Entities without a `Parent` hang under the root, and their Transforms are\n"
+        << "relative to it. Prefabs can contain copies of other prefabs, but not of themselves.\n\n"
+        << "To place a copy, give an entity a `Prefab` component with the file's path inside\n"
+        << "Content. Then list only what this copy changes on the prefab's root, usually its\n"
+        << "Transform. Every other value comes from the prefab:\n\n"
+        << "```text\n"
+        << "entity \"Lamp by the door\"\n"
+        << "  Prefab\n"
+        << "    path \"Prefabs/Street lamp.swprefab\"\n"
+        << "  Transform\n"
+        << "    position 4 0 -2\n"
+        << "end\n"
+        << "```\n\n"
+        << "- The prefab's other entities are created under the copy when the scene loads. They\n"
+        << "  aren't written in the scene. To change them, edit the prefab.\n"
+        << "- New entities can go under a copy (`Parent` names the copy, or a part of it by name).\n"
+        << "- `player --check` also checks every `.swprefab` in Content.\n\n"
         << "## Components\n";
 
     // Defaults come from default-constructed components, written exactly as a file would.
@@ -619,6 +751,17 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
     for (const auto& [name, handle] : assets.models()) names.push_back(name);
     list("Models (ModelRenderer.model, Collider convex/triangle shapes)", names);
     list("Audio clips (AudioSource.clip)", assets.audioClips());
+    names.clear();
+    std::error_code ec;
+    const std::filesystem::path content = prefabs().contentFolder();
+    if (!content.empty()) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(content, ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".swprefab")
+                names.push_back(entry.path().lexically_relative(content).generic_string());
+        }
+    }
+    std::sort(names.begin(), names.end());
+    list("Prefabs (Prefab.path)", names);
 }
 
 }   // namespace shockwave

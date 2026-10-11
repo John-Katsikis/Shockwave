@@ -1,0 +1,47 @@
+# A street lamp: a pole, a glowing head and a point light.
+# Scenes place copies with a Prefab component; see docs/Prefabs.md.
+shockwave_prefab 1
+
+entity "Street lamp"
+  Transform
+end
+
+entity "Pole"
+  Parent
+    entity "Street lamp"
+  Transform
+    position 0 1.5 0
+    scale 0.12 3 0.12
+  MeshRenderer
+    mesh cube
+    tint 0.18 0.19 0.22 1
+    roughness 0.4
+    metallic 0.8
+end
+
+entity "Head"
+  Parent
+    entity "Street lamp"
+  Transform
+    position 0 3.1 0
+    scale 0.45 0.3 0.45
+  MeshRenderer
+    mesh sphere
+    tint 1 0.85 0.6 1
+    emissive 1 0.75 0.4 1
+    emissive_intensity 4
+    cast_shadows 0
+end
+
+entity "Glow"
+  Parent
+    entity "Street lamp"
+  Transform
+    position 0 2.85 0
+  Light
+    type Point
+    color 1 0.75 0.45 1
+    intensity 5
+    range 7
+    cast_shadows 0
+end

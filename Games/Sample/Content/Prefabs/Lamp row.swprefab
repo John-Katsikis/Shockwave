@@ -1,0 +1,34 @@
+# Three street lamps in a row: a prefab made of prefab copies. Each copy lists only what
+# it changes; the middle lamp is taller.
+shockwave_prefab 1
+
+entity "Lamp row"
+  Transform
+end
+
+entity "Left lamp"
+  Prefab
+    path "Prefabs/Street lamp.swprefab"
+  Parent
+    entity "Lamp row"
+  Transform
+    position -4 0 0
+end
+
+entity "Middle lamp"
+  Prefab
+    path "Prefabs/Street lamp.swprefab"
+  Parent
+    entity "Lamp row"
+  Transform
+    scale 1 1.3 1
+end
+
+entity "Right lamp"
+  Prefab
+    path "Prefabs/Street lamp.swprefab"
+  Parent
+    entity "Lamp row"
+  Transform
+    position 4 0 0
+end

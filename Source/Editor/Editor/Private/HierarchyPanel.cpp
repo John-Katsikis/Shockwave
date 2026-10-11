@@ -2,6 +2,7 @@
 // select; drag rows onto each other to attach them; F2 or the context menu renames.
 #include "Editor.h"
 
+#include <Engine/Prefab.h>
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -45,6 +46,7 @@ void Editor::drawHierarchy() {
         ImGui::EndPopup();
     }
     ImGui::Separator();
+    drawPrefabEditingNote();
 
     ImGui::BeginChild("entities");
     // Who hangs under whom, worked out once per frame. Entities whose parent is gone
@@ -139,7 +141,15 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
                                ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_AllowOverlap;
     if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
     if (isSelected(e)) flags |= ImGuiTreeNodeFlags_Selected;
+    // Prefab copies in the accent color; their parts a little fainter.
+    const bool part = isPrefabPart(e);
+    const bool prefab = !hidden && (part || m_world.has<shockwave::PrefabInstance>(e));
     if (hidden) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    if (prefab) {
+        ImVec4 color = gui::accent();
+        if (part) color.w *= 0.7f;
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+    }
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
     // Open the way down to an entity picked in the viewport.
     if (hasChildren && m_revealSelection) {
@@ -149,7 +159,7 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
     }
     const bool open = ImGui::TreeNodeEx("##node", flags, "%s", renaming ? "" : name.c_str());
     ImGui::PopStyleVar();
-    if (hidden) ImGui::PopStyleColor();
+    if (hidden || prefab) ImGui::PopStyleColor();
     const ImVec2 rowMin = ImGui::GetItemRectMin(), rowMax = ImGui::GetItemRectMax();
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
@@ -163,7 +173,7 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
         }
     }
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !renaming) focusSelected();
-    if (!renaming && ImGui::BeginDragDropSource()) {
+    if (!renaming && !part && ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload(kEntityPayload, &e, sizeof(e));
         const size_t count = isSelected(e) ? selection().size() : 1;
         if (count > 1) {
@@ -179,7 +189,7 @@ bool Editor::drawHierarchyRow(Entity e, bool hasChildren) {
             reparentSelection(*static_cast<const Entity*>(payload->Data), e);
         }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kTexturePayload)) {
-            applyTexture(e, static_cast<const char*>(payload->Data));
+            if (!part) applyTexture(e, static_cast<const char*>(payload->Data));
         }
         ImGui::EndDragDropTarget();
     }
@@ -252,6 +262,8 @@ void Editor::drawEntityContextMenu(Entity e) {
     if (ImGui::MenuItem("Move to view", "Ctrl+Shift+F", false, count == 1 && m_world.has<shockwave::Transform>(e))) {
         alignSelectedToView();
     }
+    ImGui::Separator();
+    drawPrefabMenuItems(e);
     ImGui::Separator();
     if (ImGui::MenuItem("Delete", "Del")) deleteSelected();
 }

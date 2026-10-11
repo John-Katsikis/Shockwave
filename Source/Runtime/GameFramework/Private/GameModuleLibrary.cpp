@@ -2,6 +2,7 @@
 
 #include <Core/Log.h>
 #include <Engine/Components.h>
+#include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <Engine/World.h>
 
@@ -60,7 +61,9 @@ bool reloadGameModule(
     entities.reserve(worlds.size());
     for (const World* world : worlds) {
         std::ostringstream out;
-        writeScene(out, *world, assets);
+        SceneFileHooks exact;
+        exact.exact = true;   // prefab parts too, as they are
+        writeScene(out, *world, assets, exact);
         scenes.push_back(std::move(out).str());
         entities.push_back(world->withoutComponents());
     }
@@ -75,6 +78,7 @@ bool reloadGameModule(
     }
     // The old module's components live in these worlds: clear them while its code is loaded.
     for (World* world : worlds) *world = World{};
+    prefabs().clear();   // loaded prefabs hold the old components too
     current = std::move(next);   // unloads the old code
     for (size_t i = 0; i < worlds.size(); ++i) {
         std::istringstream in(scenes[i]);
@@ -82,6 +86,7 @@ bool reloadGameModule(
         std::vector<std::string> warnings;
         SceneFileHooks hooks;
         hooks.entities = &entities[i];
+        hooks.exact = true;
         if (!readScene(*worlds[i], assets, in, "reloaded scene", readError, hooks, &warnings))
             SW_LOG(LogGame, Error, "game code reload lost a scene: {}", readError);
         for (const std::string& warning : warnings) SW_LOG(LogGame, Warning, "after reloading game code: {}", warning);

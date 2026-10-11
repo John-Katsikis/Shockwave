@@ -6,6 +6,7 @@
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
 #include <Engine/Engine.h>
+#include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
@@ -43,6 +44,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     std::vector<fs::path> scenes = m_tool.scenes;
     std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
     std::vector<std::string> checkedEffects;   // .efkefc files a scene's ParticleEffect validated
+    std::vector<std::string> usedPrefabs;   // by the scenes checked
     if (scenes.empty()) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(m_project.sceneFolder, ec)) {
@@ -70,6 +72,15 @@ int Player::check(const std::vector<std::string>& importProblems) {
             continue;
         }
         for (const std::string& warning : warnings) report(warning);
+        world.each<const shockwave::PrefabInstance>([&](shockwave::Entity e, const shockwave::PrefabInstance& p) {
+            if (world.has<shockwave::PrefabPart>(e)) return;
+            const auto* name = world.get<shockwave::Name>(e);
+            if (p.path.empty())
+                report(scene.string() + ": entity '" + (name ? name->value : "?") + "': Prefab has no path");
+            if (!p.source) return;
+            usedPrefabs.push_back(p.source->path);
+            usedPrefabs.insert(usedPrefabs.end(), p.source->uses.begin(), p.source->uses.end());
+        });
 
         for (const auto& problem : shockwave::checkAudioScene(world, engine().assets()))
             report(scene.string() + ": " + problem);
@@ -139,6 +150,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    checkPrefabs(usedPrefabs, problems);
     // Documents no scene shows yet can still be shown by game code: check them too.
     if (m_tool.scenes.empty()) {
         for (const std::string& document : m_ui->documentFiles()) {
@@ -180,6 +192,52 @@ int Player::check(const std::vector<std::string>& importProblems) {
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
         scenes.size() == 1 ? "" : "s");
     return problems.empty() ? 0 : 1;
+}
+
+// Every .swprefab in Content (game code can spawn any of them), or with scenes named on the
+// command line, the prefabs those use.
+void Player::checkPrefabs(std::vector<std::string> prefabs, std::vector<std::string>& problems) {
+    const fs::path content = m_project.assetFolder;
+    if (m_tool.scenes.empty()) {
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(content, ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".swprefab")
+                prefabs.push_back(entry.path().lexically_relative(content).generic_string());
+        }
+    }
+    std::sort(prefabs.begin(), prefabs.end());
+    prefabs.erase(std::unique(prefabs.begin(), prefabs.end()), prefabs.end());
+    // Problems name the file as the project does ("Content/Prefabs/lamp.swprefab:3: ...").
+    const std::string folder = m_project.relative(content) + "/";
+    for (const std::string& path : prefabs) {
+        const size_t before = problems.size();
+        std::string error;
+        const auto prefab = shockwave::prefabs().load(path, &error);
+        if (!prefab) {
+            problems.push_back(folder + path + ": " + error);
+            continue;
+        }
+        for (const std::string& warning : prefab->warnings) problems.push_back(folder + warning);
+        shockwave::World world = prefab->world;   // each() wants a mutable world
+        auto where = [&](shockwave::Entity e) {
+            const auto* name = world.get<shockwave::Name>(e);
+            return folder + path + ": entity '" + (name ? name->value : "?") + "': ";
+        };
+        world.each<const shockwave::PrefabInstance>([&](shockwave::Entity e, const shockwave::PrefabInstance& p) {
+            if (p.path.empty()) problems.push_back(where(e) + "Prefab has no path");
+        });
+        world.each<const shockwave::Light>([&](shockwave::Entity e, const shockwave::Light&) {
+            if (!world.has<shockwave::Transform>(e))
+                problems.push_back(where(e) + "Light has no Transform; it won't shine");
+        });
+        world.each<const shockwave::Environment>([&](shockwave::Entity e, const shockwave::Environment&) {
+            problems.push_back(where(e) + "an Environment in a prefab changes the whole scene; keep it in the scene");
+        });
+        if (!world.has<shockwave::Transform>(prefab->root))
+            problems.push_back(where(prefab->root) + "the root has no Transform, so copies can't be placed");
+        if (problems.size() == before)
+            std::printf("ok %s%s (%zu entities)\n", folder.c_str(), path.c_str(), world.entityCount());
+    }
 }
 
 void Player::checkUIDocuments(

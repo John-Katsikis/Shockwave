@@ -75,6 +75,8 @@ void Editor::drawInspector() {
     }
 
     const Entity e = all[0];
+    const bool part = isPrefabPart(e);   // follows its prefab: shown, not edited
+    ImGui::BeginDisabled(part);
     // Identity first, with component creation beside it (docs/UI.md).
     const float addWidth = gui::buttonWidth("+ Component");
     ImGui::SetNextItemWidth(
@@ -96,9 +98,12 @@ void Editor::drawInspector() {
         ImGui::OpenPopup("AddComponent");
     }
     drawAddComponentPopup(e);
+    ImGui::EndDisabled();
     const std::string kind = kindLabel(e);
     ImGui::TextDisabled("%s%sEntity %u", kind.c_str(), kind.empty() ? "" : "  |  ", e.index);
     ImGui::Separator();
+    drawPrefabInspector(e);
+    ImGui::BeginDisabled(part);
 
     const uint32_t nameId = shockwave::componentId<Name>();
     for (const ComponentInfo& info : shockwave::registeredComponents()) {
@@ -106,6 +111,7 @@ void Editor::drawInspector() {
         drawComponent(info, e);
         if (!m_world.alive(e)) break;
     }
+    ImGui::EndDisabled();
     ImGui::End();
 }
 

@@ -1,5 +1,7 @@
 #include <Engine/Components.h>
 
+#include <Engine/Prefab.h>
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath>
@@ -65,6 +67,7 @@ void registerBuiltins() {
     if (started) return;
     started = true;
     registerComponent<Name>("Name", {field("value", &Name::value)}, "Core");
+    registerComponent<PrefabInstance>("Prefab", {field("path", &PrefabInstance::path)}, "Core");   // Prefab.h
     registerComponent<Transform>(
         "Transform",
         {
