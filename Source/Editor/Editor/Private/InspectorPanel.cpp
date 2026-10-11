@@ -206,6 +206,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     if (info.id == shockwave::componentId<shockwave::UIDocument>()) drawUIDocumentNotes(e);
     drawNavigationNotes(info, e);
     drawSpatialAudioNotes(info, e);
+    if (info.id == shockwave::componentId<shockwave::ParticleEffect>()) drawParticleEffectNotes(e);
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {

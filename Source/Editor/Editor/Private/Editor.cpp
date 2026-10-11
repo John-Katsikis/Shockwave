@@ -38,6 +38,8 @@ void Editor::onStart() {
     shockwave::registerGameUIComponents();
     shockwave::registerNavigationComponents();
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
+    shockwave::registerEffectsComponents();
+    m_effects = std::make_unique<shockwave::Effects>(&engine());
     m_audioPreview = std::make_unique<shockwave::AudioMixer>();
     connectConsole();
     ImGuiIO& io = ImGui::GetIO();
@@ -105,6 +107,7 @@ void Editor::onShutdown() {
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
     m_navOverlay.release(engine().renderer());
+    m_effects.reset();
     if (m_hasProject) {
         rememberCamera();
         saveEditorState();
@@ -211,6 +214,7 @@ void Editor::onFrame(double dt) {
     if (m_session) m_session->frame(dt);
     updateGameUI(dt);
     updateNavigation(dt);
+    updateEffects(dt);
 }
 
 void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
@@ -235,6 +239,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets());
     renderNavigation(renderer);
+    m_effects->render(renderer);
     if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too
 }
 

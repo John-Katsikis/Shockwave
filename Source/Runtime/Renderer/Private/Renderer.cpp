@@ -207,12 +207,17 @@ void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m->projection = projection;
     m->backend->setCamera(view, projection);
 }
+const glm::mat4& Renderer::cameraView() const { return m->view; }
+const glm::mat4& Renderer::cameraProjection() const { return m->projection; }
 void Renderer::drawMesh(
     MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
     const DrawMaterial& material) {
     m->backend->drawMesh(mesh, transform, texture, tint, material);
 }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
+void Renderer::drawParticles(const ParticleDrawList& particles) {
+    if (!particles.batches.empty()) m->backend->drawParticles(particles);
+}
 
 // ---- Settings ----
 

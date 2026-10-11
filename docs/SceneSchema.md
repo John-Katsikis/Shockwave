@@ -88,6 +88,19 @@ No fields; the component's presence is what matters.
 |---|---|---|
 | `entity` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
 
+### Effects
+
+#### ParticleEffect
+
+| Field | Value | Default |
+|---|---|---|
+| `effect` | quoted text | `""` |
+| `playing` | 1 or 0 (true/false also accepted) | `1` |
+| `loop` | 1 or 0 (true/false also accepted) | `1` |
+| `speed` | number; range 0 to 10 | `1` |
+| `scale` | number; range 0.001 to 1000 | `1` |
+| `color` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
+
 ### Gameplay
 
 #### ColorPulse
@@ -311,6 +324,9 @@ Names a scene can use, built-in and from this project's asset folder.
 - `checker`
 - `panel`
 - `grid`
+- `Effects/Texture/LaserMain01.png`
+- `Effects/Texture/Particle01.png`
+- `Effects/Texture/Particle02.png`
 - `textures/bricks.png`
 - `textures/wood.png`
 

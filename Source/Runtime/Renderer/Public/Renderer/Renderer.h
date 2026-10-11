@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Renderer/Mesh.h>
+#include <Renderer/Particles.h>
 #include <Renderer/RenderTypes.h>
 
 #include <glm/glm.hpp>
@@ -76,11 +77,19 @@ public:
     // view: a standard right-handed, Y-up view matrix (glm::lookAt).
     // projection: reverse-Z (see perspectiveReverseZ in Camera.h).
     void setCamera(const glm::mat4& view, const glm::mat4& projection);
+    // The camera set last, for systems that build geometry for it (particle effects).
+    const glm::mat4& cameraView() const;
+    const glm::mat4& cameraProjection() const;
     void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
         const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
+    // Particle geometry for this frame (Renderer/Particles.h), drawn into the HDR scene
+    // after the opaque geometry, depth tested and blended in the order given. Same thread
+    // as setCamera; the data is copied, so it can be reused straight away. Several calls
+    // in one frame add up.
+    void drawParticles(const ParticleDrawList& particles);
 
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no

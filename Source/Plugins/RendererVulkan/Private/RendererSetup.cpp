@@ -42,6 +42,7 @@ VulkanRenderer::Impl::~Impl() {
     for (uint32_t i = 0; i < textureCapacity(); ++i) destroyImage(textures[i]);
     for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);
     vkDestroyCommandPool(device, uploadPool, nullptr);
+    destroyParticles();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

@@ -52,6 +52,7 @@ std::vector<AssetFolder::Change> AssetFolder::open(fs::path root) {
     for (const auto& old : m_files)
         if (old.kind == Kind::Audio) m_assets.addAudioClip(old.name, nullptr);
     m_root = std::move(root);
+    m_assets.setContentRoot(m_root);
     m_files.clear();
     m_pollTimer = 0.0;
     m_initialImport = true;

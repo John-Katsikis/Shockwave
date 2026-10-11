@@ -75,6 +75,12 @@ void Editor::drawCreateMenuItems(Entity parent) {
     ImGui::SetItemTooltip("A HUD or menu from an .rml file in Content/UI; writes a starter one");
     drawNavigationCreateItems();
     drawAudioCreateItems(parent);
+    ImGui::SeparatorText("Effects");
+    if (ImGui::MenuItem("Particle effect")) {
+        const auto files = m_effects->effectFiles();
+        createParticleEffect(files.empty() ? std::string() : files.front());
+    }
+    ImGui::SetItemTooltip("Fire, smoke, sparks... from an .efkefc file made in Effekseer");
 }
 
 void Editor::drawMenuBar() {
@@ -475,6 +481,7 @@ void Editor::drawStatsWindow() {
     drawGameUIStats();
     drawNavigationStats();
     drawAudioStats();
+    drawEffectsStats();
 
     ImGui::SeparatorText("Plugins");
     ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());

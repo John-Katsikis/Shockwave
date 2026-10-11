@@ -5,6 +5,7 @@
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -47,7 +48,13 @@ public:
     std::vector<std::pair<std::string, MeshHandle>> meshes() const;
     std::vector<std::pair<std::string, TextureHandle>> textures() const;
 
+    // The folder asset names are relative to (a project's Content/), for assets other
+    // modules read from disk themselves, like particle effects. AssetFolder::open sets it.
+    void setContentRoot(std::filesystem::path root);
+    std::filesystem::path contentRoot() const;
+
 private:
+    std::filesystem::path m_contentRoot;
     mutable std::shared_mutex m_mutex;
     std::vector<std::pair<std::string, std::shared_ptr<const AudioClip>>> m_audio;
     std::vector<std::pair<std::string, std::shared_ptr<const ModelAsset>>> m_models;

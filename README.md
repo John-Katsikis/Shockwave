@@ -105,6 +105,8 @@ Each item links to the guide that covers it in detail.
   CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
 - **Let characters find their way.** Bake a navigation mesh, and agents walk round walls
   and each other with Recast & Detour. See [Navigation](docs/Navigation.md).
+- **Add particle effects.** Fire, smoke, sparks and lasers made in the free Effekseer
+  editor, played in scenes or from game code. See [Particle effects](docs/Effects.md).
 - **Use any controller.** Gamepads, flight sticks, wheels and more, bound to named
   actions. See [Controllers](#use-controllers) below and the
   [input schema](docs/InputSchema.md).

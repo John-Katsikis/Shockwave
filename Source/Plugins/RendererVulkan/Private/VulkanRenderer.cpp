@@ -36,6 +36,8 @@ void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projectio
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
 }
 void VulkanRenderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
+void VulkanRenderer::drawParticles(const ParticleDrawList& particles) { m_impl->drawParticles(particles); }
+
 void VulkanRenderer::addLight(const LightDesc& light) {
     std::lock_guard lock(m_impl->lightMutex);
     m_impl->lights.push_back(light);

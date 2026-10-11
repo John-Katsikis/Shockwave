@@ -16,6 +16,7 @@ class Engine;
 class Input;
 class PhysicsWorld;
 class AudioWorld;
+class EffectsWorld;
 class UIWorld;
 class NavigationWorld;
 
@@ -31,6 +32,9 @@ struct GameContext {
         return subsystems.find<T>();
     }
     AudioWorld& audio() const;   // always there during Play
+    // Particle effects (docs/Effects.md). Always there during Play; without a window it
+    // does nothing, so game code doesn't need to check.
+    EffectsWorld& effects() const;
     PhysicsWorld& physics() const;   // always there during Play
     // Menus and HUDs (docs/GameUI.md). Always there during Play; without a window it
     // does nothing, so game code doesn't need to check.

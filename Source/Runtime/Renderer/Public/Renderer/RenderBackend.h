@@ -21,6 +21,7 @@
 //   is unloaded.
 
 #include <Renderer/Mesh.h>
+#include <Renderer/Particles.h>
 #include <Renderer/RenderTypes.h>
 
 #include <memory>
@@ -56,6 +57,8 @@ public:
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material) = 0;
     virtual void addLight(const LightDesc& light) = 0;
+    // This frame's particles (Renderer/Particles.h); copy what you need before returning.
+    virtual void drawParticles(const ParticleDrawList& particles) = 0;
 
     // ---- Settings ----
     virtual void setGrid(const GridSettings& grid) = 0;

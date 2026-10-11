@@ -10,6 +10,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
+#include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
@@ -207,6 +208,12 @@ private:
     void drawNavigationCreateItems();
     void drawNavigationNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
     void drawNavigationStats();
+    // EffectsPanel.cpp: particle effects live in the viewport, Inspector notes, stats.
+    void updateEffects(double dt);
+    void restartEffects();   // when Play starts and stops
+    void drawParticleEffectNotes(shockwave::Entity e);
+    void drawEffectsStats();
+    shockwave::Entity createParticleEffect(const std::string& effect);
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert
@@ -351,6 +358,9 @@ private:
     std::unique_ptr<shockwave::GameUI> m_gameUI;
     bool m_showGameUI = true;
     bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
+    // Particle effects, the same way: before the session, whose EffectsWorld uses it.
+    std::unique_ptr<shockwave::Effects> m_effects;
+    bool m_showEffects = true;
     std::unique_ptr<shockwave::PlaySession> m_session;
     // Navigation while editing: the mesh last baked or loaded for this scene.
     std::shared_ptr<const shockwave::NavMesh> m_navMesh;

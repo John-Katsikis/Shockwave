@@ -10,6 +10,7 @@
 
 #include <Audio/Audio.h>
 #include <Core/Log.h>
+#include <Effects/EffectsWorld.h>
 #include <Engine/Components.h>
 #include <Engine/Engine.h>
 #include <Engine/EntityRef.h>
