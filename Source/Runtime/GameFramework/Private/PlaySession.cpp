@@ -5,6 +5,7 @@
 #include <Engine/Engine.h>
 #include <Engine/Systems.h>
 #include <GameUI/UIWorld.h>
+#include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 
 #include <cmath>
@@ -20,6 +21,8 @@ AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>();
 PhysicsWorld& GameContext::physics() const { return subsystems.get<PhysicsWorld>(); }
 UIWorld& GameContext::ui() const { return subsystems.get<UIWorld>(); }
 UIWorld* PlaySession::ui() const { return m_subsystems.find<UIWorld>(); }
+NavigationWorld& GameContext::navigation() const { return subsystems.get<NavigationWorld>(); }
+NavigationWorld* PlaySession::navigation() const { return m_subsystems.find<NavigationWorld>(); }
 
 Input& GameContext::input() const {
     if (engine) return engine->input();
@@ -56,6 +59,9 @@ void PlaySession::start() {
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
         m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr);
         if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
+        // Finds or bakes the navigation mesh, when the scene has NavAgents or NavMeshSettings.
+        m_subsystems.add<NavigationWorld>(
+            world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
         audio()->synchronize();
         m_subsystems.add<UIWorld>(world, GameUI::forEngine(m_context.engine));
         m_mode = m_instance.createGameMode(world);
@@ -65,6 +71,7 @@ void PlaySession::start() {
         m_mode->configureSystems(m_context, m_schedule);
         m_mode->beginPlay(m_context);
         physics()->synchronize();
+        navigation()->synchronize();
         audio()->synchronize();
         storePreviousTransforms(world, m_context.jobs);
         m_state = State::Playing;
@@ -113,6 +120,7 @@ void PlaySession::update(double dt) {
     if (!std::isfinite(dt) || dt <= 0) throw std::invalid_argument("simulation dt must be positive and finite");
     storePreviousTransforms(m_context.world, m_context.jobs);
     m_schedule.run(m_context.world, m_context.jobs, dt);
+    navigation()->step(dt);   // agents steer first, so physics moves their characters
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
     audio()->synchronize();

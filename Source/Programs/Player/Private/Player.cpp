@@ -12,6 +12,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
 #include <Input/InputBinding.h>
+#include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
 
@@ -28,6 +29,7 @@ namespace player {
 void Player::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
+    shockwave::registerNavigationComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -43,7 +45,9 @@ void Player::onStart() {
     m_ui = std::make_unique<shockwave::GameUI>(&engine());
     m_ui->setContentFolder(m_project.assetFolder);
     if (m_tool.mode != Tool::Mode::Play) {
-        m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
+        m_exitCode = m_tool.mode == Tool::Mode::Check         ? check(importProblems)
+                     : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
+                                                              : schema();
         engine().quit();
         return;
     }
@@ -63,6 +67,9 @@ void Player::onStart() {
     if (!shockwave::loadScene(m_world, engine().assets(), m_project.startupScene.string(), error, hooks, &warnings))
         throw std::runtime_error(error);
     if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
+    // A navigation mesh saved next to the scene saves baking it when Play starts.
+    if (shockwave::loadSceneNavMesh(m_project.startupScene, error); !error.empty())
+        SW_LOG(shockwave::LogNavigation, Warning, "{}; baking instead", error);
     m_world.each<const shockwave::AudioSource>([&](shockwave::Entity entity, const shockwave::AudioSource& source) {
         const auto problems = shockwave::validateAudioSource(source, engine().assets());
         if (!problems.empty()) throw std::runtime_error(problems.front());
@@ -206,9 +213,15 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     }
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
     if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
+    if (m_tool.showNavMesh && m_session && m_session->navigation()) {
+        const shockwave::NavMeshOverlay::Style style;
+        m_navOverlay.drawMesh(renderer, m_session->navigation()->sharedNavMesh(), style);
+        m_navOverlay.drawPaths(renderer, engine().assets(), *m_session->navigation(), m_world, style);
+    }
 }
 
 void Player::onShutdown() {
+    m_navOverlay.release(engine().renderer());
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
     if (m_session) {
         SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());

@@ -101,6 +101,8 @@ Each item links to the guide that covers it in detail.
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
 - **Build menus and HUDs.** Write them as `.rml` and `.rcss` files, much like HTML and
   CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
+- **Let characters find their way.** Bake a navigation mesh, and agents walk round walls
+  and each other with Recast & Detour. See [Navigation](docs/Navigation.md).
 - **Use any controller.** Gamepads, flight sticks, wheels and more, bound to named
   actions. See [Controllers](#use-controllers) below and the
   [input schema](docs/InputSchema.md).
@@ -577,6 +579,7 @@ Shockwave/
                           scene files, camera, subsystems and the engine loop
       Audio/              clips, mixing and spatial sound sources
       Physics/            Jolt physics (PhysicsWorld)
+      Navigation/         navigation meshes, paths and agents with Recast & Detour (NavigationWorld)
       GameFramework/      GameMode, GameInstance, GameModule, PlaySession
     Plugins/            renderer plugins, loaded at runtime and hot-swappable (docs/Plugins.md)
       RendererVulkan/     the Vulkan renderer; engine shaders (GLSL) in Shaders/
@@ -613,6 +616,7 @@ local headers, Shockwave modules, third-party, then the standard library.
 |---|---|
 | Language and build | C++20 and CMake |
 | Physics | Jolt Physics 5.6.0, for rigid bodies, triggers and character controllers |
+| Navigation | Recast & Detour 1.6.0, for navigation meshes, paths and crowds |
 | Windows, input, audio, timing | SDL3, on every platform |
 | Graphics | Vulkan 1.3, loaded at runtime by volk and set up with vk-bootstrap |
 | GPU memory and math | VMA for GPU memory, GLM for math |

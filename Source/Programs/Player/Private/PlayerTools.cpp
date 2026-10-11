@@ -13,6 +13,7 @@
 #include <GameUI/GameUI.h>
 #include <Input/Input.h>
 #include <Input/InputBinding.h>
+#include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
 
@@ -109,7 +110,20 @@ int Player::check(const std::vector<std::string>& importProblems) {
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
 
-        // Start the game on it, as Play does, to catch physics setup problems.
+        // Navigation: a saved mesh that no longer matches the scene gets baked again on
+        // every Play, which is slow and easy to miss.
+        std::string navError;
+        if (const auto saved = shockwave::loadSceneNavMesh(scene, navError);
+            saved && shockwave::sceneUsesNavigation(world) &&
+            saved->inputHash() !=
+                shockwave::navInputHash(world, &engine().assets(), shockwave::findNavMeshSettings(world)))
+            report(
+                m_project.relative(shockwave::navMeshPathFor(scene)) +
+                ": out of date, so Play bakes the navigation mesh again; run player --bake-navmesh or Bake in the "
+                "editor");
+        if (!navError.empty()) report(navError);
+
+        // Start the game on it, as Play does, to catch physics and navigation setup problems.
         try {
             shockwave::PlaySession session(world, engine().jobs(), *m_instance, &engine());
             session.start();
@@ -117,6 +131,11 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 const shockwave::Name* name = world.get<shockwave::Name>(diagnostic.entity);
                 report(scene.string() + ": entity '" + (name ? name->value : "?") + "': " + diagnostic.message);
             }
+            for (const auto& diagnostic : session.navigation()->diagnostics())
+                report(
+                    scene.string() + ": " +
+                    (diagnostic.entity.valid() ? "entity '" + entityName(diagnostic.entity) + "': " : "") +
+                    diagnostic.message);
             session.stop();
         } catch (const std::exception& e) {
             report(scene.string() + ": gameplay failed to start: " + e.what());
