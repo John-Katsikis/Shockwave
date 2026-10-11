@@ -193,6 +193,7 @@ In `SW_GAME`, `Type` is either the `GameMode` every scene plays with, or your ow
 | `audio()` | The session's audio. |
 | `physics()` | The session's physics. |
 | `ui()` | The session's menus and HUDs. See [Game UI](GameUI.md). |
+| `effects()` | The session's particle effects. See [Particle effects](Effects.md). |
 | `engine` | The engine. Null in tools and tests that run without a window. |
 | `jobs` | The job system that runs work across threads. |
 | `subsystems`, `subsystem<T>()` | This Play session's services. See [Lifecycle](#lifecycle). |

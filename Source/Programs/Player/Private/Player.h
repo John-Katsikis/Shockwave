@@ -7,6 +7,7 @@
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
 #include <Projects/Project.h>
 
@@ -70,6 +71,13 @@ private:
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
         std::vector<std::string>& checkedDocuments);
 
+    // --check for particle effects (PlayerEffects.cpp): a scene's ParticleEffects, then
+    // every .efkefc in Content. Warnings (parts that aren't drawn yet) don't fail it.
+    void checkParticleEffects(
+        shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
+        std::vector<std::string>& checkedEffects);
+    void checkUnusedEffects(const std::vector<std::string>& checkedEffects, std::vector<std::string>& problems);
+
     shockwave::Project m_project;
     Tool m_tool;
     const shockwave::GameModule& m_module;
@@ -80,11 +88,13 @@ private:
     bool m_benchmarkMeasuring = false;
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;
+    double m_effectsUpdateMs = 0, m_effectsBuildMs = 0;   // particle effects, the same way
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
     std::unique_ptr<shockwave::GameUI> m_ui;   // before the session, whose UIWorld uses it
+    std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
     std::unique_ptr<shockwave::PlaySession> m_session;
 };
 

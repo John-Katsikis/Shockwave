@@ -34,6 +34,7 @@ public:
     GameMode* gameMode() const { return m_mode.get(); }
     SubsystemCollection& subsystems() { return m_subsystems; }
     AudioWorld* audio() const;   // null while editing
+    EffectsWorld* effects() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
     UIWorld* ui() const;   // null while editing
 

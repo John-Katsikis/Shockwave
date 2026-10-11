@@ -28,6 +28,7 @@ namespace player {
 void Player::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
+    shockwave::registerEffectsComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -42,6 +43,8 @@ void Player::onStart() {
     }
     m_ui = std::make_unique<shockwave::GameUI>(&engine());
     m_ui->setContentFolder(m_project.assetFolder);
+    m_effects = std::make_unique<shockwave::Effects>(&engine());
+    m_effects->setContentFolder(m_project.assetFolder);
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
         engine().quit();
@@ -101,6 +104,7 @@ void Player::onFrame(double dt) {
     }
     m_session->frame(dt);
     m_ui->update(m_world, dt);
+    m_effects->update(m_world, dt);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
@@ -118,6 +122,9 @@ void Player::benchmark(double dt) {
         const shockwave::UIStats ui = m_ui->stats();   // the previous frame's
         m_uiUpdateMs += ui.updateMs;
         m_uiLayoutMs += ui.layoutMs;
+        const shockwave::EffectsStats effects = m_effects->stats();
+        m_effectsUpdateMs += effects.updateMs;
+        m_effectsBuildMs += effects.buildMs;
         ++m_uiFrames;
     }
     if (m_benchmarkMeasuring && m_benchmarkTime >= m_tool.benchmarkSeconds) {
@@ -153,6 +160,11 @@ void Player::reportBenchmark() {
     std::printf(
         "game ui cpu:  %.3f ms update + %.3f ms layout (%u documents, %u draws, %u vertices)\n", m_uiUpdateMs / frames,
         m_uiLayoutMs / frames, ui.visible, ui.drawCommands, ui.vertices);
+    const shockwave::EffectsStats effects = m_effects->stats();
+    std::printf(
+        "effects cpu:  %.3f ms simulation (worker) + %.3f ms build (%u effects, %u particles, %u draws, %u vertices)\n",
+        m_effectsUpdateMs / frames, m_effectsBuildMs / frames, effects.playing, effects.particles, effects.batches,
+        effects.vertices);
     if (m_tool.benchmarkJson.empty()) return;
     std::ofstream json(m_tool.benchmarkJson, std::ios::trunc);
     auto escape = [](const std::string& text) {
@@ -181,6 +193,8 @@ void Player::reportBenchmark() {
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"
          << "  \"ui_update_ms\": " << m_uiUpdateMs / frames << ",\n"
          << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
+         << "  \"effects_update_ms\": " << m_effectsUpdateMs / frames << ",\n"
+         << "  \"effects_build_ms\": " << m_effectsBuildMs / frames << ",\n"
          << "  \"passes\": [";
     const auto& passes = renderer.passTimings();
     for (size_t i = 0; i < passes.size(); ++i) {
@@ -201,6 +215,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
         renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
     }
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
+    m_effects->render(renderer);
     if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
 }
 
@@ -213,6 +228,7 @@ void Player::onShutdown() {
     m_session.reset();
     if (m_instance) m_instance->shutdown();
     m_ui.reset();
+    m_effects.reset();
 }
 
 void Player::takeScreenshot() {

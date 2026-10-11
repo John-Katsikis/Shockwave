@@ -41,6 +41,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     }
     std::vector<fs::path> scenes = m_tool.scenes;
     std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
+    std::vector<std::string> checkedEffects;   // .efkefc files a scene's ParticleEffect validated
     if (scenes.empty()) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(m_project.sceneFolder, ec)) {
@@ -108,6 +109,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         });
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
+        checkParticleEffects(world, scene.string(), problems, checkedEffects);
 
         // Start the game on it, as Play does, to catch physics setup problems.
         try {
@@ -134,6 +136,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
             if (uiProblems.empty()) std::printf("ok %s\n", shown.c_str());
         }
     }
+    if (m_tool.scenes.empty()) checkUnusedEffects(checkedEffects, problems);
     // Input bindings: optional, but a broken file means broken controls.
     const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
     if (fs::exists(inputFile)) {

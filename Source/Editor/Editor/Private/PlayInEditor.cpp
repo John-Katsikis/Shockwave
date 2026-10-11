@@ -37,6 +37,7 @@ void Editor::play() {
         return;
     }
     const bool resuming = playState() == PlayState::Paused;
+    if (!resuming) restartEffects();   // effects play from their first frame, as in the game
     try {
         m_session->start();
     } catch (const std::exception& e) {
@@ -79,6 +80,7 @@ void Editor::stop() {
     } catch (const std::exception& e) {
         error(std::string("Gameplay cleanup failed: ") + e.what());
     }
+    restartEffects();
     m_gizmoWasUsing = false;
     m_viewThroughCamera = m_viewBeforePlay;
     log("Stopped after " + std::to_string(m_session->ticks()) + " simulation ticks");

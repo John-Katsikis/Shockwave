@@ -271,6 +271,8 @@ void Editor::drawViewportToolbar() {
         if (ImGui::MenuItem("Camera and light icons", nullptr, &m_prefs.showCameraIcons)) m_prefsDirty = true;
         ImGui::MenuItem("Game UI", nullptr, &m_showGameUI);
         ImGui::SetItemTooltip("The scene's UIDocuments, drawn over it as the game shows them");
+        ImGui::MenuItem("Particle effects", nullptr, &m_showEffects);
+        ImGui::SetItemTooltip("Play the scene's ParticleEffects in the viewport");
         if (ImGui::MenuItem("Stats", nullptr, &m_prefs.showStats)) m_prefsDirty = true;
         ImGui::SeparatorText("Editor camera");
         ImGui::SetNextItemWidth(160.0f * dpi);

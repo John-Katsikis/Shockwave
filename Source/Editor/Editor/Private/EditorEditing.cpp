@@ -121,6 +121,7 @@ std::string Editor::kindLabel(Entity e) {
         const std::string model = engine().assets().modelName(m->model);
         return model.empty() ? "Model" : fs::path(model).stem().string();
     }
+    if (m_world.has<shockwave::ParticleEffect>(e)) return "Particle effect";
     if (m_world.has<shockwave::CharacterController>(e)) return "Character";
     if (m_world.has<shockwave::PhysicsSettings>(e)) return "Physics";
     if (m_world.has<shockwave::Collider>(e)) {

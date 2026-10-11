@@ -89,3 +89,8 @@ add_executable(game_ui_test GameUITest.cpp)
 target_link_libraries(game_ui_test PRIVATE Shockwave::GameUI)
 shockwave_warnings(game_ui_test)
 add_test(NAME game_ui COMMAND game_ui_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+add_executable(effects_test EffectsTest.cpp)
+target_link_libraries(effects_test PRIVATE Shockwave::Effects)
+shockwave_warnings(effects_test)
+add_test(NAME effects COMMAND effects_test ${CMAKE_SOURCE_DIR} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

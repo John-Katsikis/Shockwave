@@ -163,6 +163,7 @@ endif()
 
 include(cmake/Shaders.cmake)
 include(cmake/ImGui.cmake)
+include(cmake/Effekseer.cmake)
 
 include(cmake/ShockwaveModule.cmake)
 

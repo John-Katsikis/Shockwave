@@ -135,4 +135,14 @@ std::vector<std::string> Assets::audioClips() const {
     return result;
 }
 
+void Assets::setContentRoot(std::filesystem::path root) {
+    std::unique_lock lock(m_mutex);
+    m_contentRoot = std::move(root);
+}
+
+std::filesystem::path Assets::contentRoot() const {
+    std::shared_lock lock(m_mutex);
+    return m_contentRoot;
+}
+
 }   // namespace shockwave

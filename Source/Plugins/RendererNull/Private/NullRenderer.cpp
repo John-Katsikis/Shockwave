@@ -31,6 +31,7 @@ public:
         m_draws.fetch_add(1, std::memory_order_relaxed);
     }
     void addLight(const LightDesc&) override { m_lights.fetch_add(1, std::memory_order_relaxed); }
+    void drawParticles(const ParticleDrawList&) override {}
 
     void setGrid(const GridSettings&) override {}
     void setLighting(const LightingDesc&) override {}

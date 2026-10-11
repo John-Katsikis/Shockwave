@@ -10,6 +10,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
+#include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
 #include <Projects/Project.h>
 
@@ -191,6 +192,12 @@ private:
     // Adds an entity showing the document; writes a starter document first if it's missing.
     shockwave::Entity createUIDocument(const std::string& document);
     std::string newUIDocumentPath() const;   // "UI/hud.rml", or the first free "UI/hud2.rml"...
+    // EffectsPanel.cpp: particle effects live in the viewport, Inspector notes, stats.
+    void updateEffects(double dt);
+    void restartEffects();   // when Play starts and stops
+    void drawParticleEffectNotes(shockwave::Entity e);
+    void drawEffectsStats();
+    shockwave::Entity createParticleEffect(const std::string& effect);
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert
@@ -335,6 +342,9 @@ private:
     std::unique_ptr<shockwave::GameUI> m_gameUI;
     bool m_showGameUI = true;
     bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
+    // Particle effects, the same way: before the session, whose EffectsWorld uses it.
+    std::unique_ptr<shockwave::Effects> m_effects;
+    bool m_showEffects = true;
     std::unique_ptr<shockwave::PlaySession> m_session;
     bool m_gameModuleMatches = false;   // the project's game module is loaded, so Play can run it
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's

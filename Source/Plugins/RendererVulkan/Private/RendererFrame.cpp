@@ -71,6 +71,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
 
 bool VulkanRenderer::Impl::beginFrame() {
     clearDrawLists();
+    clearParticles();
     uiCommands.clear();
     {
         std::lock_guard lock(lightMutex);
@@ -271,6 +272,7 @@ void VulkanRenderer::Impl::endFrame() {
     vk::check(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer");
 
     prepareDraws(f);
+    prepareParticles();
     writeFrameData(f);
     buildGraph(cmd, f, image);
     graph.setTimestampPool(f.timestamps);
@@ -423,6 +425,11 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         sceneUses.push_back({atlas, ImageUse::Sampled});
     }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); });
+    if (!particleDraws.empty()) {
+        graph.addPass(
+            "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
+            [this](VkCommandBuffer cmd) { recordParticles(cmd); });
+    }
     graph.addPass(
         "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
         [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
@@ -467,7 +474,8 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     depthAttachment.imageView = sceneDepth.view;
     depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // Kept when particles are drawn next, for their depth test.
+    depthAttachment.storeOp = particleDraws.empty() ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     VkRenderingInfo rendering{};

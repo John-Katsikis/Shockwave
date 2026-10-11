@@ -36,6 +36,8 @@ void Editor::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
+    shockwave::registerEffectsComponents();
+    m_effects = std::make_unique<shockwave::Effects>(&engine());
     m_audioPreview = std::make_unique<shockwave::AudioMixer>();
     connectConsole();
     ImGuiIO& io = ImGui::GetIO();
@@ -102,6 +104,7 @@ void Editor::onShutdown() {
     m_session.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
+    m_effects.reset();
     if (m_hasProject) {
         rememberCamera();
         saveEditorState();
@@ -207,6 +210,7 @@ void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
     updateGameUI(dt);
+    updateEffects(dt);
 }
 
 void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
@@ -230,6 +234,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     // While editing (or paused) nothing moves on its own, so draw exactly what's there.
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets());
+    m_effects->render(renderer);
     if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too
 }
 

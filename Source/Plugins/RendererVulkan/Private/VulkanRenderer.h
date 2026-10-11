@@ -31,6 +31,7 @@ public:
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material) override;
     void addLight(const LightDesc& light) override;
+    void drawParticles(const ParticleDrawList& particles) override;
 
     void setGrid(const GridSettings& grid) override;
     void setLighting(const LightingDesc& lighting) override;

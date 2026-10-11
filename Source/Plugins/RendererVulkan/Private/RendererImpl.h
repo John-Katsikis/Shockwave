@@ -500,6 +500,52 @@ struct VulkanRenderer::Impl {
     // Draws one atlas's shadow maps.
     void recordShadows(VkCommandBuffer cmd, Frame& f, const std::vector<ShadowPass>& passes, const vk::Image& atlas);
 
+    // ---- Particles (RendererParticles.cpp) --------------------------------------------
+
+    // Must match ParticleBatchData in shaders/particle.frag.
+    struct ParticleBatchData {
+        glm::vec4 tint;
+        glm::vec4 edgeColor;
+        glm::vec3 lightDirection;
+        uint32_t texture;
+        glm::vec3 lightColor;
+        uint32_t alphaTexture;
+        glm::vec3 ambient;
+        uint32_t flags;
+        float emissive;
+        uint32_t blend;
+        float pad[2];
+    };
+    static_assert(sizeof(ParticleBatchData) == 96, "ParticleBatchData must match shaders/particle.frag");
+    struct ParticleDraw {
+        uint32_t firstIndex, indexCount;
+        ParticleBlend blend;
+        ParticleCull cull;
+        bool depthTest, depthWrite;
+    };
+    // Per frame in flight, persistently mapped, grown (only) when a frame doesn't fit.
+    struct ParticleBuffers {
+        vk::Buffer vertices, indices, batches;
+        void *vertexData = nullptr, *indexData = nullptr, *batchData = nullptr;
+        size_t vertexCapacity = 0, indexCapacity = 0, batchCapacity = 0;   // bytes
+        VkDeviceAddress vertexAddress = 0, batchAddress = 0;
+    };
+    std::array<ParticleBuffers, kFramesInFlight> particleBuffers{};
+    VkPipelineLayout particleLayout = VK_NULL_HANDLE;
+    std::array<VkPipeline, 5> particlePipelines{};   // indexed by ParticleBlend
+    // This frame's particles, gathered by drawParticles; capacity is kept between frames.
+    std::vector<ParticleVertex> particleVertices;
+    std::vector<uint32_t> particleIndices;
+    std::vector<ParticleBatchData> particleBatchData;
+    std::vector<ParticleDraw> particleDraws;
+
+    void createParticlePipelines();
+    void destroyParticles();
+    void drawParticles(const ParticleDrawList& list);
+    void clearParticles();
+    void prepareParticles();   // copies the frame's particles to the GPU
+    void recordParticles(VkCommandBuffer cmd);
+
     void endFrame();
 
     // Camera, ambient light and this frame's lights, where the mesh shader reads them.
