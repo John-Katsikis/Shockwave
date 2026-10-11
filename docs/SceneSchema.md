@@ -229,6 +229,7 @@ end
 | `visible` | 1 or 0 (true/false also accepted) | `1` |
 | `order` | whole number; range -1000 to 1000 | `0` |
 | `focus_on_show` | 1 or 0 (true/false also accepted) | `0` |
+| `preview` | quoted text | `""` |
 
 ## Assets
 

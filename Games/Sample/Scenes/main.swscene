@@ -197,4 +197,14 @@ entity "HUD"
     visible 1
     order 0
     focus_on_show 0
+    preview "pulses=3"
+end
+
+entity "PauseMenu"
+  UIDocument
+    document "UI/menu.rml"
+    visible 0
+    order 10
+    focus_on_show 1
+    preview "log=[{number=1, time=0.4}, {number=2, time=1.7}, {number=3, time=2.2}]"
 end

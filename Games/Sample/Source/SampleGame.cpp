@@ -2,7 +2,9 @@
 // Crate one during Play, so you can see gameplay code running in the editor. Pressing
 // "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and rumbles the
 // pad; the binding lives in Config/Input.swinput. The HUD (Content/UI/hud.rml) counts the
-// pulses and has a Pulse button that does the same.
+// pulses and has a Pulse button that does the same. "menu" (P, or Start) opens a pause
+// menu (Content/UI/menu.rml) you can drive with the keyboard or a gamepad, with a list of
+// recent pulses filled from here.
 
 #include <Shockwave/Game.h>
 
@@ -39,13 +41,27 @@ public:
             crate.add(ColorPulse{.base = crate.get<MeshRenderer>().tint});
         // The HUD's {{pulses}}, and its Pulse button (onclick="pulse").
         m_pulses = 0;
+        m_time = 0.0;
+        m_log = UIValue::list();
         game.ui().set("pulses", m_pulses);
+        game.ui().set("log", m_log);
         game.ui().on("pulse", [this, &game](const UIEvent&) { pulse(game); });
+        // The pause menu's buttons, and "back" (Escape, or East on a gamepad), which sends
+        // the menu's data-back="resume".
+        game.ui().on("resume", [&game](const UIEvent&) { game.ui().hide("PauseMenu"); });
+        game.ui().on("reset", [this, &game](const UIEvent&) {
+            m_pulses = 0;
+            m_log = UIValue::list();
+            game.ui().set("pulses", m_pulses);
+            game.ui().set("log", m_log);
+        });
         SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", game.world.entityCount());
     }
 
     // Once per frame on the main thread.
-    void frame(GameContext& game, double) override {
+    void frame(GameContext& game, double dt) override {
+        m_time += dt;
+        if (game.input().wasActionPressed("menu")) game.ui().toggle("PauseMenu");
         if (game.input().wasActionPressed("pulse") && !game.ui().capturesInput()) pulse(game);
     }
 
@@ -57,9 +73,19 @@ private:
         game.input().rumble(0.3f, 0.8f, 0.2);
         game.audio().playClip("Audio/pulse.wav", {.volume = 0.6f});
         game.ui().set("pulses", ++m_pulses);
+        // The menu lists the last five pulses: data-for="entry : log" in menu.rml.
+        m_log.push(UIValue::record({{"number", m_pulses}, {"time", m_time}}));
+        if (m_log.size() > 5) {
+            UIValue recent = UIValue::list();
+            for (size_t i = m_log.size() - 5; i < m_log.size(); ++i) recent.push(m_log[i]);
+            m_log = std::move(recent);
+        }
+        game.ui().set("log", m_log);
     }
 
     int m_pulses = 0;
+    double m_time = 0.0;
+    UIValue m_log;
 };
 
 SW_GAME("sample", SampleGame)

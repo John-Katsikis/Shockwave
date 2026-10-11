@@ -177,6 +177,9 @@ void Player::checkUIDocuments(
             return;
         }
         checkedDocuments.push_back(document.document);
+        std::string error;
+        if (!document.preview.empty() && !shockwave::parseUIPreview(document.preview, &error))
+            problems.push_back(where + " preview: " + error);
         for (const auto& problem : m_ui->validate(document.document))
             problems.push_back(where + " " + document.document + ": " + problem.message);
     });

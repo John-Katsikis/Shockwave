@@ -96,6 +96,13 @@ void UIWorld::set(std::string_view name, bool value) {
 void UIWorld::set(std::string_view name, std::string_view value) {
     if (m_ui) m_ui->setValue(name, value);
 }
+void UIWorld::set(std::string_view name, UIValue value) {
+    if (m_ui) m_ui->setValue(name, std::move(value));
+}
+const UIValue& UIWorld::value(std::string_view name) const {
+    static const UIValue unset;
+    return m_ui ? m_ui->value(name) : unset;
+}
 std::string UIWorld::get(std::string_view name) const { return m_ui ? m_ui->valueText(name) : std::string(); }
 double UIWorld::number(std::string_view name) const { return m_ui ? m_ui->valueNumber(name) : 0.0; }
 
@@ -111,6 +118,13 @@ void UIWorld::onClick(std::string_view document, std::string_view element, Handl
 
 void UIWorld::onEvent(std::string_view document, std::string_view element, std::string_view type, Handler handler) {
     m_elementHandlers.push_back({std::string(document), std::string(element), std::string(type), std::move(handler)});
+}
+
+bool UIWorld::navigate(UINav nav) { return m_ui && m_ui->navigate(nav); }
+
+std::string UIWorld::focused(std::string_view document) const {
+    const auto focus = m_ui ? m_ui->focused() : std::nullopt;
+    return focus && focus->first == find(document) ? focus->second : std::string();
 }
 
 bool UIWorld::capturesInput() const { return m_ui && (m_ui->wantsMouse() || m_ui->wantsKeyboard()); }

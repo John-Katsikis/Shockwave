@@ -57,8 +57,16 @@ body {
 }
 h1 { display: block; font-size: 22dp; font-weight: bold; margin-bottom: 6dp; }
 p { display: block; margin-bottom: 10dp; }
-button { display: inline-block; padding: 6dp 14dp; background-color: #3d7bd9; cursor: pointer; }
+button {
+    display: inline-block;
+    padding: 6dp 14dp;
+    border: 2dp transparent;
+    background-color: #3d7bd9;
+    cursor: pointer;
+}
 button:hover { background-color: #5b93e6; }
+/* The keyboard or gamepad is on this button. */
+button:focus-visible { border-color: #ffffff; }
 )";
 
 std::string replaceAll(std::string text, const std::string& from, const std::string& to) {
@@ -74,6 +82,9 @@ void Editor::updateGameUI(double dt) {
     // Input only while playing, and only when the viewport has the mouse or focus, so
     // typing in a panel never reaches the game.
     m_gameUI->setInputEnabled(playState() == PlayState::Playing && m_viewportActive);
+    // While editing, {{values}} game code sets show the UIDocuments' preview values, or
+    // their names, so layouts can be judged before Play.
+    m_gameUI->setPreview(!playing());
     m_gameUI->update(m_world, dt);
 }
 
@@ -122,7 +133,7 @@ Entity Editor::createUIDocument(const std::string& document) {
     std::string name = fs::path(document).stem().string();
     if (!name.empty()) name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
     m_world.add<shockwave::Name>(e, {uniqueName(name.empty() ? "UI" : name)});
-    m_world.add<shockwave::UIDocument>(e, {document, true, 0, false});
+    m_world.add<shockwave::UIDocument>(e, {document, true, 0, false, {}});
     select(e);
     log("Created " + displayName(e) + " showing " + document);
     return e;
@@ -165,6 +176,24 @@ void Editor::drawUIDocumentNotes(Entity e) {
     if (problems.empty() && exists)
         ImGui::TextDisabled(
             playing() ? "Live: takes the mouse and keys while the viewport is focused" : "Previewed in the viewport");
+    // The {{values}} it uses, read again only when the file changes.
+    static std::string cachedPath;
+    static fs::file_time_type cachedTime;
+    static std::string cachedNames;
+    const fs::file_time_type time = exists ? fs::last_write_time(file, ec) : fs::file_time_type{};
+    if (cachedPath != component->document || cachedTime != time) {
+        cachedPath = component->document;
+        cachedTime = time;
+        cachedNames.clear();
+        for (const std::string& name : m_gameUI->referencedValues(component->document))
+            cachedNames += (cachedNames.empty() ? "" : ", ") + name;
+    }
+    if (!cachedNames.empty() && !playing()) {
+        ImGui::TextWrapped("Values: %s", cachedNames.c_str());
+        ImGui::SetItemTooltip(
+            "Shown as {{name}} until game code sets them in Play. Give them stand-ins in Preview, like\n"
+            "score=1200; items=[Sword, Shield]");
+    }
 }
 
 void Editor::drawGameUIStats() {

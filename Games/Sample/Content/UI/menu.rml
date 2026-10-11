@@ -1,0 +1,23 @@
+<rml>
+<head>
+    <title>Sample menu</title>
+    <link type="text/rcss" href="menu.rcss"/>
+</head>
+<!-- Shown by the "menu" action (P, or Start on a gamepad). focus_on_show gives it the
+     keyboard and gamepad: arrows or the d-pad move, Enter or South presses, Escape or East
+     goes back. data-back names the command "back" sends; the game hides the menu on it. -->
+<body data-model="game" data-back="resume">
+    <div class="menu">
+        <h1>PAUSED</h1>
+        <button id="resume" onclick="resume" autofocus>Resume</button>
+        <button id="pulse" onclick="pulse">Pulse</button>
+        <button id="reset" onclick="reset">Reset count</button>
+        <h2>Recent pulses</h2>
+        <!-- A list game code fills with game.ui().set("log", UIValue::list(...)). -->
+        <div class="log">
+            <p data-for="entry : log">#{{entry.number}} <span class="time">at {{entry.time | format(1)}} s</span></p>
+            <p class="empty" data-if="log.size == 0">None yet</p>
+        </div>
+    </div>
+</body>
+</rml>

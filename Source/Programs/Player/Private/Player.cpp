@@ -74,6 +74,7 @@ void Player::onStart() {
         if (!engine().input().loadBindingsFile(bindings, error)) throw std::runtime_error(error);
     }
     m_ui->setInputEnabled(true);
+    m_ui->setPreview(m_tool.uiPreview);
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->start();
     if (!m_session->physics()->diagnostics().empty()) {
@@ -101,6 +102,9 @@ void Player::onFrame(double dt) {
     }
     m_session->frame(dt);
     m_ui->update(m_world, dt);
+    // --ui-nav: one menu step a frame, once documents have loaded and shown.
+    if (const size_t step = m_uiNavFrame++; step >= 5 && step - 5 < m_tool.uiNav.size())
+        m_ui->navigate(m_tool.uiNav[step - 5]);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
