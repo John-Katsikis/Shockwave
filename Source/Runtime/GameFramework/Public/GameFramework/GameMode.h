@@ -13,6 +13,7 @@
 namespace shockwave {
 
 class Engine;
+class SaveGames;
 class Input;
 class PhysicsWorld;
 class AudioWorld;
@@ -39,6 +40,8 @@ struct GameContext {
     Input& input() const;
     // The first entity with this Name, or an empty EntityRef (false) when there's none.
     EntityRef find(std::string_view name) const { return findEntity(world, name); }
+    // Saving and loading the game (docs/SaveGames.md). Always there during Play.
+    SaveGames& saves() const;
 };
 
 class GameMode {
@@ -54,6 +57,12 @@ public:
     virtual void frame(GameContext&, double frameDt) { (void)frameDt; }
     // Play is stopping; the authored scene is restored right after.
     virtual void endPlay(GameContext&) {}
+    // Main thread, just before a save game snapshots the world: put state that isn't in
+    // components into game.saves().set(...).
+    virtual void beforeSave(GameContext&) {}
+    // Main thread, right after a save game replaced the world (physics is rebuilt
+    // already): read back game.saves() values, refresh UI.
+    virtual void afterLoad(GameContext&) {}
 };
 
 }   // namespace shockwave

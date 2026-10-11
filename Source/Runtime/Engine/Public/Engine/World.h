@@ -145,6 +145,9 @@ public:
     size_t entityCount() const { return m_count; }
     // A world with the same entities (same handles, same free list) and no components.
     World withoutComponents() const;
+    // A world where exactly these entities are alive, with these very handles, and no
+    // components. Save games load into one so EntityRefs game code holds stay valid.
+    static World withEntities(std::span<const Entity> live);
 
     // Visits live entities in index order, which is creation order: indices are only
     // recycled once many are free, so lists of entities stay put while you edit.

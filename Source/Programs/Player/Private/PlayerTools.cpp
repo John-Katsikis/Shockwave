@@ -10,6 +10,7 @@
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <GameFramework/SaveGame.h>
 #include <GameUI/GameUI.h>
 #include <Input/Input.h>
 #include <Input/InputBinding.h>
@@ -40,6 +41,14 @@ int Player::check(const std::vector<std::string>& importProblems) {
             ")");
     }
     std::vector<fs::path> scenes = m_tool.scenes;
+    // Save games named on the command line are checked further down, after the scenes.
+    std::vector<fs::path> saves;
+    std::erase_if(scenes, [&](const fs::path& file) {
+        if (file.extension() != ".swsave") return false;
+        saves.push_back(file);
+        return true;
+    });
+    const bool onlySaves = !m_tool.scenes.empty() && scenes.empty();
     std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
     if (scenes.empty()) {
         std::error_code ec;
@@ -49,6 +58,14 @@ int Player::check(const std::vector<std::string>& importProblems) {
         if (std::find(scenes.begin(), scenes.end(), m_project.startupScene) == scenes.end())
             scenes.push_back(m_project.startupScene);
         std::sort(scenes.begin(), scenes.end());
+    }
+    if (onlySaves) scenes.clear();
+    if (m_tool.scenes.empty()) {   // every save game the project has
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(saveFolder(), ec)) {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".swsave") saves.push_back(entry.path());
+        }
+        std::sort(saves.begin(), saves.end());
     }
     for (const fs::path& scene : scenes) {
         const std::string shown = m_project.relative(scene);
@@ -123,6 +140,36 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    // Save games: they must read back the way a load would, entity handles and all.
+    for (const fs::path& file : saves) {
+        const std::string shown = m_project.relative(file);
+        const size_t before = problems.size();
+        auto report = [&](std::string problem) {
+            if (problem.rfind(file.string(), 0) == 0) problem.replace(0, file.string().size(), shown);
+            problems.push_back(std::move(problem));
+        };
+        shockwave::World world;
+        shockwave::SaveInfo info;
+        std::string error;
+        std::vector<std::string> warnings;
+        std::ifstream in(file, std::ios::binary);
+        if (!in) {
+            report(file.string() + ": can't open it");
+            continue;
+        }
+        if (!shockwave::readSaveGame(in, file.string(), engine().assets(), world, info, error, &warnings)) {
+            report(error);
+            continue;
+        }
+        for (const std::string& warning : warnings) report(warning);
+        if (!shockwave::validSaveSlot(file.stem().string()))
+            report(file.string() + ": the file name isn't a slot name (letters, digits, spaces, - and _)");
+        if (!info.scene.empty() && !fs::exists(m_project.root / info.scene))
+            report(
+                file.string() + ": scene \"" + info.scene +
+                "\" doesn't exist; `player --load` starts in the startup scene");
+        if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
+    }
     // Documents no scene shows yet can still be shown by game code: check them too.
     if (m_tool.scenes.empty()) {
         for (const std::string& document : m_ui->documentFiles()) {
@@ -162,6 +209,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     std::printf(
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
         scenes.size() == 1 ? "" : "s");
+    if (!saves.empty()) std::printf("%zu save game%s checked\n", saves.size(), saves.size() == 1 ? "" : "s");
     return problems.empty() ? 0 : 1;
 }
 
@@ -276,6 +324,49 @@ int listDevices(double seconds) {
     }
     SDL_Quit();
     return code;
+}
+
+int listSaves(const shockwave::Project& project, const fs::path& jsonFile) {
+    const fs::path folder = project.statePath() / "SaveGames";
+    const auto saves = shockwave::listSaveGames(folder);
+    if (saves.empty()) std::printf("No save games in %s\n", project.relative(folder).c_str());
+    for (const shockwave::SaveInfo& save : saves) {
+        std::printf(
+            "%-16s %s  %8.1f s  %5zu entities  %s%s%s\n", save.slot.c_str(), save.savedAt.c_str(), save.playTime,
+            save.entities, save.scene.c_str(), save.title.empty() ? "" : "  ", save.title.c_str());
+    }
+    if (jsonFile.empty()) return 0;
+    auto quote = [](const std::string& text) {
+        std::string out = "\"";
+        for (char c : text) {
+            if (c == '"' || c == '\\') out += '\\';
+            if (c == '\n') {
+                out += "\\n";
+                continue;
+            }
+            out += c;
+        }
+        return out + "\"";
+    };
+    std::ofstream json(jsonFile, std::ios::trunc);
+    json << "[";
+    for (size_t i = 0; i < saves.size(); ++i) {
+        const shockwave::SaveInfo& save = saves[i];
+        json << (i ? ",\n " : "\n ") << "{\"slot\": " << quote(save.slot)
+             << ", \"file\": " << quote(project.relative(save.file)) << ", \"title\": " << quote(save.title)
+             << ", \"scene\": " << quote(save.scene) << ", \"saved_at\": " << quote(save.savedAt)
+             << ", \"play_time\": " << save.playTime << ", \"entities\": " << save.entities << ", \"values\": {";
+        size_t n = 0;
+        for (const auto& [key, value] : save.values) json << (n++ ? ", " : "") << quote(key) << ": " << quote(value);
+        json << "}}";
+    }
+    json << "\n]\n";
+    if (!json) {
+        std::fprintf(stderr, "Player: can't write %s\n", jsonFile.string().c_str());
+        return 1;
+    }
+    std::printf("Wrote %s\n", jsonFile.string().c_str());
+    return 0;
 }
 
 }   // namespace player

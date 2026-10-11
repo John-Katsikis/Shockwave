@@ -196,6 +196,9 @@ private:
     void loadProjectInput();   // on project open and Revert
     void applyInputEdit();   // m_inputEdit goes live, unsaved
     void saveInputBindings();
+    // SaveGamesPanel.cpp: the project's save slots; save and load during Play.
+    void drawSaveGamesWindow();
+    std::filesystem::path saveGamesFolder() const { return m_project.statePath() / "SaveGames"; }
 
     // ---- Selection (Editor.cpp) ----
     void select(shockwave::Entity e);   // replaces the selection; null clears it
@@ -388,6 +391,12 @@ private:
     int m_inputListenFrames = 0;   // frames to ignore after starting, so the click isn't recorded
     std::string m_inputNewAction, m_inputTyped, m_inputTypedError;
     glm::vec3 m_padLight{0.0f, 0.9f, 1.0f};
+
+    // Save Games window
+    bool m_showSaveGames = false;
+    std::string m_saveSlotEdit = "slot1", m_saveTitleEdit, m_saveSelected;
+    std::vector<shockwave::SaveInfo> m_saveList;
+    double m_saveListAge = 1e9;   // seconds since the list was read; re-read every second
 
     std::vector<LogEntry> m_log;
     std::mutex m_pendingLogMutex;

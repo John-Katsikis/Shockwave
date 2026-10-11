@@ -17,7 +17,9 @@ struct ColorPulse {
     float time = 0;
     float flash = 0;   // 1 right after "pulse" is pressed, fading to 0
 };
-SW_COMPONENT(ColorPulse, SW_FIELD(speed, 0, 10), SW_FIELD(strength, 0, 1))
+// Fields listed here are saved in scenes and save games; base is, so a loaded Crate
+// keeps its color.
+SW_COMPONENT(ColorPulse, SW_FIELD(speed, 0, 10), SW_FIELD(strength, 0, 1), SW_FIELD(base))
 
 class SampleGame final : public GameMode {
 public:
@@ -47,6 +49,19 @@ public:
     // Once per frame on the main thread.
     void frame(GameContext& game, double) override {
         if (game.input().wasActionPressed("pulse") && !game.ui().capturesInput()) pulse(game);
+        if (game.input().wasActionPressed("quick_save")) game.saves().save("quicksave", "Quick save");
+        if (game.input().wasActionPressed("quick_load")) game.saves().load("quicksave");
+    }
+
+    // Save games (docs/SaveGames.md): F5 saves and F9 loads, "quick_save" and "quick_load"
+    // in Config/Input.swinput. A save is about to copy the world: add what isn't in
+    // components, here the pulse count.
+    void beforeSave(GameContext& game) override { game.saves().set("pulses", m_pulses); }
+
+    // A save was loaded; the Crate and its ColorPulse came back with it.
+    void afterLoad(GameContext& game) override {
+        m_pulses = game.saves().getInt("pulses");
+        game.ui().set("pulses", m_pulses);
     }
 
     void endPlay(GameContext&) override { SW_LOG(LogGame, Info, "Sample gameplay stopped"); }

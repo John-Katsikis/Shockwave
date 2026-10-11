@@ -9,6 +9,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
+#include <GameFramework/SaveGame.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
 
@@ -131,6 +132,14 @@ int main(int argc, char** argv) {
                 tool.benchmarkJson = argv[++i];
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
+            } else if (arg == "--saves") {
+                tool.listSaves = true;
+            } else if (arg == "--load" && i + 1 < argc) {
+                tool.load = argv[++i];
+            } else if (arg == "--save" && i + 1 < argc) {
+                tool.save = argv[++i];
+                if (!shockwave::validSaveSlot(tool.save))
+                    throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                           "       [--size WxH] [--view lit|unlit|normals|lighting|cascades] [--print-frame]\n"
@@ -144,11 +153,17 @@ int main(int argc, char** argv) {
                           "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
+                          "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
+                          "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
+                          "player --load slot|file.swsave      start Play from a save game (add --screenshot to see it)\n"
+                          "player --check file.swsave          check a save game; --check alone checks them all\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
                           "player --audio-volume 0..1          master playback volume (default 1)\n"
                           "player --devices [seconds]          list controllers; then print each input pressed\n"
                           "                                    as binding text, for that many seconds");
                 return 0;
+            } else if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swsave") {
+                tool.scenes.push_back(std::filesystem::absolute(arg).lexically_normal());
             } else if (!arg.empty() && arg[0] != '-') {
                 if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")
                     tool.scenes.push_back(std::filesystem::absolute(arg).lexically_normal());
@@ -174,6 +189,7 @@ int main(int argc, char** argv) {
         shockwave::Project project;
         std::string error;
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
+        if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
         auto gameModule = gameModuleFile.empty() ? shockwave::GameModuleLibrary::load(project.gameModule, error)
@@ -198,6 +214,13 @@ int main(int argc, char** argv) {
             // Runs hidden until the frame is saved; maxFrames is only a safety net.
             if (frames) tool.screenshotFrame = frames;
             config.maxFrames = tool.screenshotFrame + 120;
+            config.window.hidden = true;
+            config.window.vsync = false;
+        }
+        if (!tool.save.empty()) {
+            // Like a screenshot: hidden, and quits once the save is written.
+            if (frames) tool.saveFrame = frames;
+            config.maxFrames = std::max(config.maxFrames, tool.saveFrame + 120);
             config.window.hidden = true;
             config.window.vsync = false;
         }

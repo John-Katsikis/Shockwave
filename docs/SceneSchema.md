@@ -85,6 +85,7 @@ end
 |---|---|---|
 | `speed` | number; range 0 to 10 | `1.5` |
 | `strength` | number; range 0 to 1 | `0.15` |
+| `base` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
 
 ### Motion
 

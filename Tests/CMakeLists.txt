@@ -12,6 +12,12 @@ add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
 add_test(NAME project COMMAND project_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+add_executable(save_game_test SaveGameTest.cpp)
+target_link_libraries(save_game_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(save_game_test)
+add_test(NAME save_games COMMAND save_game_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(save_games PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+
 add_executable(model_test ModelTest.cpp)
 target_link_libraries(model_test PRIVATE Shockwave::Engine)
 add_test(NAME model_import COMMAND model_test ${CMAKE_SOURCE_DIR}
@@ -47,6 +53,12 @@ if(SHOCKWAVE_XVFB_RUN)
         -DXVFB=${SHOCKWAVE_XVFB_RUN}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/AudioCheck.cmake)
     set_tests_properties(audio_cli_check PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    add_test(NAME save_games_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+        -DXVFB=${SHOCKWAVE_XVFB_RUN}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/SaveGameCheck.cmake)
+    set_tests_properties(save_games_cli PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
 endif()
 
 add_executable(frame_pacing_test FramePacingTest.cpp)

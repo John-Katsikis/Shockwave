@@ -182,6 +182,7 @@ void Editor::onGui() {
     if (m_showConsole) drawConsole();
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
+    if (m_showSaveGames) drawSaveGamesWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     if (m_showControls) drawControlsWindow();

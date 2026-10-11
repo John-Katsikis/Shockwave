@@ -56,6 +56,26 @@ World World::withoutComponents() const {
     return result;
 }
 
+World World::withEntities(std::span<const Entity> live) {
+    World result;
+    for (const Entity e : live) {
+        if (!e.valid()) continue;
+        if (e.index >= result.m_generations.size()) {
+            // Slots in between stay free, one generation on, as if they'd been destroyed.
+            result.m_generations.resize(size_t(e.index) + 1, 1);
+            result.m_alive.resize(size_t(e.index) + 1, 0);
+        }
+        if (result.m_alive[e.index]) continue;   // listed twice
+        result.m_generations[e.index] = e.generation;
+        result.m_alive[e.index] = 1;
+        ++result.m_count;
+    }
+    for (uint32_t i = 0; i < result.m_generations.size(); ++i) {
+        if (!result.m_alive[i]) result.m_free.push_back(i);
+    }
+    return result;
+}
+
 void World::destroy(Entity e) {
     if (!alive(e)) return;
     for (auto& pool : m_pools) {
