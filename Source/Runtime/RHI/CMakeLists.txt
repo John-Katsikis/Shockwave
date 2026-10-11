@@ -2,7 +2,7 @@
 # renderer plugin links it, so Vulkan never reaches game or editor code. Always static:
 # it's built into the plugin, and reloading the plugin reloads it too.
 shockwave_module(RHI STATIC
-    PUBLIC_DEPS Shockwave::Platform Vulkan::Headers volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator
+    PUBLIC_DEPS Shockwave::Platform Shockwave::Renderer Vulkan::Headers volk vk-bootstrap::vk-bootstrap GPUOpen::VulkanMemoryAllocator
     NO_WARNINGS ${CMAKE_CURRENT_SOURCE_DIR}/Private/Vma.cpp)
 target_compile_definitions(ShockwaveRHI PUBLIC VK_NO_PROTOTYPES
     VMA_STATIC_VULKAN_FUNCTIONS=0

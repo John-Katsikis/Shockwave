@@ -60,6 +60,11 @@ if(SHOCKWAVE_XVFB_RUN)
     set_tests_properties(audio_cli_check PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
 endif()
 
+add_executable(gpu_selection_test GpuSelectionTest.cpp)
+target_link_libraries(gpu_selection_test PRIVATE Shockwave::Renderer)
+shockwave_warnings(gpu_selection_test)
+add_test(NAME gpu_selection COMMAND gpu_selection_test)
+
 add_executable(frame_pacing_test FramePacingTest.cpp)
 target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
 shockwave_warnings(frame_pacing_test)

@@ -7,6 +7,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
+#include <cstddef>
+#include <sstream>
 #include <vector>
 
 namespace shockwave::vk {
@@ -95,6 +98,9 @@ Context::Context(SDL_Window* window) {
     VkPhysicalDeviceFeatures features10{};
     features10.samplerAnisotropy = VK_TRUE;
 
+    // Which GPU: see Renderer/GpuSelection.h. vk-bootstrap then sets the chosen one up
+    // with the features above.
+    const VkPhysicalDevice chosen = chooseGpu(features13, features12, features10);
     vkb::PhysicalDeviceSelector selector(m_instance);
     auto physicalResult = selector.set_surface(m_surface)
                               .set_minimum_version(1, 3)
@@ -102,13 +108,20 @@ Context::Context(SDL_Window* window) {
                               .set_required_features_12(features12)
                               .set_required_features(features10)
                               .prefer_gpu_device_type(vkb::PreferredDeviceType::discrete)
-                              .select();
+                              .select_devices();
     if (!physicalResult) {
         throw std::runtime_error(
-            "No GPU supports what Shockwave needs (Vulkan 1.3): " + physicalResult.error().message());
+            "No GPU supports what Shockwave needs (Vulkan 1.3): " + physicalResult.error().message() +
+            ". Run `player --gpus` to see each GPU and what it lacks.");
     }
-
-    vkb::PhysicalDevice physical = physicalResult.value();
+    auto match = std::find_if(physicalResult->begin(), physicalResult->end(), [&](const vkb::PhysicalDevice& p) {
+        return p.physical_device == chosen;
+    });
+    if (match == physicalResult->end()) {
+        SW_LOG(LogVulkan, Warning, "vk-bootstrap turned down the chosen GPU; using {}", physicalResult->front().name);
+        match = physicalResult->begin();
+    }
+    vkb::PhysicalDevice physical = *match;
     enablePresentTiming(physical, surfaceCaps2);
 
     auto deviceResult = vkb::DeviceBuilder(physical).build();
@@ -163,6 +176,161 @@ Context::~Context() {
     vkb::destroy_device(m_device);
     if (m_surface) vkDestroySurfaceKHR(m_instance.instance, m_surface, nullptr);
     vkb::destroy_instance(m_instance);
+}
+
+namespace {
+
+// True when every feature switched on in `required` is on in `have`. Vulkan feature structs
+// are sType, pNext, then nothing but VkBool32s.
+template <class T>
+bool hasFeatures(const T& required, const T& have, size_t first) {
+    const auto* need = reinterpret_cast<const VkBool32*>(reinterpret_cast<const std::byte*>(&required) + first);
+    const auto* got = reinterpret_cast<const VkBool32*>(reinterpret_cast<const std::byte*>(&have) + first);
+    for (size_t i = 0; i < (sizeof(T) - first) / sizeof(VkBool32); ++i)
+        if (need[i] && !got[i]) return false;
+    return true;
+}
+
+GpuKind kindOf(VkPhysicalDeviceType type) {
+    switch (type) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return GpuKind::Discrete;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return GpuKind::Integrated;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return GpuKind::Virtual;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU: return GpuKind::Software;
+    default: return GpuKind::Other;
+    }
+}
+
+std::string versionText(uint32_t v) {
+    return std::to_string(VK_API_VERSION_MAJOR(v)) + "." + std::to_string(VK_API_VERSION_MINOR(v)) + "." +
+           std::to_string(VK_API_VERSION_PATCH(v));
+}
+
+}   // namespace
+
+// Lists every GPU with what it can do and where it sits, lets chooseGpu decide, and logs
+// the outcome. Returns the chosen GPU, or throws when none can run the engine.
+VkPhysicalDevice Context::chooseGpu(
+    const VkPhysicalDeviceVulkan13Features& features13, const VkPhysicalDeviceVulkan12Features& features12,
+    const VkPhysicalDeviceFeatures& features10) {
+    uint32_t count = 0;
+    vkEnumeratePhysicalDevices(m_instance.instance, &count, nullptr);
+    std::vector<VkPhysicalDevice> devices(count);
+    vkEnumeratePhysicalDevices(m_instance.instance, &count, devices.data());
+
+    std::vector<GpuCandidate> candidates;
+    for (VkPhysicalDevice device : devices) {
+        GpuCandidate gpu;
+        uint32_t extCount = 0;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extCount, nullptr);
+        std::vector<VkExtensionProperties> exts(extCount);
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extCount, exts.data());
+        const auto hasExt = [&](const char* name) {
+            return std::any_of(exts.begin(), exts.end(), [&](const VkExtensionProperties& e) {
+                return std::strcmp(e.extensionName, name) == 0;
+            });
+        };
+
+        VkPhysicalDeviceProperties basic{};
+        vkGetPhysicalDeviceProperties(device, &basic);
+        const bool v12 = basic.apiVersion >= VK_API_VERSION_1_2;
+        // Where it sits, so it can be matched with the GPU the screen is plugged into.
+        VkPhysicalDeviceVulkan12Properties props12{};
+        props12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+        VkPhysicalDeviceDrmPropertiesEXT drm{};
+        drm.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT;
+        VkPhysicalDevicePCIBusInfoPropertiesEXT pci{};
+        pci.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
+        VkPhysicalDeviceProperties2 props{};
+        props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        void** next = &props.pNext;
+        if (v12) *next = &props12, next = &props12.pNext;
+        const bool hasDrm = hasExt(VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME);
+        const bool hasPci = hasExt(VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
+        if (hasDrm) *next = &drm, next = &drm.pNext;
+        if (hasPci) *next = &pci, next = &pci.pNext;
+        vkGetPhysicalDeviceProperties2(device, &props);
+
+        gpu.name = basic.deviceName;
+        gpu.kind = kindOf(basic.deviceType);
+        gpu.vendorId = basic.vendorID;
+        gpu.vulkanVersion = versionText(basic.apiVersion);
+        if (v12) {
+            gpu.driver = props12.driverName;
+            if (props12.driverInfo[0]) gpu.driver += std::string(" ") + props12.driverInfo;
+        }
+        if (hasDrm && drm.hasPrimary)
+            gpu.drmMajor = static_cast<int>(drm.primaryMajor), gpu.drmMinor = static_cast<int>(drm.primaryMinor);
+        if (hasPci) {
+            char address[32];
+            std::snprintf(
+                address, sizeof address, "%04x:%02x:%02x.%x", pci.pciDomain, pci.pciBus, pci.pciDevice,
+                pci.pciFunction);
+            gpu.pciAddress = address;
+        }
+        VkPhysicalDeviceMemoryProperties memory{};
+        vkGetPhysicalDeviceMemoryProperties(device, &memory);
+        for (uint32_t i = 0; i < memory.memoryHeapCount; ++i)
+            if (memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                gpu.memoryMB += memory.memoryHeaps[i].size >> 20;
+
+        // Can it run the engine? The first thing it lacks, in plain words.
+        if (basic.apiVersion < VK_API_VERSION_1_3) {
+            gpu.problem =
+                "its driver supports Vulkan " + gpu.vulkanVersion + ", Shockwave needs 1.3 (update the driver)";
+        } else if (!hasExt(VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            gpu.problem = "it can't show images on screen (no swapchain support)";
+        } else {
+            VkPhysicalDeviceVulkan13Features have13{};
+            have13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+            VkPhysicalDeviceVulkan12Features have12{};
+            have12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+            have12.pNext = &have13;
+            VkPhysicalDeviceFeatures2 have{};
+            have.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+            have.pNext = &have12;
+            vkGetPhysicalDeviceFeatures2(device, &have);
+            uint32_t familyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, nullptr);
+            std::vector<VkQueueFamilyProperties> families(familyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, families.data());
+            bool presents = false;
+            for (uint32_t i = 0; i < familyCount && !presents; ++i) {
+                VkBool32 supported = VK_FALSE;
+                if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                    vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &supported);
+                presents = supported == VK_TRUE;
+            }
+            if (!hasFeatures(features13, have13, offsetof(VkPhysicalDeviceVulkan13Features, robustImageAccess)) ||
+                !hasFeatures(
+                    features12, have12, offsetof(VkPhysicalDeviceVulkan12Features, samplerMirrorClampToEdge)) ||
+                !hasFeatures(features10, have.features, 0))
+                gpu.problem = "it lacks Vulkan features Shockwave needs (bindless textures, dynamic rendering...)";
+            else if (!presents)
+                gpu.problem = "it can't draw into this window";
+        }
+        candidates.push_back(std::move(gpu));
+    }
+
+    m_gpuChoice = shockwave::chooseGpu(std::move(candidates), findDisplayGpus(), requestedGpu());
+    for (const std::string& line : [&] {
+             std::vector<std::string> lines;
+             std::istringstream report(describeGpuChoice(m_gpuChoice));
+             for (std::string line; std::getline(report, line);)
+                 if (line.rfind("Warning: ", 0) != 0) lines.push_back(line);
+             return lines;
+         }())
+        SW_LOG(LogVulkan, Info, "{}", line);
+    for (const std::string& warning : m_gpuChoice.warnings) SW_LOG(LogVulkan, Warning, "{}", warning);
+    if (m_gpuChoice.chosen < 0) {
+        std::string reasons;
+        for (const GpuCandidate& gpu : m_gpuChoice.gpus) reasons += "; " + gpu.name + ": " + gpu.problem;
+        throw std::runtime_error(
+            m_gpuChoice.gpus.empty()
+                ? "Vulkan found no GPU. Is a Vulkan driver installed? (check `vulkaninfo --summary`)"
+                : "No GPU can run Shockwave" + reasons);
+    }
+    return devices[static_cast<size_t>(m_gpuChoice.chosen)];
 }
 
 const char* Context::presentTimingName() const {

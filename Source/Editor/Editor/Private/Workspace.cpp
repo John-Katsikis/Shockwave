@@ -1,6 +1,7 @@
 // The frame around the panels: menu bar, toolbar, status bar, dock layout, and the
 // smaller windows (preferences, project settings, stats, controls, about, prompts).
 #include "Editor.h"
+#include "GpuPanel.h"
 
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -443,6 +444,7 @@ void Editor::drawStatsWindow() {
     shockwave::Renderer& renderer = engine().renderer();
     const double fps = engine().fps();
     ImGui::TextDisabled("%s", renderer.gpuName());
+    drawGpuStats(renderer);
     ImGui::Text("%.0f fps  (%.2f ms)", fps, fps > 0.0 ? 1000.0 / fps : 0.0);
     drawFrameTimeGraph();
 
@@ -654,6 +656,7 @@ void Editor::drawPreferencesWindow() {
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("The renderer plugin; switching keeps meshes, textures and settings");
+    changed |= drawGpuPreference(engine(), m_prefs);
     changed |= ImGui::Checkbox("Reload game code when rebuilt", &m_prefs.autoReloadGameCode);
     if (ImGui::Checkbox("Reload renderer when rebuilt", &m_prefs.autoReloadRenderer)) {
         engine().setAutoReloadRenderer(m_prefs.autoReloadRenderer);

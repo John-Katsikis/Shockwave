@@ -112,6 +112,8 @@ Each item links to the guide that covers it in detail.
   [input schema](docs/InputSchema.md).
 - **Keep frames smooth.** A precise frame limiter, a low-latency mode and frame
   statistics. See [Frame pacing](docs/FramePacing.md).
+- **Use the right GPU.** Shockwave says which GPU it picked and why, warns when your screen
+  is plugged into a different one, and lets you choose. See [Choosing the GPU](docs/GPU.md).
 - **Write scenes as text.** Scenes are plain text, so people, scripts and AI tools can
   write them, and you can check them from the command line. See
   [Authoring with tools and AI](docs/Projects.md#authoring-with-tools-and-ai) and the
