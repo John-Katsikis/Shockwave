@@ -58,7 +58,9 @@ version, the platform, the build type and the oldest system the package runs on.
 These parts of your project stay out of packages:
 
 - `Source/`: your game code ships compiled, in `Binaries/modules`.
-- `Saved/`: editor state, autosaves, screenshots and earlier packages.
+- `Saved/`: editor state, autosaves, screenshots and earlier packages. The one exception
+  is `Saved/Cache/Textures`: your textures ship already compressed (see
+  [Optimisation](Optimisation.md)), so players' machines never compress anything.
 - `Tools/`, `CMakeLists.txt`, hidden files like `.gitignore`, and
   `Config/Package.swpackage`.
 - Anything matching your own exclude patterns (see below).
@@ -117,6 +119,7 @@ package of the same version is left as it was.
    also builds the renderer plugins and your game module.
 2. **Check.** Runs `player --check` on your project. A scene with a missing asset or
    another problem stops packaging here, with the problem listed.
+   Then it compresses any textures not yet in the cache, as `player --optimise` does.
 3. **Copy.** Copies the engine and your project into a new folder next to the old
    package, on a few threads of its own. Then it strips symbols and writes the launcher
    and README.

@@ -10,6 +10,7 @@
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -153,6 +154,7 @@ private:
             "Packaging " + m_settings.displayName(m_project) + " " + m_settings.version + " for " + packagePlatform());
         build();
         check();
+        compressTextures();
         copy();
         verify();
         finish();
@@ -199,6 +201,19 @@ private:
         if (code != 0) fail("The project has problems (listed above); fix them, then package again");
         checkCancel();
         progress(PackageStep::Check, 1.0f);
+    }
+
+    // Every texture compressed into the project's cache now (docs/Optimisation.md), so the
+    // game ships with them and players' machines never compress anything.
+    void compressTextures() {
+        if (m_project.textureCompression == "off") return;
+        log(LogLevel::Info, "Compressing textures");
+        const int code = packaging::runCommand(
+            headless() + shellQuote(m_player) + " --optimise " + shellQuote(m_project.file),
+            [&](std::string_view line) { log(LogLevel::Info, line); });
+        // Not fatal: players' machines compress what's missing on first run.
+        if (code != 0) log(LogLevel::Warning, "Some textures couldn't be compressed; players' machines will do those");
+        checkCancel();
     }
 
     // Tools run without a window or sound device, so packaging works on a headless
@@ -392,7 +407,30 @@ private:
             }
         }
         if (ec) fail("Can't read the project folder " + m_project.root.string() + ": " + ec.message());
+        content += gatherTextureCache(items, to);
         log(LogLevel::Info, "Game files: " + std::to_string(content));
+    }
+
+    // The compressed textures from Saved/Cache/Textures (compressTextures). Cache files are
+    // named <asset>-<key>.ktx2; older keys of an asset are left behind, so only the newest
+    // file of each asset ships.
+    size_t gatherTextureCache(std::vector<CopyItem>& items, const fs::path& to) {
+        if (m_project.textureCompression == "off") return 0;
+        const fs::path cache = m_project.statePath() / "Cache" / "Textures";
+        std::map<std::string, std::pair<fs::path, fs::file_time_type>> newest;
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(cache, ec)) {
+            const std::string name = entry.path().filename().string();
+            const size_t dash = name.rfind('-');
+            if (entry.path().extension() != ".ktx2" || dash == std::string::npos || !entry.is_regular_file(ec))
+                continue;
+            const auto written = entry.last_write_time(ec);
+            auto& [file, time] = newest[name.substr(0, dash)];
+            if (file.empty() || written > time) file = entry.path(), time = written;
+        }
+        for (const auto& [asset, file] : newest)
+            add(items, file.first, to / file.first.lexically_relative(m_project.root));
+        return newest.size();
     }
 
     // This machine's libstdc++ and libgcc, which the launcher uses only where the

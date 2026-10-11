@@ -1,6 +1,6 @@
 # Packages the sample through the real CLI and checks the result stands on its own:
-# the files players need are there, developer files aren't, and the packaged player
-# passes its own --check. No build (ctest runs inside the build) and no archive.
+# the files players need are there (textures compressed), developer files aren't, and
+# the packaged player passes its own --check. No build (ctest runs inside the build) and no archive.
 file(REMOVE_RECURSE "${TEMP}")
 execute_process(COMMAND "${PLAYER}" --package --project "${PROJECT}" --no-build --no-archive --output "${TEMP}"
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)
@@ -15,11 +15,20 @@ foreach(file ShockwaveSample README.txt Binaries/ShockwaveSample Binaries/shockw
         message(FATAL_ERROR "The package is missing ${file}")
     endif()
 endforeach()
-foreach(file Game/Source Game/Tools Game/Saved Game/CMakeLists.txt Game/.gitignore)
+foreach(file Game/Source Game/Tools Game/Saved/SaveGames Game/CMakeLists.txt Game/.gitignore)
     if(EXISTS "${package}/${file}")
         message(FATAL_ERROR "The package shouldn't ship ${file}")
     endif()
 endforeach()
+# Textures ship compressed, so players' machines don't compress them; nothing else in
+# Saved/ ships.
+file(GLOB shipped_textures "${package}/Game/Saved/Cache/Textures/*.ktx2")
+file(GLOB_RECURSE shipped_saved RELATIVE "${package}/Game/Saved" "${package}/Game/Saved/*")
+list(LENGTH shipped_textures texture_count)
+list(FILTER shipped_saved EXCLUDE REGEX "^Cache/Textures/[^/]+\\.ktx2$")
+if(texture_count EQUAL 0 OR shipped_saved)
+    message(FATAL_ERROR "The package should ship compressed textures and nothing else from Saved: ${shipped_saved}")
+endif()
 # Started from elsewhere, the packaged player still finds its own project.
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
         "${package}/Binaries/ShockwaveSample" --check
