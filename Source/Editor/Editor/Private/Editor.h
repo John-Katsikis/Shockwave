@@ -138,6 +138,13 @@ private:
     void previewAudio(const std::string& clip, shockwave::AudioPlayback options = {});
     void stopAudioPreview();
     shockwave::Entity spawnAudio(const std::string& clip, const glm::vec3& position);
+    // AudioPanel.cpp: spatial audio (docs/SpatialAudio.md).
+    void drawAudioCreateItems(shockwave::Entity parent);
+    void drawAudioIcons(const ImVec2& pos, const ImVec2& size);
+    void drawSpatialAudioNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
+    void drawAudioStats();
+    void drawAudioProjectSettings();   // rows inside the Project settings grid
+    void applyAudioSettings(const shockwave::Project& project);
     void drawProjectSettingsWindow();
     void drawControlsWindow();
     void drawAboutWindow();

@@ -54,6 +54,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     // The project's game code, before any scene: its components must be known to load one.
     loadGameModule(m_project.gameModule);
     engine().setTickRate(m_project.tickRate);
+    applyAudioSettings(m_project);
     applyProjectTheme();
     loadProjectInput();
     logAssetChanges(

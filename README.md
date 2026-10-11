@@ -99,6 +99,8 @@ Each item links to the guide that covers it in detail.
 - **Simulate physics.** Rigid bodies, triggers, raycasts and a character controller,
   powered by Jolt. See [Physics](docs/Physics.md).
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
+- **Hear sound in 3D.** Steam Audio HRTF for headphones, distance, facing and walls that
+  muffle sound. See [Spatial audio](docs/SpatialAudio.md).
 - **Build menus and HUDs.** Write them as `.rml` and `.rcss` files, much like HTML and
   CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
 - **Let characters find their way.** Bake a navigation mesh, and agents walk round walls
@@ -622,6 +624,7 @@ local headers, Shockwave modules, third-party, then the standard library.
 | GPU memory and math | VMA for GPU memory, GLM for math |
 | Editor and debug UI | Dear ImGui (docking branch), with ImGuizmo for gizmos |
 | Shaders | GLSL, compiled to SPIR-V at build time |
+| Spatial audio | Steam Audio 4.8.1 (Apache 2.0), loaded at runtime |
 
 ## Roadmap
 

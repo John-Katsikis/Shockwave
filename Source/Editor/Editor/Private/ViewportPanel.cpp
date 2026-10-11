@@ -132,6 +132,7 @@ void Editor::drawViewport() {
         if (m_prefs.showCameraIcons) {
             drawCameraIcons(pos, size);
             drawLightIcons(pos, size);
+            drawAudioIcons(pos, size);
         }
 
         // View cube in the top-right corner: click a face to snap the camera to that axis.
@@ -510,6 +511,8 @@ Entity Editor::cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2
     };
     if (const auto* cameras = m_world.pool<shockwave::Camera>()) consider(cameras->entities());
     if (const auto* lights = m_world.pool<shockwave::Light>()) consider(lights->entities());
+    if (const auto* sounds = m_world.pool<shockwave::AudioSource>()) consider(sounds->entities());
+    if (const auto* listeners = m_world.pool<shockwave::AudioListener>()) consider(listeners->entities());
     return best;
 }
 

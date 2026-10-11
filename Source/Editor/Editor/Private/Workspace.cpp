@@ -74,6 +74,7 @@ void Editor::drawCreateMenuItems(Entity parent) {
     if (ImGui::MenuItem("UI document")) createUIDocument(newUIDocumentPath());
     ImGui::SetItemTooltip("A HUD or menu from an .rml file in Content/UI; writes a starter one");
     drawNavigationCreateItems();
+    drawAudioCreateItems(parent);
 }
 
 void Editor::drawMenuBar() {
@@ -473,6 +474,7 @@ void Editor::drawStatsWindow() {
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
     drawGameUIStats();
     drawNavigationStats();
+    drawAudioStats();
 
     ImGui::SeparatorText("Plugins");
     ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());
@@ -738,6 +740,7 @@ void Editor::drawProjectSettingsWindow() {
         ImGui::TextDisabled("%s", m_project.relative(m_projectEdit.assetFolder).c_str());
         gui::propertyLabel("Scenes");
         ImGui::TextDisabled("%s", m_project.relative(m_projectEdit.sceneFolder).c_str());
+        drawAudioProjectSettings();
         ImGui::EndTable();
     }
     ImGui::TextDisabled("%s", m_project.file.string().c_str());
@@ -748,7 +751,8 @@ void Editor::drawProjectSettingsWindow() {
         m_projectEdit.tickRate != m_project.tickRate || m_projectEdit.width != m_project.width ||
         m_projectEdit.height != m_project.height || m_projectEdit.vsync != m_project.vsync ||
         m_projectEdit.frameLimit != m_project.frameLimit || m_projectEdit.lowLatency != m_project.lowLatency ||
-        m_projectEdit.shadowQuality != m_project.shadowQuality || m_projectEdit.renderer != m_project.renderer;
+        m_projectEdit.shadowQuality != m_project.shadowQuality || m_projectEdit.renderer != m_project.renderer ||
+        m_projectEdit.audioHrtf != m_project.audioHrtf || m_projectEdit.audioHrtfHigh != m_project.audioHrtfHigh;
     ImGui::BeginDisabled(!changed || m_projectEdit.name.empty() || playing());
     if (gui::button("Save")) {
         std::string err;

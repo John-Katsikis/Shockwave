@@ -57,7 +57,15 @@ void PlaySession::start() {
     m_ticks = 0;
     try {
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
-        m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr);
+        m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr, m_audioDevice);
+        // Occlusion rays hit the physics world's colliders.
+        audio()->setRaycast(
+            [physics = physics()](
+                glm::vec3 origin, glm::vec3 direction, float distance, Entity ignore) -> std::optional<AudioRayHit> {
+                if (const auto hit = physics->raycast(origin, direction, distance, ignore))
+                    return AudioRayHit{hit->entity, hit->distance};
+                return std::nullopt;
+            });
         if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
         // Finds or bakes the navigation mesh, when the scene has NavAgents or NavMeshSettings.
         m_subsystems.add<NavigationWorld>(
@@ -123,6 +131,7 @@ void PlaySession::update(double dt) {
     navigation()->step(dt);   // agents steer first, so physics moves their characters
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
+    audio()->update(dt);
     audio()->synchronize();
     ++m_ticks;
 }

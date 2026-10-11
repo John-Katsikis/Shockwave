@@ -30,6 +30,9 @@ void Player::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
     shockwave::registerNavigationComponents();
+    shockwave::setAudioSettings(
+        {.hrtf = m_tool.audioHrtf >= 0 ? m_tool.audioHrtf == 1 : m_project.audioHrtf,
+         .hrtfBilinear = m_project.audioHrtfHigh});
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -47,6 +50,7 @@ void Player::onStart() {
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check         ? check(importProblems)
                      : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
+                     : m_tool.mode == Tool::Mode::AudioMix    ? audioMix()
                                                               : schema();
         engine().quit();
         return;

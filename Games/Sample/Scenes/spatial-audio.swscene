@@ -1,0 +1,103 @@
+# Spatial audio demo (docs/SpatialAudio.md). Put on headphones and press Play: the pulse
+# sits to your left, the hum behind the wall on your right is muffled until you walk
+# round it, and the horn is loud only in front of it.
+#   player --scene Games/Sample/Scenes/spatial-audio.swscene --audio-mix mix.wav
+shockwave_scene 2
+editor_camera 0 9 12 0 -0.6
+
+entity "Environment"
+  Environment
+    sky_color 0.16 0.2 0.28 1
+end
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -55 30 0
+  Light
+    type Directional
+    color 1 0.95 0.86 1
+    intensity 2.4
+end
+entity "Floor"
+  Transform
+    position 0 -0.25 0
+    scale 24 0.5 24
+  MeshRenderer
+    mesh cube
+    texture grid
+    tint 0.35 0.4 0.5 1
+  Collider
+    shape Box
+end
+entity "Player"
+  Transform
+    position 0 1.6 4
+  Camera
+    fov 70
+    near_plane 0.1
+    primary 1
+  AudioListener
+end
+entity "Pulse (left)"
+  Transform
+    position -4 1 4
+    scale 0.4 0.4 0.4
+  MeshRenderer
+    mesh sphere
+    tint 0.35 0.65 1 1
+  AudioSource
+    clip "Audio/pulse.wav"
+    volume 0.8
+    loop 1
+    spatial 1
+    min_distance 1
+    max_distance 20
+    rolloff Inverse
+end
+entity "Wall"
+  Transform
+    position 2.5 1.5 4
+    scale 0.3 3 4
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.6 0.6 0.65 1
+  Collider
+    shape Box
+end
+entity "Hum (behind the wall)"
+  Transform
+    position 5 1 4
+    scale 0.4 0.4 0.4
+  MeshRenderer
+    mesh sphere
+    tint 1 0.5 0.2 1
+  AudioSource
+    clip "Audio/ambient.wav"
+    volume 0.6
+    loop 1
+    spatial 1
+    min_distance 1
+    max_distance 25
+    occlusion 1
+    occlusion_radius 0.3
+    transmission 0.15
+end
+entity "Horn (faces away)"
+  Transform
+    position 0 1 -6
+    scale 0.4 0.4 0.8
+  MeshRenderer
+    mesh cube
+    tint 0.9 0.8 0.3 1
+  AudioSource
+    clip "Audio/pulse.wav"
+    volume 0.8
+    pitch 0.5
+    loop 1
+    spatial 1
+    min_distance 1
+    max_distance 30
+    directivity 0.8
+    directivity_power 2
+end

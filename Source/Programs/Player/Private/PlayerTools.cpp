@@ -70,13 +70,8 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         for (const std::string& warning : warnings) report(warning);
 
-        world.each<const shockwave::AudioSource>([&](shockwave::Entity e, const shockwave::AudioSource& source) {
-            const auto* name = world.get<shockwave::Name>(e);
-            for (const auto& problem : shockwave::validateAudioSource(source, engine().assets()))
-                report(scene.string() + ": entity '" + (name ? name->value : "?") + "': " + problem);
-            if (source.spatial && !world.has<shockwave::Transform>(e))
-                report(scene.string() + ": spatial AudioSource has no Transform");
-        });
+        for (const auto& problem : shockwave::checkAudioScene(world, engine().assets()))
+            report(scene.string() + ": " + problem);
 
         int primaries = 0;
         world.each<const shockwave::Camera>([&](const shockwave::Camera& camera) { primaries += camera.primary; });
@@ -220,6 +215,8 @@ int Player::schema() {
         << "tick_rate 60                           # simulation updates per second\n"
         << "window_size 1280 720\n"
         << "vsync true\n"
+        << "audio_hrtf true                        # optional: false pans spatial sound for speakers\n"
+        << "audio_hrtf_quality high                # optional: low or high\n"
         << "```\n\n"
         << "Unknown or repeated keys are errors. `player --check` validates the manifest too.\n";
     if (m_tool.schemaOut == "-") {
