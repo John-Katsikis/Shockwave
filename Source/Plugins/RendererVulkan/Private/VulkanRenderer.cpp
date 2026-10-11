@@ -118,6 +118,11 @@ void VulkanRenderer::initGui() { m_impl->initGui(); }
 void VulkanRenderer::shutdownGui() { m_impl->shutdownGui(); }
 void VulkanRenderer::newGuiFrame() { ImGui_ImplVulkan_NewFrame(); }
 void VulkanRenderer::renderGuiWindows() { m_impl->renderGuiWindows(); }
+glm::uvec2 VulkanRenderer::uiOutputSize() const {
+    const VkExtent2D e = m_impl->outputExtent();
+    return {e.width, e.height};
+}
+void VulkanRenderer::drawUi(const UiDrawList& list) { m_impl->drawUi(list); }
 
 namespace {
 std::unique_ptr<RenderBackend> create(const RenderBackendDesc& desc) {

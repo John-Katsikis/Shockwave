@@ -145,6 +145,18 @@ struct GridPushConstants {
 };
 static_assert(sizeof(GridPushConstants) == 96, "GridPushConstants must match the grid shaders");
 
+// Must match the push constants in shaders/ui.vert and ui.frag.
+struct UiPushConstants {
+    glm::mat4 transform;   // output pixels to clip space, after any CSS transform
+    VkDeviceAddress vertices;
+    uint32_t texture;
+    uint32_t pad;
+};
+static_assert(sizeof(UiPushConstants) == 80, "UiPushConstants must match the UI shaders");
+// The game UI is blended in sRGB like a browser, so it draws through a UNORM view of the
+// sRGB display image.
+constexpr VkFormat kUiTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+
 struct DrawCommand {
     DrawData data;
     glm::vec4 bounds;   // world-space bounding sphere: center, radius
@@ -235,6 +247,12 @@ struct VulkanRenderer::Impl {
         VkDeviceAddress frameAddress = 0;
         VkQueryPool timestamps = VK_NULL_HANDLE;   // GPU timers for this frame's passes
         std::vector<std::string> timedPasses;   // what they timed, in order; empty: nothing to read
+        // Game UI geometry, written by drawUi while the GPU is done with this slot.
+        vk::Buffer uiVertexBuffer, uiIndexBuffer;
+        UiVertex* uiVertices = nullptr;
+        uint32_t* uiIndices = nullptr;
+        VkDeviceAddress uiVertexAddress = 0;
+        size_t uiVertexCapacity = 0, uiIndexCapacity = 0;
     };
 
     Window& window;
@@ -368,7 +386,7 @@ struct VulkanRenderer::Impl {
 
     vk::Image createImage(
         VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect, uint32_t mipLevels = 1,
-        bool dedicated = false);
+        bool dedicated = false, VkImageCreateFlags flags = 0);
 
     void destroyImage(vk::Image& image);
 
@@ -495,6 +513,24 @@ struct VulkanRenderer::Impl {
     void recordTonemap(VkCommandBuffer cmd);
 
     void recordCopyToWindow(VkCommandBuffer cmd, VkImage swapchainImage);
+
+    // ---- Game UI overlay (RendererUi.cpp) --------------------------------------------
+
+    VkPipelineLayout uiLayout = VK_NULL_HANDLE;
+    VkPipeline uiPipeline = VK_NULL_HANDLE;
+    VkImageView displayUiView = VK_NULL_HANDLE;   // displayColor as UNORM, for sRGB blending
+    std::vector<UiDrawCommand> uiCommands;   // this frame's; capacity is kept between frames
+    std::vector<glm::mat4> uiTransforms;
+    glm::uvec2 uiLayoutSize{0};
+
+    void createUiPipeline();
+    void destroyUiPipeline();
+    void createDisplayUiView();
+    void destroyDisplayUiView();
+    // Copies the list into this frame's buffers; grows them (only) when it doesn't fit.
+    void drawUi(const UiDrawList& list);
+    void recordUi(VkCommandBuffer cmd, Frame& f);
+    void destroyUiBuffers(Frame& f);
 
     // ---- Screenshots ------------------------------------------------------------------
 

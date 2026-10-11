@@ -21,6 +21,9 @@ struct GraphicsPipelineDesc {
     // Depth bias set per draw with vkCmdSetDepthBias (shadow maps). Reverse-Z: negative
     // values push surfaces away from the viewer.
     bool dynamicDepthBias = false;
+    // Blending for colors that are already multiplied by their alpha (game UI): source
+    // times one, destination times one minus source alpha. Never writes depth.
+    bool premultipliedAlpha = false;
 };
 
 // Pipeline for dynamic rendering with vertex pulling (no vertex input state) and

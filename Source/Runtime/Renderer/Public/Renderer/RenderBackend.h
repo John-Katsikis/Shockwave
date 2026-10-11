@@ -100,6 +100,14 @@ public:
     virtual void shutdownGui() = 0;
     virtual void newGuiFrame() = 0;
     virtual void renderGuiWindows() = 0;
+
+    // ---- Game UI overlay (RenderTypes.h) ----
+    // The size in pixels the overlay draws at: the editor viewport, or the window.
+    virtual glm::uvec2 uiOutputSize() const = 0;
+    // This frame's overlay. It's drawn after tonemapping into the display image, so the
+    // window, the editor viewport and screenshots all show it. The backend copies what it
+    // needs before returning. Main thread, between beginFrame and endFrame.
+    virtual void drawUi(const UiDrawList& list) = 0;
 };
 
 struct RenderBackendDesc {

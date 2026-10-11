@@ -71,6 +71,9 @@ public:
     void newGuiFrame() override;
     void renderGuiWindows() override;
 
+    glm::uvec2 uiOutputSize() const override;
+    void drawUi(const UiDrawList& list) override;
+
     struct Impl;
 
 private:

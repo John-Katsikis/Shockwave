@@ -295,6 +295,13 @@ void Renderer::shutdownGui() {
 void Renderer::newGuiFrame() { m->backend->newGuiFrame(); }
 void Renderer::renderGuiWindows() { m->backend->renderGuiWindows(); }
 
+// ---- Game UI overlay ----
+
+glm::uvec2 Renderer::uiOutputSize() const { return m->backend->uiOutputSize(); }
+void Renderer::drawUi(const UiDrawList& list) {
+    if (!list.commands.empty()) m->backend->drawUi(list);
+}
+
 // ---- Backends ----
 
 std::vector<std::string> Renderer::availableBackends() { return availablePlugins("renderer"); }

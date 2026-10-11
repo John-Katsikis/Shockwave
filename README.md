@@ -99,6 +99,8 @@ Each item links to the guide that covers it in detail.
 - **Simulate physics.** Rigid bodies, triggers, raycasts and a character controller,
   powered by Jolt. See [Physics](docs/Physics.md).
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
+- **Build menus and HUDs.** Write them as `.rml` and `.rcss` files, much like HTML and
+  CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
 - **Use any controller.** Gamepads, flight sticks, wheels and more, bound to named
   actions. See [Controllers](#use-controllers) below and the
   [input schema](docs/InputSchema.md).

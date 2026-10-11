@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace shockwave {
@@ -107,6 +108,32 @@ struct ShadowStats {
 struct PassTiming {
     std::string name;
     float gpuMs = 0;
+};
+
+// ---- Game UI overlay (GameUI module, docs/GameUI.md) ----
+// 2D geometry drawn over the finished frame at output resolution: menus, HUDs, text.
+// Positions are in output pixels from the top-left corner. Colors and textures are
+// premultiplied alpha in sRGB, blended in sRGB like a web browser, so text looks the same
+// as in other UI tools. A UI texture is an ordinary texture made with srgb = false.
+struct UiVertex {
+    glm::vec2 position;
+    uint32_t color;   // premultiplied RGBA8, red in the lowest byte
+    glm::vec2 uv;
+};
+inline constexpr uint32_t kNoUiTransform = UINT32_MAX;
+struct UiDrawCommand {
+    uint32_t firstIndex = 0;
+    uint32_t indexCount = 0;
+    TextureHandle texture;   // 0: plain color
+    uint32_t transform = kNoUiTransform;   // index into UiDrawList::transforms
+    glm::ivec4 scissor{0, 0, -1, -1};   // x, y, width, height in output pixels; negative width: none
+};
+struct UiDrawList {
+    std::span<const UiVertex> vertices;
+    std::span<const uint32_t> indices;   // into vertices, three per triangle
+    std::span<const UiDrawCommand> commands;   // in drawing order
+    std::span<const glm::mat4> transforms;   // CSS transforms, in output pixels
+    glm::uvec2 size{0};   // the output size the UI was laid out for
 };
 
 }   // namespace shockwave

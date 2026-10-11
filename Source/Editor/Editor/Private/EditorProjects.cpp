@@ -58,6 +58,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     loadProjectInput();
     logAssetChanges(
         m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
+    m_gameUI->setContentFolder(m_project.assetFolder);
     loadEditorState();
     scanScenes();
 
@@ -95,6 +96,7 @@ void Editor::closeProject() {
     m_hasProject = false;
     engine().input().clearBindingsFile();
     m_world.clear();
+    m_gameUI->setContentFolder({});
     m_scenePath.clear();
     m_selection.clear();
     m_undo.clear();

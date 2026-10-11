@@ -157,7 +157,8 @@ enum class FieldType {
     Mesh,
     Texture,
     Model,
-    Entity
+    Entity,
+    UIDocument   // a std::string: an .rml document path inside Content (GameUI)
 };
 
 struct Field {

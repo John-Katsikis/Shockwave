@@ -84,6 +84,7 @@ void writeField(
         break;
     }
     case FieldType::AudioClip:
+    case FieldType::UIDocument:
     case FieldType::String: out << ' ' << std::quoted(*static_cast<const std::string*>(data)); break;
     case FieldType::Mesh: {
         const std::string name = assets.meshName(*static_cast<const MeshHandle*>(data));
@@ -155,6 +156,7 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         return true;
     }
     case FieldType::AudioClip:
+    case FieldType::UIDocument:
     case FieldType::String: return static_cast<bool>(in >> std::quoted(*static_cast<std::string*>(data)));
     case FieldType::Mesh: {
         std::string name;
@@ -209,6 +211,7 @@ std::string valueSyntax(const Field& f) {
     case FieldType::Texture: return "texture name (white when unset)";
     case FieldType::Model: return "model path inside the asset folder, or none";
     case FieldType::Entity: return "quoted entity name, or none (a block number counting from 0 also works)";
+    case FieldType::UIDocument: return "quoted .rml document path inside Content";
     }
     return {};
 }

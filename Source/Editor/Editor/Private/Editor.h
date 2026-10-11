@@ -10,6 +10,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
+#include <GameUI/GameUI.h>
 #include <Projects/Project.h>
 
 #include <imgui.h>
@@ -36,6 +37,7 @@ inline constexpr const char* kMeshPayload = "SW_MESH";
 inline constexpr const char* kModelPayload = "SW_MODEL";
 inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
+inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
@@ -181,6 +183,14 @@ private:
     void drawContentItems();
     // ConsolePanel.cpp
     void drawConsole();
+    // GameUIPanel.cpp: game UI preview, input during Play, Inspector notes, stats.
+    void updateGameUI(double dt);
+    void feedGameUIPointer(const ImVec2& pos, const ImVec2& size, bool hovered);
+    void drawUIDocumentNotes(shockwave::Entity e);
+    void drawGameUIStats();
+    // Adds an entity showing the document; writes a starter document first if it's missing.
+    shockwave::Entity createUIDocument(const std::string& document);
+    std::string newUIDocumentPath() const;   // "UI/hud.rml", or the first free "UI/hud2.rml"...
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert
@@ -320,6 +330,11 @@ private:
     // Play: the project's gameplay and physics on the live world; Stop restores the
     // authored scene. Recreated per project.
     std::unique_ptr<shockwave::GameInstance> m_gameInstance;   // for the editor's whole run
+    // Game UI: previewed in the viewport while editing, live during Play. Before the
+    // session, whose UIWorld uses it.
+    std::unique_ptr<shockwave::GameUI> m_gameUI;
+    bool m_showGameUI = true;
+    bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
     std::unique_ptr<shockwave::PlaySession> m_session;
     bool m_gameModuleMatches = false;   // the project's game module is loaded, so Play can run it
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's

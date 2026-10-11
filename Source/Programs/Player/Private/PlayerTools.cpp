@@ -10,6 +10,7 @@
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
+#include <GameUI/GameUI.h>
 #include <Input/Input.h>
 #include <Input/InputBinding.h>
 #include <Physics/Physics.h>
@@ -39,6 +40,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
             ")");
     }
     std::vector<fs::path> scenes = m_tool.scenes;
+    std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
     if (scenes.empty()) {
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(m_project.sceneFolder, ec)) {
@@ -105,6 +107,8 @@ int Player::check(const std::vector<std::string>& importProblems) {
                     "': more than one Environment; only the first is used");
         });
 
+        checkUIDocuments(world, scene.string(), problems, checkedDocuments);
+
         // Start the game on it, as Play does, to catch physics setup problems.
         try {
             shockwave::PlaySession session(world, engine().jobs(), *m_instance, &engine());
@@ -118,6 +122,17 @@ int Player::check(const std::vector<std::string>& importProblems) {
             report(scene.string() + ": gameplay failed to start: " + e.what());
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
+    }
+    // Documents no scene shows yet can still be shown by game code: check them too.
+    if (m_tool.scenes.empty()) {
+        for (const std::string& document : m_ui->documentFiles()) {
+            if (std::find(checkedDocuments.begin(), checkedDocuments.end(), document) != checkedDocuments.end())
+                continue;
+            const std::string shown = m_project.relative(m_project.assetFolder / document);
+            const auto uiProblems = m_ui->validate(document);
+            for (const auto& problem : uiProblems) problems.push_back(shown + ": " + problem.message);
+            if (uiProblems.empty()) std::printf("ok %s\n", shown.c_str());
+        }
     }
     // Input bindings: optional, but a broken file means broken controls.
     const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
@@ -148,6 +163,23 @@ int Player::check(const std::vector<std::string>& importProblems) {
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
         scenes.size() == 1 ? "" : "s");
     return problems.empty() ? 0 : 1;
+}
+
+void Player::checkUIDocuments(
+    shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
+    std::vector<std::string>& checkedDocuments) {
+    const std::string shownScene = m_project.relative(scene);
+    world.each<const shockwave::UIDocument>([&](shockwave::Entity e, const shockwave::UIDocument& document) {
+        const shockwave::Name* name = world.get<shockwave::Name>(e);
+        const std::string where = shownScene + ": entity '" + (name ? name->value : "?") + "': UIDocument";
+        if (document.document.empty()) {
+            problems.push_back(where + " has no document");
+            return;
+        }
+        checkedDocuments.push_back(document.document);
+        for (const auto& problem : m_ui->validate(document.document))
+            problems.push_back(where + " " + document.document + ": " + problem.message);
+    });
 }
 
 int Player::schema() {

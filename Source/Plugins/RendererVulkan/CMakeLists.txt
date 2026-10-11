@@ -15,4 +15,6 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/tonemap.frag
     Shaders/shadow.vert
     Shaders/shadow.frag
+    Shaders/ui.vert
+    Shaders/ui.frag
 )

@@ -16,6 +16,7 @@ class Engine;
 class Input;
 class PhysicsWorld;
 class AudioWorld;
+class UIWorld;
 
 // What game code can reach during Play.
 struct GameContext {
@@ -30,6 +31,9 @@ struct GameContext {
     }
     AudioWorld& audio() const;   // always there during Play
     PhysicsWorld& physics() const;   // always there during Play
+    // Menus and HUDs (docs/GameUI.md). Always there during Play; without a window it
+    // does nothing, so game code doesn't need to check.
+    UIWorld& ui() const;
     // The engine's input. In tools and tests without a window it's one where nothing is
     // ever pressed, so game code doesn't need to check.
     Input& input() const;

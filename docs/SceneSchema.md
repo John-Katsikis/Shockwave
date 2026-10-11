@@ -219,6 +219,17 @@ end
 | `shadow_softness` | number; range 0 to 1 | `0.3` |
 | `shadow_bias` | number; range 0 to 10 | `1` |
 
+### UI
+
+#### UIDocument
+
+| Field | Value | Default |
+|---|---|---|
+| `document` | quoted .rml document path inside Content | `""` |
+| `visible` | 1 or 0 (true/false also accepted) | `1` |
+| `order` | whole number; range -1000 to 1000 | `0` |
+| `focus_on_show` | 1 or 0 (true/false also accepted) | `0` |
+
 ## Assets
 
 Names a scene can use, built-in and from this project's asset folder.

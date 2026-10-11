@@ -273,6 +273,8 @@ void Input::beginFrame() {
     m_mouseDelta = glm::vec2(0.0f);
     m_scrollDelta = 0.0f;
     m_lastPressed.reset();
+    m_events.clear();
+    m_eventText.clear();
 }
 
 void Input::notePressed(const InputBinding& binding) {
@@ -280,6 +282,7 @@ void Input::notePressed(const InputBinding& binding) {
 }
 
 void Input::handleEvent(const SDL_Event& event) {
+    recordEvent(event);
     using S = InputBinding::Source;
     switch (event.type) {
     case SDL_EVENT_KEY_DOWN:

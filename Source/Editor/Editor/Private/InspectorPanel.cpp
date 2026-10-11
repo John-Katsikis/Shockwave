@@ -203,6 +203,7 @@ void Editor::drawComponent(const ComponentInfo& info, Entity e) {
 
 // What a component's fields can't show: physics setup problems, imported materials.
 void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
+    if (info.id == shockwave::componentId<shockwave::UIDocument>()) drawUIDocumentNotes(e);
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {
@@ -414,6 +415,27 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
                     pushUndo(m_world);
                     *texture = *h;
                 }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        break;
+    }
+    case FieldType::UIDocument: {
+        auto& value = *static_cast<std::string*>(data);
+        if (ImGui::BeginCombo(label.c_str(), value.empty() ? "none" : value.c_str(), ImGuiComboFlags_HeightLarge)) {
+            for (const std::string& document : m_gameUI->documentFiles()) {
+                if (ImGui::Selectable(document.c_str(), document == value) && document != value) {
+                    pushUndo(m_world);
+                    value = document;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("An .rml document in Content; drop one from the Content panel");
+        if (ImGui::BeginDragDropTarget()) {
+            if (const auto* payload = ImGui::AcceptDragDropPayload(kUIDocumentPayload)) {
+                pushUndo(m_world);
+                value = static_cast<const char*>(payload->Data);
             }
             ImGui::EndDragDropTarget();
         }

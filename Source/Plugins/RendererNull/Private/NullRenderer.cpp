@@ -84,6 +84,10 @@ public:
     void newGuiFrame() override {}
     void renderGuiWindows() override {}
 
+    // Game UI is laid out at the window's size and then dropped.
+    glm::uvec2 uiOutputSize() const override { return {outputWidth(), outputHeight()}; }
+    void drawUi(const UiDrawList&) override {}
+
 private:
     uint32_t outputWidth() const { return m_viewportWidth ? m_viewportWidth : m_window.pixelWidth(); }
     uint32_t outputHeight() const { return m_viewportHeight ? m_viewportHeight : m_window.pixelHeight(); }
