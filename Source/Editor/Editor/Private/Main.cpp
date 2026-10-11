@@ -19,6 +19,7 @@
 //   --theme file.swtheme   UI theme for this run (Preferences sets the usual one)
 //   --uncapped             vsync off for this run
 //   --renderer name        renderer plugin to start with (Build > Renderer sets the usual one)
+//   --gpu name|number      GPU to render on for this run (Preferences sets the usual one)
 //   --content-folder path  show a folder inside Content on startup
 //   --preferences          show the Preferences window on startup
 //   --prefs file           preferences file to use instead of the user's (tests)
@@ -39,6 +40,7 @@ int main(int argc, char** argv) {
         options.prefsPath = editor::defaultPreferencesPath();
         bool uncapped = false;
         std::string renderer;   // --renderer
+        std::string gpu;   // --gpu
         auto integer = [](const std::string& text, const char* flag, int minimum) {
             int value = 0;
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -73,13 +75,16 @@ int main(int argc, char** argv) {
                 uncapped = true;
             else if (arg == "--renderer")
                 renderer = value();
+            else if (arg == "--gpu")
+                gpu = value();
             else if (arg == "--play")
                 options.playOnStart = true;
             else if (arg == "--help") {
                 std::puts(
                     "editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
                     "       [--content-folder path] [--preferences]\n"
-                    "       [--theme file] [--uncapped] [--renderer name] [--prefs file] [--play] [--select N]\n"
+                    "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
+                    "       [--play] [--select N]\n"
                     "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
@@ -108,6 +113,11 @@ int main(int argc, char** argv) {
         config.swappableRenderer = true;
         if (!renderer.empty()) options.prefs.renderer = renderer;
         config.renderer = options.prefs.renderer;
+        // The GPU: --gpu, else SHOCKWAVE_GPU from the shell, else Preferences.
+        if (!gpu.empty())
+            shockwave::setRequestedGpu(gpu);
+        else if (shockwave::requestedGpu().empty() && !options.prefs.gpu.empty())
+            shockwave::setRequestedGpu(options.prefs.gpu);
 
         std::unique_ptr<shockwave::Engine> started;
         try {

@@ -22,6 +22,7 @@ struct Preferences {
     bool lowLatency = false;
     float renderScale = 1.0f;
     std::string renderer = "vulkan";   // the renderer plugin (Build > Renderer)
+    std::string gpu;   // the GPU to render on, by name or number; empty picks automatically
     bool autoReloadGameCode = true;   // reload the game module whenever it's rebuilt
     bool autoReloadRenderer = true;   // reload the renderer plugin whenever it's rebuilt
     int shadowQuality = 3;   // shockwave::ShadowQuality: 0 off .. 4 ultra

@@ -11,6 +11,7 @@
 #include <GameFramework/PlaySession.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
+#include <Renderer/GpuSelection.h>
 
 #include <algorithm>
 #include <charconv>
@@ -36,6 +37,7 @@ int main(int argc, char** argv) {
         int vsyncOverride = -1;   // --vsync on|off
         std::string renderer;   // --renderer
         std::filesystem::path gameModuleFile;   // --game-module
+        bool listGpus = false;   // --gpus
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
@@ -56,6 +58,10 @@ int main(int argc, char** argv) {
             } else if (arg == "--renderers") {
                 for (const std::string& name : shockwave::Renderer::availableBackends()) std::puts(name.c_str());
                 return 0;
+            } else if (arg == "--gpu" && i + 1 < argc) {
+                shockwave::setRequestedGpu(argv[++i]);
+            } else if (arg == "--gpus") {
+                listGpus = true;
             } else if (arg == "--game-module" && i + 1 < argc) {
                 gameModuleFile = argv[++i];
             } else if (arg == "--check") {
@@ -135,7 +141,9 @@ int main(int argc, char** argv) {
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                           "       [--size WxH] [--view lit|unlit|normals|lighting|cascades] [--print-frame]\n"
                           "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
-                          "       [--renderer vulkan|null] [--game-module file.so]\n"
+                          "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
+                          "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
+                          "                                    warnings (like rendering on a GPU the screen isn't on)\n"
                           "player --renderers                  list the renderer plugins that can be loaded\n"
                           "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
                           "                                    play N frames (default 30), save the last, quit\n"
@@ -170,6 +178,22 @@ int main(int argc, char** argv) {
             const auto found = shockwave::findProjectFile(manifest);
             if (!found) throw std::runtime_error("no .swproject in " + manifest.string());
             manifest = *found;
+        }
+        if (listGpus) {
+            // Starts the Vulkan renderer in a hidden window, just to see which GPU it takes.
+            shockwave::EngineConfig config;
+            config.window = {"Shockwave GPUs", 320, 240, false};
+            config.window.hidden = true;
+            config.renderer = "vulkan";
+            shockwave::Engine engine(config);
+            const shockwave::GpuChoice* choice = engine.renderer().gpuChoice();
+            if (!choice) throw std::runtime_error("the renderer reports no GPU");
+            std::fputs(shockwave::describeGpuChoice(*choice).c_str(), stdout);
+            if (!tool.benchmarkJson.empty()) {
+                std::ofstream(tool.benchmarkJson) << shockwave::gpuChoiceJson(*choice);
+                std::printf("Wrote %s\n", tool.benchmarkJson.string().c_str());
+            }
+            return choice->chosen >= 0 ? 0 : 1;
         }
         shockwave::Project project;
         std::string error;

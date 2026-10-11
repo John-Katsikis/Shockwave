@@ -97,6 +97,8 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             number(loaded.renderScale);
         else if (key == "renderer")
             loaded.renderer = value;
+        else if (key == "gpu")
+            loaded.gpu = value;
         else if (key == "auto_reload_game_code")
             loaded.autoReloadGameCode = parseBool(value);
         else if (key == "auto_reload_renderer")
@@ -154,6 +156,8 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
         << "master_volume = " << prefs.masterVolume << "\n"
         << "render_scale = " << prefs.renderScale << "\n"
         << "renderer = " << prefs.renderer << "\n"
+        << "# The GPU to render on: a name or number from `player --gpus`; empty picks automatically\n"
+        << "gpu = " << prefs.gpu << "\n"
         << "auto_reload_game_code = " << flag(prefs.autoReloadGameCode) << "\n"
         << "auto_reload_renderer = " << flag(prefs.autoReloadRenderer) << "\n"
         << "shadow_quality = " << prefs.shadowQuality << "   # 0 off, 1 low, 2 medium, 3 high, 4 ultra\n"

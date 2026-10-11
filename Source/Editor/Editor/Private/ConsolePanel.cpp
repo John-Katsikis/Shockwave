@@ -58,6 +58,12 @@ void Editor::connectConsole() {
             std::lock_guard lock(m_pendingLogMutex);
             m_pendingLog.push_back({clockTime(), shown, std::move(text)});
         });
+    // The renderer started before the Console, so repeat its GPU warnings here.
+    if (const shockwave::GpuChoice* gpu = engine().renderer().gpuChoice()) {
+        std::lock_guard lock(m_pendingLogMutex);
+        for (const std::string& warning : gpu->warnings)
+            m_pendingLog.push_back({clockTime(), LogLevel::Warning, "LogVulkan: " + warning});
+    }
 }
 
 void Editor::disconnectConsole() {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <RHI/Common.h>
+#include <Renderer/GpuSelection.h>
 
 #include <VkBootstrap.h>
 
@@ -26,6 +27,8 @@ public:
     VkQueue graphicsQueue() const { return m_graphicsQueue; }
     uint32_t graphicsQueueFamily() const { return m_graphicsQueueFamily; }
     const char* gpuName() const { return m_device.physical_device.name.c_str(); }
+    // Every GPU found, which one was picked and why (Renderer/GpuSelection.h).
+    const GpuChoice& gpuChoice() const { return m_gpuChoice; }
     VmaAllocator allocator() const { return m_allocator; }
     float maxAnisotropy() const { return m_maxAnisotropy; }
     uint32_t maxBindlessTextures() const { return m_maxBindlessTextures; }
@@ -43,7 +46,11 @@ public:
 
 private:
     void enablePresentTiming(vkb::PhysicalDevice& physical, bool surfaceCaps2);
+    VkPhysicalDevice chooseGpu(
+        const VkPhysicalDeviceVulkan13Features& features13, const VkPhysicalDeviceVulkan12Features& features12,
+        const VkPhysicalDeviceFeatures& features10);
 
+    GpuChoice m_gpuChoice;
     vkb::Instance m_instance;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
     vkb::Device m_device;

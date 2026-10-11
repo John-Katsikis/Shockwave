@@ -267,6 +267,7 @@ const std::vector<PassTiming>& Renderer::passTimings() const { return m->backend
 float Renderer::gpuFrameMs() const { return m->backend->gpuFrameMs(); }
 float Renderer::aspectRatio() const { return m->backend->aspectRatio(); }
 const char* Renderer::gpuName() const { return m->backend->gpuName(); }
+const GpuChoice* Renderer::gpuChoice() const { return m->backend->gpuChoice(); }
 uint32_t Renderer::drawCount() const { return m->backend->drawCount(); }
 void Renderer::requestScreenshot(const std::string& path) { m->backend->requestScreenshot(path); }
 bool Renderer::screenshotPending() const { return m->backend->screenshotPending(); }

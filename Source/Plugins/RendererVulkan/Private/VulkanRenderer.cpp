@@ -109,6 +109,7 @@ float VulkanRenderer::aspectRatio() const {
     return e.height ? static_cast<float>(e.width) / static_cast<float>(e.height) : 1.0f;
 }
 const char* VulkanRenderer::gpuName() const { return m_impl->context->gpuName(); }
+const GpuChoice* VulkanRenderer::gpuChoice() const { return &m_impl->context->gpuChoice(); }
 uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
 bool VulkanRenderer::beginFrame() { return m_impl->beginFrame(); }
 void VulkanRenderer::endFrame() { m_impl->endFrame(); }

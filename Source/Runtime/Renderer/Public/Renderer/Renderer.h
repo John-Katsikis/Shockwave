@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/RenderTypes.h>
 
@@ -145,6 +146,8 @@ public:
 
     float aspectRatio() const;   // of the scene's output (window or viewport), independent of render scale
     const char* gpuName() const;
+    // Every GPU found and why this one renders (GpuSelection.h); null without a GPU.
+    const GpuChoice* gpuChoice() const;
     uint32_t drawCount() const;   // draws submitted last frame
 
     // Called by the engine. beginFrame returns false when there is nothing to

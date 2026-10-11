@@ -52,6 +52,7 @@ public:
     float gpuFrameMs() const override;
     float aspectRatio() const override;
     const char* gpuName() const override;
+    const GpuChoice* gpuChoice() const override;
     uint32_t drawCount() const override;
 
     void requestScreenshot(const std::string& path) override;

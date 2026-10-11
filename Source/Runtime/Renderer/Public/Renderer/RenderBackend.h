@@ -20,6 +20,7 @@
 // - The destructor waits for the GPU and frees everything. It runs before the library
 //   is unloaded.
 
+#include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/RenderTypes.h>
 
@@ -108,6 +109,10 @@ public:
     // window, the editor viewport and screenshots all show it. The backend copies what it
     // needs before returning. Main thread, between beginFrame and endFrame.
     virtual void drawUi(const UiDrawList& list) = 0;
+
+    // ---- GPU (GpuSelection.h) ----
+    // Every GPU the backend saw and why it picked the one it uses; null when it has no GPU.
+    virtual const GpuChoice* gpuChoice() const { return nullptr; }
 };
 
 struct RenderBackendDesc {
