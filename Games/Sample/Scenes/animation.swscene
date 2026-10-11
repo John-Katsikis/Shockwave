@@ -1,0 +1,80 @@
+# Shockwave scene
+shockwave_scene 2
+
+# Skeletal animation: three foxes from the same model playing its three clips (Survey,
+# Walk, Run), skinned on the GPU and casting shadows. Select one and pick another clip in
+# its Animator, or press Play to watch them. player --animations lists the clips.
+
+entity "Environment"
+  Environment
+    sky_color 0.5 0.6 0.75 1
+    ground_color 0.22 0.19 0.15 1
+    ambient_intensity 0.45
+    shadow_distance 30
+end
+
+entity "Ground"
+  Transform
+    scale 40 1 40
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.75 0.8 0.7 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 1.1 4.2
+    rotation -9 0 0
+  Camera
+    fov 50
+    near_plane 0.05
+    primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -45 30 0
+  Light
+    type Directional
+    color 1 0.92 0.8 1
+    intensity 3
+end
+
+entity "Fox Survey"
+  Transform
+    position -2.4 0 0
+    rotation 0 30 0
+    scale 0.012 0.012 0.012
+  ModelRenderer
+    model models/Fox.glb
+  Animator
+    clip Survey
+    time 1.2
+end
+
+entity "Fox Walk"
+  Transform
+    position 0 0 0
+    rotation 0 90 0
+    scale 0.012 0.012 0.012
+  ModelRenderer
+    model models/Fox.glb
+  Animator
+    clip Walk
+    time 0.3
+end
+
+entity "Fox Run"
+  Transform
+    position 2.4 0 -0.3
+    rotation 0 90 0
+    scale 0.012 0.012 0.012
+  ModelRenderer
+    model models/Fox.glb
+  Animator
+    clip Run
+    time 0.4
+    speed 0.8
+end

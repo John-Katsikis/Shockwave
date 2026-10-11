@@ -1,5 +1,6 @@
 #include <GameFramework/PlaySession.h>
 
+#include <Animation/AnimationWorld.h>
 #include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
@@ -16,6 +17,8 @@ namespace shockwave {
 
 AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
 AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }
+AnimationWorld& GameContext::animation() const { return subsystems.get<AnimationWorld>(); }
+AnimationWorld* PlaySession::animation() const { return m_subsystems.find<AnimationWorld>(); }
 
 PhysicsWorld& GameContext::physics() const { return subsystems.get<PhysicsWorld>(); }
 UIWorld& GameContext::ui() const { return subsystems.get<UIWorld>(); }
@@ -58,6 +61,8 @@ void PlaySession::start() {
         if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
         audio()->synchronize();
         m_subsystems.add<UIWorld>(world, GameUI::forEngine(m_context.engine));
+        m_subsystems.add<AnimationWorld>(
+            world, m_context.engine ? &m_context.engine->assets() : nullptr, m_context.jobs);
         m_mode = m_instance.createGameMode(world);
         if (!m_mode) throw std::runtime_error("the GameInstance made no GameMode");
         m_schedule = Schedule{};
@@ -122,6 +127,7 @@ void PlaySession::update(double dt) {
 void PlaySession::frame(double dt) {
     if (m_state == State::Playing) {
         m_mode->frame(m_context, dt);
+        animation()->update(dt);   // after game code, so a clip it picks shows this frame
         audio()->synchronize();
     }
     if (active() && m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());

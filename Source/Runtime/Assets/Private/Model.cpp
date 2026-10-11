@@ -90,7 +90,7 @@ for library in bpy.data.libraries:
     dependencies.add(bpy.path.abspath(library.filepath))
 pathlib.Path(output).with_suffix('.deps').write_text('\n'.join(sorted(dependencies)), encoding='utf-8')
 bpy.ops.export_scene.gltf(filepath=output, export_format='GLB', use_selection=False,
-                          export_yup=True, export_apply=True, export_animations=False)
+                          export_yup=True, export_apply=True, export_animations=True)
 )PY";
     out.close();
     if (!out) throw std::runtime_error("Could not write Blender export script");
@@ -123,7 +123,144 @@ bpy.ops.export_scene.gltf(filepath=output, export_format='GLB', use_selection=Fa
     }
     return true;
 }
+// Up to four joints per vertex (aiProcess_LimitBoneWeights keeps the strongest), weights
+// normalized to add up to 1. Bone names are resolved to nodes once the hierarchy is read.
+void readSkin(const aiMesh& src, ModelMesh& mesh, std::vector<std::string>& boneNames) {
+    if (src.mNumBones > 65535) throw std::runtime_error("Mesh '" + mesh.name + "' has more than 65535 bones");
+    std::vector<VertexSkin> skin(src.mNumVertices, VertexSkin{glm::u16vec4(0), glm::vec4(0.0f)});
+    std::vector<uint8_t> used(src.mNumVertices, 0);
+    mesh.bones.resize(src.mNumBones);
+    boneNames.resize(src.mNumBones);
+    for (unsigned b = 0; b < src.mNumBones; ++b) {
+        const aiBone& bone = *src.mBones[b];
+        boneNames[b] = bone.mName.C_Str();
+        mesh.bones[b].offset = matrix(bone.mOffsetMatrix);
+        for (unsigned w = 0; w < bone.mNumWeights; ++w) {
+            const aiVertexWeight& weight = bone.mWeights[w];
+            if (weight.mVertexId >= skin.size() || !(weight.mWeight > 0.0f)) continue;
+            VertexSkin& v = skin[weight.mVertexId];
+            uint8_t& count = used[weight.mVertexId];
+            int slot = count;
+            if (count == 4) {   // keep the four strongest
+                slot = 0;
+                for (int k = 1; k < 4; ++k)
+                    if (v.weights[k] < v.weights[slot]) slot = k;
+                if (v.weights[slot] >= weight.mWeight) continue;
+            } else
+                ++count;
+            v.joints[slot] = static_cast<uint16_t>(b);
+            v.weights[slot] = weight.mWeight;
+        }
+    }
+    for (VertexSkin& v : skin) {
+        const float total = v.weights.x + v.weights.y + v.weights.z + v.weights.w;
+        v.weights = total > 1e-6f ? v.weights / total : glm::vec4(1, 0, 0, 0);   // unweighted: follows bone 0
+    }
+    mesh.skin = std::move(skin);
+}
+
+// A skinned mesh's vertices where the model's rest pose puts them, in the model's space.
+std::vector<glm::vec3> restPositions(const ModelData& model, const ModelMesh& mesh) {
+    std::vector<glm::mat4> joints(mesh.bones.size());
+    for (size_t b = 0; b < mesh.bones.size(); ++b) joints[b] = model.nodes[mesh.bones[b].node].world * mesh.bones[b].offset;
+    std::vector<glm::vec3> positions(mesh.data.vertices.size());
+    for (size_t v = 0; v < positions.size(); ++v) {
+        const VertexSkin& skin = mesh.skin[v];
+        glm::mat4 m(0.0f);
+        for (int k = 0; k < 4; ++k)
+            if (skin.weights[k] > 0) m += skin.weights[k] * joints[skin.joints[k]];
+        positions[v] = glm::vec3(m * glm::vec4(mesh.data.vertices[v].position, 1.0f));
+    }
+    return positions;
+}
+
+void resolveSkinsAndAnimations(
+    const aiScene& scene, ModelData& model, const std::vector<std::vector<std::string>>& boneNames) {
+    std::unordered_map<std::string, uint32_t> nodes;
+    for (uint32_t i = 0; i < model.nodes.size(); ++i) nodes.emplace(model.nodes[i].name, i);   // first one wins
+    for (size_t m = 0; m < model.meshes.size(); ++m) {
+        ModelMesh& mesh = model.meshes[m];
+        for (size_t b = 0; b < mesh.bones.size(); ++b) {
+            const auto found = nodes.find(boneNames[m][b]);
+            if (found == nodes.end())
+                throw std::runtime_error(
+                    "Mesh '" + mesh.name + "' is skinned to a joint '" + boneNames[m][b] + "' that isn't in the model");
+            mesh.bones[b].node = found->second;
+        }
+    }
+    // Skinned meshes sit where their joints put them, not where their node is: bounds
+    // from the rest pose.
+    bool skinned = false;
+    for (const auto& mesh : model.meshes) skinned = skinned || (mesh.skinned() && !mesh.data.indices.empty());
+    if (skinned) {
+        model.bounds = emptyBounds();
+        for (const auto& node : model.nodes)
+            for (uint32_t index : node.meshes) {
+                const ModelMesh& mesh = model.meshes[index];
+                if (mesh.skinned()) {
+                    for (const glm::vec3& p : restPositions(model, mesh)) expand(model.bounds, p);
+                    continue;
+                }
+                for (int corner = 0; corner < 8; ++corner)
+                    expand(
+                        model.bounds, glm::vec3(
+                                          node.world * glm::vec4(
+                                                           (corner & 1) ? mesh.bounds.max.x : mesh.bounds.min.x,
+                                                           (corner & 2) ? mesh.bounds.max.y : mesh.bounds.min.y,
+                                                           (corner & 4) ? mesh.bounds.max.z : mesh.bounds.min.z, 1)));
+            }
+    }
+    for (unsigned a = 0; a < scene.mNumAnimations; ++a) {
+        const aiAnimation& src = *scene.mAnimations[a];
+        ModelAnimation clip;
+        clip.name = src.mName.length ? src.mName.C_Str() : "Animation " + std::to_string(a + 1);
+        const double ticks = src.mTicksPerSecond > 0 ? src.mTicksPerSecond : 25.0;
+        clip.duration = static_cast<float>(src.mDuration / ticks);
+        auto seconds = [&](double time) { return static_cast<float>(time / ticks); };
+        for (unsigned c = 0; c < src.mNumChannels; ++c) {
+            const aiNodeAnim& channel = *src.mChannels[c];
+            const auto found = nodes.find(channel.mNodeName.C_Str());
+            if (found == nodes.end()) {
+                model.warnings.emplace_back(
+                    "Animation '" + clip.name + "' moves a node '" + channel.mNodeName.C_Str() +
+                    "' that isn't in the model; skipped");
+                continue;
+            }
+            ModelChannel out;
+            out.node = found->second;
+            for (unsigned k = 0; k < channel.mNumPositionKeys; ++k)
+                out.positions.push_back(
+                    {seconds(channel.mPositionKeys[k].mTime), vector(channel.mPositionKeys[k].mValue)});
+            for (unsigned k = 0; k < channel.mNumRotationKeys; ++k) {
+                const aiQuaternion& q = channel.mRotationKeys[k].mValue;
+                out.rotations.push_back({seconds(channel.mRotationKeys[k].mTime), glm::quat(q.w, q.x, q.y, q.z)});
+            }
+            for (unsigned k = 0; k < channel.mNumScalingKeys; ++k)
+                out.scales.push_back({seconds(channel.mScalingKeys[k].mTime), vector(channel.mScalingKeys[k].mValue)});
+            for (const auto& key : out.positions) clip.duration = std::max(clip.duration, key.time);
+            for (const auto& key : out.rotations) clip.duration = std::max(clip.duration, key.time);
+            for (const auto& key : out.scales) clip.duration = std::max(clip.duration, key.time);
+            clip.channels.push_back(std::move(out));
+        }
+        if (src.mNumMorphMeshChannels || src.mNumMeshChannels)
+            model.warnings.emplace_back(
+                "Animation '" + clip.name + "' has morph target (blend shape) keys; they aren't played yet");
+        model.animations.push_back(std::move(clip));
+    }
+}
 }   // namespace
+
+const ModelAnimation* findAnimation(const ModelData& model, std::string_view name) {
+    for (const auto& clip : model.animations)
+        if (clip.name == name) return &clip;
+    return nullptr;
+}
+
+bool hasSkinnedMeshes(const ModelData& model) {
+    for (const auto& mesh : model.meshes)
+        if (mesh.skinned() && !mesh.data.indices.empty()) return true;
+    return false;
+}
 
 std::string modelExtensions() {
     static const std::string list = [] {
@@ -167,8 +304,6 @@ bool loadModel(
                 std::string line;
                 while (std::getline(dependencyFile, line))
                     if (!line.empty()) dependency(model.dependencies, fs::path(line));
-                model.warnings.emplace_back(
-                    "Blender converted this file to static GLB; animation playback is not implemented yet");
             } else
                 model.warnings.emplace_back(blendDiagnostic + "; trying Assimp's deprecated native .blend reader");
         }
@@ -177,13 +312,12 @@ bool loadModel(
         const aiScene* scene = importer.ReadFile(
             importedPath.string(), aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
                                        aiProcess_GenSmoothNormals | aiProcess_ImproveCacheLocality |
-                                       aiProcess_SortByPType | aiProcess_ValidateDataStructure | aiProcess_FlipUVs);
+                                       aiProcess_SortByPType | aiProcess_ValidateDataStructure | aiProcess_FlipUVs |
+                                       aiProcess_LimitBoneWeights);
         if (!scene || !scene->mRootNode || !scene->HasMeshes())
             return fail(
                 std::string(importer.GetErrorString()) +
                 (blend ? ". " + blendDiagnostic + "; export glTF/GLB from Blender as an alternative" : ""));
-        if (scene->HasAnimations())
-            model.warnings.emplace_back("Animations were found; this milestone renders the static pose only");
         std::unordered_map<std::string, int> textureCache;
         auto texture = [&](const aiMaterial& material, aiTextureType type) -> int {
             aiString source;
@@ -276,6 +410,7 @@ bool loadModel(
         if (model.materials.empty()) model.materials.emplace_back();
         // Assimp mesh indices are retained, including empty slots for non-triangle primitives.
         model.meshes.resize(scene->mNumMeshes);
+        std::vector<std::vector<std::string>> boneNames(scene->mNumMeshes);   // resolved to nodes below
         for (unsigned i = 0; i < scene->mNumMeshes; ++i) {
             const aiMesh& src = *scene->mMeshes[i];
             ModelMesh& mesh = model.meshes[i];
@@ -283,8 +418,6 @@ bool loadModel(
             mesh.material = src.mMaterialIndex;
             if (mesh.material >= model.materials.size()) throw std::runtime_error("Invalid material index");
             mesh.bounds = emptyBounds();
-            if (src.HasBones())
-                model.warnings.emplace_back("Mesh '" + mesh.name + "' has skinning; rendered in its static pose");
             if (!(src.mPrimitiveTypes & aiPrimitiveType_TRIANGLE)) continue;
             mesh.data.vertices.reserve(src.mNumVertices);
             for (unsigned v = 0; v < src.mNumVertices; ++v) {
@@ -302,6 +435,7 @@ bool loadModel(
                 expand(mesh.bounds, vertex.position);
                 mesh.data.vertices.push_back(vertex);
             }
+            if (src.HasBones()) readSkin(src, mesh, boneNames[i]);
             for (unsigned f = 0; f < src.mNumFaces; ++f) {
                 const aiFace& face = src.mFaces[f];
                 if (face.mNumIndices != 3) continue;
@@ -367,6 +501,7 @@ bool loadModel(
         };
         visit(*scene->mRootNode, -1, glm::mat4(1), 0);
         if (!hasGeometry) return fail("Model contains no drawable triangles");
+        resolveSkinsAndAnimations(*scene, model, boneNames);
         if (!temp.root.empty())
             std::erase_if(
                 model.dependencies, [&](const fs::path& p) { return p.string().starts_with(temp.root.string()); });
@@ -404,19 +539,25 @@ bool intersectModel(const ModelData& model, const glm::vec3& origin, const glm::
         const auto inverse = glm::inverse(node.world);
         const auto o = glm::vec3(inverse * glm::vec4(origin, 1)), d = glm::vec3(inverse * glm::vec4(direction, 0));
         for (uint32_t index : node.meshes) {
-            if (!rayBounds(model.meshes[index].bounds, o, d, best)) continue;
+            // Skinned meshes are tested in their rest pose, in the model's space.
+            const bool skinned = model.meshes[index].skinned();
+            if (!skinned && !rayBounds(model.meshes[index].bounds, o, d, best)) continue;
             const auto& mesh = model.meshes[index].data;
+            const auto rest = skinned ? restPositions(model, model.meshes[index]) : std::vector<glm::vec3>{};
+            auto position = [&](uint32_t i) { return skinned ? rest[i] : mesh.vertices[i].position; };
+            const auto& ro = skinned ? origin : o;
+            const auto& rd = skinned ? direction : d;
             for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
-                const auto a = mesh.vertices[mesh.indices[i]].position, b = mesh.vertices[mesh.indices[i + 1]].position,
-                           c = mesh.vertices[mesh.indices[i + 2]].position;
-                const auto e1 = b - a, e2 = c - a, p = glm::cross(d, e2);
+                const auto a = position(mesh.indices[i]), b = position(mesh.indices[i + 1]),
+                           c = position(mesh.indices[i + 2]);
+                const auto e1 = b - a, e2 = c - a, p = glm::cross(rd, e2);
                 const float det = glm::dot(e1, p);
                 if (std::abs(det) < 1e-8f) continue;
-                const auto s = o - a;
+                const auto s = ro - a;
                 const float u = glm::dot(s, p) / det;
                 if (u < 0 || u > 1) continue;
                 const auto q = glm::cross(s, e1);
-                const float v = glm::dot(d, q) / det;
+                const float v = glm::dot(rd, q) / det;
                 if (v < 0 || u + v > 1) continue;
                 const float t = glm::dot(e2, q) / det;
                 if (t >= 0 && t < best) best = t;

@@ -63,6 +63,9 @@ int main(int argc, char** argv) {
             } else if (arg == "--schema" && i + 1 < argc) {
                 tool.mode = Tool::Mode::Schema;
                 tool.schemaOut = argv[++i];
+            } else if (arg == "--animations") {
+                tool.mode = Tool::Mode::Animations;
+                while (i + 1 < argc && argv[i + 1][0] != '-') tool.animationModels.push_back(argv[++i]);
             } else if (arg == "--input-schema" && i + 1 < argc) {
                 return player::writeInputSchema(argv[i + 1]);
             } else if (arg == "--devices") {
@@ -145,6 +148,7 @@ int main(int argc, char** argv) {
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                          "player --animations [model...]      list models' skeletons and animation clips\n"
                           "player --audio-volume 0..1          master playback volume (default 1)\n"
                           "player --devices [seconds]          list controllers; then print each input pressed\n"
                           "                                    as binding text, for that many seconds");

@@ -89,3 +89,10 @@ add_executable(game_ui_test GameUITest.cpp)
 target_link_libraries(game_ui_test PRIVATE Shockwave::GameUI)
 shockwave_warnings(game_ui_test)
 add_test(NAME game_ui COMMAND game_ui_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Skeletal animation (ozz-animation) without a GPU: import, play, loop, cross-fade,
+# joints and the Animator checks, on the sample's Fox.
+add_executable(animation_test AnimationTest.cpp)
+target_link_libraries(animation_test PRIVATE Shockwave::Animation)
+shockwave_warnings(animation_test)
+add_test(NAME animation COMMAND animation_test ${CMAKE_SOURCE_DIR})

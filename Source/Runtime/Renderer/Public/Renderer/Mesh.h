@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/type_precision.hpp>
 
 #include <cstdint>
 #include <vector>
@@ -16,6 +17,15 @@ struct Vertex {
     glm::vec4 color{1.0f};
 };
 static_assert(sizeof(Vertex) == 48, "Vertex must match the shader's scalar layout");
+
+// Which joints move a vertex of a skinned mesh, and how much (Renderer::createSkinnedMesh).
+// Joints index the mesh's own joint list, the matrices given to drawSkinnedMesh. Weights
+// add up to 1; unused slots have weight 0.
+struct VertexSkin {
+    glm::u16vec4 joints{0};
+    glm::vec4 weights{1.0f, 0.0f, 0.0f, 0.0f};
+};
+static_assert(sizeof(VertexSkin) == 24, "VertexSkin must match the skinning shader's scalar layout");
 
 // CPU-side mesh, ready to upload with Renderer::createMesh.
 struct MeshData {

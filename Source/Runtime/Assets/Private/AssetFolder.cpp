@@ -223,7 +223,9 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 std::shared_ptr<const ModelAsset> previous;
                 try {
                     for (const auto& mesh : uploaded->data.meshes)
-                        uploaded->meshes.push_back(m_renderer->createMesh(mesh.data));
+                        uploaded->meshes.push_back(
+                            mesh.skinned() ? m_renderer->createSkinnedMesh(mesh.data.vertices, mesh.data.indices, mesh.skin)
+                                           : m_renderer->createMesh(mesh.data));
                     // Only base-color maps are currently sampled. Other decoded maps
                     // and PBR factors remain in ModelData for the lighting milestone.
                     uploaded->textures.resize(uploaded->data.textures.size());

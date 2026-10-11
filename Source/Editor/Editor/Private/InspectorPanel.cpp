@@ -204,6 +204,7 @@ void Editor::drawComponent(const ComponentInfo& info, Entity e) {
 // What a component's fields can't show: physics setup problems, imported materials.
 void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     if (info.id == shockwave::componentId<shockwave::UIDocument>()) drawUIDocumentNotes(e);
+    if (info.id == shockwave::componentId<shockwave::Animator>()) drawAnimatorNotes(e);
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {
@@ -236,6 +237,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         const auto* instance = m_world.get<shockwave::ModelRenderer>(e);
         const auto asset = instance ? engine().assets().model(instance->model) : nullptr;
         if (!asset) return;
+        drawModelAnimationNotes(e);
         ImGui::SeparatorText("Imported materials");
         for (size_t i = 0; i < asset->data.materials.size(); ++i) {
             const auto& material = asset->data.materials[i];

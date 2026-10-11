@@ -99,6 +99,8 @@ Each item links to the guide that covers it in detail.
 - **Simulate physics.** Rigid bodies, triggers, raycasts and a character controller,
   powered by Jolt. See [Physics](docs/Physics.md).
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
+- **Animate characters.** Skinned models play the clips inside their files, with
+  cross-fades, skinned on the GPU. See [Animation](docs/Animation.md).
 - **Build menus and HUDs.** Write them as `.rml` and `.rcss` files, much like HTML and
   CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
 - **Use any controller.** Gamepads, flight sticks, wheels and more, bound to named
@@ -576,6 +578,7 @@ Shockwave/
       Engine/             entities and components (World), parenting, system scheduler,
                           scene files, camera, subsystems and the engine loop
       Audio/              clips, mixing and spatial sound sources
+      Animation/          skeletal animation (ozz-animation): Animator, AnimationWorld
       Physics/            Jolt physics (PhysicsWorld)
       GameFramework/      GameMode, GameInstance, GameModule, PlaySession
     Plugins/            renderer plugins, loaded at runtime and hot-swappable (docs/Plugins.md)

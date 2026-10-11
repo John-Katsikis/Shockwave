@@ -471,6 +471,7 @@ void Editor::drawStatsWindow() {
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
     drawGameUIStats();
+    drawAnimationStats();
 
     ImGui::SeparatorText("Plugins");
     ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());

@@ -22,9 +22,10 @@ namespace fs = std::filesystem;
 // What the player was asked to do. Tools run in a hidden window and quit before the
 // first frame; they need the renderer only to import assets the way the game does.
 struct Tool {
-    enum class Mode { Play, Check, Schema } mode = Mode::Play;
+    enum class Mode { Play, Check, Schema, Animations } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check: empty means every scene in the project
     fs::path schemaOut;   // --schema: "-" is standard output
+    std::vector<std::string> animationModels;   // --animations: models inside Content; empty: all
     // Playing, these make runs reproducible and checkable without a person watching.
     fs::path scene;   // --scene: instead of the project's startup scene
     fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
@@ -65,6 +66,9 @@ private:
     int check(const std::vector<std::string>& importProblems);
 
     int schema();
+    // --animations and --check for skeletal animation (PlayerAnimation.cpp).
+    int listAnimations();
+    void checkAnimators(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
     // --check for game UI: a scene's UIDocuments, then every .rml in Content.
     void checkUIDocuments(
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,

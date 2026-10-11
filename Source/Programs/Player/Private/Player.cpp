@@ -2,6 +2,7 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
+#include <Animation/AnimationWorld.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
@@ -28,6 +29,7 @@ namespace player {
 void Player::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
+    shockwave::registerAnimationComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -43,7 +45,9 @@ void Player::onStart() {
     m_ui = std::make_unique<shockwave::GameUI>(&engine());
     m_ui->setContentFolder(m_project.assetFolder);
     if (m_tool.mode != Tool::Mode::Play) {
-        m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
+        m_exitCode = m_tool.mode == Tool::Mode::Check        ? check(importProblems)
+                     : m_tool.mode == Tool::Mode::Animations ? listAnimations()
+                                                             : schema();
         engine().quit();
         return;
     }
@@ -153,6 +157,12 @@ void Player::reportBenchmark() {
     std::printf(
         "game ui cpu:  %.3f ms update + %.3f ms layout (%u documents, %u draws, %u vertices)\n", m_uiUpdateMs / frames,
         m_uiLayoutMs / frames, ui.visible, ui.drawCommands, ui.vertices);
+    if (const shockwave::AnimationWorld* animation = m_session ? m_session->animation() : nullptr) {
+        const shockwave::AnimationStats a = animation->stats();
+        std::printf(
+            "animation cpu: %.3f ms last frame (%u animators, %u joints; GPU: the skinning pass)\n",
+            static_cast<double>(a.updateMs), a.animators, a.joints);
+    }
     if (m_tool.benchmarkJson.empty()) return;
     std::ofstream json(m_tool.benchmarkJson, std::ios::trunc);
     auto escape = [](const std::string& text) {

@@ -121,7 +121,8 @@ module can only see the headers of modules it depends on, directly or through th
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
 | GameUI | menus and HUDs from `.rml`/`.rcss` (RmlUi, FreeType, HarfBuzz), `UIDocument`, `game.ui()` | Engine | UMG, Slate |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI | Engine's GameFramework |
+| Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Animation | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.

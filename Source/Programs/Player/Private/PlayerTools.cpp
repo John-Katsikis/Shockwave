@@ -108,6 +108,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         });
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
+        checkAnimators(world, scene.string(), problems);
 
         // Start the game on it, as Play does, to catch physics setup problems.
         try {

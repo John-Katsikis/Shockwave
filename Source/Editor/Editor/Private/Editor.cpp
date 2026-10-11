@@ -35,8 +35,10 @@ Editor::Editor(EditorOptions options) : m_options(std::move(options)), m_prefs(m
 void Editor::onStart() {
     shockwave::registerAudioComponents();
     shockwave::registerGameUIComponents();
+    shockwave::registerAnimationComponents();
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
     m_audioPreview = std::make_unique<shockwave::AudioMixer>();
+    m_animation = std::make_unique<shockwave::AnimationWorld>(m_world, &engine().assets(), engine().jobs());
     connectConsole();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;   // dragging in the viewport is for the scene
@@ -102,6 +104,7 @@ void Editor::onShutdown() {
     m_session.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
+    m_animation.reset();
     if (m_hasProject) {
         rememberCamera();
         saveEditorState();
@@ -207,6 +210,7 @@ void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
     updateGameUI(dt);
+    updateAnimation(dt);
 }
 
 void Editor::onRender(shockwave::Renderer& renderer, double alpha) {

@@ -1,0 +1,61 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_scalar_block_layout : require
+
+// GPU skinning: poses one skinned draw's vertices into this frame's skinned vertex
+// buffer, which the scene and shadow passes then draw like any mesh (RendererSkinning.cpp).
+struct Vertex {
+    vec3 position;
+    vec3 normal;
+    vec2 uv;
+    vec4 color;
+};
+
+// Must match VertexSkin in Renderer/Mesh.h: four 16-bit joint indices, four weights.
+struct Skin {
+    uint joints01;
+    uint joints23;
+    vec4 weights;
+};
+
+layout(buffer_reference, scalar) readonly buffer SourceVertices {
+    Vertex vertices[];
+};
+layout(buffer_reference, scalar) writeonly buffer TargetVertices {
+    Vertex vertices[];
+};
+layout(buffer_reference, scalar) readonly buffer Skins {
+    Skin skins[];
+};
+layout(buffer_reference, scalar) readonly buffer Joints {
+    mat4 joints[];
+};
+
+// Must match SkinningPushConstants in RendererImpl.h.
+layout(push_constant, scalar) uniform PushConstants {
+    SourceVertices source;
+    Skins skin;
+    Joints joints;
+    TargetVertices target;
+    uint vertexCount;
+    uint jointCount;
+} pc;
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.vertexCount) return;
+    Vertex v = pc.source.vertices[i];
+    const Skin s = pc.skin.skins[i];
+    const uvec4 j = min(
+        uvec4(s.joints01 & 0xFFFFu, s.joints01 >> 16, s.joints23 & 0xFFFFu, s.joints23 >> 16),
+        uvec4(pc.jointCount - 1u));
+    const mat4 m = s.weights.x * pc.joints.joints[j.x] + s.weights.y * pc.joints.joints[j.y] +
+                   s.weights.z * pc.joints.joints[j.z] + s.weights.w * pc.joints.joints[j.w];
+    v.position = (m * vec4(v.position, 1.0)).xyz;
+    const vec3 n = mat3(m) * v.normal;
+    const float len = length(n);
+    if (len > 1e-8) v.normal = n / len;
+    pc.target.vertices[i] = v;
+}

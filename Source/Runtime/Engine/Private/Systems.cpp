@@ -3,6 +3,7 @@
 #include <Assets/Assets.h>
 #include <Engine/Camera.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/Pose.h>
 #include <Renderer/Renderer.h>
 
 #include <glm/gtc/constants.hpp>
@@ -94,6 +95,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             renderer.drawMesh(m.mesh, model, m.texture, m.tint, material);
         },
         256);
+    const Pool<ModelPose>* poses = world.pool<ModelPose>();
     if (assets)
         world.parallelEach<const Transform, const ModelRenderer>(
             jobs,
@@ -109,7 +111,13 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         parent = parentOf(world, parent);
                     }
                 }
-                for (const auto& node : asset->data.nodes)
+                // Animated (Animation module): where its Animator has put the nodes this frame.
+                const ModelPose* pose = poses ? poses->find(e.index) : nullptr;
+                if (pose && (pose->model != asset || pose->nodes.size() != asset->data.nodes.size())) pose = nullptr;
+                std::vector<glm::mat4> rest;   // the nodes as modelled, for skinned meshes without a pose
+                thread_local std::vector<glm::mat4> joints;
+                for (size_t n = 0; n < asset->data.nodes.size(); ++n) {
+                    const auto& node = asset->data.nodes[n];
                     for (auto index : node.meshes) {
                         const auto& mesh = asset->data.meshes[index];
                         const auto& material = asset->data.materials[mesh.material];
@@ -124,10 +132,21 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         options.metallic = material.metallic;
                         options.emissive = material.emissive;
                         options.castShadows = instance.castShadows;
+                        if (mesh.skinned()) {
+                            // Skinned vertices end up in the model's space, whatever node holds the mesh.
+                            if (!pose && rest.empty())
+                                for (const auto& each : asset->data.nodes) rest.push_back(each.world);
+                            skinMatrices(mesh, pose ? std::span<const glm::mat4>(pose->nodes) : rest, joints);
+                            renderer.drawSkinnedMesh(
+                                asset->meshes[index], model, joints, texture, material.baseColor * instance.tint,
+                                options);
+                            continue;
+                        }
                         renderer.drawMesh(
-                            asset->meshes[index], model * node.world, texture, material.baseColor * instance.tint,
-                            options);
+                            asset->meshes[index], model * (pose ? pose->nodes[n] : node.world), texture,
+                            material.baseColor * instance.tint, options);
                     }
+                }
             },
             64);
 
@@ -150,6 +169,14 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
         desc.shadowBias = light.shadowBias;
         renderer.addLight(desc);
     });
+}
+
+void skinMatrices(const ModelMesh& mesh, std::span<const glm::mat4> nodes, std::vector<glm::mat4>& joints) {
+    joints.resize(mesh.bones.size());
+    for (size_t b = 0; b < mesh.bones.size(); ++b) {
+        const uint32_t node = mesh.bones[b].node;
+        joints[b] = (node < nodes.size() ? nodes[node] : glm::mat4(1.0f)) * mesh.bones[b].offset;
+    }
 }
 
 Entity primaryCamera(const World& world) {

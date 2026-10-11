@@ -10,6 +10,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
+#include <Animation/AnimationWorld.h>
 #include <GameUI/GameUI.h>
 #include <Projects/Project.h>
 
@@ -188,6 +189,14 @@ private:
     void feedGameUIPointer(const ImVec2& pos, const ImVec2& size, bool hovered);
     void drawUIDocumentNotes(shockwave::Entity e);
     void drawGameUIStats();
+    // AnimationPanel.cpp: Animators posed while editing, clip picking, skeletons, stats.
+    void updateAnimation(double dt);
+    void restartAnimation();   // when Play starts and stops
+    void addAnimatorIfAnimated(shockwave::Entity e);   // a placed model with clips plays them
+    void drawModelAnimationNotes(shockwave::Entity e);
+    void drawAnimatorNotes(shockwave::Entity e);
+    void drawSkeletons(const ImVec2& pos, const ImVec2& size);
+    void drawAnimationStats();
     // Adds an entity showing the document; writes a starter document first if it's missing.
     shockwave::Entity createUIDocument(const std::string& document);
     std::string newUIDocumentPath() const;   // "UI/hud.rml", or the first free "UI/hud2.rml"...
@@ -334,6 +343,10 @@ private:
     // session, whose UIWorld uses it.
     std::unique_ptr<shockwave::GameUI> m_gameUI;
     bool m_showGameUI = true;
+    // Animators while editing; during Play the session has its own.
+    std::unique_ptr<shockwave::AnimationWorld> m_animation;
+    bool m_previewAnimation = false;   // play them in the viewport without starting the game
+    bool m_showSkeletons = false;
     bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
     std::unique_ptr<shockwave::PlaySession> m_session;
     bool m_gameModuleMatches = false;   // the project's game module is loaded, so Play can run it

@@ -1,0 +1,9 @@
+Fox.glb - from the Khronos glTF Sample Assets
+https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox
+
+Model: PixelMannen, CC0 1.0 (public domain).
+Rigging and animation: tomkranis, CC BY 4.0
+  https://creativecommons.org/licenses/by/4.0/
+glTF conversion: @AsoboStudio and @scurest, CC BY 4.0
+
+Unchanged from the original file. Clips: Survey, Walk, Run.

@@ -133,6 +133,7 @@ void Editor::drawViewport() {
             drawCameraIcons(pos, size);
             drawLightIcons(pos, size);
         }
+        drawSkeletons(pos, size);
 
         // View cube in the top-right corner: click a face to snap the camera to that axis.
         glm::mat4 view = m_camera.view();
@@ -271,6 +272,10 @@ void Editor::drawViewportToolbar() {
         if (ImGui::MenuItem("Camera and light icons", nullptr, &m_prefs.showCameraIcons)) m_prefsDirty = true;
         ImGui::MenuItem("Game UI", nullptr, &m_showGameUI);
         ImGui::SetItemTooltip("The scene's UIDocuments, drawn over it as the game shows them");
+        ImGui::MenuItem("Preview animations", nullptr, &m_previewAnimation);
+        ImGui::SetItemTooltip("Play the scene's Animators in the viewport without starting the game");
+        ImGui::MenuItem("Skeletons", nullptr, &m_showSkeletons);
+        ImGui::SetItemTooltip("Draw the joints of the selected animated models");
         if (ImGui::MenuItem("Stats", nullptr, &m_prefs.showStats)) m_prefsDirty = true;
         ImGui::SeparatorText("Editor camera");
         ImGui::SetNextItemWidth(160.0f * dpi);

@@ -55,6 +55,10 @@ public:
     // Resources live until the renderer shuts down.
     MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices);
     MeshHandle createMesh(const MeshData& mesh) { return createMesh(mesh.vertices, mesh.indices); }
+    // A mesh that bends with a skeleton: one VertexSkin per vertex. Draw it with
+    // drawSkinnedMesh to pose it; drawMesh shows it as modelled (its bind pose).
+    MeshHandle createSkinnedMesh(
+        std::span<const Vertex> vertices, std::span<const uint32_t> indices, std::span<const VertexSkin> skin);
     // Main thread, between frames, after users have dropped these handles. Waits
     // for GPU readers and recycles the slot. Used by transactional model reload.
     void destroyMesh(MeshHandle mesh);
@@ -78,6 +82,14 @@ public:
     void setCamera(const glm::mat4& view, const glm::mat4& projection);
     void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
+        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
+    // A skinned mesh in a pose. joints: one matrix per joint the mesh's VertexSkins name,
+    // taking a vertex from the mesh as modelled to its posed place in the mesh's space
+    // (the joint's current matrix times its inverse bind matrix). The renderer skins the
+    // vertices on the GPU once and the scene and every shadow map draw the result. Same
+    // threads as drawMesh; joints is copied before it returns.
+    void drawSkinnedMesh(
+        MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture = {},
         const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
