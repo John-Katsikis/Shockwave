@@ -72,6 +72,18 @@ build/bin/player --benchmark 5 --json out.json
 It reports frame rate, 1% and 0.1% lows, jitter, and GPU time per pass. See
 `docs/FramePacing.md`.
 
+## Package a game
+
+Package settings live in `Config/Package.swpackage` (`docs/Packaging.md`). Validate them
+with `build/bin/player --check`, then package and verify in one step:
+
+```sh
+build/bin/player --package --project <file.swproject> [--output folder] [--no-build]
+```
+
+It exits with 1 on any problem and prints `package`, `archive` and `run` lines with the
+paths it made.
+
 ## Engine and editor UI
 
 - Follow `docs/UI.md` when adding or changing engine or editor UI.

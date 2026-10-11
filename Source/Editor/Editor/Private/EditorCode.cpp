@@ -217,6 +217,11 @@ void Editor::drawBuildMenu() {
         m_prefs.autoReloadRenderer = autoRenderer;
         m_prefsDirty = true;
     }
+
+    ImGui::SeparatorText("Players");
+    if (ImGui::MenuItem(m_package.running() ? "Packaging..." : "Package game...", nullptr, false, m_hasProject))
+        m_package.open = true;
+    ImGui::SetItemTooltip("Make a game folder players can run, without the editor (docs/Packaging.md)");
     ImGui::EndMenu();
 }
 

@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
         int frames = 0;
         float audioVolume = 1;
         Tool tool;
+        player::PackageCommand package;   // --package
         std::pair<int, int> size{0, 0};
         double fpsOverride = -1;   // --fps
         bool lowLatency = false;   // --low-latency
@@ -65,6 +66,14 @@ int main(int argc, char** argv) {
                 listGpus = true;
             } else if (arg == "--game-module" && i + 1 < argc) {
                 gameModuleFile = argv[++i];
+            } else if (arg == "--package") {
+                package.requested = true;
+            } else if (arg == "--output" && i + 1 < argc) {
+                package.output = argv[++i];
+            } else if (arg == "--no-build") {
+                package.noBuild = true;
+            } else if (arg == "--no-archive") {
+                package.noArchive = true;
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
             } else if (arg == "--bake-navmesh") {
@@ -191,6 +200,8 @@ int main(int argc, char** argv) {
                 if (!shockwave::validSaveSlot(tool.save))
                     throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
+                std::puts("player --package [--output folder] [--no-build] [--no-archive]\n"
+                          "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                           "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
                           "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
@@ -235,6 +246,8 @@ int main(int argc, char** argv) {
             } else
                 throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
+        // A packaged game runs the project it ships with, wherever it's started from.
+        if (manifest.empty()) manifest = player::packagedProjectFile();
         if (manifest.empty()) {
             // The project around the scene given, else the working folder's.
             const std::filesystem::path near = !tool.scenes.empty()  ? tool.scenes.front()
@@ -271,6 +284,7 @@ int main(int argc, char** argv) {
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
+        if (package.requested) return player::packageGame(project, package);
         auto gameModule = gameModuleFile.empty() ? shockwave::GameModuleLibrary::load(project.gameModule, error)
                                                  : shockwave::GameModuleLibrary::loadFile(gameModuleFile, error);
         if (!gameModule)

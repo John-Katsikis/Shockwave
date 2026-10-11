@@ -200,6 +200,7 @@ void Editor::onGui() {
     if (m_showSaveGames) drawSaveGamesWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
+    m_package.draw(m_project);
     if (m_showControls) drawControlsWindow();
     if (m_showAbout) drawAboutWindow();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);

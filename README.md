@@ -86,6 +86,8 @@ ctest --test-dir build
 
 Each item links to the guide that covers it in detail.
 
+- **Ship your game.** Package a project into a folder players can run, with one click
+  or one command. See [Packaging your game](docs/Packaging.md).
 - **Write game code in C++.** A whole game module can be one file. You define components
   as plain structs and add systems that run across every core. See
   [Game projects](docs/Projects.md).
@@ -285,6 +287,9 @@ editor and the standalone player run the same compiled game code:
 ./build/bin/player --project Games/Sample/Sample.swproject  # run the game without the editor
 ./build/bin/player                                        # no project around the working folder: runs Games/Sample
 ```
+
+To hand your game to players, package it: Build > Package game in the editor, or
+`./build/bin/player --package`. See [Packaging your game](docs/Packaging.md).
 
 Project paths work from any working folder when you give the manifest path.
 [Game projects](docs/Projects.md) covers the manifest format, your own game module and
@@ -587,6 +592,7 @@ Shockwave/
       Assets/             asset names, built-in assets, image and model import, the asset folder watcher
       UI/                 Dear ImGui helpers and the theme loader
       Projects/           .swproject manifests
+      Packaging/          game folders for players (docs/Packaging.md)
       Engine/             entities and components (World), parenting, system scheduler,
                           scene files, camera, subsystems and the engine loop
       Audio/              clips, mixing and spatial sound sources

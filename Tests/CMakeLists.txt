@@ -13,6 +13,20 @@ target_link_libraries(ui_theme_test PRIVATE Shockwave::UI)
 add_test(NAME ui_theme COMMAND ui_theme_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+# Packaging: settings files, and a whole package made and run through the CLI.
+add_executable(package_test PackageTest.cpp)
+target_link_libraries(package_test PRIVATE Shockwave::Packaging)
+shockwave_warnings(package_test)
+add_test(NAME package COMMAND package_test)
+if(SHOCKWAVE_MODULAR AND NOT WIN32)
+    add_test(NAME package_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/PackageCLI
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageCheck.cmake)
+    set_tests_properties(package_cli PROPERTIES TIMEOUT 120)
+endif()
+
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
 add_test(NAME project COMMAND project_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
