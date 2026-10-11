@@ -213,6 +213,8 @@ void mixing() {
         "worker commands mix safely");
 }
 void worldAudio() {
+    // These exact sample checks use the simple panner; SpatialAudioTest covers Steam Audio.
+    setAudioSettings({.steamAudio = false});
     Assets assets;
     assets.addAudioClip("test.wav", constant(.4f, .4f));
     World world;

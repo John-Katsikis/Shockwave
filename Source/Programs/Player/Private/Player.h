@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 // What the player was asked to do. Tools run in a hidden window and quit before the
 // first frame; they need the renderer only to import assets the way the game does.
 struct Tool {
-    enum class Mode { Play, Check, Schema } mode = Mode::Play;
+    enum class Mode { Play, Check, Schema, AudioMix } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check: empty means every scene in the project
     fs::path schemaOut;   // --schema: "-" is standard output
     // Playing, these make runs reproducible and checkable without a person watching.
@@ -34,6 +34,9 @@ struct Tool {
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
     fs::path benchmarkJson;   // --json with --benchmark
+    fs::path audioMix;   // --audio-mix: render the scene's sound offline to this .wav
+    double audioSeconds = 3;   // --seconds with --audio-mix
+    int audioHrtf = -1;   // --audio-hrtf on|off; -1 uses the project's audio_hrtf
 };
 
 // Tools that need no project or window. Both return the process exit code.
@@ -69,6 +72,9 @@ private:
     void checkUIDocuments(
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
         std::vector<std::string>& checkedDocuments);
+    // --audio-mix: plays the scene with an offline mixer, writes a .wav and prints levels
+    // per channel and what each spatial source sounds like (PlayerAudio.cpp).
+    int audioMix();
 
     shockwave::Project m_project;
     Tool m_tool;

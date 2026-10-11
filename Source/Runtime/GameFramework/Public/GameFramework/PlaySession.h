@@ -36,6 +36,9 @@ public:
     AudioWorld* audio() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
     UIWorld* ui() const;   // null while editing
+    // Before start: false mixes into AudioWorld::mixer().render() instead of a device,
+    // for offline tools such as player --audio-mix.
+    void setAudioDevice(bool open) { m_audioDevice = open; }
 
 private:
     void tearDown();
@@ -48,6 +51,7 @@ private:
     Schedule m_schedule;
     State m_state = State::Editing;
     uint64_t m_ticks = 0;
+    bool m_audioDevice = true;
 };
 
 }   // namespace shockwave

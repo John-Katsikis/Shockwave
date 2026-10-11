@@ -87,6 +87,16 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 row >> value;
                 result.shadowQuality = parseShadowQuality(value);
                 if (result.shadowQuality < 0) return fail("shadow_quality must be off, low, medium, high or ultra");
+            } else if (key == "audio_hrtf") {
+                std::string value;
+                row >> value;
+                if (value != "true" && value != "false") return fail("audio_hrtf must be true or false");
+                result.audioHrtf = value == "true";
+            } else if (key == "audio_hrtf_quality") {
+                std::string value;
+                row >> value;
+                if (value != "low" && value != "high") return fail("audio_hrtf_quality must be low or high");
+                result.audioHrtfHigh = value == "high";
             } else if (key == "frame_limit") {
                 if (!(row >> result.frameLimit) || !std::isfinite(result.frameLimit) || result.frameLimit < 0 ||
                     (result.frameLimit > 0 && result.frameLimit < 10) || result.frameLimit > 1000)
@@ -140,6 +150,8 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.lowLatency) out << "low_latency true\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";
     if (project.renderer != "vulkan") out << "renderer " << std::quoted(project.renderer) << "\n";
+    if (!project.audioHrtf) out << "audio_hrtf false\n";
+    if (!project.audioHrtfHigh) out << "audio_hrtf_quality low\n";
     const fs::path temp = project.file.string() + ".tmp";
     {
         std::ofstream file(temp, std::ios::binary | std::ios::trunc);

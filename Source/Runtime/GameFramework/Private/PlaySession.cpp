@@ -54,7 +54,15 @@ void PlaySession::start() {
     m_ticks = 0;
     try {
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
-        m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr);
+        m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr, m_audioDevice);
+        // Occlusion rays hit the physics world's colliders.
+        audio()->setRaycast(
+            [physics = physics()](
+                glm::vec3 origin, glm::vec3 direction, float distance, Entity ignore) -> std::optional<AudioRayHit> {
+                if (const auto hit = physics->raycast(origin, direction, distance, ignore))
+                    return AudioRayHit{hit->entity, hit->distance};
+                return std::nullopt;
+            });
         if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
         audio()->synchronize();
         m_subsystems.add<UIWorld>(world, GameUI::forEngine(m_context.engine));
@@ -115,6 +123,7 @@ void PlaySession::update(double dt) {
     m_schedule.run(m_context.world, m_context.jobs, dt);
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
+    audio()->update(dt);
     audio()->synchronize();
     ++m_ticks;
 }

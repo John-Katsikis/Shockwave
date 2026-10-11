@@ -51,8 +51,9 @@ entity "Ambient sound"
 end
 ```
 
-Between min and max distance, volume falls in a straight line to silence. If both are
-equal, the sound cuts off sharply at that distance. Both distances must be finite
+By default, between min and max distance, volume falls in a straight line to silence. The
+`rolloff` setting in [Spatial audio](SpatialAudio.md) picks other curves. If min and max
+are equal, the sound cuts off sharply at that distance. Both distances must be finite
 numbers of 0 or more, and max must be at least min.
 
 The full field list is in the generated [SceneSchema](SceneSchema.md). It also lists
@@ -61,16 +62,16 @@ format use the same field descriptions.
 
 ## Who hears spatial sound
 
-The listener is the scene's primary Camera. Its world position and its right-hand
-direction set where sounds come from, including any parent entities it has.
+The listener is the scene's primary Camera, unless an entity has an `AudioListener`
+component. Its world position and facing set where sounds come from, including any
+parent entities it has. If the scene has no listener, spatial sounds are silent.
 
-Spatial sounds are mixed down to mono, then panned between left and right with
-equal-power panning, which keeps loudness steady across the pan. If the scene has no
-primary Camera with a `Transform`, spatial sounds are silent.
+Spatial sounds are mixed down to mono, then placed in 3D by Steam Audio, with HRTF
+headphone sound, air absorption, facing and walls that muffle them. See
+[Spatial audio](SpatialAudio.md) for all of that.
 
 Nonspatial sounds keep their original stereo channels. They need neither a `Transform`
-nor a listener. This is simple stereo positioning. There is no HRTF (3D headphone
-audio) and nothing blocks sound.
+nor a listener.
 
 ## Preview sounds in the editor
 
@@ -194,7 +195,7 @@ The first import when a project opens finishes before validation or Play starts.
 - Each clip is limited to 256 MiB of source file and 256 MiB of decoded audio.
 - Ogg files can be mono or stereo.
 - Pitch uses simple linear interpolation between samples.
-- There is no Doppler, reverb, occlusion or audio graph yet.
+- There is no Doppler, reverb or audio graph yet.
 - Several loud sounds at once can clip, since the mix is clamped to the range -1 to 1.
 - Up to 128 sounds play at once. When all are busy, a new sound replaces the oldest.
 - Up to 1024 commands can wait in the queue.

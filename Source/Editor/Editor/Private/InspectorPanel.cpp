@@ -204,6 +204,7 @@ void Editor::drawComponent(const ComponentInfo& info, Entity e) {
 // What a component's fields can't show: physics setup problems, imported materials.
 void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     if (info.id == shockwave::componentId<shockwave::UIDocument>()) drawUIDocumentNotes(e);
+    drawSpatialAudioNotes(info, e);
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {

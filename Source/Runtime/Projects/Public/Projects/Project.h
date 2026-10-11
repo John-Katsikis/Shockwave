@@ -24,6 +24,8 @@ struct Project {
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)
     int shadowQuality = 3;   // 0 off, 1 low, 2 medium, 3 high, 4 ultra (Renderer's ShadowQuality)
     std::string renderer = "vulkan";   // the renderer plugin the player starts with
+    bool audioHrtf = true;   // spatial audio for headphones (HRTF); false pans for speakers
+    bool audioHrtfHigh = true;   // HRTF quality: high (bilinear) or low (nearest)
 
     std::filesystem::path statePath() const { return root / "Saved"; }
     // Project-relative with forward slashes ("Scenes/main.swscene"); paths outside the

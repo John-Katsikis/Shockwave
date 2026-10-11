@@ -129,6 +129,19 @@ int main(int argc, char** argv) {
                 }
             } else if (arg == "--json" && i + 1 < argc) {
                 tool.benchmarkJson = argv[++i];
+            } else if (arg == "--audio-mix" && i + 1 < argc) {
+                tool.mode = Tool::Mode::AudioMix;
+                tool.audioMix = argv[++i];
+            } else if (arg == "--seconds" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), tool.audioSeconds);
+                if (ec != std::errc{} || end != value.data() + value.size() || !(tool.audioSeconds > 0) ||
+                    tool.audioSeconds > 600)
+                    throw std::runtime_error("--seconds takes a number of seconds up to 600");
+            } else if (arg == "--audio-hrtf" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (value != "on" && value != "off") throw std::runtime_error("--audio-hrtf takes on or off");
+                tool.audioHrtf = value == "on" ? 1 : 0;
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
             } else if (arg == "--help") {
@@ -146,6 +159,10 @@ int main(int argc, char** argv) {
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
                           "player --audio-volume 0..1          master playback volume (default 1)\n"
+                          "player --audio-hrtf on|off          headphone (HRTF) or speaker spatial audio\n"
+                          "player --audio-mix out.wav [--seconds N] [--scene file]\n"
+                          "                                    play the scene N seconds (default 3) with no audio\n"
+                          "                                    device, write the mix and print per-channel levels\n"
                           "player --devices [seconds]          list controllers; then print each input pressed\n"
                           "                                    as binding text, for that many seconds");
                 return 0;

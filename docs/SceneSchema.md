@@ -60,6 +60,17 @@ end
 | `spatial` | 1 or 0 (true/false also accepted) | `1` |
 | `min_distance` | number; range 0 to 10000 | `1` |
 | `max_distance` | number; range 0 to 10000 | `30` |
+| `rolloff` | one of: Linear, Inverse, None (or its number, counting from 0) | `Linear` |
+| `air_absorption` | 1 or 0 (true/false also accepted) | `1` |
+| `directivity` | number; range 0 to 1 | `0` |
+| `directivity_power` | number; range 0 to 16 | `1` |
+| `occlusion` | 1 or 0 (true/false also accepted) | `0` |
+| `occlusion_radius` | number; range 0 to 10 | `0.5` |
+| `transmission` | number; range 0 to 1 | `0.1` |
+
+#### AudioListener
+
+No fields; the component's presence is what matters.
 
 ### Core
 
@@ -274,6 +285,8 @@ theme "Config/Editor.swtheme"         # optional editor theme for this project
 tick_rate 60                           # simulation updates per second
 window_size 1280 720
 vsync true
+audio_hrtf true                        # optional: false pans spatial sound for speakers
+audio_hrtf_quality high                # optional: low or high
 ```
 
 Unknown or repeated keys are errors. `player --check` validates the manifest too.

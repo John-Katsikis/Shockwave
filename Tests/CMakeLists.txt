@@ -38,6 +38,17 @@ target_link_libraries(audio_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(audio_test)
 add_test(NAME audio COMMAND audio_test ${CMAKE_SOURCE_DIR})
 set_tests_properties(audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+# Spatial audio twice: with Steam Audio (when this build ships libphonon) and with the
+# library hidden, which must fall back to simple panning.
+add_executable(spatial_audio_test SpatialAudioTest.cpp)
+target_link_libraries(spatial_audio_test PRIVATE Shockwave::Audio)
+shockwave_warnings(spatial_audio_test)
+if(SHOCKWAVE_STEAM_AUDIO AND steamaudio_library AND EXISTS ${steamaudio_library})
+    add_test(NAME spatial_audio COMMAND spatial_audio_test steam)
+    set_tests_properties(spatial_audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+endif()
+add_test(NAME spatial_audio_fallback COMMAND spatial_audio_test simple)
+set_tests_properties(spatial_audio_fallback PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SHOCKWAVE_PHONON=none" TIMEOUT 60)
 find_program(SHOCKWAVE_XVFB_RUN xvfb-run)
 if(SHOCKWAVE_XVFB_RUN)
     add_test(NAME audio_cli_check COMMAND ${CMAKE_COMMAND}
