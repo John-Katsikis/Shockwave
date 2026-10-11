@@ -20,11 +20,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace shockwave {
@@ -40,18 +43,90 @@ struct UIDocument {
     int order = 0;   // higher draws on top and gets the mouse first
     // Takes keyboard and gamepad focus when shown (menus); a HUD leaves it off.
     bool focusOnShow = false;
+    // Stand-in {{values}} for the editor while not playing, and player --ui-preview:
+    // "score=1200; name=Ana; items=[Sword, Shield]". See UIValue::parse.
+    std::string preview;
 };
 // Registers UIDocument for scenes, the Inspector and player --schema. The hosts call it
 // at startup, like registerAudioComponents.
 void registerGameUIComponents();
+
+// A {{value}} for documents: a number, true or false, text, a list (for data-for), or a
+// record of named values ({{item.name}}). Lists and records nest.
+//
+//     UIValue::list({"Sword", "Shield"})
+//     UIValue::record({{"name", "Sword"}, {"count", 2}})
+//
+// As text (preview values, player --ui-preview, UIWorld::get) it's written like this:
+//     12   -3.5   true   false   Sword   "Text, with commas"
+//     [Sword, Shield]   {name=Sword, count=2}   [{name=Sword}, {name=Bow}]
+class UIValue {
+public:
+    enum class Kind : uint8_t { Unset, Number, Bool, Text, List, Record };
+
+    UIValue() = default;
+    template <class T, std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, int> = 0>
+    UIValue(T v) : m_kind(Kind::Number), m_number(static_cast<double>(v)) {}
+    UIValue(bool v) : m_kind(Kind::Bool), m_number(v ? 1.0 : 0.0) {}
+    UIValue(const char* v) : m_kind(Kind::Text), m_text(v ? v : "") {}
+    UIValue(std::string_view v) : m_kind(Kind::Text), m_text(v) {}
+    UIValue(const std::string& v) : m_kind(Kind::Text), m_text(v) {}
+    UIValue(std::string&& v) : m_kind(Kind::Text), m_text(std::move(v)) {}
+
+    static UIValue list(std::initializer_list<UIValue> items = {});
+    static UIValue record(std::initializer_list<std::pair<std::string, UIValue>> fields = {});
+    // Reads the text form. nullopt and an error message when it isn't valid.
+    static std::optional<UIValue> parse(std::string_view text, std::string* error = nullptr);
+
+    Kind kind() const { return m_kind; }
+    bool isList() const { return m_kind == Kind::List; }
+    bool isRecord() const { return m_kind == Kind::Record; }
+    double number() const;   // text is parsed; 0 when it isn't a number
+    bool flag() const { return m_kind == Kind::Bool ? m_number != 0.0 : number() != 0.0; }
+    const std::string& text() const { return m_text; }   // Text only
+    std::string toText() const;   // the text form; plain text is written as it is
+
+    // Lists
+    UIValue& push(UIValue item);
+    size_t size() const { return m_items.size(); }   // list items or record fields
+    const UIValue& operator[](size_t index) const { return m_items[index]; }
+    // Records
+    UIValue& set(std::string_view key, UIValue value);
+    const UIValue* field(std::string_view key) const;
+    const std::vector<std::string>& keys() const { return m_keys; }
+    const std::vector<UIValue>& items() const { return m_items; }   // list items, or record values
+
+    bool operator==(const UIValue& other) const;
+
+private:
+    Kind m_kind = Kind::Unset;
+    double m_number = 0.0;
+    std::string m_text;
+    std::vector<UIValue> m_items;
+    std::vector<std::string> m_keys;   // records: parallel to m_items
+};
+
+// Reads preview values: "name=value" entries separated by ';' or new lines, each value
+// in UIValue's text form. nullopt and an error message when it isn't valid.
+std::optional<std::vector<std::pair<std::string, UIValue>>>
+parseUIPreview(std::string_view text, std::string* error = nullptr);
+
+// Directions and buttons for moving around a menu without a mouse (GameUI::navigate).
+enum class UINav : uint8_t { Up, Down, Left, Right, Confirm, Back };
+// The input actions that drive menu navigation, bound by default to the arrow keys,
+// Enter and Escape/Backspace, and on gamepads to the d-pad, left stick, South and East.
+// Rebind them in Config/Input.swinput like any action.
+inline constexpr const char* kUINavActions[] = {"ui_up", "ui_down", "ui_left", "ui_right", "ui_confirm", "ui_back"};
 
 // Something a document did that game code can react to (UIWorld::on, UIWorld::onClick).
 struct UIEvent {
     std::string_view document;   // the UIDocument entity's name, or its path if it has none
     std::string_view element;   // id of the element, or of its nearest parent that has one; "" if none
     std::span<const std::string_view> ids;   // element, then every parent's id, innermost first
-    std::string_view type;   // "click", "change", "submit", ...
-    std::string_view command;   // an inline handler's text: onclick="resume" gives "resume"
+    std::string_view type;   // "click", "change", "submit", "back", ...
+    // An inline handler's text: onclick="resume" gives "resume". For "back", the
+    // data-back attribute nearest the focused element: <body data-back="resume">.
+    std::string_view command;
     std::string_view value;   // a form control's value, if any
     Entity entity;   // the UIDocument's entity
 };
@@ -69,7 +144,7 @@ struct UIStats {
     uint32_t visible = 0;
     uint32_t drawCommands = 0;   // after merging
     uint32_t vertices = 0;
-    uint32_t textures = 0;   // glyph atlases and images
+    uint32_t textures = 0;   // glyph atlases, images, shadows and gradients
     float updateMs = 0;   // input, hot reload, data bindings
     float layoutMs = 0;   // layout and building the draw list
 };
@@ -119,6 +194,20 @@ public:
     bool wantsMouse() const;
     bool wantsKeyboard() const;
 
+    // ---- Menu navigation (keyboard and gamepad) ----
+    // While a shown document with focus_on_show is up, or an element has focus, the
+    // ui_* actions (kUINavActions) move focus between buttons and controls, press the
+    // focused one, and send "back". Held directions repeat. Needs input enabled.
+    // navigate() does one step by hand: for game code, tools and tests. Returns false
+    // when there was nothing to navigate.
+    bool navigate(UINav nav);
+    // The focused element's id ("" when it has none), and its document's entity.
+    // nullopt when nothing has focus.
+    std::optional<std::pair<Entity, std::string>> focused() const;
+    // Binds the ui_* actions to their defaults where the project doesn't bind them. The
+    // player and the editor call it at startup, like FlyCamera::bindDefaultControls.
+    static void bindDefaultControls(Input& input);
+
     // ---- Documents ----
     // Reloads every document from disk (styles, templates and images too).
     void reloadAll();
@@ -150,9 +239,18 @@ public:
     void setValue(std::string_view name, double value);
     void setValue(std::string_view name, bool value);
     void setValue(std::string_view name, std::string_view value);
+    void setValue(std::string_view name, UIValue value);   // lists and records too
+    const UIValue& value(std::string_view name) const;   // Unset when game code hasn't set it
     std::string valueText(std::string_view name) const;
     double valueNumber(std::string_view name) const;
     void clearValues();
+    // Preview: values game code hasn't set show the UIDocuments' preview values, or
+    // their own name in braces ("{{score}}"), so a layout can be judged before Play.
+    // The editor turns it on while editing; player --ui-preview turns it on.
+    void setPreview(bool on);
+    bool preview() const;
+    // The {{names}} a document refers to, read from its .rml (for tools and the editor).
+    std::vector<std::string> referencedValues(std::string_view document) const;
     // Receives every UI event while set (one listener: the Play session's UIWorld).
     void setEventListener(std::function<void(const UIEvent&)> listener);
 

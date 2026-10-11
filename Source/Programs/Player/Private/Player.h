@@ -34,6 +34,8 @@ struct Tool {
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
     fs::path benchmarkJson;   // --json with --benchmark
+    bool uiPreview = false;   // --ui-preview: unset {{values}} show UIDocument preview values
+    std::vector<shockwave::UINav> uiNav;   // --ui-nav: menu steps, one a frame from frame 5
 };
 
 // Tools that need no project or window. Both return the process exit code.
@@ -75,6 +77,7 @@ private:
     const shockwave::GameModule& m_module;
     int m_exitCode = 0;
     int m_frame = 0;
+    size_t m_uiNavFrame = 0;
     bool m_screenshotRequested = false;
     double m_benchmarkTime = 0;
     bool m_benchmarkMeasuring = false;

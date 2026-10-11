@@ -57,7 +57,7 @@ int main() {
         registerGameUIComponents();
         const ComponentInfo* info = findComponent("UIDocument");
         check(
-            info && info->fields.size() == 4 && info->fields[0].type == FieldType::UIDocument,
+            info && info->fields.size() == 5 && info->fields[0].type == FieldType::UIDocument,
             "UIDocument is registered with its fields");
 
         const fs::path content = fs::temp_directory_path() / "shockwave-gameui-test";
@@ -80,7 +80,7 @@ int main() {
         World world;
         const Entity hud = world.create();
         world.add<Name>(hud, {"HUD"});
-        world.add<UIDocument>(hud, {"UI/hud.rml", true, 0, false});
+        world.add<UIDocument>(hud, {"UI/hud.rml", true, 0, false, {}});
         ui.update(world, 0.0);
         check(ui.problems(hud).empty(), "hud.rml loads cleanly");
         check(ui.stats().documents == 1 && ui.stats().visible == 1, "one document, shown");
@@ -164,6 +164,131 @@ int main() {
         ui.update(world, 1.0);
         const float after = ui.elementRect(hud, "label")->w;
         check(after < before, "the stylesheet reloaded");
+
+        // ---- Values: lists and records, their text form, preview values ----
+        {
+            const auto parsed = UIValue::parse("[{name=Sword, count=2}, {name=\"Bow, long\", count=1}]");
+            check(parsed && parsed->isList() && parsed->size() == 2, "a list of records parses");
+            check((*parsed)[1].field("name")->text() == "Bow, long", "quoted text keeps its comma");
+            check((*parsed)[0].field("count")->number() == 2.0, "numbers are numbers");
+            check(
+                parsed->toText() == "[{name=Sword, count=2}, {name=\"Bow, long\", count=1}]",
+                "the text form reads back the same: " + parsed->toText());
+            std::string error;
+            check(!UIValue::parse("[a, b", &error) && !error.empty(), "an unclosed list is an error");
+            const auto preview = parseUIPreview("score=12; name=Ana\nitems=[a, b]");
+            check(preview && preview->size() == 3 && (*preview)[2].second.size() == 2, "preview values parse");
+            check(!parseUIPreview("score 12", &error), "a preview entry needs '='");
+        }
+
+        write(content / "UI/list.rml", R"(<rml>
+<head><link type="text/rcss" href="hud.rcss"/></head>
+<body data-model="game">
+  <p id="title">{{title}}</p>
+  <div id="items"><p data-for="item : inventory">{{item.name}} x{{item.count}}</p></div>
+  <p id="count">{{inventory.size}}</p>
+</body>
+</rml>)");
+        const Entity listDoc = world.create();
+        world.add<Name>(listDoc, {"List"});
+        world.add<UIDocument>(listDoc, {"UI/list.rml", true, 1, false, "title=Bag; inventory=[{name=Rope, count=3}]"});
+        ui.update(world, 0.0);
+        ui.layout();
+        check(ui.problems(listDoc).empty(), "list.rml loads cleanly");
+        check(game.text("List", "title").empty(), "unset values show nothing outside preview");
+        ui.setPreview(true);
+        ui.layout();
+        check(game.text("List", "title") == "Bag", "preview values fill in: '" + game.text("List", "title") + "'");
+        check(game.text("List", "count") == "1", "a preview list has a size");
+        game.set(
+            "inventory", UIValue::list(
+                             {UIValue::record({{"name", "Sword"}, {"count", 2}}),
+                              UIValue::record({{"name", "Shield"}, {"count", 1}})}));
+        ui.layout();
+        const std::string items = game.text("List", "items");
+        check(
+            items.find("Sword x2") != std::string::npos && items.find("Shield x1") != std::string::npos,
+            "data-for lists game code's records: " + items);
+        check(game.text("List", "count") == "2", "game values win over preview values");
+        check(game.value("inventory").size() == 2 && game.get("inventory").front() == '[', "lists read back");
+        world.get<UIDocument>(listDoc)->preview = "title=[oops";
+        ui.update(world, 0.0);
+        check(!ui.problems(listDoc).empty(), "a broken preview is reported with its document");
+        world.get<UIDocument>(listDoc)->preview.clear();
+        ui.update(world, 0.0);
+        ui.layout();
+        check(game.text("List", "title") == "{{title}}", "unset values show their name while previewing");
+        ui.setPreview(false);
+        const auto names = ui.referencedValues("UI/list.rml");
+        check(names.size() == 2 && names[0] == "inventory" && names[1] == "title", "referenced values are found");
+
+        // ---- Menu navigation ----
+        write(content / "UI/menu.rml", R"(<rml>
+<head><link type="text/rcss" href="hud.rcss"/>
+<style> button { display: block; width: 200px; height: 40px; } #row button { display: inline-block; } </style></head>
+<body data-model="game" data-back="close_menu">
+  <button id="play" onclick="play">Play</button>
+  <button id="options">Options</button>
+  <div id="row"><button id="left">L</button><button id="right">R</button></div>
+  <input id="sound" type="checkbox"/>
+</body>
+</rml>)");
+        const Entity menu = world.create();
+        world.add<Name>(menu, {"Menu"});
+        world.add<UIDocument>(menu, {"UI/menu.rml", true, 5, true, {}});
+        ui.update(world, 0.0);
+        ui.layout();
+        check(game.focused("Menu") == "play", "a focus_on_show menu focuses its first button: " + game.focused("Menu"));
+        check(game.navigate(UINav::Down) && game.focused("Menu") == "options", "down moves to the next button");
+        check(game.navigate(UINav::Down) && game.focused("Menu") == "left", "down reaches the row");
+        check(game.navigate(UINav::Right) && game.focused("Menu") == "right", "right moves along the row");
+        check(game.navigate(UINav::Up) && game.focused("Menu") == "options", "up goes back");
+        game.navigate(UINav::Up);
+        int played = 0, closed = 0;
+        game.on("play", [&](const UIEvent&) { ++played; });
+        game.on("close_menu", [&](const UIEvent& e) {
+            ++closed;
+            check(e.type == "back" && e.document == "Menu", "back carries its type and document");
+        });
+        check(game.navigate(UINav::Confirm) && played == 1, "confirm clicks the focused button");
+        check(game.navigate(UINav::Back) && closed == 1, "back sends the document's data-back command");
+        game.focus("Menu", "sound");
+        game.navigate(UINav::Confirm);
+        ui.layout();
+        check(game.focused("Menu") == "sound", "a checkbox can be focused");
+        world.get<UIDocument>(menu)->visible = false;
+        ui.update(world, 0.0);
+
+        // ---- Gradients and box-shadow ----
+        write(content / "UI/fx.rml", R"(<rml>
+<head><link type="text/rcss" href="hud.rcss"/>
+<style>
+  #g { display: block; width: 200px; height: 100px; decorator: linear-gradient(to right, #ff0000, #0000ff); }
+  #r { display: block; width: 100px; height: 100px; decorator: radial-gradient(circle, #ffffff, #00000000); }
+  #s { display: block; width: 100px; height: 50px; margin: 40px; background-color: #202020; box-shadow: #000000a0 4px 8px 12px 2px; }
+</style></head>
+<body><div id="g"/><div id="r"/><div id="s"/></body>
+</rml>)");
+        const uint32_t texturesBefore = ui.stats().textures;
+        const Entity fx = world.create();
+        world.add<UIDocument>(fx, {"UI/fx.rml", true, 0, false, {}});
+        ui.update(world, 0.0);
+        ui.layout();
+        check(ui.problems(fx).empty(), "fx.rml loads cleanly");
+        ui.layout();
+        check(
+            ui.stats().textures >= texturesBefore + 3,
+            "two gradients and a shadow make textures: " + std::to_string(ui.stats().textures - texturesBefore));
+        check(ui.validate("UI/fx.rml").empty(), "gradients and shadows validate");
+
+        // ---- --check: nav targets ----
+        write(
+            content / "UI/badnav.rml", "<rml><head><link type=\"text/rcss\" href=\"hud.rcss\"/></head><body>"
+                                       "<button id=\"a\" style=\"nav-down: #nowhere;\">A</button></body></rml>");
+        const auto badnav = ui.validate("UI/badnav.rml");
+        check(
+            badnav.size() == 1 && badnav[0].message.find("#nowhere") != std::string::npos,
+            "a nav target that isn't there is reported");
 
         fs::remove_all(content);
         std::cout << "game ui tests passed\n";

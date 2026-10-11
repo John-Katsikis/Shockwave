@@ -36,6 +36,7 @@ entity "HUD"
     visible 1
     order 0
     focus_on_show 0
+    preview "score=1200; items=[Sword, Shield]"
 end
 ```
 
@@ -44,10 +45,12 @@ end
 | Document | `document` | The `.rml` file, as a path inside `Content`. |
 | Visible | `visible` | Shows or hides the document. Game code changes this with `game.ui().show()` and `hide()`. |
 | Order | `order` | Which document is on top. Higher numbers draw on top and get the mouse first. |
-| Focus on show | `focus_on_show` | Gives the document keyboard focus when it's shown. Turn it on for menus, leave it off for HUDs. |
+| Focus on show | `focus_on_show` | Gives the document keyboard and gamepad focus when it's shown. Turn it on for menus, leave it off for HUDs. See [Menus with the keyboard and gamepad](#menus-with-the-keyboard-and-gamepad). |
+| Preview | `preview` | Stand-in `{{values}}` for the editor while you're not playing. See [Preview values while editing](#preview-values-while-editing). |
 
-The sample project's `Scenes/main.swscene` has a small HUD that counts pulses and has a
-Pulse button. Its files are `Games/Sample/Content/UI/hud.rml` and `hud.rcss`.
+The sample project's `Scenes/main.swscene` has a small HUD in the bottom left that counts
+pulses and has a Pulse button, and a pause menu (press P, or Start on a gamepad) with a
+list of recent pulses. Their files are in `Games/Sample/Content/UI/`.
 
 ## Write a document
 
@@ -123,15 +126,17 @@ void frame(GameContext& game, double) override {
 ```
 
 Values you `set` appear wherever a document inside `data-model="game"` writes
-`{{name}}`. They can be numbers, `true` or `false`, or text. Documents can use them in
+`{{name}}`. They can be numbers, `true` or `false`, text, or lists and records (see
+[Fill lists from game code](#fill-lists-from-game-code)). Documents can use them in
 conditions and attributes too, like `data-if="health < 25"` or
 `data-class-low="health < 25"`. While you're editing, values that game code hasn't set
-yet show as empty.
+yet show their preview value, or their own name, like `{{score}}`. During Play they show
+as empty until game code sets them.
 
 | Call | What it does |
 |---|---|
-| `set(name, value)` | Sets a `{{name}}` value: a number, `bool` or text. |
-| `get(name)`, `number(name)` | Reads a value back, as text or as a number. |
+| `set(name, value)` | Sets a `{{name}}` value: a number, `bool`, text, or a `UIValue` list or record. |
+| `get(name)`, `number(name)`, `value(name)` | Reads a value back, as text, as a number, or as a `UIValue`. |
 | `show(doc)`, `hide(doc)`, `toggle(doc)`, `visible(doc)` | Shows or hides a document. This changes its `UIDocument`. |
 | `setText(doc, id, text)` | Replaces an element's content with plain text. |
 | `text(doc, id)` | Reads an element's text. |
@@ -140,12 +145,150 @@ yet show as empty.
 | `setProperty(doc, id, name, value)` | Sets one style property, like `setProperty("HUD", "bar", "width", "40%")`. |
 | `setAttribute(doc, id, name, value)` | Sets an attribute, like `src` on an image. |
 | `focus(doc, id)` | Gives an element keyboard focus. |
+| `focused(doc)` | The `id` of the focused element in a document, or `""`. |
+| `navigate(step)` | Moves around a menu as the arrow keys or d-pad would: `UINav::Up`, `Down`, `Left`, `Right`, `Confirm` or `Back`. |
 | `click(doc, id)` | Clicks an element as the mouse would. Handy in tests. |
 | `capturesInput()` | True while the mouse is over the UI or a text field has focus. Skip gameplay input then. |
 
 Calls that can't find the document or element return `false` and change nothing. When
 Play stops, your handlers and values are dropped and every document reloads, so nothing
 done while playing sticks.
+
+## Fill lists from game code
+
+A document repeats an element for every item in a list with `data-for`. Each item can be
+a plain value or a record with named fields:
+
+```html
+<div class="inventory">
+    <p data-for="item : inventory">{{item.name}} x{{item.count}}</p>
+    <p data-if="inventory.size == 0">Your bag is empty</p>
+</div>
+```
+
+Game code builds the list with `UIValue` and sets it like any other value:
+
+```cpp
+UIValue items = UIValue::list();
+for (const Item& item : m_inventory)
+    items.push(UIValue::record({{"name", item.name}, {"count", item.count}}));
+game.ui().set("inventory", items);
+```
+
+Short lists can be written in one go: `UIValue::list({"Sword", "Shield"})`, shown with
+`{{it}}` (the default name for each item) or a name you pick in `data-for`. Lists and
+records can hold other lists and records. `{{inventory.size}}` is the number of items,
+and `{{inventory[0].name}}` reaches into one.
+
+Set the whole list again whenever it changes. Only the parts of the document that use it
+are updated, so this is cheap for the lists a menu or HUD shows.
+
+## Preview values while editing
+
+While you're editing, a `{{value}}` that game code hasn't set shows its own name, like
+`{{score}}`, so you can see where values go. To judge a layout with realistic text, give
+the document preview values in the Inspector's Preview field, or in the scene file:
+
+```text
+preview "score=1200; player=Ana; inventory=[{name=Sword, count=1}, {name=Rope, count=3}]"
+```
+
+Write one `name=value` per entry, separated by `;` or new lines. A value is written like
+this:
+
+| Value | Example |
+|---|---|
+| A number | `12`, `-3.5` |
+| `true` or `false` | `true` |
+| Text | `Ana`, or `"Text, with commas"` in quotes |
+| A list | `[Sword, Shield]` |
+| A record | `{name=Sword, count=1}` |
+
+Preview values only fill in for values game code hasn't set, and they're never used
+during Play or by the player, unless you ask the player for them (see
+[See the UI from the command line](#see-the-ui-from-the-command-line)). The Inspector
+lists the values a document uses under its Document field. A mistake in a preview shows
+in red there, and `player --check` reports it too.
+
+## Menus with the keyboard and gamepad
+
+Turn on Focus on show (`focus_on_show 1`) for a menu. When it's shown, it takes focus:
+its button with the `autofocus` attribute, or else its first button or control, gets the
+focus. Players then move around it like this:
+
+| To do this | Keyboard | Gamepad | Action |
+|---|---|---|---|
+| Move between buttons | Arrow keys | D-pad or left stick | `ui_up`, `ui_down`, `ui_left`, `ui_right` |
+| Press the focused button | Enter | South (Cross, A) | `ui_confirm` |
+| Go back | Escape or Backspace | East (Circle, B) | `ui_back` |
+
+Holding a direction repeats after a moment. These are ordinary input actions, so you can
+rebind them in `Config/Input.swinput` or the editor's Input window. In the player,
+Escape still quits the game too, as it always has.
+
+Focus moves to the nearest button or control in that direction. Buttons, inputs,
+checkboxes, sliders and selects can all take focus. To make another element focusable,
+give it `tab-index: auto` in the stylesheet. To send focus somewhere specific, name the
+element in the stylesheet, and `player --check` reports names that don't exist:
+
+```css
+#play { nav-down: #options; }
+#quit { nav-down: #play; }   /* wrap around at the bottom */
+#title { nav: none; }        /* never move from here */
+```
+
+Style the focused button with `:focus-visible`, so players can see where they are:
+
+```css
+button { border: 2dp transparent; }
+button:focus-visible { border-color: #ffffff; }
+```
+
+Confirm presses the focused button, just like a click, so `onclick` commands and
+`onClick` handlers run. On a checkbox it toggles the box; on a slider, left and right
+change the value; on a select, it opens the list.
+
+**Back** sends a `"back"` event. Name the command it sends with `data-back` on the menu's
+body or on any element inside it. The nearest one to the focused element wins:
+
+```html
+<body data-model="game" data-back="resume">
+```
+
+```cpp
+game.ui().on("resume", [&](const UIEvent&) { game.ui().hide("PauseMenu"); });
+```
+
+Without `data-back`, handle it with `onEvent(doc, element, "back", ...)`.
+
+Navigation only takes over while a menu (a shown document with Focus on show) is up, or
+something in a document has focus. A HUD on its own never takes the d-pad or arrow keys
+from your game. While a menu has focus, `capturesInput()` is true, so gameplay can skip
+its own input. While a text field has focus, the keyboard's arrows, Enter and Backspace
+edit the text, and only the gamepad navigates.
+
+## Shadows and gradients
+
+`box-shadow` and gradient decorators work like they do in CSS:
+
+```css
+.panel {
+    box-shadow: #00000080 0 6dp 18dp 0;    /* color, x, y, blur, spread */
+    decorator: linear-gradient(180deg, #1d232b, #101318);
+}
+.badge { decorator: radial-gradient(circle, #ffd27a, #ff8c33); }
+.dial  { decorator: conic-gradient(#ff8c33, #3d7bd9, #ff8c33); }
+```
+
+`linear-gradient`, `radial-gradient` and `conic-gradient` all work, and so do their
+`repeating-` versions. `box-shadow` takes several shadows and `inset` shadows too.
+
+Shadows and gradients are worked out once, when an element first appears or changes
+size, and kept as small textures. After that they draw like any image, so they cost
+nothing extra per frame. Working one out takes a few milliseconds on the main thread for a
+large soft shadow, with the work spread across every CPU core: the sample's pause menu
+shadow (472 x 370 pixels) took about 5 ms on a slow 4-core cloud machine, so expect a
+millisecond or two on a desktop. Gradients take well under a millisecond.
 
 ## React to clicks and events
 
@@ -172,15 +315,15 @@ game.ui().onEvent("Options", "volume", "change", [&](const UIEvent& e) {
 ```
 
 `onEvent` can listen for `click`, `dblclick`, `change`, `submit`, `mouseover`, `mouseout`,
-`focus` and `blur`. Each handler gets a `UIEvent`:
+`focus`, `blur` and `back`. Each handler gets a `UIEvent`:
 
 | Field | What it holds |
 |---|---|
 | `document` | The document's entity name, or its path if the entity has no name. |
 | `element` | The `id` of the element, or of its nearest parent that has one. |
 | `ids` | That `id` and every parent's, innermost first. |
-| `type` | The event: `"click"`, `"change"` and so on. |
-| `command` | The `onclick` text, for commands. Empty otherwise. |
+| `type` | The event: `"click"`, `"change"`, `"back"` and so on. |
+| `command` | The `onclick` text for commands, or the `data-back` text for `"back"`. Empty otherwise. |
 | `value` | A form control's value, such as a slider's or a text field's. |
 | `entity` | The `UIDocument` entity. |
 
@@ -252,7 +395,9 @@ It reports these mistakes:
 - RML markup errors, such as tags that don't match;
 - RCSS errors, such as misspelled properties or bad values;
 - fonts that no loaded font file matches;
-- images and stylesheets that can't be found.
+- images and stylesheets that can't be found;
+- `nav-up`, `nav-down`, `nav-left` and `nav-right` that name an element that isn't there;
+- preview values that aren't written correctly.
 
 In the editor, the same problems appear in red in the `UIDocument`'s Inspector, and in
 the Console as `LogUI` messages when a document loads or reloads.
@@ -264,6 +409,17 @@ Screenshots include the UI, drawn exactly as players see it:
 ```sh
 build/bin/player --scene Games/Sample/Scenes/main.swscene --screenshot hud.png
 ```
+
+To see the preview values in a screenshot, add `--ui-preview`. To see a menu after some
+keyboard or gamepad steps, add `--ui-nav` with the steps, separated by commas. They run
+one a frame, from the fifth frame, before the screenshot:
+
+```sh
+build/bin/player --scene Games/Sample/Scenes/main.swscene --ui-preview --screenshot preview.png
+build/bin/player --ui-nav down,confirm,down --screenshot menu.png
+```
+
+The steps are `up`, `down`, `left`, `right`, `confirm` and `back`.
 
 `player --benchmark` reports what the UI costs: its GPU pass, named `ui`, and its CPU
 time.
@@ -293,6 +449,8 @@ but `{{values}}` come back straight away because they live in game code.
 |---|---|---|---|
 | Add a document to a scene | Create > UI document, or drag an `.rml` from Content | a `UIDocument` block in the `.swscene` | |
 | Pick the document | Inspector > Document, or drop an `.rml` on it | `document "UI/hud.rml"` | |
+| Make a menu take the keyboard and gamepad | Inspector > Focus on show | `focus_on_show 1` | `player --ui-nav down,confirm` |
+| See values before Play | Inspector > Preview | `preview "score=12"` | `player --ui-preview` |
 | Edit a document | Inspector > Open file, or Content > right-click > Open in text editor | the `.rml` and `.rcss` | |
 | Reload everything | Inspector > Reload | | |
 | Hide the UI in the viewport | View > Game UI | | |
@@ -323,15 +481,17 @@ only change when new letters or sizes appear.
 
 ## Limits
 
-- Filters, `box-shadow`, gradients and masks (`filter`, `backdrop-filter`, `mask-image`,
-  `clip-path` on transformed elements) aren't drawn yet. Borders, backgrounds, images,
-  transforms, opacity and clipping all work.
-- `{{values}}` from game code are single numbers, `bool`s or text. Lists for `data-for`
-  aren't available from game code yet. Build lists with `setRml` instead.
+- Filters and masks (`filter`, `backdrop-filter`, `mask-image`) aren't drawn yet: the
+  element shows without them, except `filter: opacity()`, which works. Rounded corners
+  don't clip an element's children. Borders, backgrounds, images, gradients, shadows,
+  transforms, opacity and rectangular clipping all work.
+- A shadow is worked out on the CPU when its element first appears or changes size. An
+  element whose size animates every frame works its shadow out every frame. Give such an
+  element no shadow, or animate `transform: scale()` instead, which keeps the shadow.
 - UI is drawn in sRGB, like a web browser, so colors match what you see in other tools.
 - Fonts load once and stay loaded until the program exits. Editing a font file needs a
   restart to show up.
-- Gamepad navigation of menus isn't wired up yet. Use `focus` and your own actions.
+- Mouse hover doesn't move the keyboard and gamepad focus.
 - The UI isn't thread-safe. Call `game.ui()` only from the main thread: `beginPlay`,
   `frame`, `fixedUpdate` and `endPlay`, never from systems.
 
@@ -356,6 +516,17 @@ This section is for the curious.
 - **Input.** `Input::events()` keeps the frame's raw keyboard, mouse and text events in
   order, and `GameUI` passes them to RmlUi. The editor passes the mouse position inside
   the viewport instead.
+- **Navigation.** The `ui_*` actions drive RmlUi's own keyboard navigation (its `nav`
+  properties, with `auto` where a stylesheet doesn't say), so the arrow keys and the
+  d-pad behave the same. `GameUI::bindDefaultControls` binds them where nothing else has.
+- **Values.** Every name a document's bindings use is found in its `.rml` and bound
+  before RmlUi reads it, so values game code sets later appear without a reload.
+  `UIValue` is the value type, with lists and records for `data-for`.
+- **Shadows and gradients.** Gradients are baked into a small texture per element and
+  drawn as ordinary UI triangles, so the Vulkan UI pass needs no new shader. RmlUi draws
+  a `box-shadow` into an off-screen layer once and keeps it as a texture; Shockwave
+  records what goes into those layers and rasterizes and blurs it on the CPU
+  (`Source/Runtime/GameUI/Private/UIEffects.cpp`).
 - **Problems.** RmlUi's warnings and errors go to the log under `LogUI`. While a
   document loads, they're also recorded for that document, which is what the Inspector
   and `player --check` show.

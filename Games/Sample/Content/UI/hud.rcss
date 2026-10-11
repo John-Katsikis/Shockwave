@@ -9,14 +9,17 @@ body {
     pointer-events: none;   /* clicks go through to the game, except on .panel */
 }
 
+/* Bottom left, clear of the editor's camera label and stats in the top left. */
 .panel {
     position: absolute;
     left: 24dp;
-    top: 24dp;
+    bottom: 24dp;
     width: 280dp;
     padding: 14dp 18dp;
     background-color: #12161ccc;
+    decorator: linear-gradient(180deg, #1d232bee, #101318cc);
     border-left: 3dp #ff8c33;
+    box-shadow: #00000080 0 6dp 18dp 0;
     pointer-events: auto;
 }
 
@@ -43,14 +46,19 @@ h1 {
     margin: 4dp 0 12dp;
 }
 
+#menu-hint { margin: 12dp 0 0; font-size: 12dp; }
+
 button {
     display: inline-block;
     padding: 6dp 16dp;
     font-size: 15dp;
     font-weight: bold;
-    background-color: #ff8c33;
+    border: 2dp transparent;
+    decorator: linear-gradient(180deg, #ffa95e, #ff8c33);
     color: #12161c;
     cursor: pointer;
 }
-button:hover { background-color: #ffa95e; }
-button:active { background-color: #e0731c; }
+button:hover { decorator: linear-gradient(180deg, #ffbd80, #ffa95e); }
+button:active { decorator: none; background-color: #e0731c; }
+/* The keyboard or gamepad is on this button. */
+button:focus-visible { border-color: #ffffff; }

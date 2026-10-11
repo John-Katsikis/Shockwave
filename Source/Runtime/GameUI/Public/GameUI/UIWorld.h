@@ -9,6 +9,7 @@
 //     game.ui().show("PauseMenu");                          // the UIDocument entity's name
 //     game.ui().on("resume", [&](const UIEvent&) { ... }); // <button onclick="resume">
 //     game.ui().onClick("HUD", "menu", [&](const UIEvent&) { ... });   // <button id="menu">
+//     game.ui().set("items", UIValue::list({"Sword", "Shield"}));  // data-for="item : items"
 //
 // Documents are named by their UIDocument entity's Name, or by their file ("UI/hud.rml")
 // or its stem ("hud"). Elements are named by id. Calls that can't find their document or
@@ -65,6 +66,11 @@ public:
     void set(std::string_view name, bool value);
     void set(std::string_view name, std::string_view value);
     void set(std::string_view name, const char* value) { set(name, std::string_view(value)); }
+    void set(std::string_view name, const std::string& value) { set(name, std::string_view(value)); }
+    // Lists for data-for and records for {{item.name}}:
+    //     game.ui().set("inventory", UIValue::list({UIValue::record({{"name", "Sword"}})}));
+    void set(std::string_view name, UIValue value);
+    const UIValue& value(std::string_view name) const;
     std::string get(std::string_view name) const;   // as text; "" when unset
     double number(std::string_view name) const;   // 0 when unset or not a number
 
@@ -75,6 +81,13 @@ public:
     void onClick(std::string_view document, std::string_view element, Handler handler);
     // Any event type ("change", "submit", "mouseover"...) on an element.
     void onEvent(std::string_view document, std::string_view element, std::string_view type, Handler handler);
+
+    // ---- Menu navigation ----
+    // One step of keyboard or gamepad navigation, as the ui_* actions do: move focus,
+    // press the focused element, or send "back" (on() gets its data-back command).
+    bool navigate(UINav nav);
+    // The id of the focused element in a document; "" when nothing there has focus.
+    std::string focused(std::string_view document) const;
 
     // ---- Input ----
     // The UI is using the mouse or keyboard this frame (a menu has focus, the mouse is

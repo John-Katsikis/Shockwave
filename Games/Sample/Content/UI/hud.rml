@@ -11,6 +11,7 @@
         <span class="hint" id="hint">pulses. Press Space or click:</span>
         <!-- onclick names a command; the game reacts with game.ui().on("pulse", ...). -->
         <button id="pulse" onclick="pulse">Pulse</button>
+        <span class="hint" id="menu-hint">P or Start: menu</span>
     </div>
 </body>
 </rml>

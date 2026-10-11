@@ -10,3 +10,8 @@ bind pulse pad south
 # bind pulse joy "T.16000M" button 0
 # bind throttle joy "TWCS" axis 2 full invert
 # bind steer_right joy "G29" axis 0 +
+
+# Opens the pause menu (Content/UI/menu.rml). Menus are driven by the ui_* actions, which
+# default to the arrow keys, Enter, Escape and the d-pad, South and East.
+bind menu key P
+bind menu pad start

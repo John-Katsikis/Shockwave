@@ -129,6 +129,30 @@ int main(int argc, char** argv) {
                 }
             } else if (arg == "--json" && i + 1 < argc) {
                 tool.benchmarkJson = argv[++i];
+            } else if (arg == "--ui-preview") {
+                tool.uiPreview = true;
+            } else if (arg == "--ui-nav" && i + 1 < argc) {
+                // "down,down,confirm": what the arrow keys or d-pad, Enter and Back would do.
+                std::string steps = argv[++i];
+                for (size_t at = 0; at <= steps.size();) {
+                    const size_t comma = std::min(steps.find(',', at), steps.size());
+                    const std::string step = steps.substr(at, comma - at);
+                    at = comma + 1;
+                    if (step == "up")
+                        tool.uiNav.push_back(shockwave::UINav::Up);
+                    else if (step == "down")
+                        tool.uiNav.push_back(shockwave::UINav::Down);
+                    else if (step == "left")
+                        tool.uiNav.push_back(shockwave::UINav::Left);
+                    else if (step == "right")
+                        tool.uiNav.push_back(shockwave::UINav::Right);
+                    else if (step == "confirm")
+                        tool.uiNav.push_back(shockwave::UINav::Confirm);
+                    else if (step == "back")
+                        tool.uiNav.push_back(shockwave::UINav::Back);
+                    else
+                        throw std::runtime_error("--ui-nav takes steps like up,down,left,right,confirm,back");
+                }
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
             } else if (arg == "--help") {
@@ -139,6 +163,8 @@ int main(int argc, char** argv) {
                           "player --renderers                  list the renderer plugins that can be loaded\n"
                           "player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]\n"
                           "                                    play N frames (default 30), save the last, quit\n"
+                          "       [--ui-preview] [--ui-nav down,down,confirm]\n"
+                          "                                    show UI preview values; step through menus first\n"
                           "player --benchmark [seconds] [--json file]\n"
                           "                                    run the scene for that long (default 10) and report\n"
                           "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
