@@ -8,6 +8,8 @@
 #include <Engine/Schedule.h>
 #include <Engine/Subsystem.h>
 
+#include <glm/vec3.hpp>
+
 #include <string_view>
 
 namespace shockwave {
@@ -39,6 +41,10 @@ struct GameContext {
     Input& input() const;
     // The first entity with this Name, or an empty EntityRef (false) when there's none.
     EntityRef find(std::string_view name) const { return findEntity(world, name); }
+    // A new copy of a prefab ("Prefabs/Enemy.swprefab", see docs/Prefabs.md), where the
+    // prefab puts it or at position. An empty EntityRef (false) if it can't be loaded.
+    EntityRef spawn(std::string_view prefab) const;
+    EntityRef spawn(std::string_view prefab, const glm::vec3& position) const;
 };
 
 class GameMode {

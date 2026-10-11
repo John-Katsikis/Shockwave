@@ -38,6 +38,7 @@ inline constexpr const char* kModelPayload = "SW_MODEL";
 inline constexpr const char* kAudioPayload = "SW_AUDIO";
 inline constexpr const char* kTexturePayload = "SW_TEXTURE";
 inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
+inline constexpr const char* kPrefabPayload = "SW_PREFAB";   // path inside Content
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
@@ -197,6 +198,20 @@ private:
     void applyInputEdit();   // m_inputEdit goes live, unsaved
     void saveInputBindings();
 
+    // PrefabEditor.cpp: prefabs and their copies (Engine/Prefab.h).
+    bool isPrefabPart(shockwave::Entity e) const;
+    bool refusePrefabParts(const char* action);   // warns and returns true if the selection has parts
+    std::string newPrefabPath(const std::string& name) const;   // "Prefabs/Lamp.swprefab", first free
+    void createPrefab(shockwave::Entity e);   // saves e as a prefab and makes it a copy of it
+    shockwave::Entity placePrefab(const std::string& path, const glm::vec3& position);
+    void applyPrefab(shockwave::Entity root);
+    void unpackPrefabCopy(shockwave::Entity root);
+    void editPrefab(const std::string& path);   // opens the prefab file like a scene
+    bool isEditingPrefab() const;
+    void drawPrefabEditingNote();
+    bool drawPrefabInspector(shockwave::Entity e);   // true for a part (read-only)
+    void drawPrefabMenuItems(shockwave::Entity e);
+
     // ---- Selection (Editor.cpp) ----
     void select(shockwave::Entity e);   // replaces the selection; null clears it
     void toggleSelected(shockwave::Entity e);   // Ctrl+click
@@ -312,6 +327,7 @@ private:
 
     shockwave::World m_world;
     std::filesystem::path m_scenePath;   // empty for a scene that was never saved
+    std::filesystem::path m_prefabReturnScene;   // the scene to go back to after editing a prefab
     bool m_dirty = false;
     std::vector<shockwave::Entity> m_selection;   // primary last
     shockwave::Entity m_rangeAnchor;

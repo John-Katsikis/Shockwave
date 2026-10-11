@@ -3,6 +3,7 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <Engine/Prefab.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -59,6 +60,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     logAssetChanges(
         m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
     m_gameUI->setContentFolder(m_project.assetFolder);
+    shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     loadEditorState();
     scanScenes();
 
@@ -97,6 +99,7 @@ void Editor::closeProject() {
     engine().input().clearBindingsFile();
     m_world.clear();
     m_gameUI->setContentFolder({});
+    shockwave::prefabs().setup({}, nullptr);
     m_scenePath.clear();
     m_selection.clear();
     m_undo.clear();

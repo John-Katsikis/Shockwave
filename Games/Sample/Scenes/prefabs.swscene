@@ -1,0 +1,73 @@
+# Prefab showcase: copies of the prefabs in Content/Prefabs. Each copy lists only what it
+# changes; edit a prefab and every copy here follows.
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.2 0.24 0.34 1
+    ambient_intensity 0.35
+end
+
+entity "Floor"
+  Transform
+    scale 40 1 40
+  MeshRenderer
+    mesh floor
+    texture grid
+end
+
+entity "Main Camera"
+  Transform
+    position 0 3.2 9
+    rotation -14 0 0
+  Camera
+    fov 60
+    primary 1
+end
+
+entity "Moon"
+  Transform
+    position 0 10 0
+    rotation -40 -30 0
+  Light
+    type Directional
+    color 0.6 0.7 1 1
+    intensity 0.6
+end
+
+entity "Lamp row"
+  Prefab
+    path "Prefabs/Lamp row.swprefab"
+  Transform
+    position 0 0 -2
+end
+
+entity "Crates"
+  Prefab
+    path "Prefabs/Crate stack.swprefab"
+  Transform
+    position -2.5 0.5 1.5
+    rotation 0 -15 0
+end
+
+entity "Painted crates"
+  Prefab
+    path "Prefabs/Crate stack.swprefab"
+  Transform
+    position 2.5 0.5 1.5
+    rotation 0 20 0
+  MeshRenderer
+    tint 0.45 0.6 1 1
+end
+
+entity "Sign"
+  Parent
+    entity "Painted crates"
+  Transform
+    position 0 1.6 0
+    scale 0.8 0.3 0.05
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.6 0.25 1
+end

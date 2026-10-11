@@ -32,6 +32,9 @@ namespace shockwave {
 // Unknown components and fields are skipped on load with a warning, so newer files
 // still open in older builds.
 //
+// Entities with a Prefab component are copies of a prefab (Prefab.h): only what differs
+// from the prefab is written, and loading makes the copy again.
+//
 // The format is meant to be written by people, tools and AI alike: writeSceneSchema
 // documents every component, and `player --check` validates files.
 struct SceneFileHooks {
@@ -43,6 +46,11 @@ struct SceneFileHooks {
     // live entity. A scene written from a world with the same entities comes back with
     // the same handles (World::withoutComponents gives such a world).
     const World* entities = nullptr;
+    // Write the prefab header (shockwave_prefab) instead of the scene one. See Prefab.h.
+    bool prefab = false;
+    // Write every entity in full, prefab parts included, and read them back without
+    // remaking prefab copies: an exact round trip in memory (game code hot reload).
+    bool exact = false;
 };
 
 bool saveScene(

@@ -8,10 +8,10 @@
 #include <stdexcept>
 
 // Shockwave Editor.
-//   editor [project folder | project.swproject | scene.swscene] [options]
+//   editor [project folder | project.swproject | scene.swscene | prefab.swprefab] [options]
 //
 // With nothing given it opens the project in the working folder (or a folder above it),
-// else the last project, else the project hub. A scene opens inside its project.
+// else the last project, else the project hub. A scene or prefab opens inside its project.
 //
 // Options:
 //   --project path         the project to open (same as giving it first)
@@ -76,11 +76,10 @@ int main(int argc, char** argv) {
             else if (arg == "--play")
                 options.playOnStart = true;
             else if (arg == "--help") {
-                std::puts(
-                    "editor [project folder | project.swproject | scene.swscene] [--project path] [--assets folder]\n"
-                    "       [--content-folder path] [--preferences]\n"
-                    "       [--theme file] [--uncapped] [--renderer name] [--prefs file] [--play] [--select N]\n"
-                    "       [--frames N]");
+                std::puts("editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
+                          "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
+                          "       [--theme file] [--uncapped] [--renderer name] [--prefs file] [--play] [--select N]\n"
+                          "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;

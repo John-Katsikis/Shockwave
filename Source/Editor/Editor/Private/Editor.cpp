@@ -4,6 +4,7 @@
 
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
+#include <Engine/Prefab.h>
 #include <GameUI/GameUI.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -63,7 +64,8 @@ void Editor::onStart() {
     if (!m_options.path.empty()) {
         const fs::path path = m_options.path;
         if (const auto projectFile = shockwave::findProjectFile(path)) {
-            openProject(*projectFile, path.extension() == ".swscene" ? path : fs::path());
+            const bool document = path.extension() == ".swscene" || path.extension() == ".swprefab";
+            openProject(*projectFile, document ? path : fs::path());
         } else {
             error("No Shockwave project at " + path.string() + ". Create one in the project hub.");
         }
@@ -164,6 +166,10 @@ void Editor::onGui() {
     } else {
         logAssetChanges(m_assetFolder->poll(dt));
     }
+    // Prefab files saved here or in any program update their copies (not mid-Play: Stop
+    // brings back the authored scene, which catches up then).
+    shockwave::prefabs().poll(dt);
+    if (!playing()) shockwave::updatePrefabInstances(m_world);
     m_sceneScanTimer += dt;
     if (m_sceneScanTimer > 2.0) scanScenes();
     autosave(dt);

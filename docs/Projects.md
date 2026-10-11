@@ -189,6 +189,7 @@ In `SW_GAME`, `Type` is either the `GameMode` every scene plays with, or your ow
 |---|---|
 | `world` | The scene's entities and components. |
 | `find("Name")` | The entity with that name, as an `EntityRef`. |
+| `spawn("Prefabs/X.swprefab")` | A new copy of a prefab, as an `EntityRef`. See [Prefabs](Prefabs.md). |
 | `input()` | The engine's input. It works without a window too, where nothing is ever pressed. |
 | `audio()` | The session's audio. |
 | `physics()` | The session's physics. |

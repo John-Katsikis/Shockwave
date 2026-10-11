@@ -217,11 +217,12 @@ void Editor::drawCommandBar() {
 
         // Scene: name, save, undo and redo, as long as they fit left of the transport.
         const std::string scene = sceneDisplayName() + (m_dirty ? " *" : "");
-        const float sceneWidth = ImGui::CalcTextSize("SCENE").x + ImGui::CalcTextSize(scene.c_str()).x +
+        const char* kind = isEditingPrefab() ? "PREFAB" : "SCENE";
+        const float sceneWidth = ImGui::CalcTextSize(kind).x + ImGui::CalcTextSize(scene.c_str()).x +
                                  gui::controlGroupWidth({"Save", "Undo", "Redo"}) + style.ItemSpacing.x * 6.0f;
         if (sceneWidth + style.WindowPadding.x < centerX) {
             ImGui::AlignTextToFramePadding();
-            ImGui::TextDisabled("SCENE");
+            ImGui::TextDisabled("%s", kind);
             ImGui::SameLine();
             ImGui::TextUnformatted(scene.c_str());
             ImGui::SetItemTooltip(

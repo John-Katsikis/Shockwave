@@ -65,6 +65,8 @@ private:
     int check(const std::vector<std::string>& importProblems);
 
     int schema();
+    // --check for prefabs: problems loading them, and parts that don't belong in one.
+    void checkPrefabs(std::vector<std::string> prefabs, std::vector<std::string>& problems);
     // --check for game UI: a scene's UIDocuments, then every .rml in Content.
     void checkUIDocuments(
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,

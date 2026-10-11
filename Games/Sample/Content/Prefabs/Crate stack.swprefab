@@ -1,0 +1,22 @@
+# Two crates, the smaller one turned on top. Copies can change the bottom crate's look.
+shockwave_prefab 1
+
+entity "Crate stack"
+  Transform
+    position 0 0 0
+  MeshRenderer
+    mesh cube
+    texture textures/wood.png
+end
+
+entity "Top crate"
+  Parent
+    entity "Crate stack"
+  Transform
+    position 0.05 0.9 0
+    rotation 0 30 0
+    scale 0.6 0.6 0.6
+  MeshRenderer
+    mesh cube
+    texture textures/wood.png
+end

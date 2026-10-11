@@ -7,6 +7,7 @@
 #include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
+#include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
@@ -42,6 +43,7 @@ void Player::onStart() {
     }
     m_ui = std::make_unique<shockwave::GameUI>(&engine());
     m_ui->setContentFolder(m_project.assetFolder);
+    shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check ? check(importProblems) : schema();
         engine().quit();
@@ -99,6 +101,8 @@ void Player::onFrame(double dt) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
             SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
     }
+    // Prefab files saved while the game runs update every copy (hot reload).
+    if (!shockwave::prefabs().poll(dt).empty()) shockwave::updatePrefabInstances(m_world);
     m_session->frame(dt);
     m_ui->update(m_world, dt);
     if (!shockwave::primaryCamera(m_world).valid()) m_camera.update(engine().input(), dt);

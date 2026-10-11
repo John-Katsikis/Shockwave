@@ -3,6 +3,7 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <Engine/Prefab.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -106,6 +107,7 @@ std::string Editor::displayName(Entity e) const {
 }
 
 std::string Editor::kindLabel(Entity e) {
+    if (m_world.has<shockwave::PrefabInstance>(e)) return "Prefab";
     if (m_world.has<shockwave::Camera>(e)) return "Camera";
     if (m_world.has<shockwave::Environment>(e)) return "Environment";
     if (const auto* light = m_world.get<shockwave::Light>(e)) {
@@ -273,6 +275,10 @@ Entity Editor::spawnModel(const std::string& model, const glm::vec3& position) {
 
 bool Editor::reparent(Entity child, Entity parent) {
     if (!m_world.alive(child) || shockwave::parentOf(m_world, child) == parent) return false;
+    if (isPrefabPart(child)) {
+        warn("Can't move " + displayName(child) + " out of its prefab copy; edit the prefab, or unpack the copy");
+        return false;
+    }
     if (parent.valid() && (parent == child || shockwave::isAncestor(m_world, child, parent))) {
         warn("Can't put " + displayName(child) + " under " + displayName(parent) + ": it's inside it");
         return false;
@@ -289,6 +295,7 @@ bool Editor::reparent(Entity child, Entity parent) {
 // Dragging one of several selected rows moves the whole selection.
 bool Editor::reparentSelection(Entity dragged, Entity parent) {
     if (!isSelected(dragged) || selection().size() < 2) return reparent(dragged, parent);
+    if (refusePrefabParts("move")) return false;
     shockwave::World before = m_world;
     int moved = 0;
     for (Entity e : selectionRoots()) {
@@ -319,7 +326,7 @@ bool Editor::applyTexture(Entity e, const std::string& texture) {
 
 void Editor::duplicateSelected() {
     const std::vector<Entity> roots = selectionRoots();
-    if (roots.empty()) return;
+    if (roots.empty() || refusePrefabParts("duplicate")) return;
     pushUndo(m_world);
     std::vector<Entity> copies;
     for (Entity e : roots) {
@@ -335,7 +342,7 @@ void Editor::duplicateSelected() {
 
 void Editor::deleteSelected() {
     const std::vector<Entity> roots = selectionRoots();
-    if (roots.empty()) return;
+    if (roots.empty() || refusePrefabParts("delete")) return;
     pushUndo(m_world);
     size_t count = 0;
     const std::string first = displayName(roots[0]);
@@ -350,7 +357,7 @@ void Editor::deleteSelected() {
 // Puts the selection under a new empty entity at their centre, without moving anything.
 void Editor::groupSelected() {
     const std::vector<Entity> roots = selectionRoots();
-    if (roots.empty()) return;
+    if (roots.empty() || refusePrefabParts("group")) return;
     pushUndo(m_world);
     Entity commonParent = shockwave::parentOf(m_world, roots[0]);
     glm::vec3 centre(0.0f);
@@ -416,7 +423,7 @@ void Editor::focusSelected() {
 }
 
 void Editor::beginRename(Entity e) {
-    if (!m_world.alive(e)) return;
+    if (!m_world.alive(e) || isPrefabPart(e)) return;
     m_renaming = e;
     m_renameBuffer = displayName(e);
     m_focusRename = true;

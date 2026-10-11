@@ -3,6 +3,11 @@ target_link_libraries(ecs_test PRIVATE Shockwave::Physics)
 shockwave_warnings(ecs_test)
 add_test(NAME ecs COMMAND ecs_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+add_executable(prefab_test PrefabTest.cpp)
+target_link_libraries(prefab_test PRIVATE Shockwave::Engine)
+shockwave_warnings(prefab_test)
+add_test(NAME prefab COMMAND prefab_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
 add_executable(ui_theme_test UiThemeTest.cpp)
 target_link_libraries(ui_theme_test PRIVATE Shockwave::UI)
 add_test(NAME ui_theme COMMAND ui_theme_test ${CMAKE_SOURCE_DIR}

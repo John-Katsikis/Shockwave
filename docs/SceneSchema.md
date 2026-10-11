@@ -44,6 +44,31 @@ end
 - Check a file with `player --check path/to/scene.swscene` (no path: every scene in the
   project). It prints one `file:line: problem` per issue and exits non-zero on any.
 
+## Prefabs
+
+A prefab is a reusable group of entities in a `.swprefab` file inside Content. It's
+written like a scene with `shockwave_prefab 1` as its header line. Its first entity is
+the root. Entities without a `Parent` hang under the root, and their Transforms are
+relative to it. Prefabs can contain copies of other prefabs, but not of themselves.
+
+To place a copy, give an entity a `Prefab` component with the file's path inside
+Content. Then list only what this copy changes on the prefab's root, usually its
+Transform. Every other value comes from the prefab:
+
+```text
+entity "Lamp by the door"
+  Prefab
+    path "Prefabs/Street lamp.swprefab"
+  Transform
+    position 4 0 -2
+end
+```
+
+- The prefab's other entities are created under the copy when the scene loads. They
+  aren't written in the scene. To change them, edit the prefab.
+- New entities can go under a copy (`Parent` names the copy, or a part of it by name).
+- `player --check` also checks every `.swprefab` in Content.
+
 ## Components
 
 ### Audio
@@ -62,6 +87,12 @@ end
 | `max_distance` | number; range 0 to 10000 | `30` |
 
 ### Core
+
+#### Prefab
+
+| Field | Value | Default |
+|---|---|---|
+| `path` | quoted text | `""` |
 
 #### Transform
 
@@ -258,6 +289,12 @@ Names a scene can use, built-in and from this project's asset folder.
 
 - `Audio/ambient.wav`
 - `Audio/pulse.wav`
+
+### Prefabs (Prefab.path)
+
+- `Prefabs/Crate stack.swprefab`
+- `Prefabs/Lamp row.swprefab`
+- `Prefabs/Street lamp.swprefab`
 
 ## Project manifest
 

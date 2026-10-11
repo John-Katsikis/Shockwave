@@ -231,6 +231,7 @@ struct ComponentInfo {
     std::function<const void*(const World&, Entity)> getConst;
     std::function<void(World&, Entity)> add;   // adds a default-constructed one
     std::function<void(World&, Entity)> remove;
+    std::function<void(const World& from, Entity, World& to, Entity)> copy;   // between worlds (prefabs)
 };
 
 namespace detail {
@@ -256,6 +257,9 @@ void registerComponent(std::string name, std::vector<Field> fields, std::string 
         if (!w.has<T>(e)) w.add<T>(e);
     };
     info.remove = [](World& w, Entity e) { w.remove<T>(e); };
+    info.copy = [](const World& from, Entity a, World& to, Entity b) {
+        if (const T* c = from.get<T>(a)) to.add<T>(b, *c);
+    };
     detail::addComponentInfo(std::move(info));
 }
 
