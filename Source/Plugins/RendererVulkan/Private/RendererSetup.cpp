@@ -38,6 +38,7 @@ VulkanRenderer::Impl::~Impl() {
         if (!meshReady[i].load()) continue;
         vmaDestroyBuffer(allocator, meshes[i].vertices.buffer, meshes[i].vertices.allocation);
         vmaDestroyBuffer(allocator, meshes[i].indices.buffer, meshes[i].indices.allocation);
+        vmaDestroyBuffer(allocator, meshes[i].lodIndices.buffer, meshes[i].lodIndices.allocation);   // null is fine
     }
     for (uint32_t i = 0; i < textureCapacity(); ++i) destroyImage(textures[i]);
     for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);

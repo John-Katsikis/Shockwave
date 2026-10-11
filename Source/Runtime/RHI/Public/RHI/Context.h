@@ -29,6 +29,8 @@ public:
     VmaAllocator allocator() const { return m_allocator; }
     float maxAnisotropy() const { return m_maxAnisotropy; }
     uint32_t maxBindlessTextures() const { return m_maxBindlessTextures; }
+    // BC1-BC7 compressed textures (every desktop GPU); see docs/Optimisation.md.
+    bool textureCompressionBC() const { return m_textureCompressionBC; }
 
     // Frame pacing support, all optional (see enablePresentTiming).
     enum class PresentWait { None, Version1, Version2 };
@@ -54,6 +56,7 @@ private:
     uint32_t m_maxBindlessTextures = 0;
     mutable PresentWait m_presentWait = PresentWait::None;
     bool m_fifoLatestReady = false;
+    bool m_textureCompressionBC = false;
     float m_timestampPeriod = 0.0f;
 };
 

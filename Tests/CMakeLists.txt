@@ -55,6 +55,12 @@ shockwave_warnings(frame_pacing_test)
 add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+# Mesh optimisation and texture compression without a GPU (docs/Optimisation.md).
+add_executable(optimisation_test OptimisationTest.cpp)
+target_link_libraries(optimisation_test PRIVATE Shockwave::Assets Shockwave::Projects)
+shockwave_warnings(optimisation_test)
+add_test(NAME optimisation COMMAND optimisation_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
 # Plugins: renderer swapping and game code hot reload (modular builds only, where they
 # are libraries).
 if(SHOCKWAVE_MODULAR)

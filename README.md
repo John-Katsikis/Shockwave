@@ -96,6 +96,8 @@ Each item links to the guide that covers it in detail.
   shading, and soft shadows from all three. See [Shadows](docs/Shadows.md).
 - **Import models and textures.** Drop glTF, FBX, OBJ and other models into your
   project's `Content/` folder and place them in the editor. See [Assets](docs/Assets.md).
+- **Use less GPU memory and fewer triangles.** Textures are compressed to BC7 and distant
+  meshes use simpler levels of detail, automatically. See [Optimisation](docs/Optimisation.md).
 - **Simulate physics.** Rigid bodies, triggers, raycasts and a character controller,
   powered by Jolt. See [Physics](docs/Physics.md).
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
@@ -349,6 +351,9 @@ and reloading when a file changes all work the same in the editor and the player
 
 Modern `.blend` files are converted to GLB first, using a Blender install if you have
 one. See [Assets](docs/Assets.md) for setup, supported features and limits.
+
+Textures are compressed and meshes get levels of detail as they import. **Window >
+Optimisation** shows what that saves. See [Optimisation](docs/Optimisation.md).
 
 ### Add sound
 

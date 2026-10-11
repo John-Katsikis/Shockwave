@@ -30,6 +30,7 @@ struct Renderer::State {
     LightingDesc lighting;
     DebugView debugView = DebugView::Lit;
     ShadowQuality shadowQuality = ShadowQuality::High;
+    LodSettings lodSettings;
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
@@ -52,6 +53,8 @@ struct Renderer::State {
         bool srgb = true;
     };
     std::mutex journalMutex;
+    std::map<uint32_t, shockwave::TextureData> packedTextures;   // made from TextureData
+    std::map<uint32_t, std::pair<std::vector<MeshLod>, std::vector<uint32_t>>> meshLods;
     std::map<uint32_t, MeshData> meshes;
     std::map<uint32_t, TextureData> textures;
 
@@ -88,16 +91,34 @@ struct Renderer::State {
         backend->setRenderScale(renderScale);
         backend->setViewport(viewportWidth, viewportHeight);
         backend->setLowLatency(lowLatency);
+        backend->setLodSettings(lodSettings);
         {
             std::lock_guard lock(journalMutex);
+            for (const auto& [id, texture] : packedTextures) replayTexture({id}, texture);
             for (const auto& [id, texture] : textures)
                 backend->createTexture({id}, texture.width, texture.height, texture.rgba, texture.srgb);
             for (const auto& [id, mesh] : meshes) backend->createMesh({id}, mesh.vertices, mesh.indices);
+        }
+        {
+            std::lock_guard lock(journalMutex);
+            for (const auto& [id, lods] : meshLods) backend->setMeshLods({id}, lods.first, lods.second);
         }
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
             backend->initGui();
         }
+    }
+
+    // A new backend that can't sample a compressed texture's format shows it white.
+    void replayTexture(TextureHandle id, const shockwave::TextureData& texture) {
+        if (backend->supportsTextureFormat(texture.format)) {
+            backend->createTextureData(id, texture);
+            return;
+        }
+        SW_LOG(LogRender, Warning, "texture {} is {}, which this renderer can't use; showing white", id.id,
+               textureFormatName(texture.format));
+        const uint8_t white[4] = {255, 255, 255, 255};
+        backend->createTexture(id, 1, 1, white, texture.srgb);
     }
 
     void stop() {
@@ -148,6 +169,7 @@ void Renderer::destroyMesh(MeshHandle mesh) {
     m->backend->destroyMesh(mesh);
     if (m->swappable) {
         std::lock_guard lock(m->journalMutex);
+        m->meshLods.erase(mesh.id);
         m->meshes.erase(mesh.id);
     }
     m->release(m->freeMeshes, mesh.id);
@@ -180,6 +202,7 @@ void Renderer::updateTexture(
     if (m->swappable) {
         std::lock_guard lock(m->journalMutex);
         m->textures[texture.id] = {width, height, {rgba.begin(), rgba.begin() + size_t(width) * height * 4}, srgb};
+        m->packedTextures.erase(texture.id);
     }
 }
 
@@ -190,11 +213,74 @@ void Renderer::destroyTexture(TextureHandle texture) {
     if (m->swappable) {
         std::lock_guard lock(m->journalMutex);
         m->textures.erase(texture.id);
+        m->packedTextures.erase(texture.id);
     }
     m->release(m->freeTextures, texture.id);
 }
 
 uint64_t Renderer::guiTexture(TextureHandle texture) { return m->backend->guiTexture(texture); }
+
+// ---- Optimised assets ----
+
+void Renderer::setMeshLods(MeshHandle mesh, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) {
+    if (!mesh.valid() || lods.size() > kMaxMeshLods)
+        throw std::runtime_error("setMeshLods: invalid mesh or too many levels");
+    for (const MeshLod& lod : lods)
+        if (lod.indexCount == 0 || lod.indexCount % 3 || lod.firstIndex > lodIndices.size() ||
+            lod.indexCount > lodIndices.size() - lod.firstIndex)
+            throw std::runtime_error("setMeshLods: a level reaches past lodIndices");
+    if (lods.empty()) return;
+    std::shared_lock swap(m->swapMutex);
+    m->backend->setMeshLods(mesh, lods, lodIndices);
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        m->meshLods[mesh.id] = {{lods.begin(), lods.end()}, {lodIndices.begin(), lodIndices.end()}};
+    }
+}
+
+TextureHandle Renderer::createTexture(const TextureData& texture) {
+    if (!texture.valid()) throw std::runtime_error("createTexture: the texture data is incomplete");
+    std::shared_lock swap(m->swapMutex);
+    if (!m->backend->supportsTextureFormat(texture.format))
+        throw std::runtime_error(std::string("createTexture: this GPU can't use ") + textureFormatName(texture.format));
+    const uint32_t id = m->allocate(m->freeTextures, m->nextTexture, m->backend->maxTextures(), "texture");
+    try {
+        m->backend->createTextureData({id}, texture);
+    } catch (...) {
+        m->release(m->freeTextures, id);
+        throw;
+    }
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        m->packedTextures[id] = texture;
+    }
+    return {id};
+}
+
+void Renderer::updateTexture(TextureHandle texture, const TextureData& data) {
+    if (!data.valid()) throw std::runtime_error("updateTexture: the texture data is incomplete");
+    std::shared_lock swap(m->swapMutex);
+    if (!m->backend->supportsTextureFormat(data.format))
+        throw std::runtime_error(std::string("updateTexture: this GPU can't use ") + textureFormatName(data.format));
+    m->backend->updateTextureData(texture, data);
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        m->packedTextures[texture.id] = data;
+        m->textures.erase(texture.id);
+    }
+}
+
+bool Renderer::supportsTextureFormat(TextureFormat format) const {
+    std::shared_lock swap(m->swapMutex);
+    return m->backend->supportsTextureFormat(format);
+}
+void Renderer::setLodSettings(const LodSettings& settings) {
+    m->lodSettings = settings;
+    m->lodSettings.maxErrorPixels = std::max(settings.maxErrorPixels, 0.0f);
+    m->backend->setLodSettings(m->lodSettings);
+}
+const LodSettings& Renderer::lodSettings() const { return m->lodSettings; }
+LodStats Renderer::lodStats() const { return m->backend->lodStats(); }
 
 // ---- Per frame ----
 

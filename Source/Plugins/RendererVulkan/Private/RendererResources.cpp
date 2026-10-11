@@ -124,6 +124,8 @@ void VulkanRenderer::Impl::destroyMesh(MeshHandle handle) {
     vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
     Mesh& mesh = meshes[handle.id];
     meshReady[handle.id].store(false, std::memory_order_release);
+    if (mesh.lodIndices.buffer)
+        vmaDestroyBuffer(context->allocator(), mesh.lodIndices.buffer, mesh.lodIndices.allocation);
     vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
     vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
     mesh = {};

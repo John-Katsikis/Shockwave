@@ -2,6 +2,7 @@
 
 #include <Renderer/Mesh.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/TextureData.h>
 
 #include <glm/glm.hpp>
 
@@ -70,6 +71,21 @@ public:
     // 0 when the GUI is off. Main thread. Valid for the current frame: ask every frame,
     // since a reload hands out a new one.
     uint64_t guiTexture(TextureHandle texture);
+
+    // ---- Optimised assets (docs/Optimisation.md) ----
+    // Simpler levels of detail for a mesh (MeshData::lods and lodIndices), right after
+    // createMesh. Each draw then uses the simplest level that looks the same at its
+    // distance (setLodSettings). Same threads as createMesh.
+    void setMeshLods(MeshHandle mesh, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices);
+    // A texture in a format the backend supports (supportsTextureFormat), mipmaps
+    // included: BC7 from a .ktx2 file, say. Same threads as createTexture.
+    TextureHandle createTexture(const TextureData& texture);
+    void updateTexture(TextureHandle texture, const TextureData& data);
+    bool supportsTextureFormat(TextureFormat format) const;
+    // Kept until changed. Main thread.
+    void setLodSettings(const LodSettings& settings);
+    const LodSettings& lodSettings() const;
+    LodStats lodStats() const;   // last frame's
 
     // Per-frame commands, called from Application::onRender.
     void setClearColor(const Color& color);

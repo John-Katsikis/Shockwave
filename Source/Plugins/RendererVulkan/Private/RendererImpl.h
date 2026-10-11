@@ -161,6 +161,8 @@ struct DrawCommand {
     DrawData data;
     glm::vec4 bounds;   // world-space bounding sphere: center, radius
     VkBuffer indexBuffer;
+    uint32_t firstIndex = 0;   // in indexBuffer: the level of detail picked (pickLod)...
+    uint32_t fullIndexCount = 0;   // ...and the full mesh's count when it's a simpler one
     uint32_t indexCount;
     uint32_t drawIndex = 0;   // its entry in the frame's draw table, once gathered
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
@@ -194,6 +196,10 @@ struct Mesh {
     vk::Buffer vertices;
     vk::Buffer indices;
     VkDeviceAddress vertexAddress = 0;
+    // Simpler levels of detail (setMeshLods): ranges of their own index buffer.
+    vk::Buffer lodIndices;
+    std::array<MeshLod, kMaxMeshLods> lods{};
+    uint32_t lodCount = 0;
     uint32_t indexCount = 0;
     glm::vec4 bounds{0.0f};   // bounding sphere in mesh space: center, radius
 };
@@ -315,6 +321,9 @@ struct VulkanRenderer::Impl {
     LightingDesc lighting;
     DebugView debugView = DebugView::Lit;
     uint32_t lastLightCount = 0, lastDroppedLights = 0;
+    // Levels of detail (RendererOptimisation.cpp): set on the main thread before drawing.
+    LodSettings lodSettings;
+    LodStats lastLodStats;
 
     // The frame's passes, rebuilt every frame; image states carry over between frames.
     vk::RenderGraph graph;
@@ -462,6 +471,18 @@ struct VulkanRenderer::Impl {
 
     // Uploads RGBA8 pixels into a new sampled image with a full mip chain.
     vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);
+
+    // ---- Optimised assets (RendererOptimisation.cpp) -----------------------------------
+    void setMeshLods(MeshHandle handle, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices);
+    bool supportsTextureFormat(TextureFormat format) const;
+    void createTextureData(TextureHandle handle, const TextureData& data);
+    void updateTextureData(TextureHandle handle, const TextureData& data);
+    // Uploads every level as given; a lone RGBA8 level gets its mipmaps from uploadTexture.
+    vk::Image uploadTextureData(const TextureData& data);
+    // The level of detail to draw a mesh with: its first index and count. scale: the
+    // draw's largest axis scale; center: its bounding sphere's centre in the world.
+    void pickLod(const Mesh& mesh, float scale, const glm::vec4& bounds, DrawCommand& command) const;
+    bool formatSampleable(VkFormat format) const;
 
     // ---- Per-frame --------------------------------------------------------------------
 

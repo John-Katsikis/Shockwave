@@ -28,6 +28,8 @@ struct Tool {
     // Playing, these make runs reproducible and checkable without a person watching.
     fs::path scene;   // --scene: instead of the project's startup scene
     fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
+    bool optimise = false;   // --optimise: compress every texture now, report (with --json), quit
+    bool lodColors = false;   // --lod-colors: tint each level of detail its own colour
     int screenshotFrame = 30;   // --frames with --screenshot
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     int shadows = -1;   // --shadows: a ShadowQuality; -1 uses the project's shadow_quality
@@ -57,6 +59,10 @@ public:
 private:
     // Asks for frame N, then reports and quits once the renderer has written it.
     void takeScreenshot();
+    // Asset optimisation (docs/Optimisation.md): the project's settings, before importing;
+    // and --optimise, which compresses every texture into the cache and reports.
+    void applyOptimisationSettings();
+    int optimise();
     // --benchmark: warms up, measures, prints the frame statistics and quits.
     void benchmark(double dt);
     void reportBenchmark();

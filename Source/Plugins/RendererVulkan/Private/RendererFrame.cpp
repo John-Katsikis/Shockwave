@@ -40,6 +40,8 @@ void VulkanRenderer::Impl::drawMesh(
          glm::dot(glm::vec3(transform[2]), glm::vec3(transform[2]))}));
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(mesh.bounds), 1.0f)), mesh.bounds.w * scale);
 
+    if (mesh.lodCount > 0) pickLod(mesh, scale, command.bounds, command);   // levels of detail
+
     const uint32_t thread = JobSystem::threadIndex();
     if (thread < drawLists.size()) {
         drawLists[thread].commands.push_back(command);
@@ -212,12 +214,19 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         std::lock_guard lock(foreignDrawMutex);
         total += static_cast<uint32_t>(foreignDraws.commands.size());
         lastDrawCount = total;
+        lastLodStats = {};
         if (total == 0) return;
         draws.reserve(total);
         for (const auto& list : drawLists) draws.insert(draws.end(), list.commands.begin(), list.commands.end());
         draws.insert(draws.end(), foreignDraws.commands.begin(), foreignDraws.commands.end());
     }
     ensureDrawCapacity(f, total);
+    // What levels of detail saved.
+    for (const DrawCommand& draw : draws) {
+        lastLodStats.triangles += draw.indexCount / 3;
+        lastLodStats.fullTriangles += (draw.fullIndexCount ? draw.fullIndexCount : draw.indexCount) / 3;
+        lastLodStats.reducedDraws += draw.fullIndexCount != 0;
+    }
     const auto transparent =
         std::stable_partition(draws.begin(), draws.end(), [](const auto& draw) { return !draw.blend; });
     // Reverse-Z is smaller farther away. Object-level sorting is the basic
@@ -255,7 +264,7 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
             vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             boundIndices = draw.indexBuffer;
         }
-        vkCmdDrawIndexed(cmd, draw.indexCount, 1, 0, 0, draw.drawIndex);
+        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
     }
 }
 

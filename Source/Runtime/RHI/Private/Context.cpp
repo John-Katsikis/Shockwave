@@ -110,6 +110,9 @@ Context::Context(SDL_Window* window) {
 
     vkb::PhysicalDevice physical = physicalResult.value();
     enablePresentTiming(physical, surfaceCaps2);
+    VkPhysicalDeviceFeatures compression{};
+    compression.textureCompressionBC = VK_TRUE;   // optional: textures fall back to RGBA8 without it
+    m_textureCompressionBC = physical.enable_features_if_present(compression);
 
     auto deviceResult = vkb::DeviceBuilder(physical).build();
     if (!deviceResult) {

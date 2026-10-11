@@ -97,6 +97,7 @@ void Editor::logAssetChanges(const std::vector<shockwave::AssetFolder::Change>& 
         case What::Reloaded: log("Reloaded " + change.name); break;
         case What::Failed: error("Couldn't import " + change.name + ": " + change.error); break;
         case What::Removed: warn(change.name + " was removed; anything using it keeps the last version"); break;
+        case What::Compressed: break;   // quiet; Window > Optimisation shows progress
         }
     }
 }
