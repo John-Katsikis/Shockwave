@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PackageWindow.h"
 #include "Preferences.h"
 #include "SceneTemplates.h"
 
@@ -427,6 +428,8 @@ private:
 
     std::string m_title;
     std::string m_iniPath;   // ImGui layout, next to the preferences
+
+    PackageWindow m_package;   // Build > Package game
 };
 
 }   // namespace editor

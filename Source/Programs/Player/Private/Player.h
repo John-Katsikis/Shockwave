@@ -42,6 +42,19 @@ int writeInputSchema(const fs::path& out);   // docs/InputSchema.md; "-" for std
 // binding text that would bind it ("pad south", "joy \"G29\" axis 2 full").
 int listDevices(double seconds);
 
+// --package: makes a game folder for players (Packaging/Package.h). --output, --no-build
+// and --no-archive override Config/Package.swpackage for this run.
+struct PackageCommand {
+    bool requested = false;
+    fs::path output;
+    bool noBuild = false, noArchive = false;
+};
+int packageGame(const shockwave::Project& project, const PackageCommand& command);
+// In a packaged game, the project it ships with; empty otherwise.
+fs::path packagedProjectFile();
+// --check: problems in Config/Package.swpackage, when the project has one.
+void checkPackageSettings(const shockwave::Project& project, std::vector<std::string>& problems);
+
 class Player final : public shockwave::Application {
 public:
     Player(shockwave::Project project, Tool tool, const shockwave::GameModule& module)

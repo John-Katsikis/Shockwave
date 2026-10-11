@@ -117,6 +117,7 @@ module can only see the headers of modules it depends on, directly or through th
 | Assets | asset registry, image decode, model import, hot reload | Renderer | AssetRegistry |
 | UI | `shockwave::gui` controls, themes (Dear ImGui) | Core | Slate |
 | Projects | `.swproject` manifest | Core | Projects |
+| Packaging | turns a project into a game folder for players; `Package.swpackage` settings | Projects | Project Launcher, UnrealPak |
 | Engine | World, components, systems, hierarchy, scene files, subsystems, engine loop | everything above | Engine |
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
