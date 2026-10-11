@@ -53,6 +53,7 @@ struct Renderer::State {
     };
     std::mutex journalMutex;
     std::map<uint32_t, MeshData> meshes;
+    std::map<uint32_t, std::vector<VertexSkin>> skins;   // skinned meshes' weights
     std::map<uint32_t, TextureData> textures;
 
     State(Window& w, JobSystem& j) : window(w), jobs(j) {}
@@ -93,6 +94,7 @@ struct Renderer::State {
             for (const auto& [id, texture] : textures)
                 backend->createTexture({id}, texture.width, texture.height, texture.rgba, texture.srgb);
             for (const auto& [id, mesh] : meshes) backend->createMesh({id}, mesh.vertices, mesh.indices);
+            for (const auto& [id, skin] : skins) backend->setMeshSkin({id}, skin);
         }
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
@@ -142,6 +144,21 @@ MeshHandle Renderer::createMesh(std::span<const Vertex> vertices, std::span<cons
     return {id};
 }
 
+MeshHandle Renderer::createSkinnedMesh(
+    std::span<const Vertex> vertices, std::span<const uint32_t> indices, std::span<const VertexSkin> skin) {
+    if (skin.size() != vertices.size())
+        throw std::runtime_error("createSkinnedMesh: there must be one VertexSkin per vertex");
+    const MeshHandle mesh = createMesh(vertices, indices);
+    if (!mesh.valid()) return mesh;
+    std::shared_lock swap(m->swapMutex);
+    m->backend->setMeshSkin(mesh, skin);
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        m->skins[mesh.id] = {skin.begin(), skin.end()};
+    }
+    return mesh;
+}
+
 void Renderer::destroyMesh(MeshHandle mesh) {
     if (!mesh.valid()) return;
     std::shared_lock swap(m->swapMutex);
@@ -149,6 +166,7 @@ void Renderer::destroyMesh(MeshHandle mesh) {
     if (m->swappable) {
         std::lock_guard lock(m->journalMutex);
         m->meshes.erase(mesh.id);
+        m->skins.erase(mesh.id);
     }
     m->release(m->freeMeshes, mesh.id);
 }
@@ -213,6 +231,11 @@ void Renderer::drawMesh(
     MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
     const DrawMaterial& material) {
     m->backend->drawMesh(mesh, transform, texture, tint, material);
+}
+void Renderer::drawSkinnedMesh(
+    MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
+    const glm::vec4& tint, const DrawMaterial& material) {
+    m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material);
 }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
 void Renderer::drawParticles(const ParticleDrawList& particles) {

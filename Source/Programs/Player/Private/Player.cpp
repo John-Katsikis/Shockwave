@@ -2,6 +2,7 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
+#include <Animation/AnimationWorld.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
@@ -35,6 +36,7 @@ void Player::onStart() {
         {.hrtf = m_tool.audioHrtf >= 0 ? m_tool.audioHrtf == 1 : m_project.audioHrtf,
          .hrtfBilinear = m_project.audioHrtfHigh});
     shockwave::registerEffectsComponents();
+    shockwave::registerAnimationComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());
@@ -56,6 +58,7 @@ void Player::onStart() {
         m_exitCode = m_tool.mode == Tool::Mode::Check         ? check(importProblems)
                      : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
                      : m_tool.mode == Tool::Mode::AudioMix    ? audioMix()
+                     : m_tool.mode == Tool::Mode::Animations  ? listAnimations()
                                                               : schema();
         engine().quit();
         return;
@@ -184,6 +187,12 @@ void Player::reportBenchmark() {
         "effects cpu:  %.3f ms simulation (worker) + %.3f ms build (%u effects, %u particles, %u draws, %u vertices)\n",
         m_effectsUpdateMs / frames, m_effectsBuildMs / frames, effects.playing, effects.particles, effects.batches,
         effects.vertices);
+    if (const shockwave::AnimationWorld* animation = m_session ? m_session->animation() : nullptr) {
+        const shockwave::AnimationStats a = animation->stats();
+        std::printf(
+            "animation cpu: %.3f ms last frame (%u animators, %u joints; GPU: the skinning pass)\n",
+            static_cast<double>(a.updateMs), a.animators, a.joints);
+    }
     if (m_tool.benchmarkJson.empty()) return;
     std::ofstream json(m_tool.benchmarkJson, std::ios::trunc);
     auto escape = [](const std::string& text) {

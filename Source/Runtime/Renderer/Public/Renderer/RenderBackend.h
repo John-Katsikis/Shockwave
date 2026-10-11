@@ -44,6 +44,8 @@ public:
     virtual uint32_t maxTextures() const = 0;
     virtual void createMesh(MeshHandle id, std::span<const Vertex> vertices, std::span<const uint32_t> indices) = 0;
     virtual void destroyMesh(MeshHandle id) = 0;
+    // Right after createMesh for a skinned mesh: one VertexSkin per vertex.
+    virtual void setMeshSkin(MeshHandle id, std::span<const VertexSkin> skin) = 0;
     virtual void
     createTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) = 0;
     virtual void
@@ -60,6 +62,10 @@ public:
     virtual void addLight(const LightDesc& light) = 0;
     // This frame's particles (Renderer/Particles.h); copy what you need before returning.
     virtual void drawParticles(const ParticleDrawList& particles) = 0;
+    // Renderer::drawSkinnedMesh; joints must be copied before returning.
+    virtual void drawSkinnedMesh(
+        MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
+        const glm::vec4& tint, const DrawMaterial& material) = 0;
 
     // ---- Settings ----
     virtual void setGrid(const GridSettings& grid) = 0;

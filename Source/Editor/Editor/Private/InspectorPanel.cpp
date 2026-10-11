@@ -213,6 +213,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     drawNavigationNotes(info, e);
     drawSpatialAudioNotes(info, e);
     if (info.id == shockwave::componentId<shockwave::ParticleEffect>()) drawParticleEffectNotes(e);
+    if (info.id == shockwave::componentId<shockwave::Animator>()) drawAnimatorNotes(e);
     if (info.id == shockwave::componentId<shockwave::AudioSource>()) {
         const auto& source = *m_world.get<shockwave::AudioSource>(e);
         for (const auto& problem : shockwave::validateAudioSource(source, engine().assets())) {
@@ -245,6 +246,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         const auto* instance = m_world.get<shockwave::ModelRenderer>(e);
         const auto asset = instance ? engine().assets().model(instance->model) : nullptr;
         if (!asset) return;
+        drawModelAnimationNotes(e);
         ImGui::SeparatorText("Imported materials");
         for (size_t i = 0; i < asset->data.materials.size(); ++i) {
             const auto& material = asset->data.materials[i];

@@ -20,6 +20,7 @@ public:
     uint32_t maxTextures() const override { return 1u << 20; }
     void createMesh(MeshHandle, std::span<const Vertex>, std::span<const uint32_t>) override {}
     void destroyMesh(MeshHandle) override {}
+    void setMeshSkin(MeshHandle, std::span<const VertexSkin>) override {}
     void createTexture(TextureHandle, uint32_t, uint32_t, std::span<const uint8_t>, bool) override {}
     void updateTexture(TextureHandle, uint32_t, uint32_t, std::span<const uint8_t>, bool) override {}
     void destroyTexture(TextureHandle) override {}
@@ -28,6 +29,11 @@ public:
     void setClearColor(const Color&) override {}
     void setCamera(const glm::mat4&, const glm::mat4&) override {}
     void drawMesh(MeshHandle, const glm::mat4&, TextureHandle, const glm::vec4&, const DrawMaterial&) override {
+        m_draws.fetch_add(1, std::memory_order_relaxed);
+    }
+    void drawSkinnedMesh(
+        MeshHandle, const glm::mat4&, std::span<const glm::mat4>, TextureHandle, const glm::vec4&,
+        const DrawMaterial&) override {
         m_draws.fetch_add(1, std::memory_order_relaxed);
     }
     void addLight(const LightDesc&) override { m_lights.fetch_add(1, std::memory_order_relaxed); }

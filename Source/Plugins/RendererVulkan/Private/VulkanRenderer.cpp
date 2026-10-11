@@ -65,6 +65,12 @@ void VulkanRenderer::drawMesh(
     const DrawMaterial& material) {
     m_impl->drawMesh(mesh, transform, texture, tint, material);
 }
+void VulkanRenderer::setMeshSkin(MeshHandle id, std::span<const VertexSkin> skin) { m_impl->setMeshSkin(id, skin); }
+void VulkanRenderer::drawSkinnedMesh(
+    MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
+    const glm::vec4& tint, const DrawMaterial& material) {
+    m_impl->drawSkinnedMesh(mesh, transform, joints, texture, tint, material);
+}
 void VulkanRenderer::setRenderScale(float scale) {
     if (scale != m_impl->renderScale) {
         m_impl->renderScale = scale;

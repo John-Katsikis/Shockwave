@@ -121,3 +121,9 @@ add_executable(effects_test EffectsTest.cpp)
 target_link_libraries(effects_test PRIVATE Shockwave::Effects)
 shockwave_warnings(effects_test)
 add_test(NAME effects COMMAND effects_test ${CMAKE_SOURCE_DIR} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# Skeletal animation (ozz-animation) without a GPU: import, play, loop, cross-fade,
+# joints and the Animator checks, on the sample's Fox.
+add_executable(animation_test AnimationTest.cpp)
+target_link_libraries(animation_test PRIVATE Shockwave::Animation)
+shockwave_warnings(animation_test)
+add_test(NAME animation COMMAND animation_test ${CMAKE_SOURCE_DIR})

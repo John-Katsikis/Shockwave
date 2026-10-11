@@ -67,6 +67,7 @@ constexpr uint32_t kMaxCascades = 4;
 constexpr uint32_t kMaxLocalShadowViews = 64;   // tiles in the spot/point light atlas
 constexpr uint32_t kMaxShadowViews = kMaxCascades + kMaxLocalShadowViews;
 constexpr uint32_t kNoShadow = 0xFFFFFFFFu;
+constexpr uint32_t kNoSkin = 0xFFFFFFFFu;
 
 // Must match LightData and FrameBuffer in shaders/mesh.frag.
 struct LightData {
@@ -163,6 +164,8 @@ struct DrawCommand {
     VkBuffer indexBuffer;
     uint32_t indexCount;
     uint32_t drawIndex = 0;   // its entry in the frame's draw table, once gathered
+    // Skinned draws (RendererSkinning.cpp): which DrawList, and which SkinJob in it.
+    uint32_t skinList = 0, skin = kNoSkin;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     float depth = 0.0f;
 };
@@ -185,10 +188,30 @@ struct ShadowConfig {
 };
 ShadowConfig shadowConfig(ShadowQuality quality);
 
+// A skinned draw's vertices, skinned on the GPU before anything draws them.
+struct SkinJob {
+    uint32_t mesh;
+    uint32_t firstJoint;   // in its DrawList's joints
+    uint32_t jointCount;
+};
+
 // One per thread so drawMesh never takes a lock on the hot path.
 struct alignas(64) DrawList {
     std::vector<DrawCommand> commands;
+    std::vector<SkinJob> skins;
+    std::vector<glm::mat4> joints;
 };
+
+// Must match the push constants in shaders/skinning.comp.
+struct SkinningPushConstants {
+    VkDeviceAddress source;   // the mesh's vertices
+    VkDeviceAddress skin;   // its VertexSkins
+    VkDeviceAddress joints;   // this draw's joint matrices
+    VkDeviceAddress target;   // where the skinned vertices go
+    uint32_t vertexCount;
+    uint32_t jointCount;
+};
+static_assert(sizeof(SkinningPushConstants) == 40, "SkinningPushConstants must match skinning.comp");
 
 struct Mesh {
     vk::Buffer vertices;
@@ -196,6 +219,10 @@ struct Mesh {
     VkDeviceAddress vertexAddress = 0;
     uint32_t indexCount = 0;
     glm::vec4 bounds{0.0f};   // bounding sphere in mesh space: center, radius
+    // Skinned meshes only: one VertexSkin per vertex (setMeshSkin).
+    vk::Buffer skin;
+    VkDeviceAddress skinAddress = 0;
+    uint32_t vertexCount = 0;
 };
 
 // Records a layout transition with synchronization2.
@@ -253,6 +280,12 @@ struct VulkanRenderer::Impl {
         uint32_t* uiIndices = nullptr;
         VkDeviceAddress uiVertexAddress = 0;
         size_t uiVertexCapacity = 0, uiIndexCapacity = 0;
+        // Skinning (RendererSkinning.cpp): this frame's joint matrices, written by the CPU,
+        // and the skinned vertices the compute pass writes for the scene and shadows.
+        vk::Buffer jointBuffer, skinnedBuffer;
+        glm::mat4* joints = nullptr;
+        VkDeviceAddress jointAddress = 0, skinnedAddress = 0;
+        size_t jointCapacity = 0, skinnedCapacity = 0;   // matrices; vertices
     };
 
     Window& window;
@@ -465,9 +498,10 @@ struct VulkanRenderer::Impl {
 
     // ---- Per-frame --------------------------------------------------------------------
 
+    // joints: a skinned draw's joint matrices (drawSkinnedMesh); empty for a plain one.
     void drawMesh(
         MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-        const DrawMaterial& material);
+        const DrawMaterial& material, std::span<const glm::mat4> joints = {});
 
     void clearDrawLists();
 
@@ -487,6 +521,35 @@ struct VulkanRenderer::Impl {
     void prepareDraws(Frame& f);
     // Records the gathered draws into the scene.
     void recordDraws(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Skinning (RendererSkinning.cpp) -----------------------------------------------
+    // Skinned draws are skinned by a compute pass at the start of the frame into a
+    // per-frame vertex buffer; the scene and shadow passes then draw those vertices like
+    // any mesh's.
+
+    struct SkinDispatch {
+        SkinningPushConstants push;
+    };
+    VkPipelineLayout skinningLayout = VK_NULL_HANDLE;
+    VkPipeline skinningPipeline = VK_NULL_HANDLE;
+    std::vector<SkinDispatch> skinDispatches;   // this frame's
+    uint32_t skinnedVertexCount = 0;   // last frame's
+
+    void createSkinningPipeline();
+    void destroySkinning();
+    void setMeshSkin(MeshHandle handle, std::span<const VertexSkin> skin);
+    void drawSkinnedMesh(
+        MeshHandle handle, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
+        const glm::vec4& tint, const DrawMaterial& material);
+    // A sphere around every place the joints can move the mesh's vertices to.
+    static glm::vec4 skinnedBounds(const Mesh& mesh, std::span<const glm::mat4> joints);
+    // Adds a draw to a thread's list, with its joints when it's skinned.
+    static void addDraw(
+        DrawList& list, uint32_t listIndex, DrawCommand& command, uint32_t mesh, std::span<const glm::mat4> joints);
+    // After gathering: uploads the joints, plans the dispatches and points each skinned
+    // draw at its skinned vertices.
+    void prepareSkinning(Frame& f);
+    void recordSkinning(VkCommandBuffer cmd);
 
     // ---- Shadows (RendererShadows.cpp) -------------------------------------------------
 

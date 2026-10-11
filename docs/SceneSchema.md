@@ -71,6 +71,19 @@ end
 
 ## Components
 
+### Animation
+
+#### Animator
+
+| Field | Value | Default |
+|---|---|---|
+| `clip` | quoted text | `""` |
+| `playing` | 1 or 0 (true/false also accepted) | `1` |
+| `loop` | 1 or 0 (true/false also accepted) | `1` |
+| `speed` | number; range -10 to 10 | `1` |
+| `time` | number; range 0 to 3600 | `0` |
+| `blend_time` | number; range 0 to 10 | `0.2` |
+
 ### Audio
 
 #### AudioSource
@@ -363,6 +376,7 @@ Names a scene can use, built-in and from this project's asset folder.
 
 ### Models (ModelRenderer.model, Collider convex/triangle shapes)
 
+- `models/Fox.glb`
 - `models/material-demo.glb`
 
 ### Audio clips (AudioSource.clip)

@@ -6,7 +6,7 @@ namespace shockwave {
 
 void VulkanRenderer::Impl::drawMesh(
     MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-    const DrawMaterial& material) {
+    const DrawMaterial& material, std::span<const glm::mat4> joints) {
     if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
     const float determinant = glm::determinant(transform);
     if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) return;
@@ -38,21 +38,30 @@ void VulkanRenderer::Impl::drawMesh(
         {glm::dot(glm::vec3(transform[0]), glm::vec3(transform[0])),
          glm::dot(glm::vec3(transform[1]), glm::vec3(transform[1])),
          glm::dot(glm::vec3(transform[2]), glm::vec3(transform[2]))}));
-    command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(mesh.bounds), 1.0f)), mesh.bounds.w * scale);
+    if (!mesh.skinAddress) joints = {};
+    const glm::vec4 bounds = joints.empty() ? mesh.bounds : skinnedBounds(mesh, joints);
+    command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
 
     const uint32_t thread = JobSystem::threadIndex();
     if (thread < drawLists.size()) {
-        drawLists[thread].commands.push_back(command);
+        addDraw(drawLists[thread], thread, command, handle.id, joints);
     } else {
         std::lock_guard lock(foreignDrawMutex);
-        foreignDraws.commands.push_back(command);
+        addDraw(foreignDraws, static_cast<uint32_t>(drawLists.size()), command, handle.id, joints);
     }
 }
 
 void VulkanRenderer::Impl::clearDrawLists() {
-    for (DrawList& list : drawLists) list.commands.clear();
+    for (DrawList& list : drawLists) {
+        list.commands.clear();
+        list.skins.clear();
+        list.joints.clear();
+    }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
+    foreignDraws.skins.clear();
+    foreignDraws.joints.clear();
+    skinDispatches.clear();
 }
 
 void VulkanRenderer::Impl::recreateSwapchain() {
@@ -224,6 +233,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     // Reverse-Z is smaller farther away. Object-level sorting is the basic
     // transparency path; intersecting transparent surfaces need a later solution.
     std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
+    prepareSkinning(f);
     // One draw table serves the scene and every shadow map.
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
@@ -407,6 +417,8 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
     const auto backbuffer = graph.import("swapchain", swapchainImage, VK_IMAGE_ASPECT_COLOR_BIT, swapchainState, true);
 
+    if (!skinDispatches.empty())
+        graph.addPass("skinning", {}, [this](VkCommandBuffer cmd) { recordSkinning(cmd); });
     std::vector<vk::RenderGraph::Use> sceneUses = {
         {color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}};
     if (!cascadePasses.empty()) {

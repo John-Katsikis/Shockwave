@@ -269,6 +269,7 @@ Entity Editor::spawnModel(const std::string& model, const glm::vec3& position) {
     m_world.add<Name>(e, {uniqueName(fs::path(model).stem().string())});
     m_world.add<Transform>(e, {position});
     m_world.add<shockwave::ModelRenderer>(e, {handle});
+    addAnimatorIfAnimated(e);
     select(e);
     log("Placed " + displayName(e));
     return e;

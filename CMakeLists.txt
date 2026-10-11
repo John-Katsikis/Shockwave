@@ -145,6 +145,7 @@ include(cmake/AudioCodecs.cmake)
 include(cmake/RmlUi.cmake)
 include(cmake/Recast.cmake)
 include(cmake/SteamAudio.cmake)
+include(cmake/Ozz.cmake)
 
 # Tracy CPU profiler (Core/Profile.h). Off by default: with it off, nothing is fetched
 # and the profiling macros compile away. On-demand mode records only while the Tracy

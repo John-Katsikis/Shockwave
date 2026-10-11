@@ -39,6 +39,7 @@ void Editor::play() {
     const bool resuming = playState() == PlayState::Paused;
     updateNavigation(0.0);   // loads the scene's saved navigation mesh, so Play needn't bake
     if (!resuming) restartEffects();   // effects play from their first frame, as in the game
+    if (!resuming) restartAnimation();
     try {
         m_session->start();
     } catch (const std::exception& e) {
@@ -83,6 +84,7 @@ void Editor::stop() {
         error(std::string("Gameplay cleanup failed: ") + e.what());
     }
     restartEffects();
+    restartAnimation();
     m_gizmoWasUsing = false;
     m_viewThroughCamera = m_viewBeforePlay;
     log("Stopped after " + std::to_string(m_session->ticks()) + " simulation ticks");

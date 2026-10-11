@@ -267,6 +267,7 @@ void VulkanRenderer::Impl::createPipelines() {
     shadowDesc.dynamicDepthBias = true;
     shadowPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
     createParticlePipelines();
+    createSkinningPipeline();
 
     createUiPipeline();
 }

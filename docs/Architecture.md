@@ -121,8 +121,10 @@ module can only see the headers of modules it depends on, directly or through th
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
 | GameUI | menus and HUDs from `.rml`/`.rcss` (RmlUi, FreeType, HarfBuzz), `UIDocument`, `game.ui()` | Engine | UMG, Slate |
+| Navigation | navmesh baking, paths and crowds (Recast & Detour), `NavAgent`, `game.navigation()` | Engine | NavigationSystem |
 | Effects | particle effects from `.efkefc` files (Effekseer), `ParticleEffect`, `game.effects()` | Engine | Niagara |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Effects | Engine's GameFramework |
+| Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Navigation, Effects, Animation | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.

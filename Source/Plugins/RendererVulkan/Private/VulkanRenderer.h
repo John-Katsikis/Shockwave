@@ -18,6 +18,7 @@ public:
     uint32_t maxTextures() const override;
     void createMesh(MeshHandle id, std::span<const Vertex> vertices, std::span<const uint32_t> indices) override;
     void destroyMesh(MeshHandle id) override;
+    void setMeshSkin(MeshHandle id, std::span<const VertexSkin> skin) override;
     void
     createTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) override;
     void
@@ -32,6 +33,9 @@ public:
         const DrawMaterial& material) override;
     void addLight(const LightDesc& light) override;
     void drawParticles(const ParticleDrawList& particles) override;
+    void drawSkinnedMesh(
+        MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
+        const glm::vec4& tint, const DrawMaterial& material) override;
 
     void setGrid(const GridSettings& grid) override;
     void setLighting(const LightingDesc& lighting) override;

@@ -35,6 +35,7 @@ public:
     SubsystemCollection& subsystems() { return m_subsystems; }
     AudioWorld* audio() const;   // null while editing
     EffectsWorld* effects() const;   // null while editing
+    AnimationWorld* animation() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
     UIWorld* ui() const;   // null while editing
     NavigationWorld* navigation() const;   // null while editing

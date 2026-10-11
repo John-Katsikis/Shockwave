@@ -101,6 +101,8 @@ Each item links to the guide that covers it in detail.
 - **Play sound.** WAV and Ogg clips with 3D positioning. See [Audio](docs/Audio.md).
 - **Hear sound in 3D.** Steam Audio HRTF for headphones, distance, facing and walls that
   muffle sound. See [Spatial audio](docs/SpatialAudio.md).
+- **Animate characters.** Skinned models play the clips inside their files, with
+  cross-fades, skinned on the GPU. See [Animation](docs/Animation.md).
 - **Build menus and HUDs.** Write them as `.rml` and `.rcss` files, much like HTML and
   CSS, with sharp, properly shaped text. They reload as you save. See [Game UI](docs/GameUI.md).
 - **Let characters find their way.** Bake a navigation mesh, and agents walk round walls
@@ -586,6 +588,7 @@ Shockwave/
       Engine/             entities and components (World), parenting, system scheduler,
                           scene files, camera, subsystems and the engine loop
       Audio/              clips, mixing and spatial sound sources
+      Animation/          skeletal animation (ozz-animation): Animator, AnimationWorld
       Physics/            Jolt physics (PhysicsWorld)
       Navigation/         navigation meshes, paths and agents with Recast & Detour (NavigationWorld)
       GameFramework/      GameMode, GameInstance, GameModule, PlaySession

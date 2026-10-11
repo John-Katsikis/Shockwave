@@ -485,6 +485,7 @@ void Editor::drawStatsWindow() {
     drawNavigationStats();
     drawAudioStats();
     drawEffectsStats();
+    drawAnimationStats();
 
     ImGui::SeparatorText("Plugins");
     ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());

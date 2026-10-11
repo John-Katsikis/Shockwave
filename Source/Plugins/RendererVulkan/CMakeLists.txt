@@ -19,4 +19,5 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/ui.frag
     Shaders/particle.vert
     Shaders/particle.frag
+    Shaders/skinning.comp
 )

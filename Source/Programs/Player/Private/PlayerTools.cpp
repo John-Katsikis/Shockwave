@@ -117,6 +117,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
+        checkAnimators(world, scene.string(), problems);
 
         // Navigation: a saved mesh that no longer matches the scene gets baked again on
         // every Play, which is slow and easy to miss.

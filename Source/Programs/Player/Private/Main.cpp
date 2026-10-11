@@ -71,6 +71,9 @@ int main(int argc, char** argv) {
             } else if (arg == "--schema" && i + 1 < argc) {
                 tool.mode = Tool::Mode::Schema;
                 tool.schemaOut = argv[++i];
+            } else if (arg == "--animations") {
+                tool.mode = Tool::Mode::Animations;
+                while (i + 1 < argc && argv[i + 1][0] != '-') tool.animationModels.push_back(argv[++i]);
             } else if (arg == "--input-schema" && i + 1 < argc) {
                 return player::writeInputSchema(argv[i + 1]);
             } else if (arg == "--devices") {
@@ -199,6 +202,7 @@ int main(int argc, char** argv) {
                           "                                    tiles, polygons, bake time and crowd cost per tick\n"
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
+                          "player --animations [model...]      list models' skeletons and animation clips\n"
                           "player --audio-volume 0..1          master playback volume (default 1)\n"
                           "player --audio-hrtf on|off          headphone (HRTF) or speaker spatial audio\n"
                           "player --audio-mix out.wav [--seconds N] [--scene file]\n"

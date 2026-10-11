@@ -8,6 +8,7 @@
 // Components and SW_COMPONENT, the World and EntityRef, GameMode and SW_GAME, input,
 // audio, physics, game UI, navigation, logging and glm. See docs/Projects.md.
 
+#include <Animation/AnimationWorld.h>
 #include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Effects/EffectsWorld.h>
