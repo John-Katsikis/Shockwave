@@ -172,6 +172,11 @@ You can write a save by hand or with a tool. Leave out `entity_ids` and the enti
 get new handles when loaded. If you keep `entity_ids`, it must list exactly one id per
 entity block; `player --check` tells you when it doesn't.
 
+Copies of a [prefab](Prefabs.md) are saved in full: every part gets its own block,
+marked `PrefabPart`, so a crate knocked off a prefab stack loads where it landed. A save
+written by hand can name just the prefab copy, as a scene does, and the parts are made
+from the prefab when it loads.
+
 ## How it works
 
 - `save()` copies the world on the main thread. Copying is fast, and it's what makes

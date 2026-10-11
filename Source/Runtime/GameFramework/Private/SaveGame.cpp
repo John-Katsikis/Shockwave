@@ -138,6 +138,9 @@ bool validSaveKey(std::string_view key) {
 
 void writeSaveGame(std::ostream& out, const World& world, const Assets& assets, const SaveInfo& info) {
     SceneFileHooks hooks;
+    // Every entity in full, prefab parts included: a save holds the game as it is, and
+    // entity_ids needs one block per entity.
+    hooks.exact = true;
     hooks.writeHeader = [&](std::ostream& o) {
         o << "save_game " << kSaveVersion << "\n";
         if (!info.title.empty()) o << "title " << std::quoted(info.title) << "\n";
@@ -173,6 +176,9 @@ bool readSaveGame(
     }
     SceneFileHooks hooks;
     hooks.readHeader = [](const std::string&, std::istream&) {};   // read above
+    // writeSaveGame writes prefab parts out in full; a hand-written save that only names
+    // its prefabs gets them made the way a scene does.
+    hooks.exact = text.find("\n  PrefabPart\n") != std::string::npos;
     World skeleton;
     if (!ids.empty()) {
         if (ids.size() != blocks) {

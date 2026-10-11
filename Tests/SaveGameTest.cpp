@@ -4,6 +4,7 @@
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/PhysicsComponents.h>
+#include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <GameFramework/PlaySession.h>
 #include <GameFramework/SaveGame.h>
@@ -242,12 +243,55 @@ void duringPlay() {
     fs::remove_all(folder);
 }
 
+// Prefab copies: their parts are saved as they are in play, not remade from the prefab.
+void prefabCopies() {
+    const fs::path content = tempFolder("save-prefabs");
+    Assets assets;
+    prefabs().setup(content, &assets);
+    World source;
+    const Entity crate = source.create();
+    source.add<Name>(crate, {"Crate"});
+    source.add<Transform>(crate);
+    const Entity lid = source.create();
+    source.add<Name>(lid, {"Lid"});
+    source.add<Transform>(lid, {{0, 1, 0}});
+    source.add<Parent>(lid, {crate});
+    std::string error;
+    check(savePrefab(source, crate, assets, content / "Prefabs/Crate.swprefab", error), "A prefab saves");
+
+    World world;
+    const Entity copy = spawnPrefab(world, "Prefabs/Crate.swprefab");
+    check(copy.valid() && world.entityCount() == 2, "A prefab copy has its parts");
+    Entity part;
+    world.each<const Name, const PrefabPart>([&](Entity e, const Name& name, const PrefabPart&) {
+        if (name.value == "Lid") part = e;
+    });
+    check(part.valid(), "...including the lid");
+    if (part.valid()) world.get<Transform>(part)->position = {5, 6, 7};   // knocked off during play
+
+    std::stringstream text;
+    writeSaveGame(text, world, assets, {});
+    World loaded;
+    SaveInfo back;
+    std::vector<std::string> warnings;
+    check(readSaveGame(text, "prefabs.swsave", assets, loaded, back, error, &warnings), "A save with prefabs loads");
+    check(error.empty(), error.c_str());
+    check(loaded.entityCount() == 2, "Prefab copies come back once, parts included");
+    check(
+        part.valid() && loaded.alive(part) && loaded.get<Transform>(part) &&
+            loaded.get<Transform>(part)->position == glm::vec3(5, 6, 7),
+        "A moved prefab part keeps where it was");
+    prefabs().setup({}, nullptr);
+    fs::remove_all(content);
+}
+
 }   // namespace
 
 int main() {
     roundTrip();
     headersAndRules();
     duringPlay();
+    prefabCopies();
     if (failures) {
         std::fprintf(stderr, "%d save game check(s) failed\n", failures);
         return 1;
