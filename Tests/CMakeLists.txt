@@ -89,3 +89,10 @@ add_executable(game_ui_test GameUITest.cpp)
 target_link_libraries(game_ui_test PRIVATE Shockwave::GameUI)
 shockwave_warnings(game_ui_test)
 add_test(NAME game_ui COMMAND game_ui_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Navigation (Recast & Detour) without a GPU: baking, paths, rebakes, files and agents.
+add_executable(navigation_test NavigationTest.cpp)
+target_link_libraries(navigation_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(navigation_test)
+add_test(NAME navigation COMMAND navigation_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(navigation PROPERTIES TIMEOUT 60)

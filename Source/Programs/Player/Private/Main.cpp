@@ -60,6 +60,8 @@ int main(int argc, char** argv) {
                 gameModuleFile = argv[++i];
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
+            } else if (arg == "--bake-navmesh") {
+                tool.mode = Tool::Mode::BakeNavMesh;
             } else if (arg == "--schema" && i + 1 < argc) {
                 tool.mode = Tool::Mode::Schema;
                 tool.schemaOut = argv[++i];
@@ -90,8 +92,10 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Lighting;
                 else if (view == "cascades")
                     tool.view = shockwave::DebugView::ShadowCascades;
+                else if (view == "navmesh")
+                    tool.showNavMesh = true;
                 else
-                    throw std::runtime_error("--view takes lit, unlit, normals, lighting or cascades");
+                    throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -133,7 +137,7 @@ int main(int argc, char** argv) {
                 tool.printFrame = true;
             } else if (arg == "--help") {
                 std::puts("player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
-                          "       [--size WxH] [--view lit|unlit|normals|lighting|cascades] [--print-frame]\n"
+                          "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
                           "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                           "       [--renderer vulkan|null] [--game-module file.so]\n"
                           "player --renderers                  list the renderer plugins that can be loaded\n"
@@ -143,6 +147,9 @@ int main(int argc, char** argv) {
                           "                                    run the scene for that long (default 10) and report\n"
                           "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
                           "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
+                          "player --bake-navmesh [scene.swscene...]\n"
+                          "                                    bake and save each scene's navigation mesh; print its\n"
+                          "                                    tiles, polygons, bake time and crowd cost per tick\n"
                           "player --schema file.md             write the scene format reference (- for stdout)\n"
                           "player --input-schema file.md       write the input bindings reference (- for stdout)\n"
                           "player --audio-volume 0..1          master playback volume (default 1)\n"
@@ -150,7 +157,8 @@ int main(int argc, char** argv) {
                           "                                    as binding text, for that many seconds");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-') {
-                if (tool.mode == Tool::Mode::Check && std::filesystem::path(arg).extension() == ".swscene")
+                if ((tool.mode == Tool::Mode::Check || tool.mode == Tool::Mode::BakeNavMesh) &&
+                    std::filesystem::path(arg).extension() == ".swscene")
                     tool.scenes.push_back(std::filesystem::absolute(arg).lexically_normal());
                 else
                     manifest = arg;

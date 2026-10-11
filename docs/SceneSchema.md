@@ -86,6 +86,16 @@ end
 | `speed` | number; range 0 to 10 | `1.5` |
 | `strength` | number; range 0 to 1 | `0.15` |
 
+#### Patrol
+
+| Field | Value | Default |
+|---|---|---|
+| `first` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
+| `second` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
+| `third` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
+| `fourth` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
+| `wait` | number; range 0 to 60 | `1` |
+
 ### Motion
 
 #### Spin
@@ -102,6 +112,48 @@ end
 | `amplitude` | number; range 0 to 100 | `0.25` |
 | `frequency` | number; range 0 to 100 | `0.5` |
 | `phase` | number | `0` |
+
+### Navigation
+
+#### NavMeshSettings
+
+| Field | Value | Default |
+|---|---|---|
+| `geometry` | one of: "Static colliders", "Render meshes", Both (or its number, counting from 0) | `Both` |
+| `agent_radius` | number; range 0.05 to 10 | `0.4` |
+| `agent_height` | number; range 0.1 to 20 | `1.8` |
+| `max_climb` | number; range 0 to 10 | `0.4` |
+| `max_slope` | number; range 0 to 89 | `45` |
+| `cell_size` | number; range 0.02 to 2 | `0.2` |
+| `cell_height` | number; range 0.02 to 2 | `0.1` |
+| `tile_size` | whole number; range 16 to 256 | `64` |
+| `auto_bounds` | 1 or 0 (true/false also accepted) | `1` |
+| `bounds_min` | x y z | `-50 -10 -50` |
+| `bounds_max` | x y z | `50 20 50` |
+| `max_agents` | whole number; range 1 to 4096 | `128` |
+
+#### NavAgent
+
+| Field | Value | Default |
+|---|---|---|
+| `speed` | number; range 0 to 100 | `3.5` |
+| `acceleration` | number; range 0 to 1000 | `8` |
+| `radius` | number; range 0.05 to 10 | `0.4` |
+| `height` | number; range 0.1 to 20 | `1.8` |
+| `stopping_distance` | number; range 0 to 100 | `0.3` |
+| `target` | quoted entity name, or none (a block number counting from 0 also works) | `none` |
+| `destination` | x y z | `0 0 0` |
+| `has_destination` | 1 or 0 (true/false also accepted) | `0` |
+| `avoidance` | one of: None, Low, Medium, High (or its number, counting from 0) | `Medium` |
+| `separation` | number; range 0 to 20 | `1` |
+| `face_movement` | 1 or 0 (true/false also accepted) | `1` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### NavModifier
+
+| Field | Value | Default |
+|---|---|---|
+| `mode` | one of: Walkable, "Not walkable", Ignore (or its number, counting from 0) | `"Not walkable"` |
 
 ### Physics
 

@@ -11,6 +11,7 @@
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
 #include <GameUI/GameUI.h>
+#include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
 #include <imgui.h>
@@ -191,6 +192,14 @@ private:
     // Adds an entity showing the document; writes a starter document first if it's missing.
     shockwave::Entity createUIDocument(const std::string& document);
     std::string newUIDocumentPath() const;   // "UI/hud.rml", or the first free "UI/hud2.rml"...
+    // NavigationPanel.cpp: bake, viewport overlay, Create items, Inspector notes, stats.
+    void updateNavigation(double dt);
+    bool bakeNavigation();   // saves next to the scene when it has a file
+    void renderNavigation(shockwave::Renderer& renderer);
+    void reportNavigationProblems();   // when Play starts
+    void drawNavigationCreateItems();
+    void drawNavigationNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
+    void drawNavigationStats();
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert
@@ -336,6 +345,12 @@ private:
     bool m_showGameUI = true;
     bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
     std::unique_ptr<shockwave::PlaySession> m_session;
+    // Navigation while editing: the mesh last baked or loaded for this scene.
+    std::shared_ptr<const shockwave::NavMesh> m_navMesh;
+    shockwave::NavMeshOverlay m_navOverlay;
+    std::filesystem::path m_navScene;   // the scene m_navMesh belongs to
+    bool m_showNavMesh = false, m_navStale = false, m_navUsed = false;
+    double m_navCheckTimer = 0.0;
     bool m_gameModuleMatches = false;   // the project's game module is loaded, so Play can run it
     bool m_viewThroughCamera = false;   // render from the scene's Camera instead of the editor's
     bool m_viewBeforePlay = false;

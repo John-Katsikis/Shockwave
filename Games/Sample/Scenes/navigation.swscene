@@ -1,0 +1,215 @@
+# Navigation demo: a Guard patrols four waypoints (Patrol, in the sample's game code)
+# and a Follower with a CharacterController keeps up with it, both steering round the
+# walls with Recast & Detour. Open it in the editor, turn on View > Navigation mesh, and
+# press Play.
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.2 0.27 0.38 1
+  NavMeshSettings
+    agent_radius 0.4
+    agent_height 1.8
+    max_climb 0.4
+    max_slope 45
+    cell_size 0.15
+    cell_height 0.1
+    tile_size 48
+end
+entity "Floor"
+  Transform
+    position 0 -0.25 0
+    scale 24 0.5 24
+  MeshRenderer
+    mesh cube
+    texture grid
+    tint 0.35 0.4 0.5 1
+  Collider
+    shape Box
+end
+entity "Long wall"
+  Transform
+    position 1 1 -2
+    scale 10 2 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.75 0.72 0.68 1
+  Collider
+    shape Box
+end
+entity "Side wall"
+  Transform
+    position 4 1 5
+    scale 0.5 2 7
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.75 0.72 0.68 1
+  Collider
+    shape Box
+end
+entity "Pillar 1"
+  Transform
+    position -4 1 4
+    scale 1.2 2 1.2
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.55 0.6 0.7 1
+  Collider
+    shape Box
+end
+entity "Pillar 2"
+  Transform
+    position -1 1 7
+    scale 1.2 2 1.2
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.55 0.6 0.7 1
+  Collider
+    shape Box
+end
+entity "Barrel"
+  Transform
+    position 8 0.6 2
+  MeshRenderer
+    mesh sphere
+    texture checker
+    tint 0.85 0.55 0.25 1
+  Collider
+    shape Sphere
+    radius 0.6
+end
+entity "Platform"
+  Transform
+    position -7 0.75 -7
+    scale 4 1.5 4
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.45 0.6 0.5 1
+  Collider
+    shape Box
+end
+entity "Ramp"
+  Transform
+    position -7 0.68 -3
+    rotation 20.6 0 0
+    scale 2 0.2 4.3
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.45 0.6 0.5 1
+  Collider
+    shape Box
+end
+entity "Waypoint 1"
+  Transform
+    position -7 1.5 -7.5
+    scale 0.4 0.05 0.4
+  MeshRenderer
+    mesh sphere
+    tint 1 0.85 0.2 1
+    cast_shadows 0
+  NavModifier
+    mode Ignore
+end
+entity "Waypoint 2"
+  Transform
+    position 8 0 -7
+    scale 0.4 0.05 0.4
+  MeshRenderer
+    mesh sphere
+    tint 1 0.85 0.2 1
+    cast_shadows 0
+  NavModifier
+    mode Ignore
+end
+entity "Waypoint 3"
+  Transform
+    position 8 0 8
+    scale 0.4 0.05 0.4
+  MeshRenderer
+    mesh sphere
+    tint 1 0.85 0.2 1
+    cast_shadows 0
+  NavModifier
+    mode Ignore
+end
+entity "Waypoint 4"
+  Transform
+    position -7 0 9
+    scale 0.4 0.05 0.4
+  MeshRenderer
+    mesh sphere
+    tint 1 0.85 0.2 1
+    cast_shadows 0
+  NavModifier
+    mode Ignore
+end
+entity "Guard"
+  Transform
+    position 0 0 5
+  NavAgent
+    speed 3.5
+    acceleration 10
+  Patrol
+    first "Waypoint 1"
+    second "Waypoint 2"
+    third "Waypoint 3"
+    fourth "Waypoint 4"
+    wait 0.5
+end
+entity "Guard body"
+  Transform
+    position 0 0.9 0
+    scale 0.6 1.8 0.6
+  Parent
+    entity "Guard"
+  MeshRenderer
+    mesh cube
+    tint 0.9 0.25 0.2 1
+end
+entity "Follower"
+  Transform
+    position 2 0 9
+  CharacterController
+    radius 0.35
+    half_height 0.55
+  NavAgent
+    speed 4.5
+    acceleration 12
+    radius 0.35
+    stopping_distance 1.5
+    target "Guard"
+end
+entity "Follower body"
+  Transform
+    position 0 0.9 0
+    scale 0.6 1.8 0.6
+  Parent
+    entity "Follower"
+  MeshRenderer
+    mesh cube
+    tint 0.25 0.5 0.95 1
+end
+entity "Main Camera"
+  Transform
+    position 0 17 14
+    rotation -52 0 0
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end
+entity "Sun"
+  Transform
+    position 0 10 0
+    rotation -60 30 0
+  Light
+    type Directional
+    color 1 0.96 0.9 1
+    intensity 2.6
+end

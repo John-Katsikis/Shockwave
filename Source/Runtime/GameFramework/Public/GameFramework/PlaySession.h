@@ -36,6 +36,7 @@ public:
     AudioWorld* audio() const;   // null while editing
     PhysicsWorld* physics() const;   // null while editing
     UIWorld* ui() const;   // null while editing
+    NavigationWorld* navigation() const;   // null while editing
 
 private:
     void tearDown();

@@ -2,7 +2,8 @@
 // Crate one during Play, so you can see gameplay code running in the editor. Pressing
 // "pulse" (Space, or South on a gamepad: Cross / A) flashes the Crate and rumbles the
 // pad; the binding lives in Config/Input.swinput. The HUD (Content/UI/hud.rml) counts the
-// pulses and has a Pulse button that does the same.
+// pulses and has a Pulse button that does the same. Patrol walks NavAgents between
+// waypoints with game.navigation().
 
 #include <Shockwave/Game.h>
 
@@ -18,6 +19,17 @@ struct ColorPulse {
     float flash = 0;   // 1 right after "pulse" is pressed, fading to 0
 };
 SW_COMPONENT(ColorPulse, SW_FIELD(speed, 0, 10), SW_FIELD(strength, 0, 1))
+
+// Walks a NavAgent round up to four waypoints in order, pausing at each
+// (Scenes/navigation.swscene). The waypoints are entities, so you can move them in the
+// editor.
+struct Patrol {
+    Entity first, second, third, fourth;
+    float wait = 1.0f;   // seconds at each waypoint
+    int next = 0;   // runtime: the waypoint it's walking to
+    float waited = 0;
+};
+SW_COMPONENT(Patrol, SW_FIELD(first), SW_FIELD(second), SW_FIELD(third), SW_FIELD(fourth), SW_FIELD(wait, 0, 60))
 
 class SampleGame final : public GameMode {
 public:
@@ -42,6 +54,26 @@ public:
         game.ui().set("pulses", m_pulses);
         game.ui().on("pulse", [this, &game](const UIEvent&) { pulse(game); });
         SW_LOG(LogGame, Info, "Sample gameplay started ({} entities)", game.world.entityCount());
+    }
+
+    // Every fixed tick, after the agents have moved: send each patrolling agent on to its
+    // next waypoint once it has arrived and waited.
+    void fixedUpdate(GameContext& game, double dt) override {
+        game.world.each<Patrol, NavAgent>([&](Entity e, Patrol& patrol, NavAgent& agent) {
+            const Entity points[] = {patrol.first, patrol.second, patrol.third, patrol.fourth};
+            if (agent.hasDestination && !agent.arrived) return;
+            if (agent.arrived) {
+                patrol.waited += static_cast<float>(dt);
+                if (patrol.waited < patrol.wait) return;
+                patrol.next = (patrol.next + 1) % 4;
+            }
+            patrol.waited = 0;
+            for (int tries = 0; tries < 4; ++tries, patrol.next = (patrol.next + 1) % 4) {
+                if (!points[patrol.next].valid() || !game.world.has<Transform>(points[patrol.next])) continue;
+                game.navigation().setDestination(e, glm::vec3(worldMatrix(game.world, points[patrol.next])[3]));
+                return;
+            }
+        });
     }
 
     // Once per frame on the main thread.

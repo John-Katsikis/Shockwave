@@ -37,6 +37,7 @@ void Editor::play() {
         return;
     }
     const bool resuming = playState() == PlayState::Paused;
+    updateNavigation(0.0);   // loads the scene's saved navigation mesh, so Play needn't bake
     try {
         m_session->start();
     } catch (const std::exception& e) {
@@ -50,6 +51,7 @@ void Editor::play() {
     if (const auto* physics = m_session->physics()) {
         for (const auto& problem : physics->diagnostics()) warn(displayName(problem.entity) + ": " + problem.message);
     }
+    reportNavigationProblems();
     m_viewBeforePlay = m_viewThroughCamera;
     if (m_prefs.playFromSceneCamera) {
         if (shockwave::primaryCamera(m_world).valid()) {

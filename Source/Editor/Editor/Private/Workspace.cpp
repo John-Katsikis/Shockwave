@@ -73,6 +73,7 @@ void Editor::drawCreateMenuItems(Entity parent) {
     ImGui::SeparatorText("UI");
     if (ImGui::MenuItem("UI document")) createUIDocument(newUIDocumentPath());
     ImGui::SetItemTooltip("A HUD or menu from an .rml file in Content/UI; writes a starter one");
+    drawNavigationCreateItems();
 }
 
 void Editor::drawMenuBar() {
@@ -471,6 +472,7 @@ void Editor::drawStatsWindow() {
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());
     drawGameUIStats();
+    drawNavigationStats();
 
     ImGui::SeparatorText("Plugins");
     ImGui::Text("Renderer: %s, %s", renderer.backendName().c_str(), renderer.backendDescription());
