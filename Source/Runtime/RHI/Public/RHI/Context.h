@@ -33,6 +33,9 @@ public:
     // Frame pacing support, all optional (see enablePresentTiming).
     enum class PresentWait { None, Version1, Version2 };
     PresentWait presentWait() const { return m_presentWait; }
+    // Some drivers report present wait 2 for a surface but then refuse swapchains that use
+    // it (seen on XWayland). The swapchain calls this and retries without it.
+    void disablePresentWait() const { m_presentWait = PresentWait::None; }
     bool fifoLatestReady() const { return m_fifoLatestReady; }   // VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
     const char* presentTimingName() const;
     // Nanoseconds per GPU timestamp tick; 0 when the graphics queue has no timestamps.
@@ -49,7 +52,7 @@ private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     float m_maxAnisotropy = 1.0f;
     uint32_t m_maxBindlessTextures = 0;
-    PresentWait m_presentWait = PresentWait::None;
+    mutable PresentWait m_presentWait = PresentWait::None;
     bool m_fifoLatestReady = false;
     float m_timestampPeriod = 0.0f;
 };
