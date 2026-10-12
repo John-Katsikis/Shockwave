@@ -290,6 +290,10 @@ struct Compiler {
                 error(given.line, where + ": " + why);
             return newRegister(defaultValue(pin.type));
         }
+        if (!pin.options.empty() && (value.i < 0 || size_t(value.i) >= pin.options.size())) {
+            error(given.line, where + ": enum value is outside its named options");
+            return newRegister(defaultValue(pin.type));
+        }
         return newRegister(std::move(value));
     }
 

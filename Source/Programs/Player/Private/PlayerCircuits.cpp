@@ -4,6 +4,7 @@
 #include <Circuits/Circuit.h>
 #include <Circuits/CircuitNodes.h>
 #include <Circuits/CircuitProgram.h>
+#include <Circuits/CircuitWorld.h>
 #include <Engine/Components.h>
 #include <Engine/Prefab.h>
 
@@ -133,6 +134,55 @@ int Player::dumpCircuit() {
     if (!program) return 1;
     std::fputs(shockwave::dumpCircuit(*program).c_str(), stdout);
     return 0;
+}
+
+int Player::runCircuit() {
+    if (m_tool.circuit.empty()) {
+        std::fprintf(stderr, "--run-circuit needs --circuit <Content-relative file>\n");
+        return 1;
+    }
+    const auto kind =
+        m_tool.circuit == m_project.gameCircuitPath() ? shockwave::CircuitKind::Game : shockwave::CircuitKind::Entity;
+    std::vector<std::string> problems;
+    auto program = shockwave::circuitLibrary().load(m_tool.circuit, kind, &problems);
+    if (!program) {
+        for (const auto& problem : problems) std::fprintf(stderr, "%s\n", problem.c_str());
+        return 1;
+    }
+    if (!m_tool.circuitBreakpoint.empty() &&
+        std::none_of(program->sites.begin(), program->sites.end(), [&](const auto& site) {
+            return site.name == m_tool.circuitBreakpoint && site.node->event == shockwave::CircuitEvent::None;
+        })) {
+        std::fprintf(stderr, "Unknown breakpoint node '%s'\n", m_tool.circuitBreakpoint.c_str());
+        return 1;
+    }
+    shockwave::World world;
+    const auto entity = world.create();
+    world.add<shockwave::Name>(entity, {"CircuitRunner"});
+    world.add<shockwave::Transform>(entity);
+    if (kind == shockwave::CircuitKind::Entity) world.add<shockwave::Circuit>(entity, {m_tool.circuit});
+    shockwave::CircuitWorld circuits(
+        world, {.assets = &engine().assets()}, kind == shockwave::CircuitKind::Game ? m_tool.circuit : "");
+    circuits.setTracing(true);
+    if (!m_tool.circuitBreakpoint.empty()) circuits.setBreakpoint(m_tool.circuit, m_tool.circuitBreakpoint, true);
+    circuits.beginPlay();
+    for (int i = 0; i < m_tool.circuitTicks && !circuits.debugPaused(); ++i) {
+        circuits.fixedTick(1.0 / m_project.tickRate);
+        circuits.frame(1.0 / m_project.tickRate);
+    }
+    for (int i = 0; i < m_tool.circuitSteps && circuits.debugPaused(); ++i) circuits.debugContinue(true);
+    for (const auto& entry : circuits.trace()) {
+        std::printf("%s:%d node %s\n", entry.circuit.c_str(), entry.line, entry.node.c_str());
+        for (const auto& [pin, value] : entry.inputs) std::printf("  in %s = %s\n", pin.c_str(), value.c_str());
+        for (const auto& [pin, value] : entry.outputs) std::printf("  out %s = %s\n", pin.c_str(), value.c_str());
+    }
+    if (circuits.debugPaused()) std::printf("paused %s\n", circuits.debugLocation().node.c_str());
+    for (const auto& variable : program->variables)
+        if (const auto* value = circuits.variable(
+                kind == shockwave::CircuitKind::Game ? shockwave::kNullEntity : entity, variable.name))
+            std::printf("variable %s = %s\n", variable.name.c_str(), shockwave::formatValue(*value).c_str());
+    for (const auto& problem : circuits.diagnostics()) std::fprintf(stderr, "%s\n", problem.c_str());
+    return circuits.diagnostics().empty() ? 0 : 1;
 }
 
 }   // namespace player

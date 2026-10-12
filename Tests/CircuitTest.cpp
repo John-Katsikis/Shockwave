@@ -8,6 +8,7 @@
 #include <Engine/Components.h>
 #include <Engine/Prefab.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -320,6 +321,90 @@ node keep Set.out
     check(findNode("Test.Double") == nullptr, "its own token removes it");
 }
 
+void authoringAndDebugging(const fs::path& content) {
+    CircuitDocument source;
+    std::string error;
+    check(parseCircuitText(kMover, "mover", source, error), error);
+    source.nodes.front().note = "Starts the loop; quoted \"note\"";
+    std::ostringstream out;
+    writeCircuit(out, source);
+    CircuitDocument restored;
+    check(parseCircuitText(out.str(), "notes", restored, error), error);
+    check(restored.nodes.front().note == source.nodes.front().note, "node notes round-trip");
+    check(
+        !parseCircuitText("shockwave_circuit 1\neditor\n@note missing \"bad\"\nend\n", "notes", restored, error),
+        "unknown note target is rejected");
+    CircuitDocument pasted = source;
+    appendCircuitNodes(pasted, source, {40, 40});
+    std::vector<CircuitProblem> problems;
+    check(
+        compileCircuit(pasted, "pasted", CircuitKind::Entity, problems) != nullptr,
+        "duplicated graph compiles with remapped wires");
+    check(pasted.nodes[source.nodes.size()].name == "start_2", "paste names are unique");
+    check(pasted.nodes[source.nodes.size() + 1].execs.front().node == "start_2", "paste remaps exec wires");
+    check(pasted.nodes[source.nodes.size()].note == source.nodes.front().note, "paste keeps notes");
+    check(findNode("Data.Reroute.Vec3") != nullptr, "typed reroute node exists");
+    CircuitDocument conflict;
+    conflict.variables.push_back({"ticks", PinType::String, "\"hello\""});
+    appendCircuitNodes(conflict, source, {0, 0});
+    problems.clear();
+    check(
+        compileCircuit(conflict, "conflict", CircuitKind::Entity, problems) != nullptr,
+        "paste renames conflicting variable types");
+    check(
+        std::any_of(
+            conflict.nodes.begin(), conflict.nodes.end(), [](const auto& n) { return n.type == "Set.ticks_2"; }),
+        "paste remaps variable node types");
+    check(
+        !findNode("Component.RigidBody.Set.motion")->inputs[1].options.empty(),
+        "enum labels propagate from component metadata");
+    CircuitDocument badEnum;
+    check(
+        parseCircuitText(
+            "shockwave_circuit 1\nnode start Event.BeginPlay\nnode set Component.RigidBody.Set.motion\n exec "
+            "start.then\n in motion = 99\n",
+            "enum", badEnum, error),
+        error);
+    problems.clear();
+    check(!compileCircuit(badEnum, "enum", CircuitKind::Entity, problems), "compiler rejects invalid enum literal");
+
+    write(content / "Circuits/debug.swcircuit", kMover);
+    circuitLibrary().clear();
+    World world;
+    const Entity e = world.create();
+    world.add<Transform>(e);
+    world.add<Circuit>(e, {"Circuits/debug.swcircuit"});
+    CircuitWorld circuits(world, {});
+    circuits.setTracing(true);
+    circuits.setBreakpoint("Circuits/debug.swcircuit", "add", true);
+    circuits.beginPlay();
+    check(circuits.debugPaused() && circuits.debugLocation().node == "add", "breakpoint pauses before mutation");
+    check(circuits.variable(e, "total")->i == 0, "breakpoint preserves variable before write");
+    circuits.fixedTick(1);
+    circuits.frame(1);
+    check(circuits.variable(e, "ticks")->i == 0, "events do not run while paused");
+    circuits.debugContinue(true);
+    check(circuits.debugPaused() && circuits.debugLocation().node == "sum", "single step resumes loop stack");
+    check(circuits.variable(e, "total")->i == 1, "single step executes one node");
+    circuits.setBreakpoint("Circuits/debug.swcircuit", "add", false);
+    circuits.debugContinue();
+    check(!circuits.debugPaused() && circuits.variable(e, "total")->i == 10, "continue finishes nested loop correctly");
+    check(!circuits.trace().empty() && !circuits.trace().front().inputs.empty(), "trace records input snapshots");
+    circuits.clearTrace();
+    circuits.setTracing(false);
+    circuits.fixedTick(0.1);
+    check(circuits.trace().empty(), "disabled tracing creates no history");
+    circuits.setTracing(true);
+    for (int i = 0; i < 100; ++i) circuits.fixedTick(0.1);
+    check(circuits.trace().size() == 256, "trace history is bounded");
+    circuits.setBreakpoint("Circuits/debug.swcircuit", "move", true);
+    circuits.fixedTick(0.1);
+    check(circuits.debugPaused(), "tick breakpoint pauses");
+    world.destroy(e);
+    circuits.debugContinue();
+    check(!circuits.debugPaused(), "destroyed debug target cancels safely");
+}
+
 void gameCircuit(const fs::path& content) {
     write(content / "Circuits/game.swcircuit", R"(shockwave_circuit 1
 var score Int 0
@@ -372,6 +457,7 @@ int main() {
     components(content);
     functionNodes(content);
     gameCircuit(content);
+    authoringAndDebugging(content);
     std::error_code ec;
     fs::remove_all(root, ec);
     if (failures == 0) std::puts("Circuits: format, compiler checks, events, variables and nodes passed");

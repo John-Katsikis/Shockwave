@@ -8,6 +8,8 @@
 #include <charconv>
 #include <cmath>
 #include <iomanip>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace shockwave {
@@ -355,6 +357,17 @@ bool parseCircuit(std::istream& in, const std::string& file, CircuitDocument& do
                 inEditor = false;
                 continue;
             }
+            if (keyword == "@note") {
+                std::string name, note;
+                if (!(row >> name >> std::quoted(note))) return fail("@note needs a node and quoted text");
+                row >> std::ws;
+                if (!row.eof()) return fail("unexpected text after @note");
+                auto found = std::find_if(
+                    result.nodes.begin(), result.nodes.end(), [&](const auto& n) { return n.name == name; });
+                if (found == result.nodes.end()) return fail("@note names unknown node '" + name + "'");
+                found->note = std::move(note);
+                continue;
+            }
             glm::vec2 position;
             if (!(row >> position.x >> position.y)) return fail("editor lines are: <node> <x> <y>");
             auto found = std::find_if(
@@ -468,14 +481,62 @@ void writeCircuit(std::ostream& out, const CircuitDocument& document) {
     }
     // Positions last, so moving nodes in the editor doesn't touch the logic above.
     bool any = false;
-    for (const auto& node : document.nodes) any = any || node.placed;
+    for (const auto& node : document.nodes) any = any || node.placed || !node.note.empty();
     if (!any) return;
     out << "\neditor\n";
     for (const auto& node : document.nodes)
         if (node.placed)
             out << "  " << node.name << " " << formatFloat(node.position.x) << " " << formatFloat(node.position.y)
                 << "\n";
+    for (const auto& node : document.nodes)
+        if (!node.note.empty()) out << "  @note " << node.name << " " << quote(node.note) << "\n";
     out << "end\n";
+}
+
+void appendCircuitNodes(CircuitDocument& destination, const CircuitDocument& source, glm::vec2 offset) {
+    std::set<std::string> used;
+    for (const auto& node : destination.nodes) used.insert(node.name);
+    std::map<std::string, std::string> rename;
+    for (const auto& node : source.nodes) {
+        std::string name = node.name;
+        for (int i = 2; used.contains(name); ++i) name = node.name + "_" + std::to_string(i);
+        used.insert(name);
+        rename[node.name] = name;
+    }
+    std::map<std::string, std::string> variables;
+    std::set<std::string> variableNames;
+    for (const auto& variable : destination.variables) variableNames.insert(variable.name);
+    for (const auto& variable : source.variables) {
+        const auto found = std::find_if(destination.variables.begin(), destination.variables.end(), [&](const auto& v) {
+            return v.name == variable.name;
+        });
+        if (found != destination.variables.end() && found->type == variable.type) {
+            variables[variable.name] = variable.name;
+            continue;
+        }
+        auto copy = variable;
+        for (int i = 2; variableNames.contains(copy.name); ++i) copy.name = variable.name + "_" + std::to_string(i);
+        variableNames.insert(copy.name);
+        variables[variable.name] = copy.name;
+        destination.variables.push_back(std::move(copy));
+    }
+    for (const auto& node : source.nodes) {
+        auto copy = node;
+        copy.name = rename.at(node.name);
+        if ((copy.type.starts_with("Get.") || copy.type.starts_with("Set.")) && variables.contains(copy.type.substr(4)))
+            copy.type = copy.type.substr(0, 4) + variables.at(copy.type.substr(4));
+        copy.position += offset;
+        copy.placed = true;
+        for (auto& wire : copy.execs)
+            if (rename.contains(wire.node)) wire.node = rename.at(wire.node);
+        for (auto& input : copy.inputs) {
+            if (variables.contains(input.text)) input.text = variables.at(input.text);
+            const size_t dot = input.text.find('.');
+            if (dot != std::string::npos && rename.contains(input.text.substr(0, dot)))
+                input.text = rename.at(input.text.substr(0, dot)) + input.text.substr(dot);
+        }
+        destination.nodes.push_back(std::move(copy));
+    }
 }
 
 }   // namespace shockwave

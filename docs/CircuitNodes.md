@@ -386,7 +386,7 @@ Sets the fields given (connected or written) of the entity's AudioSource; the re
 - In `spatial` Bool
 - In `min_distance` Float
 - In `max_distance` Float
-- In `rolloff` Int
+- In `rolloff` Int, options 0=Linear; 1=Inverse; 2=None
 - In `air_absorption` Bool
 - In `directivity` Float
 - In `directivity_power` Float
@@ -500,7 +500,7 @@ Sets the entity's AudioSource rolloff.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `rolloff` Int, required
+- In `rolloff` Int, options 0=Linear; 1=Inverse; 2=None, required
 
 ### Component.AudioSource.Set.spatial
 
@@ -1146,7 +1146,7 @@ Sets the fields given (connected or written) of the entity's Collider; the rest 
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `shape` Int
+- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model
 - In `half_extents` Vec3
 - In `radius` Float
 - In `half_height` Float
@@ -1205,7 +1205,7 @@ Sets the entity's Collider shape.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `shape` Int, required
+- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model, required
 
 ### Component.ColorPulse.Add
 
@@ -1396,7 +1396,7 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `ground_color` Color
 - In `ambient_intensity` Float
 - In `exposure` Float
-- In `tonemapper` Int
+- In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None
 - In `shadow_distance` Float
 - In `shadow_cascades` Int
 
@@ -1461,7 +1461,7 @@ Sets the entity's Environment tonemapper.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `tonemapper` Int, required
+- In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None, required
 
 ### Component.Light.Add
 
@@ -1588,7 +1588,7 @@ Sets the fields given (connected or written) of the entity's Light; the rest sta
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `type` Int
+- In `type` Int, options 0=Directional; 1=Point; 2=Spot
 - In `color` Color
 - In `intensity` Float
 - In `range` Float
@@ -1697,7 +1697,7 @@ Sets the entity's Light type.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `type` Int, required
+- In `type` Int, options 0=Directional; 1=Point; 2=Spot, required
 
 ### Component.MeshRenderer.Add
 
@@ -2224,7 +2224,7 @@ Sets the fields given (connected or written) of the entity's NavAgent; the rest 
 - In `target` Entity
 - In `destination` Vec3
 - In `has_destination` Bool
-- In `avoidance` Int
+- In `avoidance` Int, options 0=None; 1=Low; 2=Medium; 3=High
 - In `separation` Float
 - In `face_movement` Bool
 - In `enabled` Bool
@@ -2245,7 +2245,7 @@ Sets the entity's NavAgent avoidance.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `avoidance` Int, required
+- In `avoidance` Int, options 0=None; 1=Low; 2=Medium; 3=High, required
 
 ### Component.NavAgent.Set.destination
 
@@ -2470,7 +2470,7 @@ Sets the fields given (connected or written) of the entity's NavMeshSettings; th
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `geometry` Int
+- In `geometry` Int, options 0=Static colliders; 1=Render meshes; 2=Both
 - In `agent_radius` Float
 - In `agent_height` Float
 - In `max_climb` Float
@@ -2553,7 +2553,7 @@ Sets the entity's NavMeshSettings geometry.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `geometry` Int, required
+- In `geometry` Int, options 0=Static colliders; 1=Render meshes; 2=Both, required
 
 ### Component.NavMeshSettings.Set.max_agents
 
@@ -2636,7 +2636,7 @@ Sets the fields given (connected or written) of the entity's NavModifier; the re
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `mode` Int
+- In `mode` Int, options 0=Walkable; 1=Not walkable; 2=Ignore
 
 ### Component.NavModifier.Set.mode
 
@@ -2645,7 +2645,7 @@ Sets the entity's NavModifier mode.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `mode` Int, required
+- In `mode` Int, options 0=Walkable; 1=Not walkable; 2=Ignore, required
 
 ### Component.Parent.Add
 
@@ -3256,7 +3256,7 @@ Sets the fields given (connected or written) of the entity's RigidBody; the rest
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `motion` Int
+- In `motion` Int, options 0=Static; 1=Dynamic; 2=Kinematic
 - In `mass` Float
 - In `friction` Float
 - In `restitution` Float
@@ -3377,7 +3377,7 @@ Sets the entity's RigidBody motion.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `motion` Int, required
+- In `motion` Int, options 0=Static; 1=Dynamic; 2=Kinematic, required
 
 ### Component.RigidBody.Set.restitution
 
@@ -3706,6 +3706,92 @@ The whole number as a number.
 
 - In `value` Int
 - Out `result` Float
+
+## Data
+
+### Data.Reroute.Bool
+
+Passes a value through, for organizing wires.
+
+- In `value` Bool
+- Out `result` Bool
+
+### Data.Reroute.Color
+
+Passes a value through, for organizing wires.
+
+- In `value` Color
+- Out `result` Color
+
+### Data.Reroute.Entity
+
+Passes a value through, for organizing wires.
+
+- In `value` Entity
+- Out `result` Entity
+
+### Data.Reroute.Float
+
+Passes a value through, for organizing wires.
+
+- In `value` Float
+- Out `result` Float
+
+### Data.Reroute.Int
+
+Passes a value through, for organizing wires.
+
+- In `value` Int
+- Out `result` Int
+
+### Data.Reroute.Mesh
+
+Passes a value through, for organizing wires.
+
+- In `value` Mesh
+- Out `result` Mesh
+
+### Data.Reroute.Model
+
+Passes a value through, for organizing wires.
+
+- In `value` Model
+- Out `result` Model
+
+### Data.Reroute.Rotation
+
+Passes a value through, for organizing wires.
+
+- In `value` Rotation
+- Out `result` Rotation
+
+### Data.Reroute.String
+
+Passes a value through, for organizing wires.
+
+- In `value` String
+- Out `result` String
+
+### Data.Reroute.Texture
+
+Passes a value through, for organizing wires.
+
+- In `value` Texture
+- Out `result` Texture
+
+### Data.Reroute.Vec2
+
+Passes a value through, for organizing wires.
+
+- In `value` Vec2
+- Out `result` Vec2
+
+### Data.Reroute.Vec3
+
+Passes a value through, for organizing wires.
+
+- In `value` Vec3
+- Out `result` Vec3
 
 ## Debug
 

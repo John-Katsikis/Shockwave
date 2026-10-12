@@ -53,6 +53,10 @@ Content and choose New circuit.
 | Give an input a value | Type in the field next to an unconnected input: a value, or a variable's name. |
 | Delete | Select nodes or wires and press Delete, or right-click them. |
 | Rename a node | Right-click it and choose Rename. Wires to it follow. |
+| Copy, paste, duplicate | Ctrl+C, Ctrl+V, Ctrl+D while the graph has focus and no text field is being edited. Internal wires are copied; connections to unselected nodes are omitted. |
+| Annotate | Type a note beneath a node title. Notes are editor metadata and do not execute. |
+| Arrange nodes | Arrange places nodes in a spaced grid; Undo restores their positions. |
+| Organize wires | Insert a typed `Data.Reroute.<Type>` node. |
 | Move around | Drag with the right mouse button; scroll to zoom. Fit shows the whole circuit. |
 | Undo, redo, save | The buttons, or Ctrl+Z, Ctrl+Y and Ctrl+S while the window has focus. |
 
@@ -68,6 +72,61 @@ version into the running game.
 To run a circuit on an entity, drag the `.swcircuit` from Content onto the entity in the
 viewport or the Hierarchy. To make one the game circuit, pick it under Game circuit in
 Project settings.
+
+Unconnected number, vector, rotation and colour pins have typed controls. Reflected enum
+pins use the component's named options. **Text** opens an explicit literal/variable editor;
+Enter commits, including an empty value to restore the default. **Pick** offers entities,
+input actions and matching content assets while keeping hand-written values available.
+
+### Debug a running graph
+
+Press Play and select an entity running the open circuit, or open the game circuit.
+Enable **Record execution** to keep the latest 256 executed nodes across the session.
+Expand an entry for its input/output values as they were at execution, or use **Locate**
+to select its node. Recording is optional and avoids formatting pin values when disabled.
+
+Use a node's **Break** checkbox to stop before it executes. Breakpoints apply to that node
+in every instance of the circuit. **Step** executes the pending node and stops before the
+next node (including pure nodes); **Continue** finishes the interrupted wire. Loop and
+sequence stacks and the instruction budget survive suspension. Event entry nodes are
+not breakpoint targets. The debugger shows the actual stopped instance, even when another
+instance of the same graph hit the breakpoint.
+
+Gameplay ticks and gameplay frame hooks are held while the debugger is stopped; the
+editor remains responsive. Audio, UI and host-side visual effects are not a full simulation
+snapshot. Other event handlers after the interrupted wire are not replayed for that event.
+Use this debugger to inspect one wire, not to establish multiplayer timing or determinism.
+Stop destroys the session, including breakpoints and history. Circuit hot reload resumes
+when execution continues; it cannot replace the bytecode under a suspended stack.
+
+### Run and inspect from the command line
+
+```sh
+build/bin/player --circuit Circuits/Spinner.swcircuit --run-circuit --circuit-ticks 2
+build/bin/player --circuit Circuits/Spinner.swcircuit --run-circuit --break-node spin --circuit-steps 1
+```
+
+The runner prints the bounded execution history, pin values, variables and paused node.
+It runs BeginPlay and the requested fixed/frame ticks on an isolated entity named
+CircuitRunner with a Transform, or runs the project's game circuit without an entity.
+Tick/step counts must be integers from 0 to 10000. An unknown breakpoint or runtime error
+fails the command. Input, physics, audio and UI hosts are absent in this isolated runner;
+service nodes requiring them do nothing. Use the actual player for full gameplay tests.
+
+Node notes are readable editor metadata:
+
+```text
+editor
+  tick -560 0
+  @note tick "Fixed simulation tick"
+end
+```
+
+`--check` rejects annotations naming unknown nodes and invalid enum literals. Notes,
+positions and copied graphs still use the same `.swcircuit` format. Pasting preserves
+notes and internal wiring, adds missing variables, and renames variables whose existing
+name has a different type. Same-name, same-type variables intentionally share the existing
+variable. The graph's clipboard is internal to the editor, across open graphs.
 
 Pin colours come from the theme (`circuit_exec`, `circuit_number` and so on; see
 [UI](UI.md)).
@@ -286,8 +345,9 @@ haven't changed. A version with errors is reported and the old one keeps running
 
 ## Limits
 
-- The graph editor has no comments, reroute points or copy and paste yet, and it can't
-  step through a running circuit.
+- There are no standalone comment groups, graph functions, or native-clipboard interchange yet.
+- Debug stepping follows the current wire; remaining handlers of the interrupted event
+  are not queued for later replay.
 - Circuits run on the main thread, one event at a time. A parallel mode that runs entity
   circuits across cores is planned. The compiler already records which components each
   circuit reads and writes, so the scheduler will be able to run them safely.

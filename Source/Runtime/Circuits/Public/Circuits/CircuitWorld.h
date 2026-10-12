@@ -24,6 +24,7 @@
 #include <Engine/Subsystem.h>
 #include <Engine/World.h>
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <set>
@@ -63,6 +64,24 @@ public:
     // How many instructions one event may run before it's stopped (an endless loop).
     static constexpr uint64_t kInstructionBudget = 1'000'000;
 
+    struct DebugEntry {
+        Entity entity;
+        std::string circuit, node;
+        int line = 0;
+        std::vector<std::pair<std::string, std::string>> inputs, outputs;
+    };
+    // Optional bounded node history. No pin formatting when tracing is disabled.
+    void setTracing(bool enabled) { m_tracing = enabled; }
+    bool tracing() const { return m_tracing; }
+    const std::deque<DebugEntry>& trace() const { return m_trace; }
+    void clearTrace() { m_trace.clear(); }
+    // Breakpoints are session-local, by circuit path and node name.
+    void setBreakpoint(std::string circuit, std::string node, bool enabled);
+    bool hasBreakpoint(std::string_view circuit, std::string_view node) const;
+    bool debugPaused() const { return m_debugPaused; }
+    const DebugEntry& debugLocation() const { return m_location; }
+    void debugContinue(bool singleStep = false);
+
 private:
     struct Instance {
         std::shared_ptr<const CircuitProgram> program;
@@ -70,6 +89,10 @@ private:
         std::vector<Value> regs;
         uint64_t generation = 0;
         bool begun = false, dirty = false;
+        int64_t pc = -1;
+        std::vector<uint32_t> resumeStack;
+        bool resumed = false, suspended = false;
+        uint64_t budget = kInstructionBudget;
     };
     static uint64_t key(Entity e) { return (uint64_t(e.generation) << 32) | e.index; }
 
@@ -106,6 +129,10 @@ private:
     std::set<std::string> m_uiCommands;   // with a UIWorld handler already
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);   // UI handlers check it
     bool m_playing = false;
+    bool m_tracing = false, m_debugPaused = false, m_skipBreakpoint = false, m_singleStep = false;
+    DebugEntry m_location;
+    std::set<std::pair<std::string, std::string>> m_breakpoints;
+    std::deque<DebugEntry> m_trace;
 };
 
 }   // namespace shockwave

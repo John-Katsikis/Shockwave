@@ -188,6 +188,7 @@ void CircuitWorld::beginNew() {
 void CircuitWorld::dispatch(
     Instance& instance, Entity self, CircuitEvent event, std::string_view param,
     const std::function<void(const CircuitProgram::CallSite&, std::vector<Value>&)>& data) {
+    if (m_debugPaused) return;
     const auto program = instance.program;   // kept alive while it runs
     if (!program) return;
     for (const auto& entry : program->events) {
@@ -196,6 +197,7 @@ void CircuitWorld::dispatch(
         if (data) data(site, instance.regs);
         if (site.exec.empty() || site.exec[0] < 0) continue;
         run(instance, self, static_cast<uint32_t>(site.exec[0]));
+        if (m_debugPaused) return;
     }
 }
 
@@ -216,10 +218,17 @@ void CircuitWorld::dispatchAll(
 void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
     const auto program = instance.program;
     const std::vector<CircuitProgram::Instruction>& code = program->code;
-    std::vector<uint32_t> resumeStack;   // Fire instructions to come back to
-    int64_t pc = entry;
-    bool resumed = false;
-    uint64_t budget = kInstructionBudget;
+    if (!instance.suspended) {
+        instance.pc = entry;
+        instance.resumeStack.clear();
+        instance.resumed = false;
+        instance.budget = kInstructionBudget;
+    }
+    instance.suspended = false;
+    auto& resumeStack = instance.resumeStack;
+    auto& pc = instance.pc;
+    auto& resumed = instance.resumed;
+    auto& budget = instance.budget;
     const CircuitProgram::CallSite* current = nullptr;
     try {
         while (true) {
@@ -230,6 +239,22 @@ void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
                 resumed = true;
             }
             if (static_cast<size_t>(pc) >= code.size()) return;
+            const auto& pending = code[size_t(pc)];
+            if (pending.op != CircuitProgram::Op::IntToFloat) {
+                const auto& site = program->sites[pending.a];
+                if (!m_skipBreakpoint &&
+                    (m_singleStep || (!m_breakpoints.empty() && hasBreakpoint(program->path, site.name)))) {
+                    m_location = {self, program->path, site.name, site.line, {}, {}};
+                    for (size_t i = 0; i < site.inputs.size(); ++i)
+                        m_location.inputs.emplace_back(
+                            site.node->inputs[i].name, formatValue(instance.regs[site.inputs[i]]));
+                    instance.suspended = true;
+                    m_debugPaused = true;
+                    m_singleStep = false;
+                    return;
+                }
+                m_skipBreakpoint = false;
+            }
             if (--budget == 0) {
                 report(
                     program->path + ":" + std::to_string(current ? current->line : 0) + ": node '" +
@@ -264,7 +289,21 @@ void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
                     .site = &site,
                 };
                 resumed = false;
+                DebugEntry trace;
+                if (m_tracing) {
+                    trace = {self, program->path, site.name, site.line, {}, {}};
+                    for (size_t i = 0; i < site.inputs.size(); ++i)
+                        trace.inputs.emplace_back(
+                            site.node->inputs[i].name, formatValue(instance.regs[site.inputs[i]]));
+                }
                 const int output = site.node->run ? site.node->run(call) : 0;
+                if (m_tracing) {
+                    for (size_t i = 0; i < site.outputs.size(); ++i)
+                        trace.outputs.emplace_back(
+                            site.node->outputs[i].name, formatValue(instance.regs[site.outputs[i]]));
+                    if (m_trace.size() == 256) m_trace.pop_front();
+                    m_trace.push_back(std::move(trace));
+                }
                 if (!fire) {
                     ++pc;
                     break;
@@ -291,6 +330,33 @@ void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
     }
 }
 
+void CircuitWorld::setBreakpoint(std::string circuit, std::string node, bool enabled) {
+    const auto key = std::make_pair(std::move(circuit), std::move(node));
+    if (enabled)
+        m_breakpoints.insert(key);
+    else
+        m_breakpoints.erase(key);
+}
+
+bool CircuitWorld::hasBreakpoint(std::string_view circuit, std::string_view node) const {
+    return m_breakpoints.contains({std::string(circuit), std::string(node)});
+}
+
+void CircuitWorld::debugContinue(bool singleStep) {
+    if (!m_debugPaused) return;
+    Instance* instance = m_location.entity.valid() ? instanceOf(m_location.entity) : &m_game;
+    m_debugPaused = false;
+    m_singleStep = singleStep;
+    m_skipBreakpoint = true;
+    if (!instance || !instance->suspended || (m_location.entity.valid() && !m_world.alive(m_location.entity))) {
+        m_singleStep = m_skipBreakpoint = false;
+        return;
+    }
+    run(*instance, m_location.entity, uint32_t(instance->pc));
+    m_singleStep = m_skipBreakpoint = false;
+    if (m_location.entity.valid()) storeVars(*instance, m_location.entity);
+}
+
 // ---- Events -------------------------------------------------------------------------------
 
 void CircuitWorld::beginPlay() {
@@ -302,13 +368,18 @@ void CircuitWorld::beginPlay() {
 
 void CircuitWorld::endPlay() {
     if (!m_playing) return;
+    // Stop cancels a suspended wire, but still delivers EndPlay without stopping on a breakpoint.
+    m_debugPaused = m_singleStep = m_skipBreakpoint = false;
+    m_breakpoints.clear();
+    m_game.suspended = false;
+    for (auto& [key, instance] : m_instances) instance.suspended = false;
     refresh();
     dispatchAll(CircuitEvent::EndPlay);
     m_playing = false;
 }
 
 void CircuitWorld::fixedTick(double dt) {
-    if (!m_playing) return;
+    if (!m_playing || m_debugPaused) return;
     refresh();
     beginNew();
     const float seconds = static_cast<float>(dt);
@@ -337,7 +408,7 @@ void CircuitWorld::fixedTick(double dt) {
 }
 
 void CircuitWorld::frame(double dt) {
-    if (!m_playing) return;
+    if (!m_playing || m_debugPaused) return;
     circuitLibrary().poll(dt);
     refresh();
     beginNew();

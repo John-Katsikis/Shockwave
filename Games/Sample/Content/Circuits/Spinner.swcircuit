@@ -38,14 +38,14 @@ node slow Set.speed
   in value = 45
 
 editor
-  tick -560 0
-  now -560 140
-  angle -560 260
-  step -320 260
-  turned -100 140
-  spin 140 0
-  pulse -560 420
-  toggle -320 420
-  fast -100 380
-  slow -100 500
+  tick -640 0
+  now -640 180
+  angle -640 360
+  step -180 360
+  turned 180 180
+  spin 560 0
+  pulse -640 600
+  toggle -260 600
+  fast 120 560
+  slow 120 760
 end
