@@ -56,6 +56,9 @@ struct CircuitEditorState {
     // Rename.
     std::string renaming, renameText;
     std::string newVariable;
+    std::string focusNode;
+    std::string clipboard;
+    std::map<uint64_t, std::string> expressions;
 
     ~CircuitEditorState() {
         if (context) ed::DestroyEditor(context);
@@ -537,6 +540,9 @@ void Editor::drawCircuitsWindow() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     const bool fit = gui::button("Fit");
+    gui::toolbarNext(gui::buttonWidth("Arrange"));
+    const bool arrange = gui::button("Arrange");
+    ImGui::SetItemTooltip("Arrange nodes in a spaced grid; Undo restores their positions");
     ImGui::SetItemTooltip("Show the whole circuit (F)");
     ImGui::EndDisabled();
     if (!s.path.empty()) {
@@ -581,12 +587,11 @@ void Editor::drawCircuitsWindow() {
     ImGui::BeginChild("side", ImVec2(sideWidth, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
     ImGui::SeparatorText("Variables");
     // Live values: the game circuit's, or the selected entity's while it runs this circuit.
-    const shockwave::CircuitWorld* live = m_session ? m_session->circuits() : nullptr;
+    shockwave::CircuitWorld* live = m_session ? m_session->circuits() : nullptr;
     shockwave::Entity liveEntity = shockwave::kNullEntity;
     if (live && s.kind == shockwave::CircuitKind::Entity) {
         for (shockwave::Entity e : selection())
             if (const auto* c = m_world.get<shockwave::Circuit>(e); c && c->circuit == s.path) liveEntity = e;
-        if (!liveEntity.valid()) live = nullptr;
     }
     if (live && liveEntity.valid())
         ImGui::TextDisabled("Values of %s now:", displayName(liveEntity).c_str());
@@ -632,7 +637,7 @@ void Editor::drawCircuitsWindow() {
             changed(s);
         }
         if (ImGui::IsItemActivated()) remember(s);
-        if (live)
+        if (live && (s.kind == shockwave::CircuitKind::Game || liveEntity.valid()))
             if (const shockwave::Value* now = live->variable(liveEntity, variable.name))
                 ImGui::TextColored(gui::accent(), "  now %s", shockwave::formatValue(*now).c_str());
         ImGui::PopID();
@@ -660,7 +665,43 @@ void Editor::drawCircuitsWindow() {
         changed(s);
     }
     ImGui::EndDisabled();
-    ImGui::TextDisabled("Right-click the graph for Get and Set nodes.");
+    ImGui::BeginDisabled();
+    ImGui::TextWrapped("Right-click the graph for Get and Set nodes.");
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Debugger");
+    if (live) {
+        bool tracing = live->tracing();
+        if (ImGui::Checkbox("Record execution", &tracing)) live->setTracing(tracing);
+        if (live->debugPaused()) {
+            const auto& at = live->debugLocation();
+            ImGui::TextWrapped("Paused: %s (%s:%d)", at.node.c_str(), at.circuit.c_str(), at.line);
+            if (gui::button("Step")) {
+                live->debugContinue(true);
+                s.focusNode = live->debugLocation().node;
+            }
+            gui::toolbarNext(gui::buttonWidth("Continue"));
+            if (gui::button("Continue")) live->debugContinue();
+            for (const auto& [pin, value] : at.inputs) ImGui::TextWrapped("%s = %s", pin.c_str(), value.c_str());
+        }
+        if (gui::button("Clear history")) live->clearTrace();
+        for (auto it = live->trace().rbegin(); it != live->trace().rend(); ++it) {
+            if (it->circuit != s.path || it->entity != liveEntity) continue;
+            ImGui::PushID(&*it);
+            if (ImGui::SmallButton("Locate")) s.focusNode = it->node;
+            ImGui::SameLine();
+            if (ImGui::TreeNode(it->node.c_str())) {
+                ImGui::TextDisabled("Line %d", it->line);
+                for (const auto& [pin, value] : it->inputs)
+                    ImGui::TextWrapped("in %s = %s", pin.c_str(), value.c_str());
+                for (const auto& [pin, value] : it->outputs)
+                    ImGui::TextWrapped("out %s = %s", pin.c_str(), value.c_str());
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+    } else
+        ImGui::TextWrapped("Play and select an entity running this graph to inspect it.");
 
     ImGui::SeparatorText("Problems");
     if (s.problems.empty()) ImGui::TextDisabled("None: the circuit compiles.");
@@ -669,6 +710,16 @@ void Editor::drawCircuitsWindow() {
         ImGui::TextColored(
             gui::semanticColor(problem.warning ? theme.warning : theme.error), "%s", problem.message.c_str());
         ImGui::PopTextWrapPos();
+        const auto node =
+            std::find_if(s.doc.nodes.begin(), s.doc.nodes.end(), [&](const auto& n) { return n.line == problem.line; });
+        if (node != s.doc.nodes.end()) {
+            ImGui::PushID(&problem);
+            if (gui::button("Locate node")) s.focusNode = node->name;
+            ImGui::PopID();
+        }
+    }
+    if (live) {
+        for (const auto& problem : live->diagnostics()) ImGui::TextWrapped("%s", problem.c_str());
     }
     ImGui::EndChild();
     ImGui::SameLine();
@@ -700,6 +751,65 @@ void Editor::drawCircuitsWindow() {
     style.Colors[ed::StyleColor_PinRectBorder] = gui::semanticColor(theme.accent);
 
     ed::Begin("graph");
+    if (arrange) {
+        remember(s);
+        float width = 320.0f, height = 160.0f;
+        for (const auto id : s.ids) {
+            const auto size = ed::GetNodeSize(id);
+            width = std::max(width, size.x + 80.0f);
+            height = std::max(height, size.y + 80.0f);
+        }
+        for (size_t i = 0; i < s.doc.nodes.size(); ++i) {
+            s.doc.nodes[i].position = {float(i % 3) * width, float(i / 3) * height};
+            s.doc.nodes[i].placed = true;
+        }
+        s.placeNodes = true;
+        changed(s);
+    }
+    const bool graphFocused = focused && !ImGui::GetIO().WantTextInput;
+    if (graphFocused && (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_C) || ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D))) {
+        std::vector<ed::NodeId> selected(ed::GetSelectedObjectCount());
+        const int count = ed::GetSelectedNodes(selected.data(), int(selected.size()));
+        CircuitDocument copied = s.doc;
+        std::erase_if(copied.nodes, [&](const auto& node) {
+            const size_t i = size_t(&node - copied.nodes.data());
+            return std::find(selected.begin(), selected.begin() + count, ed::NodeId(s.ids[i])) ==
+                   selected.begin() + count;
+        });
+        std::set<std::string> names;
+        for (const auto& node : copied.nodes) names.insert(node.name);
+        for (auto& node : copied.nodes) {
+            std::erase_if(node.execs, [&](const auto& wire) { return !names.contains(wire.node); });
+            std::erase_if(node.inputs, [&](const auto& input) {
+                const auto dot = input.text.find('.');
+                return dot != std::string::npos && !names.contains(input.text.substr(0, dot)) &&
+                       std::any_of(s.doc.nodes.begin(), s.doc.nodes.end(), [&](const auto& n) {
+                           return n.name == input.text.substr(0, dot);
+                       });
+            });
+        }
+        std::ostringstream out;
+        shockwave::writeCircuit(out, copied);
+        if (count > 0) s.clipboard = out.str();
+        if (count > 0 && ImGui::IsKeyPressed(ImGuiKey_D)) {
+            remember(s);
+            shockwave::appendCircuitNodes(s.doc, copied, {40, 40});
+            while (s.ids.size() < s.doc.nodes.size()) s.ids.push_back(s.nextId++);
+            s.placeNodes = true;
+            changed(s);
+        }
+    }
+    if (graphFocused && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_V) && !s.clipboard.empty()) {
+        CircuitDocument copied;
+        std::string why;
+        if (shockwave::parseCircuitText(s.clipboard, "clipboard", copied, why)) {
+            remember(s);
+            shockwave::appendCircuitNodes(s.doc, copied, {40, 40});
+            while (s.ids.size() < s.doc.nodes.size()) s.ids.push_back(s.nextId++);
+            s.placeNodes = true;
+            changed(s);
+        }
+    }
     if (s.placeNodes) {
         float autoX = 0.0f;
         for (size_t i = 0; i < s.doc.nodes.size(); ++i) {
@@ -775,6 +885,19 @@ void Editor::drawCircuitsWindow() {
         ImGui::TextUnformatted(node.name.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled("%s", node.type.c_str());
+        if (live && desc && desc->event == shockwave::CircuitEvent::None) {
+            bool breakpoint = live->hasBreakpoint(s.path, node.name);
+            if (ImGui::Checkbox("Break", &breakpoint)) live->setBreakpoint(s.path, node.name, breakpoint);
+            ImGui::SameLine();
+        }
+        ImGui::SetNextItemWidth(110.0f * dpi);
+        std::string note = node.note;
+        const bool noteEdited = ImGui::InputTextWithHint("##note", "Add a note...", &note);
+        if (ImGui::IsItemActivated()) remember(s);
+        if (noteEdited) {
+            node.note = note;
+            changed(s);
+        }
         if (!desc) {
             ImGui::TextColored(gui::semanticColor(theme.error), "Unknown node type");
             ImGui::PopID();
@@ -817,12 +940,129 @@ void Editor::drawCircuitsWindow() {
                     text = on ? "true" : "false";
                     edited = true;
                 }
+            } else if (pin.type >= PinType::Int && pin.type <= PinType::Rotation) {
+                shockwave::Value value;
+                std::string why;
+                const bool literal = shockwave::parseValue(
+                    text.empty() ? (pin.defaultValue.empty() ? shockwave::formatValue(shockwave::defaultValue(pin.type))
+                                                             : pin.defaultValue)
+                                 : text,
+                    pin.type, value, why);
+                if (literal) {
+                    ImGui::SetNextItemWidth(170.0f * dpi);
+                    bool edit = false;
+                    if (!pin.options.empty()) {
+                        const char* shown = value.i >= 0 && size_t(value.i) < pin.options.size()
+                                                ? pin.options[value.i].c_str()
+                                                : "Invalid enum";
+                        if (ImGui::BeginCombo("##v", shown)) {
+                            for (size_t option = 0; option < pin.options.size(); ++option)
+                                if (ImGui::Selectable(pin.options[option].c_str(), value.i == int(option))) {
+                                    remember(s);
+                                    value.i = int(option);
+                                    edit = true;
+                                }
+                            ImGui::EndCombo();
+                        }
+                    } else if (pin.type == PinType::Int)
+                        edit = ImGui::DragInt("##v", &value.i);
+                    else if (pin.type == PinType::Float)
+                        edit = ImGui::DragFloat("##v", &value.v.x, 0.1f);
+                    else if (pin.type == PinType::Vec2)
+                        edit = ImGui::DragFloat2("##v", &value.v.x, 0.1f);
+                    else if (pin.type == PinType::Vec3)
+                        edit = ImGui::DragFloat3("##v", &value.v.x, 0.1f);
+                    else if (pin.type == PinType::Color)
+                        edit = ImGui::ColorEdit4("##v", &value.v.x, ImGuiColorEditFlags_Float);
+                    else {
+                        glm::vec3 degrees = glm::degrees(glm::eulerAngles(value.asRotation()));
+                        edit = ImGui::DragFloat3("##v", &degrees.x, 0.5f);
+                        value = shockwave::Value::rotation(glm::quat(glm::radians(degrees)));
+                    }
+                    if (ImGui::IsItemActivated()) remember(s);
+                    if (edit) {
+                        text = shockwave::formatValue(value);
+                        edited = true;
+                    }
+                } else {
+                    ImGui::SetNextItemWidth(170.0f * dpi);
+                    if (ImGui::InputText("##v", &text)) edited = true;
+                    if (ImGui::IsItemActivated()) remember(s);
+                }
+                ImGui::SameLine();
+                if (gui::button("Text")) {
+                    s.expressions[pid] = text;
+                    ImGui::OpenPopup("expression");
+                }
+                if (ImGui::BeginPopup("expression")) {
+                    std::string& raw = s.expressions[pid];
+                    ImGui::SetNextItemWidth(240.0f * dpi);
+                    if (ImGui::InputTextWithHint(
+                            "##expression", "literal or variable", &raw, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                        remember(s);
+                        text = raw;
+                        edited = true;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    // Store the text while typing in ImGui's own edit buffer; Enter commits.
+                    ImGui::EndPopup();
+                }
             } else {
                 ImGui::SetNextItemWidth(
                     (pin.type == PinType::String || pin.type == PinType::Vec3 ? 120.0f : 70.0f) * dpi);
                 const std::string hint = pin.defaultValue.empty() ? (pin.required ? "needed" : "") : pin.defaultValue;
                 if (ImGui::InputTextWithHint("##v", hint.c_str(), &text)) edited = true;
                 if (ImGui::IsItemActivated()) remember(s);
+            }
+            if (pin.type == PinType::Entity || pin.type == PinType::Mesh || pin.type == PinType::Texture ||
+                pin.type == PinType::Model || pin.name == "clip" || pin.name == "prefab" || pin.name == "document" ||
+                pin.name == "action") {
+                ImGui::SameLine();
+                if (gui::button("Pick")) ImGui::OpenPopup("picker");
+                if (ImGui::BeginPopup("picker")) {
+                    auto choose = [&](const std::string& name) {
+                        if (ImGui::Selectable(name.c_str())) {
+                            remember(s);
+                            text = shockwave::formatValue(shockwave::Value::string(name));
+                            edited = true;
+                            ImGui::CloseCurrentPopup();
+                        }
+                    };
+                    if (pin.type == PinType::Entity) {
+                        if (ImGui::Selectable("self")) {
+                            remember(s);
+                            text = "self";
+                            edited = true;
+                        }
+                        if (ImGui::Selectable("none")) {
+                            remember(s);
+                            text = "none";
+                            edited = true;
+                        }
+                        m_world.each<const shockwave::Name>(
+                            [&](shockwave::Entity, const auto& name) { choose(name.value); });
+                    } else if (pin.name == "action") {
+                        for (const auto& [action, bindings] : engine().input().actions()) choose(action);
+                    } else if (pin.type == PinType::Mesh) {
+                        for (const auto& [name, handle] : engine().assets().meshes()) choose(name);
+                    } else if (pin.type == PinType::Texture) {
+                        for (const auto& [name, handle] : engine().assets().textures()) choose(name);
+                    } else if (pin.type == PinType::Model) {
+                        for (const auto& [name, handle] : engine().assets().models()) choose(name);
+                    } else if (m_assetFolder) {
+                        for (const auto& file : m_assetFolder->files()) {
+                            const auto ext = lower(file.path.extension().string());
+                            const bool match = pin.name == "clip"       ? (ext == ".wav" || ext == ".ogg")
+                                               : pin.name == "prefab"   ? ext == ".swprefab"
+                                               : pin.name == "document" ? ext == ".rml"
+                                               : pin.type == PinType::Model || pin.type == PinType::Mesh
+                                                   ? file.kind == shockwave::AssetFolder::Kind::Model
+                                                   : file.kind == shockwave::AssetFolder::Kind::Texture;
+                            if (match) choose(file.name);
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
             }
             if (edited) {
                 std::erase_if(node.inputs, [&](const auto& in) { return in.pin == pin.name; });
@@ -1022,6 +1262,14 @@ void Editor::drawCircuitsWindow() {
     }
     ed::Resume();
 
+    if (!s.focusNode.empty()) {
+        const int index = nodeIndex(s, s.focusNode);
+        if (index >= 0) {
+            ed::SelectNode(s.ids[size_t(index)]);
+            ed::NavigateToSelection();
+        }
+        s.focusNode.clear();
+    }
     if (fit || (s.placeNodes && !s.doc.nodes.empty())) ed::NavigateToContent(s.placeNodes ? 0.0f : -1.0f);
     s.placeNodes = false;
     ed::End();

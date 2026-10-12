@@ -165,3 +165,9 @@ add_executable(animation_test AnimationTest.cpp)
 target_link_libraries(animation_test PRIVATE Shockwave::Animation)
 shockwave_warnings(animation_test)
 add_test(NAME animation COMMAND animation_test ${CMAKE_SOURCE_DIR})
+
+add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/CircuitCheck.cmake)
+set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)

@@ -155,7 +155,7 @@ void PlaySession::tearDown() {
 }
 
 void PlaySession::update(double dt) {
-    if (m_state != State::Playing) return;
+    if (m_state != State::Playing || (circuits() && circuits()->debugPaused())) return;
     if (!std::isfinite(dt) || dt <= 0) throw std::invalid_argument("simulation dt must be positive and finite");
     applyLoadedSave();
     storePreviousTransforms(m_context.world, m_context.jobs);
@@ -171,8 +171,9 @@ void PlaySession::update(double dt) {
 }
 
 void PlaySession::frame(double dt) {
+    if (circuits() && circuits()->debugPaused()) return;
     if (active()) applyLoadedSave();   // a load from a pause menu goes in while paused
-    if (m_state == State::Playing) {
+    if (m_state == State::Playing && !(circuits() && circuits()->debugPaused())) {
         m_mode->frame(m_context, dt);
         circuits()->frame(dt);
         animation()->update(dt);   // after game code, so a clip it picks shows this frame

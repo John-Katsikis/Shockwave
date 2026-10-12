@@ -90,6 +90,20 @@ int main(int argc, char** argv) {
             } else if (arg == "--circuit" && i + 1 < argc) {
                 tool.circuit = argv[++i];
                 if (tool.mode == Tool::Mode::Play) tool.mode = Tool::Mode::CircuitDump;
+            } else if (arg == "--run-circuit") {
+                tool.mode = Tool::Mode::CircuitRun;
+            } else if ((arg == "--circuit-ticks" || arg == "--circuit-steps") && i + 1 < argc) {
+                int count = 0;
+                const std::string value = argv[++i];
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), count);
+                if (ec != std::errc{} || end != value.data() + value.size() || count < 0 || count > 10000)
+                    throw std::runtime_error(arg + " takes an integer from 0 to 10000");
+                if (arg == "--circuit-ticks")
+                    tool.circuitTicks = count;
+                else
+                    tool.circuitSteps = count;
+            } else if (arg == "--break-node" && i + 1 < argc) {
+                tool.circuitBreakpoint = argv[++i];
             } else if (arg == "--dump") {
                 tool.mode = Tool::Mode::CircuitDump;
             } else if (arg == "--input-schema" && i + 1 < argc) {
@@ -212,8 +226,9 @@ int main(int argc, char** argv) {
                 if (!shockwave::validSaveSlot(tool.save))
                     throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
-                std::puts("player --package [--output folder] [--no-build] [--no-archive]\n"
-                          "                                    make a game folder for players (docs/Packaging.md)");
+                std::puts(
+                    "player --package [--output folder] [--no-build] [--no-archive]\n"
+                    "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                     "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
@@ -238,6 +253,7 @@ int main(int argc, char** argv) {
                     "                                    tiles, polygons, bake time and crowd cost per tick\n"
                     "player --schema file.md             write the scene format reference (- for stdout)\n"
                     "player --node-schema file.md        write the circuit node reference (- for stdout)\n"
+                    "player --circuit file --run-circuit [--circuit-ticks N] [--break-node name] [--circuit-steps N]\n"
                     "player --circuit file --dump        compile a .swcircuit and print its bytecode\n"
                     "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
                     "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
@@ -346,9 +362,9 @@ int main(int argc, char** argv) {
             config.window.vsync = false;
         }
         // Tools only read files, so they need no GPU unless asked for one.
-        config.renderer = !renderer.empty()               ? renderer
+        config.renderer = !renderer.empty()                                ? renderer
                           : tool.mode != Tool::Mode::Play || tool.optimise ? std::string("null")
-                                                          : project.renderer;
+                                                                           : project.renderer;
         shockwave::Engine engine(config);
         engine.setMasterVolume(audioVolume);
         Player player(std::move(project), std::move(tool), gameModule->module());

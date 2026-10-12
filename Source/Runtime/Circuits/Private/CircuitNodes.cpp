@@ -608,6 +608,15 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
             return 0;
         }));
 
+    for (int t = int(PinType::Bool); t <= int(PinType::Model); ++t) {
+        const PinType type = PinType(t);
+        list.push_back(pure(
+            std::string("Data.Reroute.") + pinTypeName(type), "Passes a value through, for organizing wires.",
+            {pin("value", type)}, {pin("result", type)}, [](CircuitCall& c) {
+                c.out(0) = c.in(0);
+                return 0;
+            }));
+    }
     for (NodeDesc& node : list) {
         const std::string id = node.id;
         nodes[id] = std::make_shared<const NodeDesc>(std::move(node));
@@ -764,6 +773,10 @@ void addReflected(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes,
     const ComponentRef component{info.name, info.id};
     const uint32_t id = info.id;
     auto finish = [&](NodeDesc node, bool reads, bool writes) {
+        for (auto* pins : {&node.inputs, &node.outputs})
+            for (auto& pin : *pins)
+                for (const auto& field : fields)
+                    if (pin.name == field.field.name) pin.options = field.field.options;
         node.category = "Component";
         node.component = id;
         node.readsComponent = reads;
@@ -995,6 +1008,10 @@ void writeNodeSchema(std::ostream& out) {
         for (const PinDesc& p : node->inputs) {
             out << "- In `" << p.name << "` " << pinTypeName(p.type);
             if (p.constant) out << ", constant";
+            if (!p.options.empty()) {
+                out << ", options ";
+                for (size_t i = 0; i < p.options.size(); ++i) out << (i ? "; " : "") << i << "=" << p.options[i];
+            }
             if (p.required)
                 out << ", required";
             else if (!p.defaultValue.empty())

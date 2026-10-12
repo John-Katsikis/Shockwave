@@ -75,6 +75,7 @@ struct PinDesc {
     std::string defaultValue;   // literal text; empty: the type's default
     bool required = false;   // must be connected or given a value
     bool constant = false;   // must be a literal (an event's action name, say)
+    std::vector<std::string> options{};   // reflected int-backed enum labels
 };
 
 struct NodeDesc;

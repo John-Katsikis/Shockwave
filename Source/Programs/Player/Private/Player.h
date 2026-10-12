@@ -33,10 +33,13 @@ struct Tool {
         AudioMix,
         Animations,
         NodeSchema,
+        CircuitRun,
         CircuitDump
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
+    int circuitTicks = 1, circuitSteps = 0;
+    std::string circuitBreakpoint;
     std::string circuit;   // --circuit file --dump: a .swcircuit, inside Content or a path to one
     std::vector<std::string> animationModels;   // --animations: models inside Content; empty: all
     // Save games (docs/SaveGames.md).
@@ -140,6 +143,7 @@ private:
     void checkAllCircuits(const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems);
     int nodeSchema();
     int dumpCircuit();
+    int runCircuit();
 
     // --check for particle effects (PlayerEffects.cpp): a scene's ParticleEffects, then
     // every .efkefc in Content. Warnings (parts that aren't drawn yet) don't fail it.

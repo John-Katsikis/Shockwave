@@ -69,6 +69,7 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::AudioMix    ? audioMix()
                      : m_tool.mode == Tool::Mode::Animations  ? listAnimations()
                      : m_tool.mode == Tool::Mode::NodeSchema  ? nodeSchema()
+                     : m_tool.mode == Tool::Mode::CircuitRun  ? runCircuit()
                      : m_tool.mode == Tool::Mode::CircuitDump ? dumpCircuit()
                                                               : schema();
         engine().quit();

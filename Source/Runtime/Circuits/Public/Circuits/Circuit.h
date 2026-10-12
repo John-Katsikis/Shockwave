@@ -156,6 +156,7 @@ struct CircuitDocument {
     };
     struct Node {
         std::string name, type;
+        std::string note;   // editor annotation, saved as @note in the editor block
         std::vector<Input> inputs;
         std::vector<Exec> execs;
         glm::vec2 position{0.0f};   // from the editor block
@@ -171,5 +172,7 @@ struct CircuitDocument {
 bool parseCircuit(std::istream& in, const std::string& file, CircuitDocument& document, std::string& error);
 bool parseCircuitText(std::string_view text, const std::string& file, CircuitDocument& document, std::string& error);
 void writeCircuit(std::ostream& out, const CircuitDocument& document);
+// Paste nodes with unique names and remapped internal wires. Variables must match by type.
+void appendCircuitNodes(CircuitDocument& destination, const CircuitDocument& source, glm::vec2 offset);
 
 }   // namespace shockwave
