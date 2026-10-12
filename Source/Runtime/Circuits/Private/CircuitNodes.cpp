@@ -1,5 +1,6 @@
 // The node registry: built-in nodes, nodes made from component reflection, and SW_NODEs.
 #include <Circuits/CircuitNodes.h>
+#include <Circuits/CircuitWorld.h>
 
 #include <Circuits/CircuitProgram.h>
 
@@ -51,6 +52,7 @@ const char* circuitEventName(CircuitEvent event) {
     case CircuitEvent::BeforeSave: return "BeforeSave";
     case CircuitEvent::AfterLoad: return "AfterLoad";
     case CircuitEvent::UICommand: return "UICommand";
+    case CircuitEvent::Message: return "Message";
     }
     return "?";
 }
@@ -166,6 +168,55 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
     list.push_back(event(
         "Event.UICommand", CircuitEvent::UICommand, "The game circuit: a UI element's onclick=\"command\" ran.",
         {pin("value", S), pin("element", S), pin("document", S)}, {pin("command", S)}));
+
+    list.push_back(event(
+        "Event.Message", CircuitEvent::Message,
+        "A named gameplay command addressed to this entity (or the game circuit).",
+        {pin("sender", E), pin("amount", F), pin("value", S)}, {pin("message", S)}));
+    {
+        auto node = action(
+            "Circuit.Send", "Queue a named command for a target. accepted means queued, not completed.",
+            {self(), required("message", S), pin("amount", F), pin("value", S)}, {pin("accepted", B)},
+            [](CircuitCall& c) {
+                c.out(0) = Value::boolean(
+                    c.host.circuits && c.host.circuits->send(c.entity(0), c.text(1), c.self, c.number(2), c.text(3)));
+                return 0;
+            });
+        node.inputs[1].constant = true;
+        list.push_back(std::move(node));
+    }
+    list.push_back(action(
+        "Transform.SetPosition", "Set the target's local position; reports whether it had a Transform.",
+        {self(), pin("position", V)}, {pin("success", B)}, [](CircuitCall& c) {
+            auto* transform = c.world.get<Transform>(c.entity(0));
+            if (transform) transform->position = c.vec3(1);
+            c.out(0) = Value::boolean(transform != nullptr);
+            return 0;
+        }));
+    list.push_back(action(
+        "Transform.Rotate", "Rotate the target by Euler degrees in local space.", {self(), pin("degrees", V)},
+        {pin("success", B)}, [](CircuitCall& c) {
+            auto* transform = c.world.get<Transform>(c.entity(0));
+            if (transform)
+                transform->rotation = glm::normalize(transform->rotation * glm::quat(glm::radians(c.vec3(1))));
+            c.out(0) = Value::boolean(transform != nullptr);
+            return 0;
+        }));
+
+    list.push_back(action(
+        "Transform.RotateByRate", "Rotate locally at degrees per second around an axis. Supply the event's dt.",
+        {self(), pin("speed", F, "45"), pin("axis", V, "0 1 0"), required("dt", F)}, {pin("success", B)},
+        [](CircuitCall& c) {
+            auto* transform = c.world.get<Transform>(c.entity(0));
+            const auto axis = c.vec3(2);
+            const float length = glm::length(axis);
+            const bool valid = transform && length > 0.000001f;
+            if (valid)
+                transform->rotation = glm::normalize(
+                    transform->rotation * glm::angleAxis(glm::radians(c.number(1) * c.number(3)), axis / length));
+            c.out(0) = Value::boolean(valid);
+            return 0;
+        }));
 
     // ---- Flow
     list.push_back(action(
@@ -618,6 +669,10 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
             }));
     }
     for (NodeDesc& node : list) {
+        if (node.id.rfind("Transform.", 0) == 0) {
+            node.component = componentId<Transform>();
+            node.readsComponent = node.writesComponent = true;
+        }
         const std::string id = node.id;
         nodes[id] = std::make_shared<const NodeDesc>(std::move(node));
     }

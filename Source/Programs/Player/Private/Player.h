@@ -38,6 +38,7 @@ struct Tool {
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
+    std::string circuitMessage;
     int circuitTicks = 1, circuitSteps = 0;
     std::string circuitBreakpoint;
     std::string circuit;   // --circuit file --dump: a .swcircuit, inside Content or a path to one

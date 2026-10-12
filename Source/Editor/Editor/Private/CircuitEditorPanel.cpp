@@ -58,6 +58,8 @@ struct CircuitEditorState {
     std::string newVariable;
     std::string focusNode;
     std::string clipboard;
+    float commandAmount = 0;
+    std::string commandValue, commandStatus;
     std::map<uint64_t, std::string> expressions;
 
     ~CircuitEditorState() {
@@ -585,7 +587,6 @@ void Editor::drawCircuitsWindow() {
     // ---- Side panel: variables and problems ----
     const float sideWidth = 250.0f * dpi;
     ImGui::BeginChild("side", ImVec2(sideWidth, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
-    ImGui::SeparatorText("Variables");
     // Live values: the game circuit's, or the selected entity's while it runs this circuit.
     shockwave::CircuitWorld* live = m_session ? m_session->circuits() : nullptr;
     shockwave::Entity liveEntity = shockwave::kNullEntity;
@@ -593,6 +594,37 @@ void Editor::drawCircuitsWindow() {
         for (shockwave::Entity e : selection())
             if (const auto* c = m_world.get<shockwave::Circuit>(e); c && c->circuit == s.path) liveEntity = e;
     }
+    ImGui::SeparatorText("Public commands");
+    if (gui::beginPropertyGrid("command payload")) {
+        gui::propertyLabel("Amount");
+        ImGui::DragFloat("##command amount", &s.commandAmount);
+        gui::propertyLabel("Value");
+        ImGui::InputText("##command value", &s.commandValue);
+        ImGui::EndTable();
+    }
+    ImGui::BeginDisabled(!live || (s.kind == shockwave::CircuitKind::Entity && !liveEntity.valid()));
+    std::set<std::string> commands;
+    for (const auto& node : s.doc.nodes) {
+        if (node.type != "Event.Message") continue;
+        for (const auto& input : node.inputs) {
+            if (input.pin != "message") continue;
+            shockwave::Value name;
+            std::string error;
+            if (!shockwave::parseValue(input.text, PinType::String, name, error) || name.text.empty() ||
+                !commands.insert(name.text).second)
+                continue;
+            if (gui::button(name.text.c_str())) {
+                s.commandStatus =
+                    live->send(liveEntity, name.text, shockwave::kNullEntity, s.commandAmount, s.commandValue)
+                        ? "Command queued"
+                        : "Command rejected";
+            }
+        }
+    }
+    ImGui::EndDisabled();
+    if (commands.empty()) ImGui::TextWrapped("Add Event.Message to expose a named gameplay command.");
+    if (!s.commandStatus.empty()) ImGui::TextWrapped("%s", s.commandStatus.c_str());
+    ImGui::SeparatorText("Variables");
     if (live && liveEntity.valid())
         ImGui::TextDisabled("Values of %s now:", displayName(liveEntity).c_str());
     else if (live)
@@ -1194,26 +1226,41 @@ void Editor::drawCircuitsWindow() {
             if (node->event != shockwave::CircuitEvent::None && !shockwave::eventAllowed(node->event, s.kind)) continue;
             choices.emplace_back(node->id, node->description);
         }
-        std::string category;
-        int shownCount = 0;
-        for (const auto& [type, description] : choices) {
-            if (!filter.empty() && lower(type).find(filter) == std::string::npos) continue;
-            // Components make hundreds of nodes; without a search, list the rest first.
-            if (filter.empty() && type.rfind("Component.", 0) == 0) continue;
-            const std::string group = type.substr(0, type.find('.'));
-            if (group != category) {
-                category = group;
-                ImGui::SeparatorText(category.c_str());
+        // Organize by intent first, rather than exposing a flat registry of implementation IDs.
+        auto groupFor = [&](const std::string& type) {
+            const auto node = shockwave::findNode(type);
+            if (type.rfind("Get.", 0) == 0 || type.rfind("Set.", 0) == 0) return std::string("Variables");
+            if (node && node->event != shockwave::CircuitEvent::None) return std::string("Events");
+            if (type.rfind("Flow.", 0) == 0) return std::string("Flow control");
+            if (type.rfind("Component.", 0) == 0) return std::string("Components / advanced");
+            if (node && !node->pure()) return std::string("Gameplay actions");
+            if (type.rfind("Math.", 0) == 0 || type.rfind("Rotation.", 0) == 0 || type.rfind("Vector.", 0) == 0 ||
+                type.rfind("Data.", 0) == 0)
+                return std::string("Math / utilities");
+            return std::string("Queries / values");
+        };
+        for (const char* group :
+             {"Events", "Gameplay actions", "Flow control", "Queries / values", "Variables", "Math / utilities",
+              "Components / advanced"}) {
+            const bool expanded =
+                !filter.empty() ||
+                ImGui::CollapsingHeader(
+                    group, (std::string_view(group) == "Events" || std::string_view(group) == "Gameplay actions")
+                               ? ImGuiTreeNodeFlags_DefaultOpen
+                               : 0);
+            if (!expanded) continue;
+            if (!filter.empty()) ImGui::SeparatorText(group);
+            for (const auto& [type, description] : choices) {
+                if (groupFor(type) != group) continue;
+                if (!filter.empty() && lower(type + " " + description).find(filter) == std::string::npos) continue;
+                if (ImGui::Selectable(type.c_str())) {
+                    addNode(s, type, s.newNodeAt, s.dragFrom);
+                    s.dragFrom = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SetItemTooltip("%s", description.c_str());
             }
-            if (ImGui::Selectable(type.c_str())) {
-                addNode(s, type, s.newNodeAt, s.dragFrom);
-                s.dragFrom = 0;
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SetItemTooltip("%s", description.c_str());
-            if (++shownCount > 400) break;
         }
-        if (filter.empty()) ImGui::TextDisabled("Type to search component nodes too.");
         ImGui::EndChild();
         ImGui::EndPopup();
     }

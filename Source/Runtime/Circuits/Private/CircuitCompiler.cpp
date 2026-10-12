@@ -290,6 +290,10 @@ struct Compiler {
                 error(given.line, where + ": " + why);
             return newRegister(defaultValue(pin.type));
         }
+        if ((node.desc->id == "Event.Message" || node.desc->id == "Circuit.Send") && pin.name == "message" &&
+            value.text.find_first_not_of(" \t\r\n") == std::string::npos) {
+            error(given.line, where + ": message name must not be empty");
+        }
         if (!pin.options.empty() && (value.i < 0 || size_t(value.i) >= pin.options.size())) {
             error(given.line, where + ": enum value is outside its named options");
             return newRegister(defaultValue(pin.type));

@@ -1,0 +1,21 @@
+shockwave_circuit 1
+# Attach to an entity with a Transform. Send Open or Close from another circuit,
+# C++, or player --run-circuit --send-message Open. Positions are local coordinates.
+node open Event.Message
+  in message = "Open"
+node raise Transform.SetPosition
+  exec open.then
+  in position = 0 3 0
+node close Event.Message
+  in message = "Close"
+node lower Transform.SetPosition
+  exec close.then
+  in position = 0 0 0
+editor
+  open -400 0
+  raise 0 0
+  close -400 320
+  lower 0 320
+  @note open "Public command: Open"
+  @note close "Public command: Close"
+end

@@ -193,6 +193,7 @@ void PlaySession::applyLoadedSave() {
     if (!saves || !saves->applyLoaded()) return;
     World& world = m_context.world;
     m_subsystems.replace<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
+    circuits()->setPhysics(physics());   // the old world is gone
     physics()->synchronize();
     audio()->synchronize();
     storePreviousTransforms(world, m_context.jobs);
