@@ -43,10 +43,6 @@ if(SHOCKWAVE_MODULAR)
     endif()
 endif()
 
-# MSVC: sources are UTF-8, and the biggest files need more sections than the default.
-if(MSVC)
-    add_compile_options(/utf-8 /bigobj /Zc:__cplusplus)
-endif()
 
 include(FetchContent)
 
@@ -199,6 +195,12 @@ include(cmake/ShockwaveModule.cmake)
 
 # Runtime modules and plugins first: the game module links against them, and the
 # editor and player against all of it.
+# MSVC: our sources are UTF-8, and the biggest files need more sections than the default.
+# Set here, after the dependencies, so it only reaches Shockwave's own targets: Assimp's
+# zlib sets /source-charset, which /utf-8 can't be combined with.
+if(MSVC)
+    add_compile_options(/utf-8 /bigobj /Zc:__cplusplus)
+endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
 # Add your own game's folder here (a ;-separated list). The editor opens any project

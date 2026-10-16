@@ -1,6 +1,6 @@
 // packageProject: build, check, copy, verify and archive a game folder for players.
 #include "BinaryInfo.h"
-#include "Process.h"
+#include "ChildProcess.h"
 
 #include <Core/Plugin.h>
 #include <Packaging/Package.h>

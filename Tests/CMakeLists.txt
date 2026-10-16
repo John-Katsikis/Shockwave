@@ -109,6 +109,9 @@ target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
 shockwave_warnings(frame_pacing_test)
 add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# It measures real sleeps, which shared macOS CI machines stretch by several milliseconds;
+# CI runs tests labelled timing there without failing the build.
+set_tests_properties(frame_pacing PROPERTIES LABELS timing)
 
 # Mesh optimisation and texture compression without a GPU (docs/Optimisation.md).
 add_executable(optimisation_test OptimisationTest.cpp)
