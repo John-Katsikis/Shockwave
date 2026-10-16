@@ -67,11 +67,11 @@ void PlaySession::start() {
     try {
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
         m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr, m_audioDevice);
-        // Occlusion rays hit the physics world's colliders.
+        // Occlusion rays hit the physics world's colliders. Looked up per ray: loading a save
+        // replaces the physics world.
         audio()->setRaycast(
-            [physics = physics()](
-                glm::vec3 origin, glm::vec3 direction, float distance, Entity ignore) -> std::optional<AudioRayHit> {
-                if (const auto hit = physics->raycast(origin, direction, distance, ignore))
+            [this](glm::vec3 origin, glm::vec3 direction, float distance, Entity ignore) -> std::optional<AudioRayHit> {
+                if (const auto hit = physics()->raycast(origin, direction, distance, ignore))
                     return AudioRayHit{hit->entity, hit->distance};
                 return std::nullopt;
             });
@@ -195,6 +195,7 @@ void PlaySession::applyLoadedSave() {
     m_subsystems.replace<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
     circuits()->setPhysics(physics());   // the old world is gone
     physics()->synchronize();
+    circuits()->setPhysics(physics());
     audio()->synchronize();
     storePreviousTransforms(world, m_context.jobs);
     m_mode->afterLoad(m_context);

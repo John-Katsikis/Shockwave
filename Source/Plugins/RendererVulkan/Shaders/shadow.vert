@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 
 // Shadow maps: the scene's draw table seen from a light. Same vertex pulling as mesh.vert.
@@ -22,7 +23,7 @@ struct DrawData {
     mat4 normalMatrix;
     vec4 tint;
     vec2 uvScale;
-    VertexBuffer vertexBuffer;
+    uvec2 vertexBuffer;   // a VertexBuffer; see below
     uint textureIndex;
     float alphaCutoff;
     float roughness;
@@ -55,7 +56,8 @@ layout(location = 3) flat out float vAlphaCutoff;
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
-    Vertex v = draw.vertexBuffer.vertices[gl_VertexIndex];
+    // Stored as an address: MoltenVK (macOS) reads references kept inside buffers as null.
+    Vertex v = VertexBuffer(draw.vertexBuffer).vertices[gl_VertexIndex];
     gl_Position = pc.viewProjection * (draw.model * vec4(v.position, 1.0));
     vUv = v.uv * draw.uvScale;
     vAlpha = v.color.a * draw.tint.a;

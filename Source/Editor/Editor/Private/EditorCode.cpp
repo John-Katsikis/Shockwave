@@ -11,6 +11,11 @@
 #include <cstdio>
 #include <utility>
 
+#if defined(_WIN32)
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace editor {
 
 namespace fs = std::filesystem;

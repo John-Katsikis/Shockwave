@@ -1,0 +1,14 @@
+shockwave_circuit 1
+# Attach it to an entity with a Circuit component, or make it the project's game
+# circuit in Project settings.
+
+node start Event.BeginPlay
+
+node hello Debug.Print
+  exec start.then
+  in text = "Hello from a circuit"
+
+editor
+  start -260 0
+  hello 0 0
+end
