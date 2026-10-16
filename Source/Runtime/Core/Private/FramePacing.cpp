@@ -4,6 +4,10 @@
 #include <cmath>
 #include <thread>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace shockwave {
 
 void FrameLimiter::setTargetFps(double fps) {
@@ -23,7 +27,11 @@ FrameLimiter::Clock::time_point FrameLimiter::wait() {
     }
     if (now < m_next - m_spin) std::this_thread::sleep_until(m_next - m_spin);
     while ((now = Clock::now()) < m_next) {
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(_MSC_VER) && defined(_M_X64)
+        _mm_pause();
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+        __yield();
+#elif defined(__x86_64__)
         __builtin_ia32_pause();
 #elif defined(__aarch64__)
         asm volatile("yield");

@@ -50,8 +50,8 @@ endfunction()
 #
 # shockwave_plugin(<Kind> <Name> [DEPS <targets...>] [SOURCES <files...>] [NO_WARNINGS <files...>])
 #
-# Builds Source/Plugins/<Folder>/Private/* into bin/plugins/<kind>_<name>.so in modular
-# builds. Otherwise it's a static library that executables link whole with
+# Builds Source/Plugins/<Folder>/Private/* into bin/plugins/<kind>_<name>.so (.dylib on
+# macOS, .dll on Windows, as Core/Plugin.cpp expects) in modular builds. Otherwise it's a static library that executables link whole with
 # shockwave_link_plugins, so its SHOCKWAVE_PLUGIN registration is kept.
 function(shockwave_plugin_target target)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -70,7 +70,8 @@ function(shockwave_plugin kind name)
     if(SHOCKWAVE_MODULAR)
         add_library(${target} MODULE ${sources} ${ARG_SOURCES})
         set_target_properties(${target} PROPERTIES
-            PREFIX "" DEBUG_POSTFIX "" LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins)
+            PREFIX "" SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX} DEBUG_POSTFIX ""
+            LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins)
     else()
         add_library(${target} STATIC ${sources} ${ARG_SOURCES})
     endif()
@@ -105,7 +106,8 @@ function(shockwave_game_module id)
     if(SHOCKWAVE_MODULAR)
         add_library(${target} MODULE ${ARG_SOURCES} ${entry})
         set_target_properties(${target} PROPERTIES
-            PREFIX "" DEBUG_POSTFIX "" LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/modules)
+            PREFIX "" SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX} DEBUG_POSTFIX ""
+            LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/modules)
     else()
         add_library(${target} STATIC ${ARG_SOURCES} ${entry})
     endif()

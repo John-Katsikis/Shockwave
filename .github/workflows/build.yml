@@ -43,3 +43,58 @@ jobs:
           xvfb-run -a build/bin/player --schema docs/SceneSchema.md
           xvfb-run -a build/bin/player --input-schema docs/InputSchema.md
           git diff --exit-code docs/
+
+  # macOS (Apple silicon) and Windows: build everything and run the tests that need no
+  # GPU. Hosted runners may have no usable Vulkan driver, so the GPU tests and the sample
+  # check run too but only report (continue-on-error).
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      SDL_AUDIO_DRIVER: dummy
+      CMAKE_GENERATOR: Ninja
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        # MoltenVK and the Vulkan loader run Vulkan on Metal; glslang compiles shaders.
+        run: brew install ninja glslang molten-vk vulkan-loader
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('**/CMakeLists.txt', 'cmake/**/*.cmake') }}
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -LE gpu
+      - name: GPU tests and sample check
+        continue-on-error: true
+        run: |
+          ctest --test-dir build --output-on-failure -L gpu
+          build/bin/player --check Games/Sample/Sample.swproject
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      SDL_AUDIO_DRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('**/CMakeLists.txt', 'cmake/**/*.cmake') }}
+      - name: Configure
+        run: cmake -B build
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure -LE gpu
+      - name: GPU tests and sample check
+        continue-on-error: true
+        run: |
+          ctest --test-dir build -C Release --output-on-failure -L gpu
+          build/bin/player.exe --check Games/Sample/Sample.swproject

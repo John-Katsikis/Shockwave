@@ -54,6 +54,8 @@ public:
     // CircuitVars and, for the game circuit, from get (nullopt-like: return false when
     // the save doesn't have the key). Then AfterLoad runs.
     void afterLoad(const std::function<bool(const std::string& key, std::string& value)>& get);
+    // Loading a save rebuilds the physics world; circuits follow it to the new one.
+    void setPhysics(PhysicsWorld* physics) { m_host.physics = physics; }
 
     // Problems loading or running circuits this session, "file:line: message", once each.
     const std::vector<std::string>& diagnostics() const { return m_diagnostics; }
