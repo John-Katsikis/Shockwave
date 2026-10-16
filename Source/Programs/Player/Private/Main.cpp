@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
         std::string renderer;   // --renderer
         std::filesystem::path gameModuleFile;   // --game-module
         bool listGpus = false;   // --gpus
+        double tickRateOverride = 0;   // --tick-rate: instead of the project's tick_rate
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--project" && i + 1 < argc)
@@ -207,6 +208,24 @@ int main(int argc, char** argv) {
             } else if (arg == "--audio-mix" && i + 1 < argc) {
                 tool.mode = Tool::Mode::AudioMix;
                 tool.audioMix = argv[++i];
+            } else if (arg == "--physics-test") {
+                tool.mode = Tool::Mode::PhysicsTest;
+            } else if (arg == "--tick-rates" && i + 1 < argc) {
+                std::stringstream list(argv[++i]);
+                std::string item;
+                while (std::getline(list, item, ',')) {
+                    double rate = 0;
+                    const auto [end, ec] = std::from_chars(item.data(), item.data() + item.size(), rate);
+                    if (ec != std::errc{} || end != item.data() + item.size() || rate < 1 || rate > 1000)
+                        throw std::runtime_error("--tick-rates takes rates from 1 to 1000, like 30,60,120");
+                    tool.tickRates.push_back(rate);
+                }
+            } else if (arg == "--tick-rate" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), tickRateOverride);
+                if (ec != std::errc{} || end != value.data() + value.size() || tickRateOverride < 1 ||
+                    tickRateOverride > 1000)
+                    throw std::runtime_error("--tick-rate takes ticks per second, 1 to 1000");
             } else if (arg == "--seconds" && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), tool.audioSeconds);
@@ -250,6 +269,10 @@ int main(int argc, char** argv) {
                     "                                    texture memory and mesh levels of detail\n"
                     "player --lod-colors                 tint each level of detail its own colour\n"
                     "player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem\n"
+                    "player --physics-test [--scene file] [--tick-rates 30,60,120,240,512] [--seconds N]\n"
+                    "       [--json file]           play the scene headless at each tick rate; print the\n"
+                    "                                    CPU cost and where each dynamic body ended up\n"
+                    "player --tick-rate N                simulation ticks per second for this run\n"
                     "player --bake-navmesh [scene.swscene...]\n"
                     "                                    bake and save each scene's navigation mesh; print its\n"
                     "                                    tiles, polygons, bake time and crowd cost per tick\n"
@@ -334,6 +357,7 @@ int main(int argc, char** argv) {
                 project.gameModule + "\"");
         shockwave::EngineConfig config;
         config.window = {project.name, project.width, project.height, project.vsync};
+        if (tickRateOverride > 0) project.tickRate = tickRateOverride;
         config.tickRate = project.tickRate;
         config.frameLimit = fpsOverride >= 0 ? fpsOverride : project.frameLimit;
         config.lowLatency = lowLatency || project.lowLatency;

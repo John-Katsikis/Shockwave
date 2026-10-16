@@ -1,0 +1,311 @@
+# Shockwave scene
+shockwave_scene 2
+
+# Physics at different tick rates. Compare them headless:
+#   player --physics-test --scene Games/Sample/Scenes/physics-ticks.swscene
+# or watch one: player --scene Games/Sample/Scenes/physics-ticks.swscene --tick-rate 240
+#
+#   Fast ball / Fast ball (continuous): 100 m/s at a 5 cm wall. The plain one passes
+#     through below about 500 ticks a second; continuous collision catches it at any rate.
+#   Tower: ten stacked crates. Too few ticks and the stack jitters and falls.
+#   Bouncing ball: restitution 0.9 from 6 m. How high it keeps bouncing depends on the rate.
+#   Slider: a box sliding down a 25 degree ramp onto the floor.
+#   Spinner: a box spinning in the air with no damping; its rotation drifts at low rates.
+
+entity "Environment"
+  Environment
+    sky_color 0.36 0.45 0.6 1
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Main Camera"
+  Transform
+    position 1 7 15
+    rotation -22 0 0
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end
+
+entity "Sun"
+  Transform
+    position 0 20 0
+    rotation -50 -30 0
+  Light
+    type Directional
+    intensity 2.5
+end
+
+entity "Floor"
+  Transform
+    position 0 -0.25 0
+    scale 40 0.5 40
+  MeshRenderer
+    mesh cube
+    texture grid
+    tint 0.45 0.5 0.55 1
+  Collider
+    shape Box
+  RigidBody
+    motion Static
+end
+
+entity "Thin wall"
+  Transform
+    position 6 1.5 -3
+    scale 0.05 3 4
+  MeshRenderer
+    mesh cube
+    tint 0.9 0.9 0.95 1
+  Collider
+    shape Box
+  RigidBody
+    motion Static
+end
+
+entity "Fast ball"
+  Transform
+    position -4 1.5 -3.8
+    scale 0.3 0.3 0.3
+  MeshRenderer
+    mesh sphere
+    tint 1 0.35 0.3 1
+  Collider
+    shape Sphere
+  RigidBody
+    mass 0.2
+    gravity_factor 0
+    linear_damping 0
+    linear_velocity 100 0 0
+    continuous 0
+end
+
+entity "Fast ball (continuous)"
+  Transform
+    position -4 1.5 -2.2
+    scale 0.3 0.3 0.3
+  MeshRenderer
+    mesh sphere
+    tint 0.3 0.8 1 1
+  Collider
+    shape Sphere
+  RigidBody
+    mass 0.2
+    gravity_factor 0
+    linear_damping 0
+    linear_velocity 100 0 0
+    continuous 1
+end
+
+entity "Tower 1"
+  Transform
+    position -5 0.25 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 2"
+  Transform
+    position -5 0.75 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 3"
+  Transform
+    position -5 1.25 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 4"
+  Transform
+    position -5 1.75 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 5"
+  Transform
+    position -5 2.25 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 6"
+  Transform
+    position -5 2.75 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 7"
+  Transform
+    position -5 3.25 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 8"
+  Transform
+    position -5 3.75 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 9"
+  Transform
+    position -5 4.25 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Tower 10"
+  Transform
+    position -5 4.75 3
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 1 0.62 0.25 1
+  Collider
+    shape Box
+  RigidBody
+    mass 1
+    friction 0.6
+end
+
+entity "Bouncing ball"
+  Transform
+    position -1 6 3
+    scale 0.6 0.6 0.6
+  MeshRenderer
+    mesh sphere
+    texture checker
+    tint 0.4 1 0.5 1
+  Collider
+    shape Sphere
+  RigidBody
+    restitution 0.9
+    linear_damping 0
+end
+
+entity "Ramp"
+  Transform
+    position 4 1.2 3.5
+    rotation 0 0 -25
+    scale 5 0.2 2
+  MeshRenderer
+    mesh cube
+    tint 0.6 0.6 0.65 1
+  Collider
+    shape Box
+  RigidBody
+    motion Static
+end
+
+entity "Slider"
+  Transform
+    position 5.6 2.55 3.5
+    rotation 0 0 -25
+    scale 0.5 0.5 0.5
+  MeshRenderer
+    mesh cube
+    texture panel
+    tint 0.7 0.5 1 1
+  Collider
+    shape Box
+  RigidBody
+    friction 0.15
+end
+
+entity "Spinner"
+  Transform
+    position 1.5 3 -1
+    scale 0.8 0.3 0.4
+  MeshRenderer
+    mesh cube
+    tint 1 0.9 0.3 1
+  Collider
+    shape Box
+  RigidBody
+    gravity_factor 0
+    linear_damping 0
+    angular_damping 0
+    angular_velocity 1 8 2
+end

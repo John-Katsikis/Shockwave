@@ -89,6 +89,35 @@ Put one `PhysicsSettings` component on any entity in the scene. It sets:
 
 Without it, gravity is `(0, -9.81, 0)` and there is one step per fixed tick.
 
+## Compare tick rates
+
+Physics steps once per fixed tick, at the project's `tick_rate` (60 a second by default,
+1 to 1000). More ticks make tall stacks steadier and catch fast objects better, but every
+tick also runs your systems, navigation, circuits and audio, so the CPU cost grows with
+it. To see both for a scene, play it headless at several rates:
+
+```sh
+build/bin/player --physics-test --scene Games/Sample/Scenes/physics-ticks.swscene
+build/bin/player --physics-test --tick-rates 60,120,240 --seconds 10 --json out.json
+```
+
+For each rate it prints the time a tick takes, the CPU time one second of play costs, and
+the headroom left. Then it lists where every dynamic body ended up, and how far off (in
+metres and degrees) each rate is from the highest one. `Scenes/physics-ticks.swscene` in
+the sample has a ten-crate tower, a fast ball with and without continuous collision, a
+bouncing ball, a ramp and a spinning box.
+
+To watch a rate, add `--tick-rate N` when you play or take a screenshot:
+
+```sh
+build/bin/player --scene Games/Sample/Scenes/physics-ticks.swscene --tick-rate 30
+```
+
+In that scene the tower falls at 30 ticks a second and stands at 60 and above. The
+plain fast ball (100 m/s at a 5 cm wall) only stops at about 500. With `continuous` on,
+the other ball stops at every rate, so turn that on for fast objects rather than raising
+the tick rate for them.
+
 ## Add a walking character
 
 Add a `CharacterController` and a `Transform` to an entity. Don't add a `Collider` or a

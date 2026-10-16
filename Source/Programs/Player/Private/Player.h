@@ -34,8 +34,10 @@ struct Tool {
         Animations,
         NodeSchema,
         CircuitRun,
-        CircuitDump
+        CircuitDump,
+        PhysicsTest
     } mode = Mode::Play;
+    std::vector<double> tickRates;   // --physics-test --tick-rates 30,60,...: empty uses a standard set
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
     std::string circuitMessage;
@@ -144,6 +146,9 @@ private:
     void checkAllCircuits(const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems);
     int nodeSchema();
     int dumpCircuit();
+    // --physics-test (PlayerPhysics.cpp): plays a scene headless at several tick rates and
+    // compares the CPU cost and where each dynamic body ends up.
+    int physicsTest();
     int runCircuit();
 
     // --check for particle effects (PlayerEffects.cpp): a scene's ParticleEffects, then

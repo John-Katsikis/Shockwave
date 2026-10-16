@@ -71,6 +71,7 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::NodeSchema  ? nodeSchema()
                      : m_tool.mode == Tool::Mode::CircuitRun  ? runCircuit()
                      : m_tool.mode == Tool::Mode::CircuitDump ? dumpCircuit()
+                     : m_tool.mode == Tool::Mode::PhysicsTest ? physicsTest()
                                                               : schema();
         engine().quit();
         return;
