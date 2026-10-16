@@ -51,8 +51,6 @@ public:
     send(Entity target, std::string message, Entity sender = kNullEntity, float amount = 0.0f, std::string value = {});
     void beginPlay();
     void endPlay();
-    // A loaded save game replaces the session's PhysicsWorld; point circuits at the new one.
-    void setPhysics(PhysicsWorld* physics) { m_host.physics = physics; }
     void fixedTick(double dt);   // runs trigger events from the physics step too
     void frame(double dt);   // input actions, then Frame; picks up edited circuits
     // Game circuit values for save games: BeforeSave runs, then they're written with set.
