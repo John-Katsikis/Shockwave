@@ -35,7 +35,10 @@ namespace detail {
 
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint32_t kMaxMeshes = 65536;
-constexpr uint32_t kInternalTextureSlots = 3;   // scene color and the two shadow atlases
+constexpr uint32_t kInternalTextureSlots = 4;   // scene color, the two shadow atlases, the BRDF table
+// Image-based lighting's cube maps (environment, specular, irradiance) sit beside the
+// bindless table in the same set, so they come out of the same descriptor budget.
+constexpr uint32_t kEnvironmentCubes = 3;
 // The scene renders in HDR; tonemapping to the display happens at the end of the frame.
 constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
@@ -115,9 +118,10 @@ struct FrameData {
     uint32_t cascadeAtlas;   // bindless slots of the two shadow atlases
     uint32_t localAtlas;
     uint32_t shadowTaps;   // filter samples per lookup
-    float pad;
+    uint32_t brdfTable;   // bindless slot of image-based lighting's BRDF table
     VkDeviceAddress shadowViews;
-    uint64_t pad2;
+    float specularLevels;   // mip levels of the prefiltered specular cube
+    uint32_t pad;
 };
 static_assert(
     sizeof(FrameData) == 112 && offsetof(FrameData, shadowViews) == 96,
@@ -243,7 +247,7 @@ struct Mesh {
 inline void transitionImage(
     VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
     VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
-    uint32_t baseMip = 0, uint32_t mipCount = VK_REMAINING_MIP_LEVELS) {
+    uint32_t baseMip = 0, uint32_t mipCount = VK_REMAINING_MIP_LEVELS, uint32_t layerCount = 1) {
     VkImageMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.srcStageMask = srcStage;
@@ -255,7 +259,7 @@ inline void transitionImage(
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
-    barrier.subresourceRange = {aspect, baseMip, mipCount, 0, 1};
+    barrier.subresourceRange = {aspect, baseMip, mipCount, 0, layerCount};
 
     VkDependencyInfo dep{};
     dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -383,7 +387,9 @@ struct VulkanRenderer::Impl {
     // Indexed by the ids Renderer hands out (RenderBackend.h). Texture 0 is white; the
     // renderer's own bindless slots (scene, shadow atlases) sit at the top of the table.
     std::unique_ptr<vk::Image[]> textures;
-    uint32_t textureCapacity() const { return context->maxBindlessTextures() - kInternalTextureSlots; }
+    // Slots in the bindless texture array: the renderer's own are the last kInternalTextureSlots.
+    uint32_t bindlessSlots() const { return context->maxBindlessTextures() - kEnvironmentCubes; }
+    uint32_t textureCapacity() const { return bindlessSlots() - kInternalTextureSlots; }
 
     std::mutex queueMutex;   // VkQueue access must be externally synchronized
     VkCommandPool uploadPool = VK_NULL_HANDLE;
@@ -512,13 +518,15 @@ struct VulkanRenderer::Impl {
 
     // Uploads RGBA8 pixels into a new sampled image with a full mip chain.
     vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);
+    // The same for any uncompressed format the GPU can blit (RGBA16F, say).
+    vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> pixels, VkFormat format);
 
     // ---- Optimised assets (RendererOptimisation.cpp) -----------------------------------
     void setMeshLods(MeshHandle handle, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices);
     bool supportsTextureFormat(TextureFormat format) const;
     void createTextureData(TextureHandle handle, const TextureData& data);
     void updateTextureData(TextureHandle handle, const TextureData& data);
-    // Uploads every level as given; a lone RGBA8 level gets its mipmaps from uploadTexture.
+    // Uploads every level as given; a lone uncompressed level gets its mipmaps from uploadTexture.
     vk::Image uploadTextureData(const TextureData& data);
     // The level of detail to draw a mesh with: its first index and count. scale: the
     // draw's largest axis scale; center: its bounding sphere's centre in the world.
@@ -669,6 +677,55 @@ struct VulkanRenderer::Impl {
     void drawUi(const UiDrawList& list);
     void recordUi(VkCommandBuffer cmd, Frame& f);
     void destroyUiBuffers(Frame& f);
+
+    // ---- Image-based lighting (RendererEnvironment.cpp) -------------------------------
+    // The surroundings (an environment map, or the sky and ground colors) are drawn into a
+    // cube map, then filtered into the light a surface receives from them: a small
+    // irradiance cube for diffuse light and a prefiltered specular cube whose mip levels
+    // hold blurrier reflections for rougher surfaces. A BRDF table made at startup finishes
+    // the split-sum approximation in mesh.frag. Rebuilt only when the environment changes.
+
+    struct CubeMap {
+        VkImage image = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;   // a cube with every level, for sampling
+        std::vector<VkImageView> levelViews;   // one 2D array (six faces) per level, for writing
+        std::vector<VkDescriptorSet> levelTargets;   // a storage image set per level view
+        uint32_t size = 0, levels = 0;
+    };
+    // What the cubes were last made from; anything else makes them again.
+    struct EnvironmentKey {
+        VkImage map = VK_NULL_HANDLE;
+        glm::vec3 sky{0.0f}, ground{0.0f};
+        float intensity = 0.0f, rotation = 0.0f;
+        bool operator==(const EnvironmentKey&) const = default;
+    };
+    CubeMap environmentCube, specularCube, irradianceCube;
+    vk::Image brdfTable;
+    VkImageView brdfTableTarget = VK_NULL_HANDLE;   // brdfTable as a one-layer 2D array
+    VkDescriptorSet brdfTableSet = VK_NULL_HANDLE;
+    uint32_t brdfSlot = 0;
+    VkDescriptorSetLayout environmentTargetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool environmentPool = VK_NULL_HANDLE;
+    VkPipelineLayout environmentLayout = VK_NULL_HANDLE;
+    VkPipeline environmentSkyPipeline = VK_NULL_HANDLE, environmentFilterPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout skyLayout = VK_NULL_HANDLE;
+    VkPipeline skyPipeline = VK_NULL_HANDLE;
+    EnvironmentKey environmentKey;
+    bool environmentBuilt = false;
+
+    void createEnvironment();
+    void destroyEnvironment();
+    CubeMap createCubeMap(uint32_t size, uint32_t levels);
+    void destroyCubeMap(CubeMap& cube);
+    // The environment map to use: its image, or null for the sky and ground colors.
+    VkImage environmentMapImage() const;
+    // Whether the cubes need making again for this frame's lighting (and remembers it).
+    bool environmentChanged();
+    void recordEnvironment(VkCommandBuffer cmd);
+    // The environment map behind everything, before the scene's draws.
+    bool showsSky() const;
+    void recordSky(VkCommandBuffer cmd);
 
     // ---- Screenshots ------------------------------------------------------------------
 

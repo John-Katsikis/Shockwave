@@ -1330,6 +1330,10 @@ Every field of the entity's Environment; found is false when it has none.
 - Out `sky_color` Color
 - Out `ground_color` Color
 - Out `ambient_intensity` Float
+- Out `environment_map` Texture
+- Out `environment_intensity` Float
+- Out `environment_rotation` Float
+- Out `show_environment` Bool
 - Out `exposure` Float
 - Out `tonemapper` Int
 - Out `shadow_distance` Float
@@ -1341,6 +1345,27 @@ The entity's Environment ambient_intensity.
 
 - In `target` Entity, default self
 - Out `ambient_intensity` Float
+
+### Component.Environment.Get.environment_intensity
+
+The entity's Environment environment_intensity.
+
+- In `target` Entity, default self
+- Out `environment_intensity` Float
+
+### Component.Environment.Get.environment_map
+
+The entity's Environment environment_map.
+
+- In `target` Entity, default self
+- Out `environment_map` Texture
+
+### Component.Environment.Get.environment_rotation
+
+The entity's Environment environment_rotation.
+
+- In `target` Entity, default self
+- Out `environment_rotation` Float
 
 ### Component.Environment.Get.exposure
 
@@ -1369,6 +1394,13 @@ The entity's Environment shadow_distance.
 
 - In `target` Entity, default self
 - Out `shadow_distance` Float
+
+### Component.Environment.Get.show_environment
+
+The entity's Environment show_environment.
+
+- In `target` Entity, default self
+- Out `show_environment` Bool
 
 ### Component.Environment.Get.sky_color
 
@@ -1409,6 +1441,10 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `sky_color` Color
 - In `ground_color` Color
 - In `ambient_intensity` Float
+- In `environment_map` Texture
+- In `environment_intensity` Float
+- In `environment_rotation` Float
+- In `show_environment` Bool
 - In `exposure` Float
 - In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None
 - In `shadow_distance` Float
@@ -1422,6 +1458,33 @@ Sets the entity's Environment ambient_intensity.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `ambient_intensity` Float, required
+
+### Component.Environment.Set.environment_intensity
+
+Sets the entity's Environment environment_intensity.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `environment_intensity` Float, required
+
+### Component.Environment.Set.environment_map
+
+Sets the entity's Environment environment_map.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `environment_map` Texture, required
+
+### Component.Environment.Set.environment_rotation
+
+Sets the entity's Environment environment_rotation.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `environment_rotation` Float, required
 
 ### Component.Environment.Set.exposure
 
@@ -1458,6 +1521,15 @@ Sets the entity's Environment shadow_distance.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `shadow_distance` Float, required
+
+### Component.Environment.Set.show_environment
+
+Sets the entity's Environment show_environment.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `show_environment` Bool, required
 
 ### Component.Environment.Set.sky_color
 

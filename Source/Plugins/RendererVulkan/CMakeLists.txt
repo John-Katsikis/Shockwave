@@ -20,4 +20,8 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/particle.vert
     Shaders/particle.frag
     Shaders/skinning.comp
+    Shaders/environment_sky.comp
+    Shaders/environment_filter.comp
+    Shaders/sky.vert
+    Shaders/sky.frag
 )

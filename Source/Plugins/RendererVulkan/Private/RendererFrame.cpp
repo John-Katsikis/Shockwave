@@ -377,6 +377,8 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     header.skyAmbient = lighting.skyAmbient;
     header.groundAmbient = lighting.groundAmbient;
     header.debugView = static_cast<uint32_t>(debugView);
+    header.brdfTable = brdfSlot;
+    header.specularLevels = static_cast<float>(specularCube.levels);
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -432,6 +434,10 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE};
     const auto backbuffer = graph.import("swapchain", swapchainImage, VK_IMAGE_ASPECT_COLOR_BIT, swapchainState, true);
 
+    // The lighting cubes keep their own layouts and barriers: only this pass writes them,
+    // and only when the environment changed.
+    if (environmentChanged())
+        graph.addPass("environment lighting", {}, [this](VkCommandBuffer cmd) { recordEnvironment(cmd); });
     if (!skinDispatches.empty())
         graph.addPass("skinning", {}, [this](VkCommandBuffer cmd) { recordSkinning(cmd); });
     std::vector<vk::RenderGraph::Use> sceneUses = {
@@ -514,6 +520,7 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     rendering.pDepthAttachment = &depthAttachment;
     vkCmdBeginRendering(cmd, &rendering);
     setSceneViewport(cmd);
+    if (showsSky()) recordSky(cmd);
     recordDraws(cmd, f);
     recordGrid(cmd);
     vkCmdEndRendering(cmd);

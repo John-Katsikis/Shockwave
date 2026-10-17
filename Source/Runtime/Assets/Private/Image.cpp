@@ -58,4 +58,32 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
     return true;
 }
 
+bool isHdrImage(std::span<const uint8_t> bytes) {
+    return !bytes.empty() && bytes.size() <= size_t(INT_MAX) &&
+           stbi_is_hdr_from_memory(bytes.data(), static_cast<int>(bytes.size()));
+}
+
+bool decodeHdrImage(std::span<const uint8_t> bytes, HdrImage& image, std::string& error) {
+    error.clear();
+    if (!isHdrImage(bytes)) {
+        error = "not a Radiance .hdr image";
+        return false;
+    }
+    int width = 0, height = 0, channels = 0;
+    std::unique_ptr<float, decltype(&stbi_image_free)> pixels(
+        stbi_loadf_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4),
+        stbi_image_free);
+    if (!pixels) {
+        const char* reason = stbi_failure_reason();
+        error = reason ? reason : "image decoding failed";
+        return false;
+    }
+    HdrImage decoded;
+    decoded.width = static_cast<uint32_t>(width);
+    decoded.height = static_cast<uint32_t>(height);
+    decoded.rgba.assign(pixels.get(), pixels.get() + size_t(width) * height * 4);
+    image = std::move(decoded);
+    return true;
+}
+
 }   // namespace shockwave

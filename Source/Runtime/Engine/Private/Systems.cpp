@@ -56,6 +56,10 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
     LightingDesc lighting;
     lighting.skyAmbient = glm::vec3(environment.skyColor) * environment.ambientIntensity;
     lighting.groundAmbient = glm::vec3(environment.groundColor) * environment.ambientIntensity;
+    lighting.environmentMap = environment.environmentMap;
+    lighting.environmentIntensity = std::max(environment.environmentIntensity, 0.0f);
+    lighting.environmentRotation = glm::radians(environment.environmentRotation);
+    lighting.showEnvironment = environment.showEnvironment;
     lighting.exposure = environment.exposure;
     lighting.tonemapper = static_cast<LightingDesc::Tonemapper>(environment.tonemapper);
     lighting.shadowDistance = environment.shadowDistance;

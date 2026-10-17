@@ -1,0 +1,154 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : require
+
+// Image-based lighting, steps 2 and 3 (RendererEnvironment.cpp), by mode:
+//   0: one level of the prefiltered specular cube: the environment seen through a GGX lobe
+//      of that level's roughness (Karis, "Real Shading in Unreal Engine 4");
+//   1: the irradiance cube: the cosine-weighted average of the environment around each
+//      normal (what a white matte surface facing that way reflects);
+//   2: the BRDF table: the scale and bias that turn F0 into the share of a lobe's light
+//      reflected, by n.v (x) and roughness (y).
+// Modes 0 and 1 importance sample the environment cube, reading from a blurrier mip level
+// the fewer samples cover a direction (filtered importance sampling, GPU Gems 3 ch. 20).
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 1) uniform sampler linearSampler;
+layout(set = 0, binding = 3) uniform textureCube environmentCube;
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2DArray target;
+
+// Must match EnvironmentFilterPushConstants in RendererEnvironment.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    float roughness;
+    uint size;
+    uint samples;
+    uint mode;
+    float sourceSize;
+    float sourceLevels;
+} pc;
+
+const float PI = 3.14159265;
+
+vec3 cubeDirection(uvec3 id, uint size) {
+    vec2 st = (vec2(id.xy) + 0.5) / float(size) * 2.0 - 1.0;
+    vec3 d;
+    switch (id.z) {
+    case 0u: d = vec3(1.0, -st.y, -st.x); break;
+    case 1u: d = vec3(-1.0, -st.y, st.x); break;
+    case 2u: d = vec3(st.x, 1.0, st.y); break;
+    case 3u: d = vec3(st.x, -1.0, -st.y); break;
+    case 4u: d = vec3(st.x, -st.y, 1.0); break;
+    default: d = vec3(-st.x, -st.y, -1.0); break;
+    }
+    return normalize(d);
+}
+
+// Evenly spread points in the unit square (Hammersley).
+vec2 hammersley(uint i, uint count) {
+    return vec2((float(i) + 0.5) / float(count), float(bitfieldReverse(i)) * 2.3283064365386963e-10);
+}
+
+// A half vector around +Z, distributed like GGX with roughness squared `a`.
+vec3 sampleGGX(vec2 xi, float a) {
+    float phi = 2.0 * PI * xi.x;
+    float cosTheta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+}
+
+float distributionGGX(float nDotH, float a) {
+    float a2 = a * a;
+    float d = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * d * d);
+}
+
+// Must match visibilitySmith in mesh.frag.
+float visibilitySmith(float nDotV, float nDotL, float a) {
+    float gv = nDotL * (nDotV * (1.0 - a) + a);
+    float gl = nDotV * (nDotL * (1.0 - a) + a);
+    return 0.5 / max(gv + gl, 1e-5);
+}
+
+// From a vector around +Z to one around n.
+vec3 toWorld(vec3 v, vec3 n) {
+    vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 t = normalize(cross(up, n));
+    vec3 b = cross(n, t);
+    return t * v.x + b * v.y + n * v.z;
+}
+
+// The environment level whose texels cover about as much of the sphere as a sample with
+// this probability density does.
+float sourceLevel(float pdf) {
+    float texel = 4.0 * PI / (6.0 * pc.sourceSize * pc.sourceSize);
+    float sampleArea = 1.0 / (float(pc.samples) * pdf + 1e-6);
+    return clamp(0.5 * log2(sampleArea / texel) + 1.0, 0.0, pc.sourceLevels - 1.0);
+}
+
+vec3 prefilterSpecular(vec3 n) {
+    // A mirror needs no lobe: the right level of the environment as it is.
+    if (pc.roughness < 1e-3) return textureLod(samplerCube(environmentCube, linearSampler), n, log2(pc.sourceSize / float(pc.size))).rgb;
+    // Seen head on (v = n), as the split-sum approximation assumes.
+    float a = pc.roughness * pc.roughness;
+    vec3 total = vec3(0.0);
+    float weight = 0.0;
+    for (uint i = 0u; i < pc.samples; ++i) {
+        vec3 h = toWorld(sampleGGX(hammersley(i, pc.samples), a), n);
+        float nDotH = dot(n, h);
+        vec3 l = 2.0 * nDotH * h - n;
+        float nDotL = dot(n, l);
+        if (nDotL <= 0.0) continue;
+        // pdf of l = D(h) n.h / (4 v.h), and v.h = n.h here.
+        float pdf = distributionGGX(max(nDotH, 0.0), a) * 0.25;
+        total += textureLod(samplerCube(environmentCube, linearSampler), l, sourceLevel(pdf)).rgb * nDotL;
+        weight += nDotL;
+    }
+    return total / max(weight, 1e-4);
+}
+
+vec3 irradiance(vec3 n) {
+    // Cosine-weighted samples, so their plain average is the cosine-weighted average.
+    vec3 total = vec3(0.0);
+    for (uint i = 0u; i < pc.samples; ++i) {
+        vec2 xi = hammersley(i, pc.samples);
+        float phi = 2.0 * PI * xi.x;
+        float r = sqrt(xi.y);
+        float cosTheta = sqrt(max(1.0 - xi.y, 0.0));
+        vec3 l = toWorld(vec3(cos(phi) * r, sin(phi) * r, cosTheta), n);
+        total += textureLod(samplerCube(environmentCube, linearSampler), l, sourceLevel(cosTheta / PI)).rgb;
+    }
+    return total / float(pc.samples);
+}
+
+vec2 brdfTable(vec2 uv) {
+    float nDotV = uv.x;
+    float a = uv.y * uv.y;
+    vec3 v = vec3(sqrt(1.0 - nDotV * nDotV), 0.0, nDotV);
+    vec2 result = vec2(0.0);
+    for (uint i = 0u; i < pc.samples; ++i) {
+        vec3 h = sampleGGX(hammersley(i, pc.samples), a);
+        float vDotH = dot(v, h);
+        vec3 l = 2.0 * vDotH * h - v;
+        float nDotL = l.z;
+        if (nDotL <= 0.0) continue;
+        float nDotH = max(h.z, 1e-4);
+        // G v.h / (n.h n.v), with the visibility term (G / 4 n.l n.v) mesh.frag uses.
+        float g = visibilitySmith(nDotV, nDotL, a) * 4.0 * nDotL * max(vDotH, 0.0) / nDotH;
+        float fc = pow(1.0 - max(vDotH, 0.0), 5.0);
+        result += vec2(1.0 - fc, fc) * g;
+    }
+    return result / float(pc.samples);
+}
+
+void main() {
+    uvec3 id = gl_GlobalInvocationID;
+    if (id.x >= pc.size || id.y >= pc.size) return;
+    vec3 color;
+    if (pc.mode == 2u) {
+        // Texel centers sit on the values they hold, so lookups need no remapping.
+        color = vec3(brdfTable((vec2(id.xy) + 0.5) / float(pc.size)), 0.0);
+    } else {
+        vec3 n = cubeDirection(id, pc.size);
+        color = pc.mode == 0u ? prefilterSpecular(n) : irradiance(n);
+    }
+    imageStore(target, ivec3(id), vec4(color, 1.0));
+}

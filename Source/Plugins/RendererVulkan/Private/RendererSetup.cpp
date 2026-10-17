@@ -22,11 +22,13 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
 
     const uint8_t white[4] = {255, 255, 255, 255};
     createTexture({0}, 1, 1, white, false);   // slot 0: the default texture
-    sceneSlot = context->maxBindlessTextures() - 1;
-    cascadeSlot = context->maxBindlessTextures() - 2;
-    localSlot = context->maxBindlessTextures() - 3;
+    sceneSlot = bindlessSlots() - 1;
+    cascadeSlot = bindlessSlots() - 2;
+    localSlot = bindlessSlots() - 3;
+    brdfSlot = bindlessSlots() - 4;
     createRenderTargets();
     createShadowMaps();
+    createEnvironment();
 }
 
 VulkanRenderer::Impl::~Impl() {
@@ -50,6 +52,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyDisplayUiView();
     destroyImage(displayColor);
     destroyShadowMaps();
+    destroyEnvironment();
     destroyUiPipeline();
     for (Frame& f : frames) destroyUiBuffers(f);
     vkDestroyPipeline(device, shadowPipeline, nullptr);

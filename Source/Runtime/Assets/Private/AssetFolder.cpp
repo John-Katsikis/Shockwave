@@ -7,8 +7,11 @@
 
 #include "TextureCompressor.h"
 
+#include <glm/gtc/packing.hpp>
+
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <exception>
 
 namespace shockwave {
@@ -55,6 +58,24 @@ namespace {
 // RGBA8 with a full mip chain: what an uncompressed texture takes on the GPU.
 uint64_t rgbaBytes(uint32_t width, uint32_t height) {
     return TextureData{TextureFormat::RGBA8, true, width, height, {{width, height, 0, 0}}, {}}.gpuBytes();
+}
+
+// One RGBA16F level; the GPU makes the mipmaps. Brighter than a half float holds is clamped.
+TextureData halfFloatTexture(const HdrImage& image) {
+    TextureData texture;
+    texture.format = TextureFormat::RGBA16F;
+    texture.srgb = false;
+    texture.width = image.width;
+    texture.height = image.height;
+    const size_t size = textureLevelBytes(TextureFormat::RGBA16F, image.width, image.height);
+    texture.levels = {{image.width, image.height, 0, size}};
+    texture.bytes.resize(size);
+    auto* out = reinterpret_cast<uint16_t*>(texture.bytes.data());
+    for (size_t i = 0; i < image.rgba.size(); ++i) {
+        const float value = image.rgba[i];
+        out[i] = glm::packHalf1x16(std::isfinite(value) ? std::clamp(value, 0.0f, 65504.0f) : 0.0f);
+    }
+    return texture;
 }
 }   // namespace
 
@@ -300,11 +321,18 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         fileBytes += ktx2.size();
         return true;
     };
+    // HDR images (environment maps) keep their full range as half floats, uncompressed.
+    const bool halfFloat = m_renderer && m_renderer->supportsTextureFormat(TextureFormat::RGBA16F);
     auto importTexture = [&](const File& f, Import& job) {
         std::vector<uint8_t> bytes;
         if (!readFileBytes(f.path, bytes, job.error)) return;
         if (isKtx2File(f.path)) {
             if (transcodeKtx2(bytes, bc7, job.texture, job.error)) job.compressedFileBytes = bytes.size();
+            return;
+        }
+        if (halfFloat && isHdrImage(bytes)) {
+            HdrImage hdr;
+            if (decodeHdrImage(bytes, hdr, job.error)) job.texture = halfFloatTexture(hdr);
             return;
         }
         if (job.settings.compression != TextureCompression::Off) {

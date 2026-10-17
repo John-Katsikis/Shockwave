@@ -9,6 +9,10 @@ layout(set = 0, binding = 0) uniform texture2D textures[];
 layout(set = 0, binding = 1) uniform sampler linearSampler;
 // Depth comparison for shadow maps (reverse-Z: lit when the surface is at least as close).
 layout(set = 0, binding = 2) uniform samplerShadow shadowSampler;
+// Image-based lighting (RendererEnvironment.cpp): reflections, one roughness per mip
+// level, and the light a surface facing each way receives from the surroundings.
+layout(set = 0, binding = 4) uniform textureCube specularCube;
+layout(set = 0, binding = 5) uniform textureCube irradianceCube;
 
 // Must match LightData, ShadowView and FrameData in RendererImpl.h.
 struct LightData {
@@ -51,9 +55,10 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint cascadeAtlas;
     uint localAtlas;
     uint shadowTaps;
-    float pad;
+    uint brdfTable;   // bindless slot of image-based lighting's BRDF table
     uvec2 shadowViews;   // a ShadowViews: MoltenVK reads references kept inside buffers as null
-    uvec2 pad2;
+    float specularLevels;   // mip levels of specularCube
+    uint pad;
     LightData lights[];
 };
 
@@ -271,11 +276,25 @@ void main() {
         light += (diffuse + specular) * l.color * (nDotL * attenuation);
     }
 
-    // Hemisphere ambient: sky from above, ground from below.
+    // Image-based lighting: light from all around (an environment map, or the sky above and
+    // the ground below), reflected by the split-sum approximation, with the multiple
+    // scattering energy compensation of Fdez-Aguera 2019 so rough metals don't lose light.
     // The occlusion map only darkens this: direct light has shadows of its own.
-    vec3 ambient = mix(frame.groundAmbient, frame.skyAmbient, n.y * 0.5 + 0.5);
     float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w).r - 1.0) : 1.0;
-    light += ambient * (diffuseColor + f0 * 0.25) * occlusion;
+    const float tableTexel = 1.0 / 128.0;   // kBrdfTableSize; clamped so lookups never wrap
+    vec2 brdf = textureLod(
+        sampler2D(textures[frame.brdfTable], linearSampler),
+        clamp(vec2(nDotV, roughness), vec2(tableTexel * 0.5), vec2(1.0 - tableTexel * 0.5)), 0.0).rg;
+    vec3 prefiltered = textureLod(
+        samplerCube(specularCube, linearSampler), reflect(-v, n), roughness * (frame.specularLevels - 1.0)).rgb;
+    vec3 irradiance = textureLod(samplerCube(irradianceCube, linearSampler), n, 0.0).rgb;
+    vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);
+    vec3 singleScatter = fresnel * brdf.x + brdf.y;
+    float missed = 1.0 - (brdf.x + brdf.y);
+    vec3 averageFresnel = f0 + (1.0 - f0) / 21.0;
+    vec3 multiScatter = missed * singleScatter * averageFresnel / (1.0 - missed * averageFresnel);
+    vec3 diffuseShare = diffuseColor * (1.0 - singleScatter - multiScatter);
+    light += (singleScatter * prefiltered + (multiScatter + diffuseShare) * irradiance) * occlusion;
 
     if (frame.debugView == 4u) {
         // Which sun cascade each pixel reads: red, green, blue, yellow from near to far.
