@@ -1,12 +1,13 @@
 // packageProject: build, check, copy, verify and archive a game folder for players.
 #include "BinaryInfo.h"
-#include "Process.h"
+#include "ChildProcess.h"
 
 #include <Core/Plugin.h>
 #include <Packaging/Package.h>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -18,6 +19,8 @@
 
 #if defined(__linux__)
 #include <link.h>
+#elif defined(__APPLE__)
+#include <Availability.h>
 #endif
 
 namespace shockwave {
@@ -305,7 +308,8 @@ private:
         writeMarker();
         writeLauncher();
         writeReadme();
-        m_result.files = items.size() + 3;
+        for (const auto& [path, text] : m_extraFiles) writeFile(path, text);
+        m_result.files = items.size() + 3 + m_extraFiles.size();
         progress(PackageStep::Copy, 1.0f);
     }
 
@@ -364,6 +368,9 @@ private:
         // Third-party licenses go where players see them.
         if (fs::is_directory(m_engine / "licenses", ec))
             addFolder(items, m_engine / "licenses", m_staging / "Licenses");
+#if defined(__APPLE__)
+        gatherMoltenVK(items, to);
+#endif
         if (pluginsReloadable()) {
             const fs::path module = pluginPath("game", m_project.gameModule);
             if (!fs::exists(module, ec))
@@ -373,6 +380,31 @@ private:
             add(items, module, to / "modules" / module.filename());
         }
     }
+
+#if defined(__APPLE__)
+    // Macs have no Vulkan driver of their own. MoltenVK runs Vulkan on Metal; the game
+    // loads it from next to itself (Platform's Window), so players need nothing installed.
+    void gatherMoltenVK(std::vector<CopyItem>& items, const fs::path& to) {
+        std::vector<fs::path> candidates;
+        if (const char* sdk = std::getenv("VULKAN_SDK"); sdk && *sdk)
+            candidates.push_back(fs::path(sdk) / "lib" / "libMoltenVK.dylib");
+        candidates.emplace_back("/usr/local/lib/libMoltenVK.dylib");
+        candidates.emplace_back("/opt/homebrew/lib/libMoltenVK.dylib");
+        std::error_code ec;
+        for (const fs::path& path : candidates) {
+            if (!fs::is_regular_file(path, ec)) continue;
+            add(items, fs::canonical(path, ec), to / "libMoltenVK.dylib");
+            m_extraFiles.emplace_back(
+                m_staging / "Licenses" / "MoltenVK-LICENSE.txt",
+                "MoltenVK (libMoltenVK.dylib) is licensed under the Apache License, Version 2.0:\n"
+                "https://www.apache.org/licenses/LICENSE-2.0\n"
+                "Source: https://github.com/KhronosGroup/MoltenVK\n");
+            return;
+        }
+        log(LogLevel::Warning,
+            "MoltenVK wasn't found (install the Vulkan SDK), so players will need it installed to run the game");
+    }
+#endif
 
     bool excluded(const std::string& rel, const std::string& name) const {
         static const char* always[] = {".*",   "Saved", "Source", "Tools", "CMakeLists.txt", "Config/Package.swpackage",
@@ -498,14 +530,18 @@ private:
     }
 
     void writeLauncher() {
-#if defined(_WIN32) || defined(__APPLE__)
-        // Players start Binaries/<game>.exe (or the .app, later) directly for now.
+#if defined(_WIN32)
+        // Players start Binaries/<game>.exe directly for now.
         m_result.launcher = m_final / kLayout.binaries / m_executable;
 #else
         const fs::path path = m_staging / m_executable;
         std::ostringstream script;
         script << "#!/bin/sh\n"
                << "# Starts " << m_settings.displayName(m_project) << ". Options go to the game; try --help.\n"
+#if defined(__APPLE__)
+               << "here=$(cd \"$(dirname \"$0\")\" && pwd -P)\n"
+               << "exec \"$here/" << kLayout.binaries << "/" << m_executable << "\" \"$@\"\n";
+#else
                << "here=$(dirname \"$(readlink -f \"$0\")\")\n"
                << "bin=\"$here/" << kLayout.binaries << "\"\n"
                << "# The C++ runtime in " << kLayout.cppRuntime << " is used only when this system's own\n"
@@ -525,6 +561,7 @@ private:
                << "    fi\n"
                << "fi\n"
                << "exec \"$bin/" << m_executable << "\" \"$@\"\n";
+#endif
         m_launcherText = script.str();
         writeFile(path, m_launcherText);
         std::error_code ec;
@@ -541,8 +578,15 @@ private:
         if (!m_result.minimumGlibc.empty()) text << " with glibc " << m_result.minimumGlibc << " or newer";
         text << ". Any distribution works.\n";
 #endif
+#if defined(__APPLE__)
+        // The macOS the build targets: the building Mac's own unless CMAKE_OSX_DEPLOYMENT_TARGET says older.
+        constexpr int macos = __MAC_OS_X_VERSION_MIN_REQUIRED;
+        text << "- macOS " << macos / 10000 << "." << macos / 100 % 100
+             << " or newer. Graphics run on Metal through MoltenVK, which ships with the game.\n";
+#else
         text << "- A graphics driver with Vulkan 1.3: Mesa 23 or newer for AMD and Intel, or NVIDIA's\n"
              << "  driver 525 or newer.\n";
+#endif
         return text.str();
     }
 
@@ -696,6 +740,7 @@ private:
     PackageResult m_result;
     fs::path m_engine, m_player, m_final, m_staging;
     std::string m_executable, m_launcherText, m_readmeText;
+    std::vector<std::pair<fs::path, std::string>> m_extraFiles;   // written with the copy
 };
 
 }   // namespace

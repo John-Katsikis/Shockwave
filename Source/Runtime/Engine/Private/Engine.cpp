@@ -104,7 +104,11 @@ void Engine::initGui() {
         io.IniFilename = nullptr;
     }
 
-    m_dpiScale = SDL_GetWindowDisplayScale(m_window->handle());
+    // ImGui works in window coordinates. Where those are points (macOS, Wayland), the
+    // screen's pixel density is already applied through the framebuffer scale, so only
+    // the rest of the display scale is left for sizes; elsewhere density is 1.
+    const float density = SDL_GetWindowPixelDensity(m_window->handle());
+    m_dpiScale = SDL_GetWindowDisplayScale(m_window->handle()) / (density > 0.0f ? density : 1.0f);
     if (m_dpiScale <= 0.0f) m_dpiScale = 1.0f;
     loadGuiTheme(false);
 

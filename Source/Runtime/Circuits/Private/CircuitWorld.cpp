@@ -17,7 +17,9 @@ constexpr size_t kMaxResumeDepth = 256;
 }   // namespace
 
 CircuitWorld::CircuitWorld(World& world, CircuitHost host, std::string gameCircuit)
-    : m_world(world), m_host(host), m_gamePath(std::move(gameCircuit)) {}
+    : m_world(world), m_host(host), m_gamePath(std::move(gameCircuit)) {
+    m_host.circuits = this;
+}
 
 CircuitWorld::~CircuitWorld() { *m_alive = false; }
 
@@ -359,6 +361,46 @@ void CircuitWorld::debugContinue(bool singleStep) {
 
 // ---- Events -------------------------------------------------------------------------------
 
+bool CircuitWorld::send(Entity target, std::string message, Entity sender, float amount, std::string value) {
+    if (!m_playing || message.empty()) return false;
+    Instance* instance = target.valid() ? (m_world.alive(target) ? instanceOf(target) : nullptr) : &m_game;
+    if (!instance || !instance->program) return false;
+    const bool handles =
+        std::any_of(instance->program->events.begin(), instance->program->events.end(), [&](const auto& entry) {
+            return entry.event == CircuitEvent::Message && entry.param == message;
+        });
+    if (!handles) return false;
+    if (m_messages.size() >= kMessageBudget) {
+        report("Circuits: message queue capacity exceeded (1024); command rejected");
+        return false;
+    }
+    m_messages.push_back({target, sender, std::move(message), std::move(value), amount});
+    return true;
+}
+
+void CircuitWorld::drainMessages() {
+    // Snapshot count: messages emitted by handlers wait until the next boundary. This
+    // makes self-messaging bounded and prevents stack recursion or starvation.
+    size_t remaining = m_messages.size();
+    while (remaining-- && !m_messages.empty() && !m_debugPaused) {
+        Message message = std::move(m_messages.front());
+        m_messages.pop_front();
+        Instance* instance =
+            message.target.valid() ? (m_world.alive(message.target) ? instanceOf(message.target) : nullptr) : &m_game;
+        if (!instance) continue;
+        dispatch(
+            *instance, message.target, CircuitEvent::Message, message.name,
+            [&](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
+                regs[site.outputs[0]] = Value::entityValue(message.sender);
+                regs[site.outputs[1]] = Value::number(message.amount);
+                regs[site.outputs[2]] = Value::string(message.value);
+            });
+        if (message.target.valid()) {
+            if (auto* current = instanceOf(message.target)) storeVars(*current, message.target);
+        }
+    }
+}
+
 void CircuitWorld::beginPlay() {
     m_playing = true;
     circuitLibrary().poll(0.0, 0.0);   // circuits saved since the last Play
@@ -376,12 +418,15 @@ void CircuitWorld::endPlay() {
     refresh();
     dispatchAll(CircuitEvent::EndPlay);
     m_playing = false;
+    m_messages.clear();
 }
 
 void CircuitWorld::fixedTick(double dt) {
     if (!m_playing || m_debugPaused) return;
     refresh();
     beginNew();
+    drainMessages();
+    if (m_debugPaused) return;
     const float seconds = static_cast<float>(dt);
     dispatchAll(CircuitEvent::FixedTick, {}, [seconds](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
         if (!site.outputs.empty()) regs[site.outputs[0]] = Value::number(seconds);
@@ -412,6 +457,8 @@ void CircuitWorld::frame(double dt) {
     circuitLibrary().poll(dt);
     refresh();
     beginNew();
+    drainMessages();
+    if (m_debugPaused) return;
     if (m_host.input) {
         // Actions any circuit listens for, each checked once.
         std::set<std::string> pressed, released;
@@ -445,6 +492,8 @@ void CircuitWorld::beforeSave(const std::function<void(const std::string& key, c
 }
 
 void CircuitWorld::afterLoad(const std::function<bool(const std::string& key, std::string& value)>& get) {
+    m_messages.clear();   // the restored world supersedes transient commands
+
     // The world was replaced: entity circuits start over from their entities' CircuitVars,
     // without running BeginPlay again.
     for (const Entity e : m_order) {

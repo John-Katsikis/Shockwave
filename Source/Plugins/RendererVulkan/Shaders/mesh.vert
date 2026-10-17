@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 
 // GPU-driven layout: one push constant points at this frame's draw table, each draw
@@ -24,7 +25,7 @@ struct DrawData {
     mat4 normalMatrix;
     vec4 tint;
     vec2 uvScale;
-    VertexBuffer vertexBuffer;
+    uvec2 vertexBuffer;   // a VertexBuffer; see below
     uint textureIndex;
     float alphaCutoff;
     float roughness;
@@ -61,7 +62,8 @@ layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion str
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
-    Vertex v = draw.vertexBuffer.vertices[gl_VertexIndex];
+    // Stored as an address: MoltenVK (macOS) reads references kept inside buffers as null.
+    Vertex v = VertexBuffer(draw.vertexBuffer).vertices[gl_VertexIndex];
 
     gl_Position = draw.mvp * vec4(v.position, 1.0);
     vNormal = mat3(draw.normalMatrix) * v.normal;

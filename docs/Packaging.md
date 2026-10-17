@@ -4,8 +4,9 @@ Packaging turns your project into a folder you can hand to players. They run one
 and play, without the editor, the engine's source code or a build folder. Shockwave
 also makes a `.tar.gz` of that folder, ready to upload or send.
 
-Packages are made for the platform you package on. Today that's Linux. Windows and
-macOS packages will come with those ports.
+Packages are made for the platform you package on: Linux or macOS. A macOS package ships
+MoltenVK, so players need nothing installed, and runs on the macOS version it was built on
+or newer. Windows packages will come with that port.
 
 ## Package your game
 

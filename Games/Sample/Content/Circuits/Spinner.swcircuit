@@ -6,22 +6,10 @@ var speed Float 45
 
 node tick Event.FixedTick
 
-node spin Component.Transform.Set.rotation
+node spin Transform.RotateByRate
   exec tick.then
-  in rotation = turned.result
-
-node turned Rotation.Combine
-  in first = now.rotation
-  in second = step.result
-
-node now Component.Transform.Get.rotation
-
-node step Rotation.AroundY
-  in degrees = angle.result
-
-node angle Math.Multiply
-  in a = tick.dt
-  in b = speed
+  in speed = speed
+  in dt = tick.dt
 
 node pulse Event.ActionPressed
   in action = "pulse"
@@ -38,14 +26,10 @@ node slow Set.speed
   in value = 45
 
 editor
-  tick -640 0
-  now -640 180
-  angle -640 360
-  step -180 360
-  turned 180 180
-  spin 560 0
-  pulse -640 600
-  toggle -260 600
-  fast 120 560
-  slow 120 760
+  tick -400 0
+  spin 0 0
+  pulse -400 320
+  toggle 0 320
+  fast 400 260
+  slow 400 520
 end

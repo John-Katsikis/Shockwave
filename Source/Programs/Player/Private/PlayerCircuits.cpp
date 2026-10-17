@@ -166,6 +166,11 @@ int Player::runCircuit() {
     circuits.setTracing(true);
     if (!m_tool.circuitBreakpoint.empty()) circuits.setBreakpoint(m_tool.circuit, m_tool.circuitBreakpoint, true);
     circuits.beginPlay();
+    if (!m_tool.circuitMessage.empty() &&
+        !circuits.send(kind == shockwave::CircuitKind::Game ? shockwave::kNullEntity : entity, m_tool.circuitMessage)) {
+        std::fprintf(stderr, "No handler accepts message '%s'\n", m_tool.circuitMessage.c_str());
+        return 1;
+    }
     for (int i = 0; i < m_tool.circuitTicks && !circuits.debugPaused(); ++i) {
         circuits.fixedTick(1.0 / m_project.tickRate);
         circuits.frame(1.0 / m_project.tickRate);

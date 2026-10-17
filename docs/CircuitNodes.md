@@ -35,6 +35,20 @@ Plays a clip that follows an entity.
 - In `clip` String, required
 - In `target` Entity, default self
 
+## Circuit
+
+### Circuit.Send
+
+Queue a named command for a target. accepted means queued, not completed.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `message` String, constant, required
+- In `amount` Float
+- In `value` String
+- Out `accepted` Bool
+
 ## Component
 
 ### Component.Animator.Add
@@ -3915,6 +3929,17 @@ Every rendered frame, after the GameMode's frame.
 - Exec out: `then`
 - Out `dt` Float
 
+### Event.Message
+
+A named gameplay command addressed to this entity (or the game circuit).
+
+- Event: Message (entity and game circuits)
+- Exec out: `then`
+- In `message` String, constant, required
+- Out `sender` Entity
+- Out `amount` Float
+- Out `value` String
+
 ### Event.TriggerEnter
 
 Entity circuits: something started touching this entity's sensor collider.
@@ -4335,6 +4360,40 @@ The Vec3 as text.
 
 - In `value` Vec3
 - Out `result` String
+
+## Transform
+
+### Transform.Rotate
+
+Rotate the target by Euler degrees in local space.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `degrees` Vec3
+- Out `success` Bool
+
+### Transform.RotateByRate
+
+Rotate locally at degrees per second around an axis. Supply the event's dt.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `speed` Float, default 45
+- In `axis` Vec3, default 0 1 0
+- In `dt` Float, required
+- Out `success` Bool
+
+### Transform.SetPosition
+
+Set the target's local position; reports whether it had a Transform.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `position` Vec3
+- Out `success` Bool
 
 ## UI
 

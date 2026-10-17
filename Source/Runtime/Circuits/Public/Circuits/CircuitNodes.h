@@ -25,6 +25,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -33,6 +34,7 @@
 
 namespace shockwave {
 
+class CircuitWorld;
 class AudioWorld;
 class Assets;
 class Input;
@@ -47,6 +49,7 @@ struct CircuitHost {
     UIWorld* ui = nullptr;
     PhysicsWorld* physics = nullptr;
     const Assets* assets = nullptr;
+    CircuitWorld* circuits = nullptr;   // session-owned message destination
 };
 
 // Events start a circuit running. Which kind of circuit may use which is checked when it
@@ -63,7 +66,8 @@ enum class CircuitEvent : uint8_t {
     TriggerExit,
     BeforeSave,
     AfterLoad,
-    UICommand
+    UICommand,
+    Message
 };
 enum class CircuitKind : uint8_t { Entity, Game };
 const char* circuitEventName(CircuitEvent event);
@@ -312,6 +316,24 @@ NodeDesc functionNode(std::string category, std::string name, bool pure, F fn, c
         std::move(category), std::move(name), std::move(fn), pure, std::vector<std::string>{std::string(names)...});
 }
 
+// Component member methods are explicit gameplay actions, rather than reflected field
+// mutations. The target is resolved at invocation; stale targets fail with a VM diagnostic.
+template <class C, class R, class... A, class... Names>
+NodeDesc componentMethod(std::string category, std::string name, R (C::*method)(A...), const Names&... names) {
+    auto fn = [method](CircuitCall& call, Entity target, NodeArg<A>... args) -> R {
+        C* component = call.world.get<C>(target);
+        if (!component) throw std::runtime_error("method target is missing its required component");
+        return (component->*method)(args...);
+    };
+    auto node =
+        makeFunctionNode(std::move(category), std::move(name), std::move(fn), false, {"target", std::string(names)...});
+    node.inputs[0].defaultValue = "self";
+    node.component = componentId<C>();
+    node.readsComponent = node.writesComponent = true;
+    node.description = "Component method. Target must contain the method's component.";
+    return node;
+}
+
 // One per SW_NODE: registers when the game module loads, unregisters when it unloads.
 struct AutoNode {
     std::string id;
@@ -336,3 +358,9 @@ struct AutoNode {
 #define SW_PURE_NODE(category, name, ...)                                                                              \
     static const ::shockwave::detail::AutoNode SW_NODE_CONCAT(swNode_, __COUNTER__){                                   \
         ::shockwave::detail::functionNode(category, name, true, __VA_ARGS__)};
+
+// SW_METHOD("Combat", "Damage", &Health::damage, "amount"). The target pin defaults to self.
+// Member functions must be non-const and use supported pin types; overloads need an explicit cast.
+#define SW_METHOD(category, name, ...)                                                                                 \
+    static const ::shockwave::detail::AutoNode SW_NODE_CONCAT(swMethod_, __COUNTER__){                                 \
+        ::shockwave::detail::componentMethod(category, name, __VA_ARGS__)};

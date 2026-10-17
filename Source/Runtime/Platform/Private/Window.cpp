@@ -1,12 +1,45 @@
 #include <Platform/Window.h>
 
+#include <Core/Plugin.h>
+
 #include <SDL3/SDL.h>
 
+#include <cstdlib>
+#include <filesystem>
 #include <stdexcept>
+#include <vector>
 
 namespace shockwave {
 
+namespace {
+
+// macOS has no system Vulkan loader, and the dynamic linker no longer searches
+// /usr/local/lib, so SDL won't find the Vulkan SDK's loader by name. Point it at one:
+// next to the executable first (a packaged game ships its own), then the Vulkan SDK and
+// Homebrew. SDL_VULKAN_LIBRARY, when set, still wins.
+void findVulkanLoader() {
+#if defined(__APPLE__)
+    if (SDL_GetHint(SDL_HINT_VULKAN_LIBRARY)) return;
+    namespace fs = std::filesystem;
+    std::vector<fs::path> candidates = {executableDir() / "libvulkan.1.dylib", executableDir() / "libMoltenVK.dylib"};
+    if (const char* sdk = std::getenv("VULKAN_SDK"); sdk && *sdk)
+        candidates.push_back(fs::path(sdk) / "lib" / "libvulkan.1.dylib");
+    candidates.emplace_back("/usr/local/lib/libvulkan.1.dylib");
+    candidates.emplace_back("/opt/homebrew/lib/libvulkan.1.dylib");
+    std::error_code ec;
+    for (const fs::path& path : candidates) {
+        if (fs::is_regular_file(path, ec)) {
+            SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, path.string().c_str());
+            return;
+        }
+    }
+#endif
+}
+
+}   // namespace
+
 Window::Window(const WindowDesc& desc) {
+    findVulkanLoader();
     m_window = SDL_CreateWindow(
         desc.title.c_str(), desc.width, desc.height,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |

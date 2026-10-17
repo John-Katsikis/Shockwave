@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
 
 // Bindless: every texture in the engine lives in this one array.
@@ -51,7 +52,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint localAtlas;
     uint shadowTaps;
     float pad;
-    ShadowViews shadowViews;
+    uvec2 shadowViews;   // a ShadowViews: MoltenVK reads references kept inside buffers as null
     uvec2 pad2;
     LightData lights[];
 };
@@ -111,7 +112,7 @@ float interleavedGradientNoise(vec2 p) {
 float filterShadow(
     FrameBuffer frame, uint atlas, uint viewIndex, vec3 worldPos, vec3 n, vec3 toLight, float lightDistance,
     float radius, float bias) {
-    ShadowView s = frame.shadowViews.views[viewIndex];
+    ShadowView s = ShadowViews(frame.shadowViews).views[viewIndex];
     float texel = s.texelSize * (s.perspective != 0u ? lightDistance : 1.0);
     // Normal offset: look the point up a little off the surface, more at grazing angles,
     // so a surface doesn't shadow itself (acne).

@@ -8,6 +8,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Every executable lands in build/bin, with compiled shaders next to it in build/bin/shaders.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# Visual Studio and Xcode build several configurations; keep each one's programs in
+# build/bin too, rather than build/bin/<Config>, so they find their shaders.
+foreach(config ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${config} config)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config} ${CMAKE_BINARY_DIR}/bin)
+endforeach()
 
 # Modular builds make every engine module a shared library and load renderers and game
 # code as plugins, so they can be swapped and hot reloaded (docs/Plugins.md). Off links
@@ -22,10 +28,21 @@ option(SHOCKWAVE_MODULAR "Engine modules as shared libraries; renderers and game
        ${modular_default})
 if(SHOCKWAVE_MODULAR)
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    foreach(config ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${config} config)
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config} ${CMAKE_BINARY_DIR}/bin)
+    endforeach()
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     # Executables find the engine's libraries next to themselves, so build/bin can move.
     set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+    if(APPLE)
+        # The same on macOS, where that option does nothing: next to the binary, or one
+        # folder up for plugins and game modules.
+        set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+        set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/..")
+    endif()
 endif()
+
 
 include(FetchContent)
 
@@ -105,7 +122,13 @@ set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
-set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+# macOS ships zlib in its SDK, and Assimp's bundled copy doesn't compile against it (its
+# zutil.h redefines fdopen). Other platforms build the bundled copy.
+if(APPLE)
+    set(ASSIMP_BUILD_ZLIB OFF CACHE BOOL "" FORCE)
+else()
+    set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+endif()
 # Avoid an earlier system-minizip discovery leaking into the bundled build.
 set(UNZIP_FOUND FALSE CACHE INTERNAL "Use Assimp bundled minizip" FORCE)
 set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
@@ -122,6 +145,8 @@ FetchContent_MakeAvailable(assimp)
 # GPU compute backends, architecture-specific AVX assumptions, or global flags.
 set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
 set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+# The same C runtime as everything else on Windows (the DLL one); Jolt defaults to static.
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)
@@ -172,6 +197,13 @@ include(cmake/ShockwaveModule.cmake)
 
 # Runtime modules and plugins first: the game module links against them, and the
 # editor and player against all of it.
+# MSVC: our sources are UTF-8, the biggest files need more sections than the default, and
+# the macros in our headers (SW_COMPONENT's __VA_OPT__) need the standard preprocessor.
+# Set here, after the dependencies, so it only reaches Shockwave's own targets: Assimp's
+# zlib sets /source-charset, which /utf-8 can't be combined with.
+if(MSVC)
+    add_compile_options(/utf-8 /bigobj /Zc:__cplusplus /Zc:preprocessor)
+endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
 # Add your own game's folder here (a ;-separated list). The editor opens any project

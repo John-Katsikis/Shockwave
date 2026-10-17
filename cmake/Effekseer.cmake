@@ -47,6 +47,12 @@ find_package(Threads REQUIRED)
 target_link_libraries(effekseer_runtime PUBLIC Threads::Threads)
 if(NOT MSVC)
     target_compile_options(effekseer_runtime PRIVATE -w)   # third-party code, built as is
+    # Effekseer's ARM NEON math (Apple silicon, ARM Linux) gives NaN positions once an
+    # effect moves, so ARM builds use its plain C++ path. PUBLIC: its headers inline that
+    # math too, and every user must see the same path.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64|ARM64)$" OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        target_compile_options(effekseer_runtime PUBLIC -U__ARM_NEON -U__ARM_NEON__)
+    endif()
 endif()
 
 # Effekseer's license, next to the other libraries' (build/bin/licenses).

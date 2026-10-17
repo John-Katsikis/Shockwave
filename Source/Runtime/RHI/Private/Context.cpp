@@ -34,7 +34,12 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 }   // namespace
 
 Context::Context(SDL_Window* window) {
-    check(volkInitialize(), "Loading the Vulkan library (is a Vulkan driver installed?)");
+    // Use the Vulkan loader SDL already opened for the window, so both agree on it (on
+    // macOS it isn't on the default library path; Platform's Window finds it).
+    if (const auto getProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr()))
+        volkInitializeCustom(getProcAddr);
+    else
+        check(volkInitialize(), "Loading the Vulkan library (is a Vulkan driver installed?)");
 
     Uint32 extCount = 0;
     const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&extCount);

@@ -14,6 +14,7 @@ add_test(NAME ui_theme COMMAND ui_theme_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # Packaging: settings files, and a whole package made and run through the CLI.
+# Tests labelled gpu need a Vulkan driver; `ctest -LE gpu` runs the rest.
 add_executable(package_test PackageTest.cpp)
 target_link_libraries(package_test PRIVATE Shockwave::Packaging)
 shockwave_warnings(package_test)
@@ -23,8 +24,9 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32)
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/PackageCLI
+        -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageCheck.cmake)
-    set_tests_properties(package_cli PROPERTIES TIMEOUT 120)
+    set_tests_properties(package_cli PROPERTIES TIMEOUT 120 LABELS gpu)
 endif()
 
 add_executable(project_test ProjectTest.cpp)
@@ -107,6 +109,9 @@ target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
 shockwave_warnings(frame_pacing_test)
 add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# It measures real sleeps, which shared macOS CI machines stretch by several milliseconds;
+# CI runs tests labelled timing there without failing the build.
+set_tests_properties(frame_pacing PROPERTIES LABELS timing)
 
 # Mesh optimisation and texture compression without a GPU (docs/Optimisation.md).
 add_executable(optimisation_test OptimisationTest.cpp)
@@ -139,7 +144,7 @@ if(SHOCKWAVE_MODULAR)
     shockwave_link_plugins(renderer_swap_test)
     add_test(NAME renderer_swap COMMAND renderer_swap_test)
     set_tests_properties(renderer_swap PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
-                         TIMEOUT 60)
+                         TIMEOUT 60 LABELS gpu)
 endif()
 
 # Game UI (RmlUi, FreeType, HarfBuzz) without a GPU: layout, shaping, data binding,
@@ -170,4 +175,5 @@ add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
     -DPLAYER=$<TARGET_FILE:player>
     -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CircuitCheck.cmake)
-set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60
+                     LABELS gpu)

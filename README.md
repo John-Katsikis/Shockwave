@@ -6,9 +6,10 @@ Shockwave is a free, open source 3D game engine written in C++20. It draws with 
 uses every CPU core by default, and comes with an editor for building scenes and playing
 them. It's MIT licensed with no royalties.
 
-Shockwave runs on Linux today. Windows and macOS (through MoltenVK, a layer that runs
-Vulkan on Apple's Metal) are planned. If you know Unity or Unreal, much of it will feel
-familiar: [Architecture](docs/Architecture.md) maps Shockwave's ideas to Unreal's.
+Shockwave runs on Linux and macOS (through MoltenVK, a layer that runs Vulkan on Apple's
+Metal). Windows builds are checked in CI but haven't been tried on a Windows PC yet. If you
+know Unity or Unreal, much of it will feel familiar: [Architecture](docs/Architecture.md)
+maps Shockwave's ideas to Unreal's.
 
 ## Get started
 
@@ -46,6 +47,10 @@ A few notes:
   each one: https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
 
 You don't need to install any other libraries. CMake downloads them during the build.
+
+On macOS, install Xcode's command line tools (`xcode-select --install`), CMake, and the
+Vulkan SDK from https://vulkan.lunarg.com (it includes MoltenVK). Homebrew works too:
+`brew install cmake glslang molten-vk vulkan-loader`.
 
 ### 2. Build
 
@@ -671,4 +676,4 @@ local headers, Shockwave modules, third-party, then the standard library.
    undo/redo, plain-text scenes, editing engine entities with a generated inspector, play
    mode, hot-reloadable UI themes, entity parenting, asset browser with image import and
    hot reload, multi-select (done). Next: glTF meshes in the asset browser
-9. Windows and macOS ports
+9. Windows and macOS ports (macOS done; Windows builds in CI, not yet tried on a PC)

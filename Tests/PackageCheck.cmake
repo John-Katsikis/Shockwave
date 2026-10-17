@@ -9,7 +9,8 @@ if(NOT result EQUAL 0 OR NOT output MATCHES "package ([^\n]+)")
 endif()
 set(package "${CMAKE_MATCH_1}")
 foreach(file ShockwaveSample README.txt Binaries/ShockwaveSample Binaries/shockwave-package.txt
-        Binaries/modules/game_sample.so Binaries/plugins/renderer_vulkan.so Game/Sample.swproject
+        Binaries/modules/game_sample${LIBRARY_SUFFIX} Binaries/plugins/renderer_vulkan${LIBRARY_SUFFIX}
+        Game/Sample.swproject
         Game/Scenes/main.swscene Game/Config/Input.swinput Licenses/Shockwave-LICENSE.txt)
     if(NOT EXISTS "${package}/${file}")
         message(FATAL_ERROR "The package is missing ${file}")

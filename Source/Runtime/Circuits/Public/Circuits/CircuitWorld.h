@@ -44,6 +44,11 @@ public:
     CircuitWorld& operator=(const CircuitWorld&) = delete;
 
     // Main thread, from PlaySession.
+    // Main-thread gameplay commands. Accepted messages are delivered FIFO on the next
+    // frame/tick boundary, never recursively inside a node. Null target means game circuit.
+    // Returns false when stopped, full, invalid, or the target has no matching handler.
+    bool
+    send(Entity target, std::string message, Entity sender = kNullEntity, float amount = 0.0f, std::string value = {});
     void beginPlay();
     void endPlay();
     void fixedTick(double dt);   // runs trigger events from the physics step too
@@ -54,6 +59,8 @@ public:
     // CircuitVars and, for the game circuit, from get (nullopt-like: return false when
     // the save doesn't have the key). Then AfterLoad runs.
     void afterLoad(const std::function<bool(const std::string& key, std::string& value)>& get);
+    // Loading a save rebuilds the physics world; circuits follow it to the new one.
+    void setPhysics(PhysicsWorld* physics) { m_host.physics = physics; }
 
     // Problems loading or running circuits this session, "file:line: message", once each.
     const std::vector<std::string>& diagnostics() const { return m_diagnostics; }
@@ -117,6 +124,14 @@ private:
         const std::function<void(const CircuitProgram::CallSite&, std::vector<Value>&)>& data = {});
     void run(Instance& instance, Entity self, uint32_t pc);
     void report(const std::string& problem);
+    void drainMessages();
+    struct Message {
+        Entity target, sender;
+        std::string name, value;
+        float amount;
+    };
+    std::deque<Message> m_messages;
+    static constexpr size_t kMessageBudget = 1024;
 
     World& m_world;
     CircuitHost m_host;

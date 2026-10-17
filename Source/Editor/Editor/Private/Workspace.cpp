@@ -43,8 +43,10 @@ std::string fileTime(const fs::path& path) {
     std::error_code ec;
     const auto time = fs::last_write_time(path, ec);
     if (ec) return "an unknown time";
-    const std::time_t t =
-        std::chrono::system_clock::to_time_t(std::chrono::clock_cast<std::chrono::system_clock>(time));
+    // libc++ (macOS) has no clock_cast, so convert through the two clocks' current times.
+    const auto system = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        time - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+    const std::time_t t = std::chrono::system_clock::to_time_t(system);
     char text[64];
     std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M", std::localtime(&t));
     return text;

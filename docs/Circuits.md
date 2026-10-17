@@ -356,3 +356,67 @@ haven't changed. A version with errors is reported and the old one keeps running
   reported, and the game carries on.
 - Pure nodes are worked out again each time a node on an exec wire needs them. When
   Sequence or ForLoop goes round again, the nodes feeding them are not worked out again.
+
+## Gameplay commands and component methods
+
+Build behavior from an event, an action, and a result. Right-click the graph to browse
+Events and Gameplay actions first. Queries, variables, math and reflected component
+access have their own collapsible sections; search includes descriptions.
+
+The sidebar lists public commands with buttons and editable Amount/Value payloads.
+During Play, select an entity running the open graph to invoke its commands; game
+circuit commands target the game instance.
+
+A circuit can expose named commands with `Event.Message`. Its required `message` input
+is a nonempty literal. Outputs are `sender` (Entity), `amount` (Float), and `value`
+(String): a fixed typed command envelope. `Circuit.Send` addresses one target and supplies
+that envelope. Its `accepted` result means queued, not completed. An absent handler,
+stale entity or full queue returns false. Target `none` addresses the game circuit.
+Use commands such as Open, Close, Activate and ApplyDamage instead of reaching into
+another entity's private variables.
+
+`Content/Circuits/Door.swcircuit` is a four-node example: Open raises a door and Close
+lowers it. Verify it without the editor:
+
+```sh
+build/bin/player --circuit Circuits/Door.swcircuit --run-circuit --send-message Open
+```
+
+The isolated runner supplies a Transform; its trace shows the invoked action and pins.
+An unknown message fails with exit code 1. `player --check` rejects missing or empty
+message names and incorrectly typed pins. Dynamic target/handler existence is checked
+at runtime, because entities may spawn or disappear.
+
+C++ game code can expose a component's member method directly:
+
+```cpp
+struct Health {
+    float current = 100;
+    float damage(float amount) { current -= amount; return current; }
+};
+// Register Health as a component using the normal game-module mechanism.
+SW_METHOD("Combat", "Damage", &Health::damage, "amount")
+```
+
+This creates `Combat.Damage` with exec/then, a target Entity defaulting to self, a Float
+amount, and a Float result. Void methods omit the result. Missing required components
+produce a VM diagnostic. Methods currently support non-const member functions and the
+same parameter types as SW_NODE; disambiguate overloaded functions with an explicit
+member-pointer cast. SW_NODE remains the entry point for free functions and service
+adapters. Registrations follow the existing module hot-reload lifecycle.
+
+From main-thread C++ session code, use `CircuitWorld::send(target, "Open", sender,
+amount, value)`. Commands are FIFO and delivered at the next frame or fixed-tick
+boundary. Handler-generated messages wait for a subsequent boundary, preventing
+recursive stacks and infinite same-frame dispatch. The pending queue is capped at 1024;
+overflow is rejected and diagnosed. Stop cancels pending commands. Messages are transient,
+not saved, and this API is not a cross-thread mailbox. Breakpoints retain the existing
+single-wire stepping limitation; unrun handlers of an interrupted message are not replayed.
+
+`Transform.SetPosition`, `Transform.Rotate`, and `Transform.RotateByRate` are direct gameplay actions with a
+success result. They modify local transforms immediately, not physics bodies; use the
+physics actions for dynamic bodies. Commands do not yet have arbitrary user-declared
+parameter lists, return values, latent completion, or graph-local function calls.
+
+The Spinner sample uses FixedTick → RotateByRate directly. Speed and dt are inputs;
+the quaternion composition stays inside the action rather than filling the graph.

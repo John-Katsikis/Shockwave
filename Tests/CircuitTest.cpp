@@ -32,6 +32,10 @@ bool near(float a, float b) { return std::abs(a - b) < 1e-4f; }
 
 struct Health {
     float current = 100;
+    float damage(float amount) {
+        current -= amount;
+        return current;
+    }
 };
 
 // Compiles text and returns its problems, joined, for matching.
@@ -440,6 +444,88 @@ node more Math.AddInt
     check(circuits.variable(kNullEntity, "score")->i == 42, "and come back on load");
     check(circuits.variable(kNullEntity, "loads")->i == 1, "AfterLoad runs after they're back");
 }
+void gameplayMessages(const fs::path& content) {
+    write(content / "Circuits/commands.swcircuit", R"(shockwave_circuit 1
+var received Float 0
+node open Event.Message
+  in message = "Open"
+node move Transform.SetPosition
+  exec open.then
+  in position = 0 2 0
+node record Set.received
+  exec move.then
+  in value = open.amount
+node again Circuit.Send
+  exec record.then
+  in message = "Open"
+  in amount = 7
+)");
+    auto method = detail::componentMethod("Combat", "Damage", &Health::damage, "amount");
+    const auto token = registerNode(std::move(method));
+    write(content / "Circuits/damage.swcircuit", R"(shockwave_circuit 1
+node start Event.BeginPlay
+node damage Combat.Damage
+  exec start.then
+  in amount = 12
+)");
+    circuitLibrary().clear();
+    World world;
+    Entity target = world.create();
+    world.add<Transform>(target);
+    world.add<Circuit>(target, {"Circuits/commands.swcircuit"});
+    CircuitWorld circuits(world, {});
+    check(!circuits.send(target, "Open"), "commands reject stopped sessions");
+    circuits.beginPlay();
+    check(!circuits.send(target, "Unknown"), "commands reject missing methods");
+    check(circuits.send(target, "Open", target, 3), "command finds named handler");
+    check(near(world.get<Transform>(target)->position.y, 0), "commands never execute recursively");
+    circuits.fixedTick(0.01);
+    check(near(world.get<Transform>(target)->position.y, 2), "gameplay method moves target");
+    check(near(circuits.variable(target, "received")->v.x, 3), "typed payload reaches handler");
+    circuits.fixedTick(0.01);
+    check(near(circuits.variable(target, "received")->v.x, 7), "self command waits until next boundary");
+    for (int i = 0; i < 1023; ++i) check(circuits.send(target, "Open"), "queue accepts bounded commands");
+    check(!circuits.send(target, "Open"), "queue refuses overflow");
+    circuits.endPlay();
+    const float saved = circuits.variable(target, "received")->v.x;
+    circuits.beginPlay();
+    circuits.fixedTick(0.01);
+    check(near(circuits.variable(target, "received")->v.x, saved), "Stop cancels pending commands");
+    Entity victim = world.create();
+    world.add<Health>(victim);
+    world.add<Circuit>(victim, {"Circuits/damage.swcircuit"});
+    circuits.frame(0.01);
+    check(near(world.get<Health>(victim)->current, 88), "component member method invoked with typed arguments");
+    Entity invalid = world.create();
+    world.add<Circuit>(invalid, {"Circuits/damage.swcircuit"});
+    circuits.frame(0.01);
+    check(
+        std::any_of(
+            circuits.diagnostics().begin(), circuits.diagnostics().end(),
+            [](const auto& problem) { return problem.find("missing its required component") != std::string::npos; }),
+        "missing method receiver becomes a diagnostic");
+    unregisterNode("Combat.Damage", token);
+    write(content / "Circuits/rate.swcircuit", R"(shockwave_circuit 1
+node tick Event.FixedTick
+node spin Transform.RotateByRate
+  exec tick.then
+  in speed = 90
+  in dt = tick.dt
+)");
+    Entity spinner = world.create();
+    world.add<Transform>(spinner);
+    world.add<Circuit>(spinner, {"Circuits/rate.swcircuit"});
+    circuits.fixedTick(1.0);
+    const auto forward = world.get<Transform>(spinner)->rotation * glm::vec3(0, 0, 1);
+    check(near(forward.x, 1) && near(forward.z, 0), "rate action applies degrees per second with event dt");
+    world.destroy(target);
+    check(!circuits.send(target, "Open"), "stale entity commands rejected");
+    check(
+        problemsOf("shockwave_circuit 1\nnode event Event.Message\n in message = \"\"\n", CircuitKind::Entity)
+                .find("must not be empty") != std::string::npos,
+        "empty method name fails check");
+}
+
 }   // namespace
 
 int main() {
@@ -458,6 +544,7 @@ int main() {
     functionNodes(content);
     gameCircuit(content);
     authoringAndDebugging(content);
+    gameplayMessages(content);
     std::error_code ec;
     fs::remove_all(root, ec);
     if (failures == 0) std::puts("Circuits: format, compiler checks, events, variables and nodes passed");

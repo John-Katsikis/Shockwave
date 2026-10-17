@@ -102,6 +102,8 @@ int main(int argc, char** argv) {
                     tool.circuitTicks = count;
                 else
                     tool.circuitSteps = count;
+            } else if (arg == "--send-message" && i + 1 < argc) {
+                tool.circuitMessage = argv[++i];
             } else if (arg == "--break-node" && i + 1 < argc) {
                 tool.circuitBreakpoint = argv[++i];
             } else if (arg == "--dump") {
@@ -253,7 +255,8 @@ int main(int argc, char** argv) {
                     "                                    tiles, polygons, bake time and crowd cost per tick\n"
                     "player --schema file.md             write the scene format reference (- for stdout)\n"
                     "player --node-schema file.md        write the circuit node reference (- for stdout)\n"
-                    "player --circuit file --run-circuit [--circuit-ticks N] [--break-node name] [--circuit-steps N]\n"
+                    "player --circuit file --run-circuit [--circuit-ticks N] [--send-message name] [--break-node name] "
+                    "[--circuit-steps N]\n"
                     "player --circuit file --dump        compile a .swcircuit and print its bytecode\n"
                     "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
                     "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
