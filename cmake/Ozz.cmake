@@ -9,6 +9,8 @@ set(ozz_build_samples OFF CACHE BOOL "" FORCE)
 set(ozz_build_howtos OFF CACHE BOOL "" FORCE)
 set(ozz_build_tests OFF CACHE BOOL "" FORCE)
 set(ozz_build_postfix OFF CACHE BOOL "" FORCE)
+# The DLL C runtime on Windows, like everything else (ozz defaults to the static one).
+set(ozz_build_msvc_rt_dll ON CACHE BOOL "" FORCE)
 FetchContent_Declare(ozz
     GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
     GIT_TAG 0.16.0
