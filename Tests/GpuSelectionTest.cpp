@@ -141,7 +141,9 @@ int main() {
         CHECK(chooseGpu({broken}, {}, "").chosen == -1);
         CHECK(chooseGpu({}, {}, "").chosen == -1);
     }
-    // Reading screens from a made-up /sys.
+    // Reading screens from a made-up /sys. That's how Linux finds them; the other systems
+    // don't have /sys, and Windows can't make the symlink below without admin rights.
+#if defined(__linux__)
     {
         const fs::path sys = fs::temp_directory_path() / "shockwave_gpu_sysfs";
         fs::remove_all(sys);
@@ -167,6 +169,7 @@ int main() {
         CHECK(findDisplayGpus(sys / "missing").empty());
         fs::remove_all(sys);
     }
+#endif
     // The environment variable round trip.
     setRequestedGpu("3080");
     CHECK(requestedGpu() == "3080");
