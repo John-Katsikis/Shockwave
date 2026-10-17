@@ -122,6 +122,17 @@ shockwave_plugin(renderer mine DEPS Shockwave::Renderer)
 `Source/Plugins/RendererNull` is the smallest complete example. The engine gives your
 renderer resource ids instead of letting it choose them, so the ids survive swaps.
 
+`Source/Plugins/RendererRaymarch` is a starting point for a renderer of your own that
+draws without any GPU features: a software ray marcher (`player --renderer raymarch`).
+
+- **Meshes:** each mesh is baked into a signed distance field with a sparse voxel octree
+  over it when it's created.
+- **Frames:** every pixel is sphere traced on the CPU, across the job system, with soft
+  shadows, and shown through SDL. It draws at a quarter of the window's resolution.
+- **Not yet:** textures, skinning, particles, game UI and the editor's GUI. Those places
+  are marked `Next:` in the code.
+- **Screenshots:** `--screenshot` saves the traced image at its own resolution.
+
 ## How it works
 
 This section is for the curious.
