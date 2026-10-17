@@ -145,6 +145,8 @@ FetchContent_MakeAvailable(assimp)
 # GPU compute backends, architecture-specific AVX assumptions, or global flags.
 set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
 set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+# The same C runtime as everything else on Windows (the DLL one); Jolt defaults to static.
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)
@@ -195,11 +197,12 @@ include(cmake/ShockwaveModule.cmake)
 
 # Runtime modules and plugins first: the game module links against them, and the
 # editor and player against all of it.
-# MSVC: our sources are UTF-8, and the biggest files need more sections than the default.
+# MSVC: our sources are UTF-8, the biggest files need more sections than the default, and
+# the macros in our headers (SW_COMPONENT's __VA_OPT__) need the standard preprocessor.
 # Set here, after the dependencies, so it only reaches Shockwave's own targets: Assimp's
 # zlib sets /source-charset, which /utf-8 can't be combined with.
 if(MSVC)
-    add_compile_options(/utf-8 /bigobj /Zc:__cplusplus)
+    add_compile_options(/utf-8 /bigobj /Zc:__cplusplus /Zc:preprocessor)
 endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
