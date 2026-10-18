@@ -294,7 +294,8 @@ void VulkanRenderer::Impl::recordShadows(
     rendering.layerCount = 1;
     rendering.pDepthAttachment = &depth;
     vkCmdBeginRendering(cmd, &rendering);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+    VkPipeline boundPipeline = shadowDepthOnlyPipeline;
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, boundPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowLayout, 0, 1, &bindlessSet, 0, nullptr);
     for (const ShadowPass& pass : passes) {
         if (pass.draws.empty()) continue;
@@ -317,6 +318,11 @@ void VulkanRenderer::Impl::recordShadows(
         VkBuffer boundIndices = VK_NULL_HANDLE;
         for (uint32_t i : pass.draws) {
             const DrawCommand& draw = gatheredDraws[i];
+            const VkPipeline pipeline = draw.data.alphaCutoff >= 0.0f ? shadowPipeline : shadowDepthOnlyPipeline;
+            if (pipeline != boundPipeline) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                boundPipeline = pipeline;
+            }
             if (draw.indexBuffer != boundIndices) {
                 vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                 boundIndices = draw.indexBuffer;
