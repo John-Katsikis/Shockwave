@@ -206,8 +206,12 @@ void starters(const std::filesystem::path& templates) {
          {"Source/Game.cpp", "CMakeLists.txt", "Scenes/main.swscene", "Config/Input.swinput", "Content/.gitkeep",
           "README.md", ".gitignore"})
         check(fs::is_regular_file(first.root / file), "complete starter layout exists");
-    std::ifstream code(first.root / "Source/Game.cpp");
-    const std::string source((std::istreambuf_iterator<char>(code)), {});
+    std::string source;
+    {
+        // Closed before the folder is removed: Windows can't delete an open file.
+        std::ifstream code(first.root / "Source/Game.cpp");
+        source.assign(std::istreambuf_iterator<char>(code), std::istreambuf_iterator<char>());
+    }
     check(
         source.find("SW_GAME(\"first_game\"") != std::string::npos && source.find("@GAME_MODULE@") == std::string::npos,
         "source uses the owning project's id");
@@ -228,7 +232,9 @@ void starters(const std::filesystem::path& templates) {
         !createGameProject(root / "Missing", "Missing", "missing", root / "no-template", loaded, error) &&
             !fs::exists(root / "Missing"),
         "missing templates leave destination untouched");
-    fs::remove_all(root);
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    check(!ec, "starter test folder is removed");
 }
 int main(int argc, char** argv) {
     if (argc != 2) return 2;

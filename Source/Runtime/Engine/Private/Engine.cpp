@@ -56,7 +56,11 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     }
     if (!initialized) throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
-    m_window = std::make_unique<Window>(m_config.window);
+    WindowDesc windowDesc = m_config.window;
+    // The null renderer draws nothing, so tools (player --check) run without a Vulkan
+    // driver. A swappable renderer may switch to one that does need it.
+    windowDesc.vulkan = m_config.renderer != "null" || m_config.swappableRenderer;
+    m_window = std::make_unique<Window>(windowDesc);
     m_renderer = std::make_unique<Renderer>(
         *m_window, *m_jobs,
         RendererOptions{
