@@ -44,6 +44,7 @@ LodStats VulkanRenderer::lodStats() const { return m_impl->lastLodStats; }
 void VulkanRenderer::setClearColor(const Color& color) { m_impl->clearColor = color; }
 void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
     m_impl->viewProjection = projection * view;
+    m_impl->viewFrustum = Frustum(m_impl->viewProjection);
     m_impl->view = view;
     m_impl->projection = projection;
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
@@ -132,6 +133,7 @@ float VulkanRenderer::aspectRatio() const {
 const char* VulkanRenderer::gpuName() const { return m_impl->context->gpuName(); }
 const GpuChoice* VulkanRenderer::gpuChoice() const { return &m_impl->context->gpuChoice(); }
 uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
+uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 bool VulkanRenderer::beginFrame() { return m_impl->beginFrame(); }
 void VulkanRenderer::endFrame() { m_impl->endFrame(); }
 void VulkanRenderer::onResize() { m_impl->needsResize = true; }

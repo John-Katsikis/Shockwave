@@ -219,12 +219,13 @@ void Player::reportBenchmark() {
         "worst frame:  %.3f ms\n"
         "jitter:       %.3f ms\n"
         "cpu:          %.3f ms\n"
-        "gpu time:     %.3f ms\n",
+        "gpu time:     %.3f ms\n"
+        "draws:        %u submitted, %u outside the view (culled)\n",
         m_project.relative(m_project.startupScene).c_str(), s.frames, m_tool.benchmarkSeconds, renderer.gpuName(),
         renderer.presentModeName(), renderer.presentTiming(),
         engine().frameLimit() > 0 ? (std::to_string(static_cast<int>(engine().frameLimit())) + " fps").c_str() : "none",
         engine().lowLatency() ? "on" : "off", s.averageFps, s.averageMs, s.low1Fps, s.low01Fps, s.maxMs, s.jitterMs,
-        s.cpuMs, s.gpuMs);
+        s.cpuMs, s.gpuMs, renderer.drawCount(), renderer.culledDraws());
     for (const auto& pass : renderer.passTimings())
         std::printf("  pass %-24s %.3f ms\n", pass.name.c_str(), static_cast<double>(pass.gpuMs));
     const double frames = static_cast<double>(std::max<size_t>(m_uiFrames, 1));
@@ -269,6 +270,8 @@ void Player::reportBenchmark() {
          << "  \"jitter_ms\": " << s.jitterMs << ",\n"
          << "  \"cpu_ms\": " << s.cpuMs << ",\n"
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"
+         << "  \"draws\": " << renderer.drawCount() << ",\n"
+         << "  \"culled_draws\": " << renderer.culledDraws() << ",\n"
          << "  \"ui_update_ms\": " << m_uiUpdateMs / frames << ",\n"
          << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
          << "  \"effects_update_ms\": " << m_effectsUpdateMs / frames << ",\n"
