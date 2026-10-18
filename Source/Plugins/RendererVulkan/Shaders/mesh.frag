@@ -80,6 +80,10 @@ layout(location = 10) flat in vec2 vMapScales;   // normal scale, occlusion stre
 
 layout(location = 0) out vec4 outColor;
 
+// False for solid surfaces' pipelines (RendererPipelines.cpp): without a discard the GPU can
+// test depth before shading, so surfaces hidden behind nearer ones cost almost nothing.
+layout(constant_id = 0) const bool kAlphaTest = true;
+
 const float PI = 3.14159265;
 
 // GGX / Trowbridge-Reitz normal distribution.
@@ -215,7 +219,7 @@ vec3 surfaceNormal() {
 
 void main() {
     vec4 albedo = texture(sampler2D(textures[nonuniformEXT(vTexture)], linearSampler), vUv) * vColor;
-    if (vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
+    if (kAlphaTest && vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
 
     FrameBuffer frame = pc.frame;
     vec3 n = surfaceNormal();

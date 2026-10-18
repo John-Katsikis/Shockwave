@@ -367,6 +367,9 @@ struct VulkanRenderer::Impl {
     VkPipeline meshBlendPipeline = VK_NULL_HANDLE;
     VkPipeline meshBlendDoubleSidedPipeline = VK_NULL_HANDLE;
     std::array<VkPipeline, 4> mirroredPipelines{};
+    // Opaque without alpha test, so with early depth testing: + 1 double-sided, + 2 mirrored.
+    std::array<VkPipeline, 4> solidPipelines{};
+    VkPipeline meshPipelineFor(const DrawCommand& draw) const;
     VkPipelineLayout gridLayout = VK_NULL_HANDLE;
     VkPipeline gridPipeline = VK_NULL_HANDLE;
     GridSettings grid;
@@ -383,7 +386,8 @@ struct VulkanRenderer::Impl {
     uint32_t cascadeSlot = 0, localSlot = 0;
     VkSampler shadowSampler = VK_NULL_HANDLE;
     VkPipelineLayout shadowLayout = VK_NULL_HANDLE;
-    VkPipeline shadowPipeline = VK_NULL_HANDLE;
+    VkPipeline shadowPipeline = VK_NULL_HANDLE;   // alpha-tested casters
+    VkPipeline shadowDepthOnlyPipeline = VK_NULL_HANDLE;   // every other caster
     std::vector<ShadowPass> cascadePasses, localPasses;   // this frame's
     ShadowStats shadowStats;
 

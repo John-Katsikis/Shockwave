@@ -27,7 +27,8 @@ VkShaderModule loadShaderModule(VkDevice device, const std::string& path) {
 
 VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& desc) {
     VkShaderModule vert = loadShaderModule(device, desc.vertexShader);
-    VkShaderModule frag = loadShaderModule(device, desc.fragmentShader);
+    // No fragment shader: depth only, the fastest way to fill a shadow map.
+    VkShaderModule frag = desc.fragmentShader.empty() ? VK_NULL_HANDLE : loadShaderModule(device, desc.fragmentShader);
 
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -38,6 +39,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     stages[1].module = frag;
     stages[1].pName = "main";
+    stages[1].pSpecializationInfo = desc.fragmentSpecialization;
 
     // Empty on purpose: shaders fetch vertices themselves through buffer device address.
     VkPipelineVertexInputStateCreateInfo vertexInput{};
@@ -108,7 +110,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     VkGraphicsPipelineCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     info.pNext = &rendering;
-    info.stageCount = 2;
+    info.stageCount = frag ? 2 : 1;
     info.pStages = stages;
     info.pVertexInputState = &vertexInput;
     info.pInputAssemblyState = &inputAssembly;
@@ -123,7 +125,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
 
-    vkDestroyShaderModule(device, frag, nullptr);
+    if (frag) vkDestroyShaderModule(device, frag, nullptr);
     vkDestroyShaderModule(device, vert, nullptr);
     check(result, "vkCreateGraphicsPipelines");
     return pipeline;

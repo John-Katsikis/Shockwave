@@ -248,6 +248,13 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     }
     const auto transparent =
         std::stable_partition(draws.begin(), draws.end(), [](const auto& draw) { return !draw.blend; });
+    // Opaque draws by pipeline, then nearest first, so nearer surfaces fill the depth buffer
+    // first and hidden ones fail the early depth test instead of being shaded (reverse-Z:
+    // greater depth is nearer).
+    std::sort(draws.begin(), transparent, [this](const auto& a, const auto& b) {
+        const VkPipeline pa = meshPipelineFor(a), pb = meshPipelineFor(b);
+        return pa != pb ? pa < pb : a.depth > b.depth;
+    });
     // Reverse-Z is smaller farther away. Object-level sorting is the basic
     // transparency path; intersecting transparent surfaces need a later solution.
     std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
@@ -262,6 +269,14 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         "vmaFlushAllocation");
 }
 
+VkPipeline VulkanRenderer::Impl::meshPipelineFor(const DrawCommand& draw) const {
+    if (!draw.blend && draw.data.alphaCutoff < 0.0f)
+        return solidPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)];
+    return draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
+           : draw.blend  ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
+                         : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
+}
+
 void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     if (gatheredDraws.empty()) return;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
@@ -274,9 +289,7 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     VkPipeline boundPipeline = meshPipeline;
     for (const auto& draw : gatheredDraws) {
         if (!draw.visible) continue;
-        const auto pipeline = draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
-                              : draw.blend  ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
-                                            : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
+        const VkPipeline pipeline = meshPipelineFor(draw);
         if (pipeline != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             boundPipeline = pipeline;

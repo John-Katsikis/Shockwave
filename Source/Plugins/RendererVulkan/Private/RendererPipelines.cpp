@@ -214,6 +214,18 @@ void VulkanRenderer::Impl::createPipelines() {
         desc.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         mirroredPipelines[i] = vk::createGraphicsPipeline(context->device(), desc);
     }
+    // Solid surfaces (opaque, no alpha test) get mesh.frag without its discard, which lets
+    // the GPU reject hidden fragments before shading them.
+    const VkBool32 noAlphaTest = VK_FALSE;
+    const VkSpecializationMapEntry alphaTestEntry{0, 0, sizeof(VkBool32)};
+    const VkSpecializationInfo solid{1, &alphaTestEntry, sizeof(noAlphaTest), &noAlphaTest};
+    desc.fragmentSpecialization = &solid;
+    desc.alphaBlend = false;
+    for (int i = 0; i < 4; ++i) {
+        desc.frontFace = (i & 2) ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        desc.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+        solidPipelines[i] = vk::createGraphicsPipeline(context->device(), desc);
+    }
 
     // The editor grid: a transparent quad on the ground, depth-tested against the
     // scene but not writing depth, drawn after everything opaque.
@@ -278,6 +290,10 @@ void VulkanRenderer::Impl::createPipelines() {
     shadowDesc.cullMode = VK_CULL_MODE_NONE;
     shadowDesc.dynamicDepthBias = true;
     shadowPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
+    // Most casters only need depth: no fragment shader keeps early depth testing and skips
+    // the shading work entirely. shadowPipeline is for alpha-tested ones.
+    shadowDesc.fragmentShader.clear();
+    shadowDepthOnlyPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
     createParticlePipelines();
     createSkinningPipeline();
 

@@ -12,7 +12,9 @@ struct GraphicsPipelineDesc {
     bool alphaBlend = false;   // standard "over" blending; never writes depth
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     std::string vertexShader;   // path to .spv
-    std::string fragmentShader;   // path to .spv
+    std::string fragmentShader;   // path to .spv; empty: none (depth only)
+    // Specialization constants for the fragment shader (variants of one shader); may be null.
+    const VkSpecializationInfo* fragmentSpecialization = nullptr;
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout layout = VK_NULL_HANDLE;

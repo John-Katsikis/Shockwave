@@ -56,11 +56,13 @@ VulkanRenderer::Impl::~Impl() {
     destroyUiPipeline();
     for (Frame& f : frames) destroyUiBuffers(f);
     vkDestroyPipeline(device, shadowPipeline, nullptr);
+    vkDestroyPipeline(device, shadowDepthOnlyPipeline, nullptr);
     vkDestroyPipelineLayout(device, shadowLayout, nullptr);
     vkDestroySampler(device, shadowSampler, nullptr);
     vkDestroyPipeline(device, tonemapPipeline, nullptr);
     vkDestroyPipelineLayout(device, tonemapLayout, nullptr);
     for (auto pipeline : mirroredPipelines) vkDestroyPipeline(device, pipeline, nullptr);
+    for (auto pipeline : solidPipelines) vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipeline(device, meshPipeline, nullptr);
     vkDestroyPipeline(device, meshDoubleSidedPipeline, nullptr);
     vkDestroyPipeline(device, meshBlendPipeline, nullptr);
