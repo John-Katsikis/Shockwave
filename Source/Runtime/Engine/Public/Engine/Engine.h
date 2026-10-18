@@ -8,6 +8,7 @@
 #include <Engine/Camera.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/GraphicsSettings.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
 #include <Engine/Systems.h>
@@ -100,6 +101,7 @@ public:
     JobSystem& jobs() { return *m_jobs; }
     Window& window() { return *m_window; }
     Renderer& renderer() { return *m_renderer; }
+    Graphics& graphics() { return m_graphics; }
     Input& input() { return *m_input; }
     Assets& assets() { return *m_assets; }
     void setMasterVolume(float volume);   // any thread; 0..1
@@ -127,6 +129,9 @@ public:
     const FrameStats& frameStats() const { return m_frameStats; }
     FrameStats& frameStats() { return m_frameStats; }   // to clear it, say after loading
     double tickRate() const { return m_config.tickRate; }
+    // Main thread, during onFrame/onRender: the same blend factor renderWorld uses.
+    // Frame-driven cameras can follow interpolated physics without lagging mouse input.
+    double interpolationAlpha() const { return m_interpolationAlpha; }
     // Changes the simulation rate from the next frame on. Main thread.
     void setTickRate(double ticksPerSecond);
     bool guiEnabled() const { return m_config.gui; }
@@ -153,6 +158,7 @@ private:
     void loadGuiTheme(bool reload);
     void pollGuiTheme(double frameDt);
 
+    Graphics m_graphics{this};
     EngineConfig m_config;
     std::unique_ptr<JobSystem> m_jobs;
     std::unique_ptr<Window> m_window;
@@ -162,6 +168,7 @@ private:
     std::atomic<float> m_masterVolume{1};
     bool m_running = false;
     double m_fps = 0.0;
+    double m_interpolationAlpha = 1.0;
     FrameLimiter m_limiter;
     FrameTimeSmoother m_smoother;
     FrameStats m_frameStats;

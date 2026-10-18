@@ -56,7 +56,11 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     }
     if (!initialized) throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
-    m_window = std::make_unique<Window>(m_config.window);
+    WindowDesc windowDesc = m_config.window;
+    // The null renderer draws nothing, so tools (player --check) run without a Vulkan
+    // driver. A swappable renderer may switch to one that does need it.
+    windowDesc.vulkan = m_config.renderer != "null" || m_config.swappableRenderer;
+    m_window = std::make_unique<Window>(windowDesc);
     m_renderer = std::make_unique<Renderer>(
         *m_window, *m_jobs,
         RendererOptions{
@@ -281,6 +285,7 @@ void Engine::run(Application& app) {
     app.onStart();
 
     while (m_running) {
+        m_graphics.commit();   // apply UI/game requests before any frame recording
         // The swap's stall isn't counted as frame time.
         if ((!m_pendingRenderer.empty() || m_autoReloadRenderer) && applyRendererChange())
             previous = SDL_GetPerformanceCounter();
@@ -334,6 +339,7 @@ void Engine::run(Application& app) {
             app.onUpdate(dt);
             accumulator -= dt;
         }
+        m_interpolationAlpha = std::clamp(accumulator / dt, 0.0, 1.0);
         {
             SW_PROFILE_SCOPE("Application frame");
             app.onFrame(frameTime);
@@ -350,7 +356,7 @@ void Engine::run(Application& app) {
             }
             {
                 SW_PROFILE_SCOPE("Gather draws");
-                app.onRender(*m_renderer, accumulator / dt);
+                app.onRender(*m_renderer, m_interpolationAlpha);
             }
             {
                 SW_PROFILE_SCOPE("Record and submit");

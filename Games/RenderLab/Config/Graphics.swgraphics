@@ -1,0 +1,7 @@
+swgraphics 1
+render_scale 1
+shadow_quality high
+lod_error_pixels 1
+vsync false
+frame_limit 0
+low_latency false

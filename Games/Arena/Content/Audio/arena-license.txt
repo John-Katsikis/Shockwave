@@ -1,0 +1,4 @@
+The original synthesized arena-shot.wav, arena-reload.wav and arena-hit.wav sounds
+and their generator (Tools/GenerateArenaAudio.py) are dedicated to the public domain
+under CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+No downloaded recordings or third-party samples are used.

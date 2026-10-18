@@ -56,6 +56,8 @@ struct Tool {
     int screenshotFrame = 30;   // --frames with --screenshot
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     bool showNavMesh = false;   // --view navmesh: the lit scene with the navigation mesh and agents' paths
+    shockwave::GraphicsSettings graphics, graphicsDefaults;
+    fs::path graphicsFile;
     int shadows = -1;   // --shadows: a ShadowQuality; -1 uses the project's shadow_quality
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit

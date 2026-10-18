@@ -1,0 +1,13 @@
+shockwave_input 1
+deadzone 0.15
+
+bind arena_forward key W
+bind arena_back key S
+bind arena_left key A
+bind arena_right key D
+bind arena_fire mouse left
+bind arena_reload key R
+bind arena_sprint key LeftShift
+bind arena_jump key Space
+bind arena_menu key P
+bind arena_restart key F2

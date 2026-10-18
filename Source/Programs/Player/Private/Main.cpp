@@ -14,6 +14,8 @@
 #include <Projects/Project.h>
 #include <Renderer/GpuSelection.h>
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -29,6 +31,8 @@ using player::Tool;
 int main(int argc, char** argv) {
     try {
         std::filesystem::path manifest;
+        std::filesystem::path newProjectFolder;
+        std::string newProjectName, newProjectModule;
         int frames = 0;
         float audioVolume = 1;
         Tool tool;
@@ -39,10 +43,33 @@ int main(int argc, char** argv) {
         int vsyncOverride = -1;   // --vsync on|off
         std::string renderer;   // --renderer
         std::filesystem::path gameModuleFile;   // --game-module
+        std::filesystem::path graphicsFile, graphicsSchema;
+        bool graphicsInfo = false, noUserGraphics = false;
+        float renderScaleOverride = -1;
         bool listGpus = false;   // --gpus
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
-            if (arg == "--project" && i + 1 < argc)
+            if (arg == "--graphics" && i + 1 < argc)
+                graphicsFile = argv[++i];
+            else if (arg == "--graphics-schema" && i + 1 < argc)
+                graphicsSchema = argv[++i];
+            else if (arg == "--graphics-info")
+                graphicsInfo = true;
+            else if (arg == "--no-user-graphics")
+                noUserGraphics = true;
+            else if (arg == "--render-scale" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), renderScaleOverride);
+                if (ec != std::errc{} || end != value.data() + value.size() || !std::isfinite(renderScaleOverride) ||
+                    renderScaleOverride < 0.25f || renderScaleOverride > 2)
+                    throw std::runtime_error("--render-scale takes a number in 0.25..2");
+            } else if (arg == "--new-project" && i + 1 < argc)
+                newProjectFolder = argv[++i];
+            else if (arg == "--name" && i + 1 < argc)
+                newProjectName = argv[++i];
+            else if (arg == "--module" && i + 1 < argc)
+                newProjectModule = argv[++i];
+            else if (arg == "--project" && i + 1 < argc)
                 manifest = argv[++i];
             else if (arg == "--frames" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -155,8 +182,8 @@ int main(int argc, char** argv) {
                 const std::string value = argv[++i];
                 double fps = -1;
                 const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), fps);
-                if (ec != std::errc{} || end != value.data() + value.size() || fps < 0 || (fps > 0 && fps < 10) ||
-                    fps > 1000)
+                if (ec != std::errc{} || end != value.data() + value.size() || !std::isfinite(fps) || fps < 0 ||
+                    (fps > 0 && fps < 10) || fps > 1000)
                     throw std::runtime_error("--fps takes 0 (no limit) or a frame rate from 10 to 1000");
                 fpsOverride = fps;
             } else if (arg == "--low-latency") {
@@ -233,7 +260,11 @@ int main(int argc, char** argv) {
                     "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
+                    "player --new-project folder [--name display-name] [--module module_id]\n"
+                    "                                    create an independent C++ starter in an empty folder\n"
                     "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
+                    "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
+                    "       [--graphics-info] [--graphics-schema file|-]\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
                     "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
@@ -283,6 +314,36 @@ int main(int argc, char** argv) {
             } else
                 throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
+        if (!graphicsSchema.empty()) {
+            const auto schema = shockwave::graphicsSettingsSchema();
+            if (graphicsSchema == "-")
+                std::fputs(schema.c_str(), stdout);
+            else {
+                std::ofstream out(graphicsSchema);
+                out << schema;
+                out.close();
+                if (!out) throw std::runtime_error("can't write " + graphicsSchema.string());
+            }
+            return 0;
+        }
+        if (!newProjectFolder.empty()) {
+            if (newProjectName.empty()) newProjectName = newProjectFolder.lexically_normal().filename().string();
+            if (newProjectModule.empty()) newProjectModule = shockwave::projectModuleId(newProjectName);
+            shockwave::Project created;
+            std::string error;
+            const char* base = SDL_GetBasePath();
+            if (!base || !shockwave::createGameProject(
+                             newProjectFolder, newProjectName, newProjectModule,
+                             std::filesystem::path(base) / "templates" / "Blank", created, error))
+                throw std::runtime_error(error.empty() ? "can't locate project templates" : error);
+            std::printf("project %s\nmodule %s\n", created.file.string().c_str(), created.gameModule.c_str());
+            std::puts(
+                "Add this folder to SHOCKWAVE_GAMES, then build player/editor before Play. See the project's "
+                "README.md.");
+            return 0;
+        }
+        if (!newProjectName.empty() || !newProjectModule.empty())
+            throw std::runtime_error("--name and --module require --new-project");
         // A packaged game runs the project it ships with, wherever it's started from.
         if (manifest.empty()) manifest = player::packagedProjectFile();
         if (manifest.empty()) {
@@ -317,7 +378,42 @@ int main(int argc, char** argv) {
         }
         shockwave::Project project;
         std::string error;
+        if (std::filesystem::is_directory(manifest)) {
+            const auto found = shockwave::findProjectFile(manifest);
+            if (!found) throw std::runtime_error("no .swproject in " + manifest.string());
+            manifest = *found;
+        }
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
+        if (!shockwave::projectGraphicsSettings(project, tool.graphicsDefaults, error)) throw std::runtime_error(error);
+        tool.graphics = tool.graphicsDefaults;
+        // Reproducible tools ignore local user preferences. Explicit --graphics still
+        // loads (and --check validates) the file, without a window or GPU.
+        if (!graphicsFile.empty()) {
+            tool.graphicsFile = std::filesystem::absolute(graphicsFile);
+            if (!shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
+                throw std::runtime_error(error);
+        } else if (
+            !noUserGraphics && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
+            tool.screenshot.empty() && !package.requested) {
+            if (char* pref = SDL_GetPrefPath("Shockwave", project.gameModule.c_str())) {
+                tool.graphicsFile = std::filesystem::path(pref) / "Graphics.swgraphics";
+                SDL_free(pref);
+                if (std::filesystem::exists(tool.graphicsFile) &&
+                    !shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
+                    SW_LOG(shockwave::LogEngine, Warning, "Ignoring user graphics settings: {}", error);
+            }
+        }
+        if (fpsOverride >= 0) tool.graphics.frameLimit = fpsOverride;
+        if (vsyncOverride >= 0) tool.graphics.vsync = vsyncOverride == 1;
+        if (lowLatency) tool.graphics.lowLatency = true;
+        if (tool.shadows >= 0) tool.graphics.shadows = static_cast<shockwave::ShadowQuality>(tool.shadows);
+        if (renderScaleOverride >= 0) tool.graphics.renderScale = renderScaleOverride;
+        if (graphicsInfo) {
+            std::printf(
+                "# user file: %s\n", tool.graphicsFile.empty() ? "disabled" : tool.graphicsFile.string().c_str());
+            std::fputs(shockwave::graphicsSettingsText(tool.graphics).c_str(), stdout);
+            return 0;
+        }
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
@@ -333,10 +429,10 @@ int main(int argc, char** argv) {
                 "the game module is \"" + std::string(gameModule->id()) + "\" but the project wants \"" +
                 project.gameModule + "\"");
         shockwave::EngineConfig config;
-        config.window = {project.name, project.width, project.height, project.vsync};
+        config.window = {project.name, project.width, project.height, tool.graphics.vsync};
         config.tickRate = project.tickRate;
-        config.frameLimit = fpsOverride >= 0 ? fpsOverride : project.frameLimit;
-        config.lowLatency = lowLatency || project.lowLatency;
+        config.frameLimit = tool.graphics.frameLimit;
+        config.lowLatency = tool.graphics.lowLatency;
         if (vsyncOverride >= 0) config.window.vsync = vsyncOverride == 1;
         config.maxFrames = frames;
         if (size.first) config.window.width = size.first, config.window.height = size.second;

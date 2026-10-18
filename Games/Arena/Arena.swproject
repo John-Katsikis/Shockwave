@@ -1,0 +1,8 @@
+shockwave_project 1
+name "Shockwave Arena"
+game_module "arena"
+startup_scene "Scenes/arena.swscene"
+assets "Content"
+tick_rate 60
+window_size 1280 720
+vsync true

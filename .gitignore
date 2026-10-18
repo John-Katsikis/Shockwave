@@ -5,3 +5,4 @@ compile_commands.json
 Saved/
 # macOS Finder files
 .DS_Store
+build-*/

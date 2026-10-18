@@ -1,0 +1,6 @@
+<rml><head><title>Render Lab</title><link type="text/rcss" href="lab.rcss"/></head>
+<body data-model="game">
+<div id="readout"><h1>{{lab_scene}}</h1><p>{{lab_stats}}</p><p>{{lab_quality}}</p></div>
+<div id="controls"><button onclick="quality_0">LOW</button><button onclick="quality_1">MEDIUM</button><button onclick="quality_2">HIGH</button><button onclick="quality_3">ULTRA</button><button onclick="full_detail">LOD / FULL</button><button onclick="orbit">ORBIT / O</button><button onclick="reset">RESET / R</button></div>
+<div id="hint">RMB + mouse to look / WASD move / Q E vertical / Shift fast / F1-F4 quality / Esc quit</div>
+</body></rml>

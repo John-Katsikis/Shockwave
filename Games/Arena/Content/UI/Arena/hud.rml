@@ -1,0 +1,11 @@
+<rml><head><title>Arena HUD</title><link type="text/rcss" href="arena.rcss"/></head>
+<body data-model="game">
+  <div id="damage"></div>
+  <div id="scoreboard"><span class="blue">BLUE {{arena_blue}}</span> <span class="clock">{{arena_time}}s</span> <span class="orange">{{arena_orange}} ORANGE</span></div>
+  <div id="designation">SHOCKWAVE / ARENA<br/>LOCAL 6v6 BOT TEST</div>
+  <div id="feed">{{arena_feed}}</div>
+  <div id="crosshair">+</div>
+  <div id="health" class="panel"><span class="caption">VITALS</span><br/><span class="number">{{arena_health}}</span> HP<br/><span class="caption">{{arena_kills}} KILLS / {{arena_deaths}} DEATHS</span></div>
+  <div id="ammo" class="panel"><span class="caption">SW-01 / AUTOMATIC</span><br/><span class="number">{{arena_ammo}}</span> / {{arena_magazine}}<br/><span class="caption">R RELOAD / UNLIMITED RESERVE</span></div>
+  <div id="status">{{arena_status}}</div>
+</body></rml>

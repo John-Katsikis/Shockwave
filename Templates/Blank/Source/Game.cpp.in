@@ -1,0 +1,9 @@
+#include <Shockwave/Game.h>
+
+// Put your components and gameplay systems here, or add more files under Source/.
+// Register components with SW_COMPONENT to expose them to scenes and the inspector.
+namespace {
+class Game final : public shockwave::GameMode {};
+} // namespace
+
+SW_GAME("@GAME_MODULE@", Game)

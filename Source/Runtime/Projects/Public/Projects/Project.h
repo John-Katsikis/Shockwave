@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace shockwave {
 // A game project: a folder holding a .swproject manifest (see docs/Projects.md),
@@ -65,4 +66,14 @@ std::optional<std::filesystem::path> findProjectFile(const std::filesystem::path
 bool createProject(
     const std::filesystem::path& folder, const std::string& name, const std::string& gameModule, Project& project,
     std::string& error);
+
+// Complete independent C++ starter, shared by the editor hub and player --new-project.
+// Refuses nonempty destinations; reads all template files before writing anything.
+// gameModule must contain only lowercase ASCII letters, digits and underscores,
+// starting with a letter. templateFolder is the installed templates/Blank directory.
+bool createGameProject(
+    const std::filesystem::path& folder, const std::string& name, const std::string& gameModule,
+    const std::filesystem::path& templateFolder, Project& project, std::string& error);
+// Stable default module id derived from the project name, prefixed with "project_".
+std::string projectModuleId(std::string_view name);
 }   // namespace shockwave

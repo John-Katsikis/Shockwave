@@ -79,7 +79,20 @@ void Editor::reloadGameCode() {
     if (!m_hasProject) return;
     if (!m_gameModule) {   // first build since the project opened
         const std::string id = m_project.gameModule;
+        // A newly scaffolded project can already have edits before its first build.
+        // loadGameModule tears down the old session/world, so keep those engine-owned
+        // components and editing history while installing the first game module.
+        auto world = std::move(m_world);
+        auto undo = std::move(m_undo);
+        auto redo = std::move(m_redo);
+        auto editStart = std::move(m_editStart);
+        auto selection = std::move(m_selection);
         loadGameModule(id);
+        m_world = std::move(world);
+        m_undo = std::move(undo);
+        m_redo = std::move(redo);
+        m_editStart = std::move(editStart);
+        m_selection = std::move(selection);
         return;
     }
     if (!m_gameModule->reloadable()) {
@@ -214,8 +227,9 @@ void Editor::drawBuildMenu() {
     }
     if (ImGui::MenuItem("Reload renderer", "Ctrl+Alt+R", false, renderer.swappable() && reloadable))
         engine().reloadRenderer();
-    ImGui::SetItemTooltip("Restart the renderer from its plugin as it is on disk, with any rebuilt shaders.\n"
-                          "Meshes, textures and settings carry over.");
+    ImGui::SetItemTooltip(
+        "Restart the renderer from its plugin as it is on disk, with any rebuilt shaders.\n"
+        "Meshes, textures and settings carry over.");
     bool autoRenderer = engine().autoReloadRenderer();
     if (ImGui::MenuItem("Reload renderer when rebuilt", nullptr, &autoRenderer, reloadable)) {
         engine().setAutoReloadRenderer(autoRenderer);

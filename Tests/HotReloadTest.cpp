@@ -5,6 +5,7 @@
 #include <Assets/Assets.h>
 #include <Core/Plugin.h>
 #include <Engine/Components.h>
+#include <Engine/Prefab.h>
 #include <Engine/World.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <GameFramework/PlaySession.h>
@@ -134,10 +135,21 @@ int main(int argc, char** argv) {
         probeInfo() && probeInfo()->fields.size() == 2 && probeField(world, probe, "a") == 5.0f,
         "the running code and the worlds are untouched");
 
-    // Unloading takes the module's types with it.
+    // Prefab caches also own module-defined pools. They must die before dlclose,
+    // even on normal shutdown (not just hot reload).
+    std::ofstream(dir / "probe.swprefab") << "shockwave_prefab 1\nentity \"Probe\"\n  ReloadProbe\n    a 9\nend\n";
+    prefabs().setup(dir, &assets);
+    auto prefab = prefabs().load("probe.swprefab", &error);
+    check(prefab != nullptr, "prefab with a game-defined component loads");
+    std::weak_ptr<const PrefabAsset> cached = prefab;
+    prefab.reset();
+    check(!cached.expired(), "library caches the prefab world");
+
+    // Unloading takes the module's types and cached prefab pools with it.
     world = {};
     undo = {};
     library.reset();
+    check(cached.expired(), "module unload releases cached prefab pools before unmapping code");
     check(probeInfo() == nullptr, "unloading unregisters the module's components");
 #ifdef __linux__
     check(loadedCopies() == 0, "and unmaps it");

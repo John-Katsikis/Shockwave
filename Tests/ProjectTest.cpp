@@ -134,12 +134,14 @@ void manifests() {
     const auto original = p.name;
     for (const auto& invalid :
          {valid + "tick_rate 30\n", valid + "unknown 1\n",
-          std::string("shockwave_project 1\nname Test\ngame_module test\nstartup_scene \"scenes with "
-                      "spaces/main.swscene\"\nwindow_size 1 1\n"),
+          std::string(
+              "shockwave_project 1\nname Test\ngame_module test\nstartup_scene \"scenes with "
+              "spaces/main.swscene\"\nwindow_size 1 1\n"),
           std::string("shockwave_project 99\n"), std::string("shockwave_project 1\nname \"Missing scene\"\n"),
           std::string("shockwave_project 1\nname Test\ngame_module test\nstartup_scene missing.swscene\n"),
-          std::string("shockwave_project 1\nname Test\ngame_module test\nstartup_scene \"scenes with "
-                      "spaces/main.swscene\"\ntick_rate 0\n")}) {
+          std::string(
+              "shockwave_project 1\nname Test\ngame_module test\nstartup_scene \"scenes with "
+              "spaces/main.swscene\"\ntick_rate 0\n")}) {
         write(invalid);
         check(
             !loadProject(file, p, error) && p.name == original && !error.empty(),
@@ -181,9 +183,64 @@ void created() {
     fs::remove_all(root);
 }
 }   // namespace
-int main() {
+void starters(const std::filesystem::path& templates) {
+    namespace fs = std::filesystem;
+    const auto root =
+        fs::temp_directory_path() /
+        ("shockwave-starter-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    Project first, second, loaded;
+    std::string error;
+    check(projectModuleId("My Game") == "project_my_game", "names become safe independent module ids");
+    check(
+        projectModuleId("42 / Weird! Name") == "project_42_weird_name", "module ids exclude code and path punctuation");
+    check(
+        createGameProject(root / "One", "First Game", "first_game", templates, first, error),
+        "first starter is created");
+    check(
+        createGameProject(root / "Two", "Second Game", "second_game", templates, second, error),
+        "second starter is independent");
+    check(
+        loadProject(first.file, loaded, error) && loaded.gameModule == "first_game",
+        "starter manifest loads immediately");
+    for (const char* file :
+         {"Source/Game.cpp", "CMakeLists.txt", "Scenes/main.swscene", "Config/Input.swinput", "Content/.gitkeep",
+          "README.md", ".gitignore"})
+        check(fs::is_regular_file(first.root / file), "complete starter layout exists");
+    std::string source;
+    {
+        // Closed before the folder is removed: Windows can't delete an open file.
+        std::ifstream code(first.root / "Source/Game.cpp");
+        source.assign(std::istreambuf_iterator<char>(code), std::istreambuf_iterator<char>());
+    }
+    check(
+        source.find("SW_GAME(\"first_game\"") != std::string::npos && source.find("@GAME_MODULE@") == std::string::npos,
+        "source uses the owning project's id");
+    check(
+        !createGameProject(first.root, "Replacement", "replacement", templates, loaded, error),
+        "existing project is never overwritten");
+    fs::create_directories(root / "Occupied");
+    std::ofstream(root / "Occupied/precious.txt") << "keep";
+    check(
+        !createGameProject(root / "Occupied", "Occupied", "occupied", templates, loaded, error) &&
+            fs::is_regular_file(root / "Occupied/precious.txt"),
+        "nonempty folders are preserved");
+    check(
+        !createGameProject(root / "Invalid", "Invalid", "bad;id", templates, loaded, error) &&
+            !fs::exists(root / "Invalid"),
+        "unsafe module ids are rejected before writing");
+    check(
+        !createGameProject(root / "Missing", "Missing", "missing", root / "no-template", loaded, error) &&
+            !fs::exists(root / "Missing"),
+        "missing templates leave destination untouched");
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    check(!ec, "starter test folder is removed");
+}
+int main(int argc, char** argv) {
+    if (argc != 2) return 2;
     sessions();
     manifests();
     created();
+    starters(argv[1]);
     return failures ? 1 : 0;
 }

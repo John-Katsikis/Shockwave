@@ -36,6 +36,9 @@ std::unique_ptr<GameModuleLibrary> GameModuleLibrary::loadFile(const std::filesy
 }
 
 GameModuleLibrary::~GameModuleLibrary() {
+    // Cached prefab worlds can own pools whose destructors live in this module.
+    // Release them while the plugin is still mapped, including normal shutdown.
+    prefabs().clear();
     for (const auto& [name, id] : m_components) detail::removeComponentInfo(name, id);
 }
 

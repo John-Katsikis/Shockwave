@@ -19,6 +19,8 @@
 
 namespace shockwave {
 
+Graphics& GameContext::graphics() const { return engine ? engine->graphics() : subsystems.get<Graphics>(); }
+
 AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
 AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }
 EffectsWorld& GameContext::effects() const { return subsystems.get<EffectsWorld>(); }
@@ -65,6 +67,10 @@ void PlaySession::start() {
     m_snapshot.emplace(world);
     m_ticks = 0;
     try {
+        if (!m_context.engine)
+            m_subsystems.add<Graphics>();
+        else if (m_context.engine->guiEnabled())
+            m_graphicsSnapshot = m_context.graphics().requested();
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
         m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr, m_audioDevice);
         // Occlusion rays hit the physics world's colliders. Looked up per ray: loading a save
@@ -146,6 +152,11 @@ void PlaySession::stop() {
 }
 
 void PlaySession::tearDown() {
+    if (m_graphicsSnapshot) {
+        std::string error;
+        m_context.graphics().apply(*m_graphicsSnapshot, error);
+        m_graphicsSnapshot.reset();
+    }
     m_mode.reset();
     m_subsystems.clear();
     m_context.world = std::move(*m_snapshot);

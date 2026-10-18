@@ -42,6 +42,13 @@ void Editor::play() {
     if (!resuming) restartAnimation();
     try {
         if (!resuming) {   // game.saves() works in Saved/SaveGames
+            shockwave::GraphicsSettings defaults;
+            std::string problem;
+            if (!shockwave::projectGraphicsSettings(m_project, defaults, problem) ||
+                !engine().graphics().configure(defaults, {}, problem)) {
+                error("Couldn't load game graphics defaults: " + problem);
+                return;
+            }
             m_session->setSaveFolder(saveGamesFolder(), m_scenePath.empty() ? "" : m_project.relative(m_scenePath));
             m_session->setGameCircuit(m_project.gameCircuitPath());
         }

@@ -48,11 +48,17 @@ Source/
   Editor/      the editor (Shockwave's UnrealEd)
   Programs/    executables: Player (the game and its CLI tools), Sandbox
 Games/Sample/  the sample project: Sample.swproject, Content/, Scenes/, Source/ (its game module)
+Games/Arena/   independent shooter project, including its own tests and documentation
+Templates/Blank/ project scaffold used by the editor hub and player --new-project
 Tests/         CTest suites and fixtures
 themes/        editor UI themes (.swtheme)
 docs/          guides; SceneSchema.md and InputSchema.md are generated
 cmake/         dependency, shader and module helpers
 ```
+
+New games can live outside this repository. [Starting projects](StartingProjects.md)
+explains creating an independent module and registering it through CMake configuration
+without editing engine source files.
 
 ## Gameplay model
 
@@ -187,3 +193,5 @@ fast as it can, unless VSync or a frame limit slows it down:
   (`Core/Jobs.h`). A system may only touch the components it declares.
 - `Renderer::drawMesh`, `Renderer::addLight` and `SW_LOG` are safe to call from any
   thread.
+
+Player quality and frame pacing are exposed through the Engine-owned `Graphics` service, available as `game.graphics()`. [Graphics settings](Graphics.md) describes its deferred application, text format and user preferences.
