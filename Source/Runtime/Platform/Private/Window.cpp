@@ -40,9 +40,16 @@ void findVulkanLoader() {
 
 Window::Window(const WindowDesc& desc) {
     findVulkanLoader();
+#ifdef __APPLE__
+    // SDL on macOS makes a window with no graphics flag an OpenGL one, which CI can't load;
+    // MoltenVK always loads, so keep Vulkan there.
+    const bool vulkan = true;
+#else
+    const bool vulkan = desc.vulkan;
+#endif
     m_window = SDL_CreateWindow(
         desc.title.c_str(), desc.width, desc.height,
-        (desc.vulkan ? SDL_WINDOW_VULKAN : 0) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+        (vulkan ? SDL_WINDOW_VULKAN : 0) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
             (desc.hidden ? SDL_WINDOW_HIDDEN : 0));
     if (!m_window) {
         throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
