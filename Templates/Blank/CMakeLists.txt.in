@@ -1,0 +1,2 @@
+# This project owns its game code. Register this folder with SHOCKWAVE_GAMES.
+shockwave_game_module(@GAME_MODULE@)

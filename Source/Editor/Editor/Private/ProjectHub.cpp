@@ -135,6 +135,9 @@ void Editor::drawProjectHub() {
         ImGui::PopItemWidth();
         const fs::path folder = fs::path(m_newProjectLocation) / m_newProjectName;
         ImGui::TextDisabled("Creates %s", folder.string().c_str());
+        ImGui::TextWrapped(
+            "Creates an independent C++ starter. Register and build its module before Play; instructions are in its "
+            "README.md.");
         ImGui::Spacing();
         ImGui::BeginDisabled(m_newProjectName.empty() || m_newProjectLocation.empty());
         const gui::Theme& theme = gui::currentTheme();

@@ -14,6 +14,8 @@
 #include <Projects/Project.h>
 #include <Renderer/GpuSelection.h>
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -29,6 +31,8 @@ using player::Tool;
 int main(int argc, char** argv) {
     try {
         std::filesystem::path manifest;
+        std::filesystem::path newProjectFolder;
+        std::string newProjectName, newProjectModule;
         int frames = 0;
         float audioVolume = 1;
         Tool tool;
@@ -42,7 +46,13 @@ int main(int argc, char** argv) {
         bool listGpus = false;   // --gpus
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
-            if (arg == "--project" && i + 1 < argc)
+            if (arg == "--new-project" && i + 1 < argc)
+                newProjectFolder = argv[++i];
+            else if (arg == "--name" && i + 1 < argc)
+                newProjectName = argv[++i];
+            else if (arg == "--module" && i + 1 < argc)
+                newProjectModule = argv[++i];
+            else if (arg == "--project" && i + 1 < argc)
                 manifest = argv[++i];
             else if (arg == "--frames" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -233,6 +243,8 @@ int main(int argc, char** argv) {
                     "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
+                    "player --new-project folder [--name display-name] [--module module_id]\n"
+                    "                                    create an independent C++ starter in an empty folder\n"
                     "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
@@ -283,6 +295,24 @@ int main(int argc, char** argv) {
             } else
                 throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
+        if (!newProjectFolder.empty()) {
+            if (newProjectName.empty()) newProjectName = newProjectFolder.lexically_normal().filename().string();
+            if (newProjectModule.empty()) newProjectModule = shockwave::projectModuleId(newProjectName);
+            shockwave::Project created;
+            std::string error;
+            const char* base = SDL_GetBasePath();
+            if (!base || !shockwave::createGameProject(
+                             newProjectFolder, newProjectName, newProjectModule,
+                             std::filesystem::path(base) / "templates" / "Blank", created, error))
+                throw std::runtime_error(error.empty() ? "can't locate project templates" : error);
+            std::printf("project %s\nmodule %s\n", created.file.string().c_str(), created.gameModule.c_str());
+            std::puts(
+                "Add this folder to SHOCKWAVE_GAMES, then build player/editor before Play. See the project's "
+                "README.md.");
+            return 0;
+        }
+        if (!newProjectName.empty() || !newProjectModule.empty())
+            throw std::runtime_error("--name and --module require --new-project");
         // A packaged game runs the project it ships with, wherever it's started from.
         if (manifest.empty()) manifest = player::packagedProjectFile();
         if (manifest.empty()) {
@@ -317,6 +347,11 @@ int main(int argc, char** argv) {
         }
         shockwave::Project project;
         std::string error;
+        if (std::filesystem::is_directory(manifest)) {
+            const auto found = shockwave::findProjectFile(manifest);
+            if (!found) throw std::runtime_error("no .swproject in " + manifest.string());
+            manifest = *found;
+        }
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It

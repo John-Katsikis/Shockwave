@@ -115,23 +115,19 @@ void Editor::closeProject() {
 bool Editor::createNewProject(const fs::path& folder, const std::string& name) {
     shockwave::Project project;
     std::string err;
-    // New projects play with the game module loaded now, if any, so Play works straight away.
-    const std::string module = m_gameModule ? std::string(m_gameModule->id()) : "game";
-    if (!shockwave::createProject(folder, name, module, project, err)) {
+    // Every project owns its module; never inherit the currently open game's behavior.
+    const std::string module = shockwave::projectModuleId(name);
+    const char* base = SDL_GetBasePath();
+    if (!base ||
+        !shockwave::createGameProject(folder, name, module, fs::path(base) / "templates" / "Blank", project, err)) {
         m_hubError = err;
         error("Couldn't create the project: " + err);
         return false;
     }
     m_hubError.clear();
     log("Created project " + project.name + " in " + folder.string());
-    // The manifest needs its startup scene to exist before it will load.
-    shockwave::World scene;
-    makeScene(SceneTemplate::Basic, scene, engine().assets());
-    if (!shockwave::saveScene(scene, engine().assets(), project.startupScene.string(), err)) {
-        m_hubError = err;
-        error("Couldn't write the first scene: " + err);
-        return false;
-    }
+    log("Register this folder in SHOCKWAVE_GAMES and build game_" + module +
+        " before Play. Setup instructions are in the project's README.md.");
     return openProject(project.file);
 }
 

@@ -334,6 +334,7 @@ void Engine::run(Application& app) {
             app.onUpdate(dt);
             accumulator -= dt;
         }
+        m_interpolationAlpha = std::clamp(accumulator / dt, 0.0, 1.0);
         {
             SW_PROFILE_SCOPE("Application frame");
             app.onFrame(frameTime);
@@ -350,7 +351,7 @@ void Engine::run(Application& app) {
             }
             {
                 SW_PROFILE_SCOPE("Gather draws");
-                app.onRender(*m_renderer, accumulator / dt);
+                app.onRender(*m_renderer, m_interpolationAlpha);
             }
             {
                 SW_PROFILE_SCOPE("Record and submit");

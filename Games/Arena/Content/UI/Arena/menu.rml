@@ -1,0 +1,7 @@
+<rml><head><title>Arena menu</title><link type="text/rcss" href="arena.rcss"/></head>
+<body class="menu" data-model="game" data-back="arena_resume">
+<div id="menu-panel"><h1>SHOCKWAVE / ARENA</h1><p>LOCAL BOT MATCH</p><p>WASD move / mouse aim<br/>Left click fire / R reload<br/>Shift sprint / Space jump<br/>P menu / F2 restart / Esc quit</p>
+<button id="resume" autofocus onclick="arena_resume">RESUME</button>
+<button id="restart" onclick="arena_restart">RESTART MATCH</button>
+<p>Blue is your team. First to 20 wins.<br/>Respawn: 3 seconds. Spawn protection: 1 second.</p></div>
+</body></rml>

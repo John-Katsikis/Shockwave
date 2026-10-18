@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 project(Shockwave VERSION 0.1.0 LANGUAGES C CXX)
+include(CTest)
+
+# Authoring templates ship beside the tools, so creating projects does not depend on cwd.
+file(GLOB_RECURSE project_templates CONFIGURE_DEPENDS LIST_DIRECTORIES false
+     RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/Templates" "${CMAKE_CURRENT_SOURCE_DIR}/Templates/*")
+foreach(template IN LISTS project_templates)
+    configure_file("Templates/${template}" "${CMAKE_BINARY_DIR}/bin/templates/${template}" COPYONLY)
+endforeach()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -208,16 +216,21 @@ add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
 # Add your own game's folder here (a ;-separated list). The editor opens any project
 # whose module is built.
-set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample" CACHE STRING "Game module folders to build")
+set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample;${CMAKE_CURRENT_SOURCE_DIR}/Games/Arena"
+    CACHE STRING "Game module folders to build (absolute paths, separated by semicolons)")
 # The project the player runs when it's given none.
 set(SHOCKWAVE_GAME_PROJECT "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample/Sample.swproject"
     CACHE FILEPATH "The .swproject the player runs by default")
 foreach(game ${SHOCKWAVE_GAMES})
     get_filename_component(game_name ${game} NAME)
-    add_subdirectory(${game} ${CMAKE_BINARY_DIR}/Games/${game_name})
+    # Two external projects can share a folder name; don't collide in the build tree.
+    string(SHA256 game_hash "${game}")
+    string(SUBSTRING "${game_hash}" 0 12 game_hash)
+    add_subdirectory("${game}" "${CMAKE_BINARY_DIR}/Games/${game_name}-${game_hash}")
 endforeach()
 add_subdirectory(Source/Editor)
 add_subdirectory(Source/Programs)
 
-enable_testing()
-add_subdirectory(Tests)
+if(BUILD_TESTING)
+    add_subdirectory(Tests)
+endif()

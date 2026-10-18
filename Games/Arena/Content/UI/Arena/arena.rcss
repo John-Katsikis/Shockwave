@@ -1,0 +1,18 @@
+/* Game palette lives here; the editor uses its own shared gui theme. */
+body { font-family: "Noto Sans"; font-size: 16dp; color: #edf4f5; width: 100%; height: 100%; pointer-events: none; }
+#scoreboard { position: absolute; top: 22dp; left: 50%; margin-left: -200dp; width: 400dp; text-align: center; background-color: #101a20e8; border-bottom: 2dp #6c858c; padding: 10dp 0; font-size: 22dp; font-weight: bold; }
+.blue { color: #50d0ef; } .orange { color: #ffa35b; } .clock { margin: 0 22dp; font-size: 16dp; }
+#designation { position: absolute; left: 24dp; top: 24dp; font-size: 12dp; letter-spacing: 1dp; color: #b8cbd0; }
+#feed { position: absolute; right: 24dp; top: 85dp; font-size: 14dp; background-color: #101a20c0; padding: 6dp 12dp; }
+#crosshair { position: absolute; left: 50%; top: 50%; margin-left: -12dp; margin-top: -22dp; width: 24dp; text-align: center; font-size: 32dp; color: #ffffff; }
+#crosshair.hit { color: #ffb75b; }
+.panel { position: absolute; bottom: 54dp; background-color: #101a20e8; padding: 12dp 18dp; border-top: 2dp #50d0ef; }
+#health { left: 24dp; } #ammo { right: 24dp; text-align: right; }
+.caption { font-size: 12dp; color: #b8cbd0; letter-spacing: 1dp; } .number { font-size: 38dp; font-weight: bold; }
+#status { position: absolute; bottom: 15dp; left: 0; width: 100%; text-align: center; font-size: 13dp; }
+#damage { position: absolute; left: 0; top: 0; width: 100%; height: 100%; } #damage.hurt { background-color: #d8381828; }
+body.menu { background-color: #08121cd8; pointer-events: auto; }
+#menu-panel { position: absolute; left: 50%; top: 50%; margin-left: -210dp; margin-top: -220dp; width: 380dp; padding: 20dp; background-color: #14232b; border: 1dp #5c7984; }
+h1 { display: block; margin-bottom: 8dp; font-size: 23dp; color: #50d0ef; } p { display: block; margin: 12dp 0; line-height: 1.5; }
+button { display: block; width: 350dp; margin: 8dp 0; padding: 10dp 12dp; background-color: #223b48; color: #edf4f5; border: 1dp #527482; font-size: 16dp; }
+button:hover, button:focus-visible { background-color: #365767; border-color: #50d0ef; }

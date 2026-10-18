@@ -48,11 +48,17 @@ Source/
   Editor/      the editor (Shockwave's UnrealEd)
   Programs/    executables: Player (the game and its CLI tools), Sandbox
 Games/Sample/  the sample project: Sample.swproject, Content/, Scenes/, Source/ (its game module)
+Games/Arena/   independent shooter project, including its own tests and documentation
+Templates/Blank/ project scaffold used by the editor hub and player --new-project
 Tests/         CTest suites and fixtures
 themes/        editor UI themes (.swtheme)
 docs/          guides; SceneSchema.md and InputSchema.md are generated
 cmake/         dependency, shader and module helpers
 ```
+
+New games can live outside this repository. [Starting projects](StartingProjects.md)
+explains creating an independent module and registering it through CMake configuration
+without editing engine source files.
 
 ## Gameplay model
 

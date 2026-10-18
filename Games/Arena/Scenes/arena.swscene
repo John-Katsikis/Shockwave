@@ -1,0 +1,506 @@
+shockwave_scene 2
+editor_camera 0 7 18 0 -0.3
+
+entity "Match"
+  ArenaRules
+    score_limit 20
+    round_seconds 180
+    auto_play 0
+end
+
+entity "Environment"
+  Environment
+    sky_color 0.15 0.22 0.3 1
+    ground_color 0.18 0.2 0.21 1
+    ambient_intensity 0.8
+    exposure 0
+    shadow_distance 50
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Sun"
+  Transform
+    rotation -50 -25 0
+  Light
+    type Directional
+    color 1 0.9 0.76 1
+    intensity 2.5
+end
+
+entity "Concrete floor"
+  Transform
+    position 0 -0.3 0
+    scale 34 0.6 30
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.28 0.32 0.34 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "West wall"
+  Transform
+    position -17 2 0
+    scale 0.8 4 30
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.38 0.41 0.4 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "East wall"
+  Transform
+    position 17 2 0
+    scale 0.8 4 30
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.38 0.41 0.4 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "North wall"
+  Transform
+    position 0 2 -15
+    scale 34 4 0.8
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.38 0.41 0.4 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "South wall"
+  Transform
+    position 0 2 15
+    scale 34 4 0.8
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.38 0.41 0.4 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Cover 0"
+  Transform
+    position -7 0.7 0
+    scale 3 1.4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.3 0.29 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Cover stripe 0"
+  Transform
+    position -7 1.1 1.01
+    scale 2.8 0.16 0.02
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.9 0.65 0.12 1
+    roughness 0.8
+end
+
+entity "Cover 1"
+  Transform
+    position 7 0.7 0
+    scale 3 1.4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.3 0.29 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Cover stripe 1"
+  Transform
+    position 7 1.1 1.01
+    scale 2.8 0.16 0.02
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.9 0.65 0.12 1
+    roughness 0.8
+end
+
+entity "Cover 2"
+  Transform
+    position -12 0.7 -5
+    scale 3 1.4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.3 0.29 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Cover stripe 2"
+  Transform
+    position -12 1.1 -3.99
+    scale 2.8 0.16 0.02
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.9 0.65 0.12 1
+    roughness 0.8
+end
+
+entity "Cover 3"
+  Transform
+    position 12 0.7 5
+    scale 3 1.4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.3 0.29 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Cover stripe 3"
+  Transform
+    position 12 1.1 6.01
+    scale 2.8 0.16 0.02
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.9 0.65 0.12 1
+    roughness 0.8
+end
+
+entity "Lane marking -12"
+  Transform
+    position -12 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking -8"
+  Transform
+    position -8 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking -4"
+  Transform
+    position -4 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking 0"
+  Transform
+    position 0 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking 4"
+  Transform
+    position 4 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking 8"
+  Transform
+    position 8 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Lane marking 12"
+  Transform
+    position 12 0.015 0
+    scale 0.055 0.02 28
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.65 0.6 1
+    roughness 0.8
+end
+
+entity "Spawn stripe 11"
+  Transform
+    position 0 0.02 11
+    scale 30 0.025 0.25
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.04 0.5 0.7 1
+    roughness 0.8
+end
+
+entity "Spawn stripe -11"
+  Transform
+    position 0 0.02 -11
+    scale 30 0.025 0.25
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.9 0.25 0.04 1
+    roughness 0.8
+end
+
+entity "Arena Player"
+  Transform
+    position 0 0.05 11
+  CharacterController
+    radius 0.32
+    half_height 0.5
+    jump_speed 5
+  ArenaFighter
+    team 0
+    player 1
+    speed 5.5
+  ArenaWeapon
+end
+
+entity "Arena Camera"
+  Transform
+    position 0 1.6 11
+  Camera
+    fov 75
+    near_plane 0.04
+    primary 1
+end
+
+entity "Arena Rifle"
+  Transform
+    position 0.26 -0.24 -0.55
+  Parent
+    entity "Arena Camera"
+end
+
+entity "Rifle Receiver"
+  Transform
+    position 0 0 0
+    scale 0.14 0.16 0.48
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.08 0.1 0.12 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Rifle Barrel"
+  Transform
+    position 0 0 -0.35
+    scale 0.055 0.055 0.3
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.13 0.16 0.18 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Rifle Magazine"
+  Transform
+    position 0 -0.16 0.02
+    scale 0.09 0.25 0.13
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.24 0.25 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Rifle Stock"
+  Transform
+    position 0 -0.01 0.28
+    scale 0.12 0.13 0.2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.08 0.1 0.12 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Rifle Sight"
+  Transform
+    position 0 0.12 -0.1
+    scale 0.055 0.065 0.08
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.04 0.65 0.7 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Rifle Support hand"
+  Transform
+    position -0.04 -0.08 -0.16
+    scale 0.14 0.1 0.16
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.29 0.25 1
+    roughness 0.8
+  Parent
+    entity "Arena Rifle"
+end
+
+entity "Arena Muzzle"
+  Transform
+    position 0 0 -0.56
+    scale 0.14 0.14 0.18
+  Parent
+    entity "Arena Rifle"
+  MeshRenderer
+    mesh sphere
+    texture white
+    tint 1 0.65 0.1 1
+    emissive 1 0.5 0.05 1
+    emissive_intensity 4
+    visible 0
+    cast_shadows 0
+end
+
+entity "Blue 1"
+  Prefab
+    path "Prefabs/Arena bot 0.swprefab"
+  Transform
+    position -12 0 7
+end
+
+entity "Blue 2"
+  Prefab
+    path "Prefabs/Arena bot 0.swprefab"
+  Transform
+    position -8 0 7
+end
+
+entity "Blue 3"
+  Prefab
+    path "Prefabs/Arena bot 0.swprefab"
+  Transform
+    position -4 0 7
+end
+
+entity "Blue 4"
+  Prefab
+    path "Prefabs/Arena bot 0.swprefab"
+  Transform
+    position 5 0 7
+end
+
+entity "Blue 5"
+  Prefab
+    path "Prefabs/Arena bot 0.swprefab"
+  Transform
+    position 10 0 7
+end
+
+entity "Orange 1"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position -12 0 -8
+end
+
+entity "Orange 2"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position -8 0 -8
+end
+
+entity "Orange 3"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position -3 0 -8
+end
+
+entity "Orange 4"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position 3 0 -8
+end
+
+entity "Orange 5"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position 8 0 -8
+end
+
+entity "Orange 6"
+  Prefab
+    path "Prefabs/Arena bot 1.swprefab"
+  Transform
+    position 12 0 -8
+end
+
+entity "Arena HUD"
+  UIDocument
+    document UI/Arena/hud.rml
+    preview "arena_blue=0; arena_orange=0; arena_time=180; arena_health=100; arena_ammo=30; arena_magazine=30; arena_kills=0; arena_deaths=0; arena_feed=BLUE VS ORANGE; arena_status=CLICK TO CAPTURE MOUSE"
+end
+
+entity "Arena Menu"
+  UIDocument
+    document UI/Arena/menu.rml
+    visible 0
+    focus_on_show 1
+    order 10
+end
+

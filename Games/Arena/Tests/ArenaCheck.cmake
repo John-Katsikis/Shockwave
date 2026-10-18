@@ -1,0 +1,22 @@
+file(MAKE_DIRECTORY "${TEMP}")
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${SCENE}"
+                RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Arena validation failed: ${out}\n${err}")
+endif()
+file(READ "${SCENE}" source)
+string(REPLACE "  ArenaWeapon\n" "  ArenaWeapon\n    magazine 0\n" invalid "${source}")
+file(WRITE "${TEMP}/invalid.swscene" "${invalid}")
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${TEMP}/invalid.swscene"
+                RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "magazine")
+    message(FATAL_ERROR "Invalid weapon should fail --check: ${result}\n${out}\n${err}")
+endif()
+string(REPLACE "  CharacterController" "  Camera" invalid "${source}")
+file(WRITE "${TEMP}/invalid.swscene" "${invalid}")
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${TEMP}/invalid.swscene"
+                RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "Arena player requires")
+    message(FATAL_ERROR "Incomplete player should fail --check: ${result}\n${out}\n${err}")
+endif()
+file(REMOVE_RECURSE "${TEMP}")

@@ -301,6 +301,15 @@ editor and the standalone player run the same compiled game code:
 ./build/bin/player                                        # no project around the working folder: runs Games/Sample
 ```
 
+For a playable shooter prototype with an automatic rifle, HUD and a local 6v6 bot
+match, run `./build/bin/player --scene Games/Arena/Scenes/arena.swscene`.
+See [Arena shooter test](Games/Arena/README.md) for controls, editing and automated combat benchmarks.
+
+To start your own independent game, use the editor's **New project** action or
+`./build/bin/player --new-project /absolute/path/to/MyGame --name "My Game"`.
+Then register its folder in `SHOCKWAVE_GAMES` and build. No engine source edits are
+needed; see [Starting projects](docs/StartingProjects.md).
+
 To hand your game to players, package it: Build > Package game in the editor, or
 `./build/bin/player --package`. See [Packaging your game](docs/Packaging.md).
 

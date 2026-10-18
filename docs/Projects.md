@@ -61,9 +61,21 @@ camera.
 The project hub offers the sample project and can create a new one. A new project gets:
 
 - `<Name>.swproject`, with spaces and punctuation removed from the name;
-- `Content/` and `Scenes/` folders;
+- `Content/`, `Scenes/`, `Config/` and `Source/` folders;
+- its own C++ game module and `CMakeLists.txt`, without inheriting the open game's module;
+- input settings and a README with build instructions;
 - a `.gitignore` that ignores `Saved/`;
 - a starter scene with a camera, ground and a light.
+
+The same starter is available without opening the editor:
+
+```sh
+./build/bin/player --new-project /absolute/path/to/MyGame --name "My Game"
+```
+
+Register the new folder in `SHOCKWAVE_GAMES` and build its module before Play.
+[Starting projects](StartingProjects.md) gives the complete workflow, including
+projects outside the engine repository and the distinction between Sample and Arena.
 
 To change a project's settings later, use File > Project settings... in the editor. It
 edits the manifest in place.

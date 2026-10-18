@@ -19,7 +19,7 @@ add_executable(package_test PackageTest.cpp)
 target_link_libraries(package_test PRIVATE Shockwave::Packaging)
 shockwave_warnings(package_test)
 add_test(NAME package COMMAND package_test)
-if(SHOCKWAVE_MODULAR AND NOT WIN32)
+if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
     add_test(NAME package_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
@@ -31,7 +31,12 @@ endif()
 
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
-add_test(NAME project COMMAND project_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME project COMMAND project_test ${CMAKE_SOURCE_DIR}/Templates/Blank
+         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_test(NAME project_create_cli COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/ProjectCreateCLI
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/ProjectCreateCheck.cmake)
 
 add_executable(save_game_test SaveGameTest.cpp)
 target_link_libraries(save_game_test PRIVATE Shockwave::GameFramework)
@@ -83,7 +88,7 @@ endif()
 add_test(NAME spatial_audio_fallback COMMAND spatial_audio_test simple)
 set_tests_properties(spatial_audio_fallback PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SHOCKWAVE_PHONON=none" TIMEOUT 60)
 find_program(SHOCKWAVE_XVFB_RUN xvfb-run)
-if(SHOCKWAVE_XVFB_RUN)
+if(SHOCKWAVE_XVFB_RUN AND TARGET game_sample)
     add_test(NAME audio_cli_check COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
@@ -171,9 +176,11 @@ target_link_libraries(animation_test PRIVATE Shockwave::Animation)
 shockwave_warnings(animation_test)
 add_test(NAME animation COMMAND animation_test ${CMAKE_SOURCE_DIR})
 
+if(TARGET game_sample)
 add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
     -DPLAYER=$<TARGET_FILE:player>
     -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CircuitCheck.cmake)
 set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60
                      LABELS gpu)
+endif()
