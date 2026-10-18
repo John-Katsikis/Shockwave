@@ -4,6 +4,7 @@
 #include "Editor.h"
 
 #include <Circuits/Circuit.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -155,6 +156,9 @@ void Editor::drawAddComponentPopup(Entity e) {
         } else {
             chosen->add(m_world, e);
         }
+        // A scene's network object needs a unique key; a prefab's is left empty so each
+        // copy gets its own.
+        if (!isEditingPrefab()) shockwave::net::assignMissingNetworkKey(m_world, e);
         log("Added " + chosen->name + " to " + displayName(e));
         ImGui::CloseCurrentPopup();
     }

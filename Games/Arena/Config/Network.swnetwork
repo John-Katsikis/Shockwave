@@ -1,0 +1,11 @@
+shockwave_network 1
+# Arena's multiplayer settings (docs/Networking.md). Sessions arrive in later batches;
+# until then this is what `player --check` and `--network-info` validate.
+enabled 0
+transport steam
+steam_app_id 0
+max_players 12
+tick_rate 60
+snapshot_rate 20
+input_rate 60
+manifest "Config/NetworkManifest.swnetmanifest"

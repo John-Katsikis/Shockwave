@@ -42,9 +42,9 @@ struct TransportAddress {
     uint16_t port = 0;   // Steam virtual port
 };
 
-// The most connections any endpoint holds: eleven remote players plus up to four peers
-// still being admitted.
-inline constexpr uint32_t kMaxTransportConnections = 16;
+// The most connections any endpoint holds: 63 remote players (a 64-player session) plus
+// up to four peers still being admitted.
+inline constexpr uint32_t kMaxTransportConnections = 68;
 
 struct TransportLimits {
     uint32_t maxConnections = 11;

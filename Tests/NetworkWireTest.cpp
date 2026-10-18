@@ -519,10 +519,13 @@ static void testRanges() {
     CHECK(encodeStatus(Spawn{1, 5, 0, 0, 0, "", 1, {}}).code == WireStatusCode::Invalid);   // authored needs a key
     CHECK(encodeStatus(Spawn{1, 5, 0, 0, 2, "door", 1, {}}).code == WireStatusCode::Invalid);
     CHECK(bool(encodeStatus(Spawn{1, 5, 0, 0, 0, "door-west", 1, {}})));
-    CHECK(encodeStatus(Spawn{1, 5, 0, 13, 2, "", 1, {}}).code == WireStatusCode::OutOfRange);   // owner slot 13
+    CHECK(bool(encodeStatus(Spawn{1, 5, 0, 64, 2, "", 1, {}})));   // 64 players
+    CHECK(encodeStatus(Spawn{1, 5, 0, 65, 2, "", 1, {}}).code == WireStatusCode::OutOfRange);   // owner slot 65
     CHECK(encodeStatus(Spawn{0, 5, 0, 0, 2, "", 1, {}}).code == WireStatusCode::OutOfRange);   // serial 0
     CHECK(encodeStatus(Despawn{1, 0, 0}).code == WireStatusCode::OutOfRange);   // entity 0
     CHECK(encodeStatus(Welcome{1, 7, 0, 512}).code == WireStatusCode::OutOfRange);   // slot 1 is the host's
+    CHECK(bool(encodeStatus(Welcome{64, 7, 0, 512})));
+    CHECK(encodeStatus(Welcome{65, 7, 0, 512}).code == WireStatusCode::OutOfRange);
     CHECK(encodeStatus(Snapshot{1, 1, 1, 1, 1, 0, {}}).code == WireStatusCode::Invalid);
     CHECK(encodeStatus(Snapshot{1, 1, 1, 0, 257, 0, {}}).code == WireStatusCode::OutOfRange);
     CHECK(encodeStatus(Pong{1, 0, 10, 9, 0}).code == WireStatusCode::Invalid);

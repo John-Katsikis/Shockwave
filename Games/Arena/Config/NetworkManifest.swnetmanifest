@@ -1,0 +1,5 @@
+shockwave_network_manifest 1
+# What a host and its clients must have identical (docs/Networking.md). Scene paths are
+# relative to the project folder, prefab paths to Content.
+game_protocol "arena.v1"
+scene 1 "Scenes/arena.swscene"

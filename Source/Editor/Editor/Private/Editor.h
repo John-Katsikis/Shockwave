@@ -10,6 +10,7 @@
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
+#include <Multiplayer/NetworkSettings.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
 #include <Animation/AnimationWorld.h>
@@ -150,6 +151,10 @@ private:
     void drawSpatialAudioNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
     void drawAudioStats();
     void drawAudioProjectSettings();   // rows inside the Project settings grid
+    // NetworkPanel.cpp: the Multiplayer section of Project settings (docs/Networking.md).
+    void drawNetworkProjectSettings();
+    void loadNetworkSettingsEdit();
+    void checkNetworkSetup();
     void applyAudioSettings(const shockwave::Project& project);
     void drawProjectSettingsWindow();
     void drawControlsWindow();
@@ -506,6 +511,15 @@ private:
 
     // Project settings form: an edited copy, applied on Save.
     shockwave::Project m_projectEdit;
+    // Its Multiplayer section: Config/Network.swnetwork, saved on its own.
+    struct NetworkSettingsEdit {
+        bool loaded = false;   // read when Project settings opens
+        bool present = false, savedPresent = false;   // the file exists (or will on Save)
+        shockwave::net::NetworkSettings saved, edit;
+        std::string loadError;   // the file couldn't be read: shown, never overwritten
+        bool checked = false;   // "Check network setup" ran
+        std::vector<shockwave::net::NetProblem> checkProblems, checkResults;
+    } m_networkEdit;
 
     // File dialogs answer from another thread.
     enum class DialogKind { OpenScene, SaveScene, OpenProject, NewProjectFolder, Import };

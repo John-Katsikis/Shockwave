@@ -47,6 +47,8 @@ int main(int argc, char** argv) {
         bool graphicsInfo = false, noUserGraphics = false;
         float renderScaleOverride = -1;
         bool listGpus = false;   // --gpus
+        bool networkInfo = false;   // --network-info
+        std::filesystem::path networkSchema;   // --network-schema
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--graphics" && i + 1 < argc)
@@ -246,6 +248,10 @@ int main(int argc, char** argv) {
                 tool.audioHrtf = value == "on" ? 1 : 0;
             } else if (arg == "--print-frame") {
                 tool.printFrame = true;
+            } else if (arg == "--network-info") {
+                networkInfo = true;
+            } else if (arg == "--network-schema" && i + 1 < argc) {
+                networkSchema = argv[++i];
             } else if (arg == "--saves") {
                 tool.listSaves = true;
             } else if (arg == "--load" && i + 1 < argc) {
@@ -300,6 +306,9 @@ int main(int argc, char** argv) {
                     "player --audio-mix out.wav [--seconds N] [--scene file]\n"
                     "                                    play the scene N seconds (default 3) with no audio\n"
                     "                                    device, write the mix and print per-channel levels\n"
+                    "player --network-info [--json file] the project's multiplayer settings, digests and\n"
+                    "                                    problems; opens no socket (docs/Networking.md)\n"
+                    "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
                     "player --devices [seconds]          list controllers; then print each input pressed\n"
                     "                                    as binding text, for that many seconds");
                 return 0;
@@ -414,6 +423,13 @@ int main(int argc, char** argv) {
             std::fputs(shockwave::graphicsSettingsText(tool.graphics).c_str(), stdout);
             return 0;
         }
+        const bool networkTool = networkInfo || !networkSchema.empty();
+        if (networkTool && (networkInfo == !networkSchema.empty() || tool.mode != Tool::Mode::Play ||
+                            package.requested || tool.listSaves || !tool.screenshot.empty() ||
+                            tool.benchmarkSeconds > 0 || tool.optimise || !tool.save.empty())) {
+            std::fprintf(stderr, "Player: --network-info and --network-schema run on their own (with --json)\n");
+            return 2;
+        }
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
@@ -428,6 +444,9 @@ int main(int argc, char** argv) {
             throw std::runtime_error(
                 "the game module is \"" + std::string(gameModule->id()) + "\" but the project wants \"" +
                 project.gameModule + "\"");
+        // Multiplayer tools read files and the game's registered types; no window or GPU.
+        if (networkInfo) return player::networkInfo(project, gameModule->module(), tool.benchmarkJson);
+        if (!networkSchema.empty()) return player::writeNetworkSchema(gameModule->module(), networkSchema);
         shockwave::EngineConfig config;
         config.window = {project.name, project.width, project.height, tool.graphics.vsync};
         config.tickRate = project.tickRate;

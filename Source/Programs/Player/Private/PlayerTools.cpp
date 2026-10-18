@@ -72,6 +72,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         std::sort(saves.begin(), saves.end());
     }
+    checkNetworkProject(problems);   // before the scenes, whose network objects need its registry
     for (const fs::path& scene : scenes) {
         const std::string shown = m_project.relative(scene);
         const size_t before = problems.size();
@@ -147,6 +148,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
         checkAnimators(world, scene.string(), problems);
         checkCircuits(world, scene.string(), problems, usedCircuits);
+        checkNetworkScene(world, shown, problems);
 
         // Navigation: a saved mesh that no longer matches the scene gets baked again on
         // every Play, which is slow and easy to miss.

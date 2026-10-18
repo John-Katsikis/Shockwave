@@ -10,6 +10,7 @@
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
+#include <Multiplayer/Replication.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
@@ -89,6 +90,12 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
 fs::path packagedProjectFile();
 // --check: problems in Config/Package.swpackage, when the project has one.
 void checkPackageSettings(const shockwave::Project& project, std::vector<std::string>& problems);
+// Multiplayer (PlayerNetwork.cpp, docs/Networking.md). --network-schema writes
+// docs/NetworkSchema.md for the game's registered types ("-" for stdout); --network-info
+// prints the project's network settings, digests and problems (with --json, as JSON).
+// Neither starts Steam or opens a socket.
+int writeNetworkSchema(const shockwave::GameModule& module, const fs::path& out);
+int networkInfo(const shockwave::Project& project, const shockwave::GameModule& module, const fs::path& json);
 
 class Player final : public shockwave::Application {
 public:
@@ -155,6 +162,11 @@ private:
         std::vector<std::string>& checkedEffects);
     void checkUnusedEffects(const std::vector<std::string>& checkedEffects, std::vector<std::string>& problems);
 
+    // --check for multiplayer (PlayerNetwork.cpp): Config/Network.swnetwork, the network
+    // manifest, its prefabs and the registered types, then each scene's network objects.
+    void checkNetworkProject(std::vector<std::string>& problems);
+    void checkNetworkScene(const shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
+
     shockwave::Project m_project;
     Tool m_tool;
     const shockwave::GameModule& m_module;
@@ -176,6 +188,7 @@ private:
     std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
     std::unique_ptr<shockwave::PlaySession> m_session;
     shockwave::NavMeshOverlay m_navOverlay;
+    std::unique_ptr<shockwave::net::ReplicationRegistry> m_networkRegistry;   // --check: frozen, or null
 };
 
 }   // namespace player

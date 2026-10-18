@@ -16,6 +16,7 @@
 #include <GameFramework/PlaySession.h>
 #include <GameFramework/SaveGame.h>
 #include <Input/InputBinding.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
@@ -40,6 +41,7 @@ void Player::onStart() {
     shockwave::registerEffectsComponents();
     shockwave::registerAnimationComponents();
     shockwave::registerCircuitComponents();
+    shockwave::net::registerNetworkComponents();
     const shockwave::GameModule& module = m_module;   // its types are registered already
     shockwave::createBuiltinAssets(engine().renderer(), engine().assets());
     if (module.createAssets) module.createAssets(engine());

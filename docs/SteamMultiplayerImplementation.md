@@ -32,6 +32,28 @@ Recorded here as the document asks, newest last. Status of each batch is in
    `move_x`/`move_z` vector may be no longer than 128 (a normalised diagonal encodes
    as about 90, 90); Pong's `responder_send_us` can't precede `responder_receive_us`;
    AuthTicket holds 1..4096 bytes.
+5. Batch 2, 2026-10-18, at the project owner's request: `max_players` is 2..64 (1v1 up
+   to 32v32), not 12. The wire follows: `kMaxPlayers` is 64, Welcome's `player_slot` is
+   2..64, Spawn's `owner_slot` 0..64, and `kMaxTransportConnections` is 68 (63 remote
+   players plus up to five being admitted). Everything below that says twelve players
+   or eleven clients now means `max_players`. `--check` estimates player-state
+   bandwidth from the largest registered per-player profile and fails when it doesn't
+   fit `outbound_bytes_per_second`, so large lobbies need a larger budget.
+6. Batch 2: Multiplayer depends on Engine and Network only, not Physics: the components
+   its checks read (RigidBody, Collider, CharacterController) are Engine's.
+7. Batch 2: profiles are field descriptor lists with one generic codec
+   (`encodeProfile`/`decodeProfile`) rather than hand-written codecs per profile, so the
+   wire layout, the `--check` rules and `docs/NetworkSchema.md` come from one list.
+   `engine.pose.v1` through it is byte-identical to `encodePose`. Capture and apply are
+   plain function pointers on a fixed-size `ProfileValue` (up to 32 fields).
+8. Batch 2: a game registers types with `SW_NETWORK_TYPES(function)` or
+   `GameModule::registerNetworkTypes`; `kPluginAbiVersion` is 2. Commands and events
+   1..31 are `engine.*` names only and 32 and up are game names only, like profiles.
+9. Batch 2: the content digest covers every Content file in v1 (cosmetic files
+   included), with CRLF read as LF in text formats; symbolic links are errors.
+10. Batch 2: the editor's "Assign missing network keys" bulk tool and its CLI counterpart
+    are deferred to Batch 9 (editor tooling). New components, duplicates and placed
+    prefab copies get keys as they're made, and `--check` reports missing ones.
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 

@@ -84,7 +84,7 @@ The sender's identity comes from the transport, never from this message. Capture
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
-| 0 | `player_slot` | u16 | 2..12 |
+| 0 | `player_slot` | u16 | 2..64 |
 | 2 | `baseline_id` | u32 | >= 1 |
 | 6 | `server_tick` | u32 |  |
 | 10 | `max_entities` | u16 | 12..4096 |
@@ -107,7 +107,7 @@ An authored object (`prefab_id` 0) has an `authored_key`; a spawned prefab has a
 | 0 | `control_serial` | u32 | >= 1 |
 | 4 | `entity` | u64 | >= 1 |
 | 12 | `incarnation` | u32 |  |
-| 16 | `owner_slot` | u16 | 0..12 |
+| 16 | `owner_slot` | u16 | 0..64 |
 | 18 | `prefab_id` | u16 |  |
 | 20 | `authored_key` | string(96) | 0..96 bytes UTF-8, no NUL |
 |  | `profile_id` | u16 | 1..1023 |
@@ -128,7 +128,7 @@ An authored object (`prefab_id` 0) has an `authored_key`; a spawned prefab has a
 | 0 | `control_serial` | u32 | >= 1 |
 | 4 | `entity` | u64 | >= 1 |
 | 12 | `incarnation` | u32 |  |
-| 16 | `owner_slot` | u16 | 0..12 |
+| 16 | `owner_slot` | u16 | 0..64 |
 
 ### 9 InitialState
 

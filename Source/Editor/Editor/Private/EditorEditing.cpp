@@ -4,6 +4,7 @@
 
 #include <Assets/BuiltinAssets.h>
 #include <Engine/Prefab.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
 
@@ -336,6 +337,8 @@ void Editor::duplicateSelected() {
         if (Name* name = m_world.get<Name>(copy)) name->value = uniqueName(name->value);
         copies.push_back(copy);
     }
+    // Copies of network objects are new network objects (docs/Networking.md).
+    if (!isEditingPrefab()) shockwave::net::renewNetworkKeys(m_world, copies);
     m_selection = copies;
     m_rangeAnchor = copies.back();
     log(copies.size() == 1 ? "Duplicated as " + displayName(copies[0])
