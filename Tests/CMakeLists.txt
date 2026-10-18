@@ -199,3 +199,23 @@ if(TARGET game_arena)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsCheck.cmake)
     set_tests_properties(graphics_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
 endif()
+
+# Networking (Network module): the wire format and its reference doc, the loopback
+# transport with fault injection, and packet captures. No Steam, sockets or display.
+add_executable(network_wire_test NetworkWireTest.cpp)
+target_link_libraries(network_wire_test PRIVATE Shockwave::Network)
+shockwave_warnings(network_wire_test)
+add_test(NAME network_wire COMMAND network_wire_test ${CMAKE_SOURCE_DIR}/docs/NetworkProtocol.md)
+set_tests_properties(network_wire PROPERTIES TIMEOUT 120)
+
+add_executable(network_transport_test NetworkTransportTest.cpp)
+target_link_libraries(network_transport_test PRIVATE Shockwave::Network)
+shockwave_warnings(network_transport_test)
+add_test(NAME network_transport COMMAND network_transport_test)
+set_tests_properties(network_transport PROPERTIES TIMEOUT 120)
+
+add_executable(network_capture_test NetworkCaptureTest.cpp)
+target_link_libraries(network_capture_test PRIVATE Shockwave::Network)
+shockwave_warnings(network_capture_test)
+add_test(NAME network_capture COMMAND network_capture_test)
+set_tests_properties(network_capture PROPERTIES TIMEOUT 60)

@@ -115,6 +115,18 @@ build/bin/player --package --project <file.swproject> [--output folder] [--no-bu
 It exits with 1 on any problem and prints `package`, `archive` and `run` lines with the
 paths it made.
 
+## Networking
+
+Multiplayer is built in batches from `docs/SteamMultiplayerImplementation.md`; record
+each batch's evidence in `docs/NetworkingVerification.md`. `docs/Networking.md` covers
+what exists. After changing a message in `Network/Messages.h`, regenerate the protocol
+reference and run the network tests:
+
+```sh
+build/bin/network_wire_test --write-reference docs/NetworkProtocol.md
+ctest --test-dir build -R network_ --output-on-failure
+```
+
 ## Engine and editor UI
 
 - Follow `docs/UI.md` when adding or changing engine or editor UI.

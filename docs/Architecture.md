@@ -118,6 +118,7 @@ module can only see the headers of modules it depends on, directly or through th
 | Module | What it holds | Depends on | Unreal counterpart |
 |---|---|---|---|
 | Core | job system, logging, frame pacing, profiling macros (Tracy), plugin loading | GLM | Core |
+| Network | multiplayer wire protocol and message catalog, transport interface, in-process loopback transport with fault injection, packet captures, online services interface. No Engine, SDL or Steam | Core | NetCore, Sockets |
 | Platform | window and OS events (SDL3) | Core | ApplicationCore |
 | Input | keyboard, mouse, gamepads and joysticks behind named actions; `.swinput` bindings | Platform | InputCore, Enhanced Input |
 | RHI | Vulkan device, swapchain, pipelines, render graph (static, inside the Vulkan plugin) | Platform | RHI, VulkanRHI |
