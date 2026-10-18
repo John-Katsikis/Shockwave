@@ -13,6 +13,8 @@ layout(push_constant, scalar) uniform PushConstants {
     uint sceneTexture;
     float exposureScale;
     uint tonemapper;   // 0 ACES, 1 AgX, 2 Reinhard, 3 none; 99: debug view, pass through
+    uint bloomTexture;   // the bloom chain's top level (RendererBloom.cpp)
+    float bloomIntensity;   // 0: none
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -53,6 +55,13 @@ void main() {
     // Stay half a texel inside the edges: the shared sampler repeats.
     vec2 uv = clamp(gl_FragCoord.xy / pc.outputSize, 0.5 / size, 1.0 - 0.5 / size);
     vec3 hdr = texture(sampler2D(textures[nonuniformEXT(pc.sceneTexture)], linearSampler), uv).rgb;
+    if (pc.bloomIntensity > 0.0) {
+        // A mix rather than an add: bloom moves light around instead of adding more of it.
+        vec2 bloomSize = vec2(textureSize(sampler2D(textures[nonuniformEXT(pc.bloomTexture)], linearSampler), 0));
+        vec2 bloomUv = clamp(gl_FragCoord.xy / pc.outputSize, 0.5 / bloomSize, 1.0 - 0.5 / bloomSize);
+        vec3 bloom = texture(sampler2D(textures[nonuniformEXT(pc.bloomTexture)], linearSampler), bloomUv).rgb;
+        hdr = mix(hdr, bloom, pc.bloomIntensity);
+    }
     vec3 color;
     if (pc.tonemapper == 99u) {
         color = hdr;

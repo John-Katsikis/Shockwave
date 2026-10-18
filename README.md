@@ -591,7 +591,8 @@ window or viewport size. Meshes outside the camera's view are skipped (frustum c
 against each draw's bounding sphere), though they still cast shadows into it.
 
 The sun casts soft cascaded shadows, and spot and point lights cast shadows from a shared
-atlas. See [Shadows](docs/Shadows.md). Bloom and upscaling aren't done yet.
+atlas. See [Shadows](docs/Shadows.md). Bloom spreads very bright light into its
+surroundings (see [Lighting](docs/Lighting.md#bloom)). Upscaling isn't done yet.
 
 ### Repository layout
 

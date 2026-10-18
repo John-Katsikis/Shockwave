@@ -472,7 +472,7 @@ void lighting() {
         out << "shockwave_scene 2\n"
                "entity \"Environment\"\n  Environment\n    ground_color 0.1 0.1 0.1\n    exposure -1.5\n"
                "    tonemapper AgX\n    environment_intensity 2.5\n    environment_rotation 90\n"
-               "    show_environment no\nend\n"
+               "    show_environment no\n    bloom_intensity 0.1\nend\n"
                "entity \"Spot\"\n  Transform\n    rotation -90 0 0\n  Light\n    type Spot\n    color 1 0.5 0.25\n"
                "    intensity 12\n    range 8\n    spot_angle 25\n    spot_softness 0.5\n    enabled no\nend\n"
                "entity \"Glow\"\n  MeshRenderer\n    roughness 0.2\n    metallic 1\n    emissive 0 1 0\n"
@@ -491,6 +491,7 @@ void lighting() {
         CHECK(near(env->groundColor.r, 0.1f));
         CHECK(env->environmentMap.id == 0 && near(env->environmentIntensity, 2.5f));
         CHECK(near(env->environmentRotation, 90.0f) && !env->showEnvironment);
+        CHECK(near(env->bloomIntensity, 0.1f));
         CHECK(light->type == Light::Type::Spot && !light->enabled);
         CHECK(near(light->intensity, 12.0f) && near(light->range, 8.0f) && near(light->spotAngle, 25.0f));
         CHECK(near(light->spotSoftness, 0.5f) && near(light->color.g, 0.5f));

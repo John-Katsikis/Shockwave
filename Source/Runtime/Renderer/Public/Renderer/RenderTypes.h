@@ -87,6 +87,9 @@ struct LightingDesc {
     float environmentIntensity = 1.0f;   // multiplies the map's light
     float environmentRotation = 0.0f;   // radians about +Y, counterclockwise seen from above
     bool showEnvironment = true;   // draw the map behind everything instead of the clear color
+    // Bright light spreading into its surroundings: how much of the blurred image is mixed
+    // into the sharp one. 0 turns it off.
+    float bloomIntensity = 0.04f;
 };
 
 // What the scene shows: the lit result, or a view for checking content. ShadowCascades

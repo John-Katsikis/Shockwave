@@ -33,6 +33,12 @@ UseInfo useInfo(ImageUse use) {
              VK_ACCESS_2_SHADER_SAMPLED_READ_BIT},
             false,
             "sampled"};
+    case ImageUse::ComputeSampled:
+        return {
+            {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+             VK_ACCESS_2_SHADER_SAMPLED_READ_BIT},
+            false,
+            "sampled (compute)"};
     case ImageUse::TransferSrc:
         return {
             {VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT},

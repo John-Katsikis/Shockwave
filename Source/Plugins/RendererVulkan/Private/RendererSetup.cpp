@@ -26,6 +26,7 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     cascadeSlot = bindlessSlots() - 2;
     localSlot = bindlessSlots() - 3;
     brdfSlot = bindlessSlots() - 4;
+    bloomSlot = bindlessSlots() - 5;
     createRenderTargets();
     createShadowMaps();
     createEnvironment();
@@ -47,6 +48,8 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroyCommandPool(device, uploadPool, nullptr);
     destroyParticles();
     destroySkinning();
+    destroyBloomTargets();
+    destroyBloomPipeline();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -155,6 +158,7 @@ void VulkanRenderer::Impl::createRenderTargets() {
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 1, true, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
     createDisplayUiView();
+    createBloomTargets();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
     // The tonemap pass reads the scene through the bindless table like any texture.
@@ -182,6 +186,7 @@ void VulkanRenderer::Impl::registerGuiSceneTexture() {
 
 void VulkanRenderer::Impl::recreateSceneTargets() {
     vkDeviceWaitIdle(context->device());
+    destroyBloomTargets();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

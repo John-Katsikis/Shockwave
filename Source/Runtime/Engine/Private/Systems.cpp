@@ -60,6 +60,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
     lighting.environmentIntensity = std::max(environment.environmentIntensity, 0.0f);
     lighting.environmentRotation = glm::radians(environment.environmentRotation);
     lighting.showEnvironment = environment.showEnvironment;
+    lighting.bloomIntensity = std::clamp(environment.bloomIntensity, 0.0f, 1.0f);
     lighting.exposure = environment.exposure;
     lighting.tonemapper = static_cast<LightingDesc::Tonemapper>(environment.tonemapper);
     lighting.shadowDistance = environment.shadowDistance;
