@@ -26,29 +26,6 @@ ShadowConfig detail::shadowConfig(ShadowQuality quality) {
 
 namespace {
 
-// A view's six clip planes (Gribb & Hartmann), for testing bounding spheres. Works for any
-// projection with 0..1 depth, reversed or not; a plane a projection doesn't have (the far
-// plane of an infinite one) is left out.
-struct Frustum {
-    std::array<glm::vec4, 6> planes{};
-    uint32_t count = 0;
-
-    explicit Frustum(const glm::mat4& m) {
-        auto row = [&](int i) { return glm::vec4(m[0][i], m[1][i], m[2][i], m[3][i]); };
-        const glm::vec4 r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
-        for (const glm::vec4& p : {r3 + r0, r3 - r0, r3 + r1, r3 - r1, r2, r3 - r2}) {
-            const float length = glm::length(glm::vec3(p));
-            if (length > 1e-6f) planes[count++] = p / length;
-        }
-    }
-    bool intersects(const glm::vec4& sphere) const {
-        for (uint32_t i = 0; i < count; ++i) {
-            if (glm::dot(glm::vec3(planes[i]), glm::vec3(sphere)) + planes[i].w < -sphere.w) return false;
-        }
-        return true;
-    }
-};
-
 // Any vector not parallel to dir, for lookAt.
 glm::vec3 upFor(const glm::vec3& dir) {
     return std::abs(dir.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);

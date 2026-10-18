@@ -482,8 +482,8 @@ void Editor::drawStatsWindow() {
     }
     ImGui::Separator();
     ImGui::Text(
-        "Scene %u x %u at %.2fx, %u draws", renderer.renderWidth(), renderer.renderHeight(), renderer.renderScale(),
-        renderer.drawCount());
+        "Scene %u x %u at %.2fx, %u draws (%u outside the view)", renderer.renderWidth(), renderer.renderHeight(),
+        renderer.renderScale(), renderer.drawCount(), renderer.culledDraws());
     drawOptimisationStats();
     ImGui::Text("%zu entities", m_world.entityCount());
     ImGui::Text("%u threads in the job system", engine().jobs().threadCount());

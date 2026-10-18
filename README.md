@@ -587,7 +587,8 @@ The scene renders to an HDR image with forward PBR shading: GGX specular, Lamber
 diffuse, up to 256 directional, point and spot lights, and image-based lighting from an
 environment map or the sky and ground colors (see [Lighting](docs/Lighting.md)).
 Then a tonemap pass applies exposure and the chosen curve, writing an sRGB image at the
-window or viewport size.
+window or viewport size. Meshes outside the camera's view are skipped (frustum culling
+against each draw's bounding sphere), though they still cast shadows into it.
 
 The sun casts soft cascaded shadows, and spot and point lights cast shadows from a shared
 atlas. See [Shadows](docs/Shadows.md). Bloom and upscaling aren't done yet.
@@ -667,8 +668,8 @@ local headers, Shockwave modules, third-party, then the standard library.
    uncapped interpolated rendering (done)
 3. 3D basics: reverse-Z depth, back-face culling, fly camera, keyboard and mouse input
    with action mapping, bindless textures with GPU mipmaps, GPU draw table (done)
-4. Gamepads, flight sticks and wheels (done). Next: GPU-driven rendering, with frustum
-   culling and indirect draws generated on the GPU
+4. Gamepads, flight sticks and wheels (done), frustum culling on the CPU (done). Next:
+   GPU-driven rendering, with culling and indirect draws generated on the GPU
 5. Scene: entities and components, with systems scheduled on the job system (done)
 6. Render graph, tonemapping, lighting and shadows (done), and audio (done). Next:
    upscaling, glTF assets in the asset browser

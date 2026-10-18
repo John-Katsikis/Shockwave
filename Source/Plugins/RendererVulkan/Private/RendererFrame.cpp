@@ -49,6 +49,7 @@ void VulkanRenderer::Impl::drawMesh(
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
 
     if (mesh.lodCount > 0) pickLod(mesh, scale, command.bounds, command);   // levels of detail
+    command.visible = viewFrustum.intersects(command.bounds);
 
     const uint32_t thread = JobSystem::threadIndex();
     if (thread < drawLists.size()) {
@@ -224,6 +225,7 @@ void VulkanRenderer::Impl::recordGrid(VkCommandBuffer cmd) {
 void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     auto& draws = gatheredDraws;
     draws.clear();
+    lastCulledDraws = 0;
     uint32_t total = 0;
     for (const DrawList& list : drawLists) total += static_cast<uint32_t>(list.commands.size());
     {
@@ -239,6 +241,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     ensureDrawCapacity(f, total);
     // What levels of detail saved.
     for (const DrawCommand& draw : draws) {
+        lastCulledDraws += !draw.visible;
         lastLodStats.triangles += draw.indexCount / 3;
         lastLodStats.fullTriangles += (draw.fullIndexCount ? draw.fullIndexCount : draw.indexCount) / 3;
         lastLodStats.reducedDraws += draw.fullIndexCount != 0;
@@ -270,6 +273,7 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     VkBuffer boundIndices = VK_NULL_HANDLE;
     VkPipeline boundPipeline = meshPipeline;
     for (const auto& draw : gatheredDraws) {
+        if (!draw.visible) continue;
         const auto pipeline = draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
                               : draw.blend  ? (draw.doubleSided ? meshBlendDoubleSidedPipeline : meshBlendPipeline)
                                             : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);

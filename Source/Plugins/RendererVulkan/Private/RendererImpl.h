@@ -181,6 +181,9 @@ struct DrawCommand {
     // Skinned draws (RendererSkinning.cpp): which DrawList, and which SkinJob in it.
     uint32_t skinList = 0, skin = kNoSkin;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
+    // In the camera's view. Draws outside it stay in the draw table: they may still cast
+    // shadows into the view.
+    bool visible = true;
     float depth = 0.0f;
 };
 
@@ -207,6 +210,30 @@ struct SkinJob {
     uint32_t mesh;
     uint32_t firstJoint;   // in its DrawList's joints
     uint32_t jointCount;
+};
+
+// A view's six clip planes (Gribb & Hartmann), for testing bounding spheres. Works for any
+// projection with 0..1 depth, reversed or not; a plane a projection doesn't have (the far
+// plane of an infinite one) is left out.
+// The camera's culls the scene's draws (drawMesh); each shadow map's culls its casters.
+struct Frustum {
+    std::array<glm::vec4, 6> planes{};
+    uint32_t count = 0;
+
+    explicit Frustum(const glm::mat4& m) {
+        auto row = [&](int i) { return glm::vec4(m[0][i], m[1][i], m[2][i], m[3][i]); };
+        const glm::vec4 r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
+        for (const glm::vec4& p : {r3 + r0, r3 - r0, r3 + r1, r3 - r1, r2, r3 - r2}) {
+            const float length = glm::length(glm::vec3(p));
+            if (length > 1e-6f) planes[count++] = p / length;
+        }
+    }
+    bool intersects(const glm::vec4& sphere) const {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (glm::dot(glm::vec3(planes[i]), glm::vec3(sphere)) + planes[i].w < -sphere.w) return false;
+        }
+        return true;
+    }
 };
 
 // One per thread so drawMesh never takes a lock on the hot path.
@@ -398,6 +425,7 @@ struct VulkanRenderer::Impl {
     std::mutex foreignDrawMutex;
     DrawList foreignDraws;   // threads the job system doesn't own
     uint32_t lastDrawCount = 0;
+    uint32_t lastCulledDraws = 0;   // of those, outside the camera's view
     std::vector<DrawCommand> gatheredDraws;
 
     vk::Image sceneColor;
@@ -429,6 +457,7 @@ struct VulkanRenderer::Impl {
     bool needsResize = false;
     Color clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     glm::mat4 viewProjection{1.0f};
+    Frustum viewFrustum{glm::mat4(1.0f)};   // viewProjection's, set with it
     glm::mat4 view{1.0f}, projection{1.0f};
     glm::vec3 cameraPosition{0.0f};
 

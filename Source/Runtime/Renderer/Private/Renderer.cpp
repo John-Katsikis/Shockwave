@@ -383,6 +383,7 @@ float Renderer::aspectRatio() const { return m->backend->aspectRatio(); }
 const char* Renderer::gpuName() const { return m->backend->gpuName(); }
 const GpuChoice* Renderer::gpuChoice() const { return m->backend->gpuChoice(); }
 uint32_t Renderer::drawCount() const { return m->backend->drawCount(); }
+uint32_t Renderer::culledDraws() const { return m->backend->culledDraws(); }
 void Renderer::requestScreenshot(const std::string& path) { m->backend->requestScreenshot(path); }
 bool Renderer::screenshotPending() const { return m->backend->screenshotPending(); }
 const std::string& Renderer::screenshotResult() const { return m->backend->screenshotResult(); }

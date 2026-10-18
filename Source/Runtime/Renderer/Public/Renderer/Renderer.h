@@ -186,6 +186,7 @@ public:
     // Every GPU found and why this one renders (GpuSelection.h); null without a GPU.
     const GpuChoice* gpuChoice() const;
     uint32_t drawCount() const;   // draws submitted last frame
+    uint32_t culledDraws() const;   // of those, outside the camera's view, so not drawn in the scene
 
     // Called by the engine. beginFrame returns false when there is nothing to
     // draw into (minimized window, swapchain being rebuilt).

@@ -352,7 +352,9 @@ void Editor::drawViewportOverlay(const ImVec2& pos, const ImVec2& size) {
         std::snprintf(
             lines[1], sizeof(lines[1]), "%u x %u (%.2fx)", renderer.renderWidth(), renderer.renderHeight(),
             renderer.renderScale());
-        std::snprintf(lines[2], sizeof(lines[2]), "%u draws", renderer.drawCount());
+        std::snprintf(
+            lines[2], sizeof(lines[2]), "%u draws, %u culled", renderer.drawCount() - renderer.culledDraws(),
+            renderer.culledDraws());
         std::snprintf(lines[3], sizeof(lines[3]), "%zu entities", m_world.entityCount());
         for (const char* line : lines) {
             overlayText(draw, ImVec2(pos.x + 10.0f, y), text, line);

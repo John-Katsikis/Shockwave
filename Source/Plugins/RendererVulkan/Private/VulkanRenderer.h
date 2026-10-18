@@ -66,6 +66,7 @@ public:
     const char* gpuName() const override;
     const GpuChoice* gpuChoice() const override;
     uint32_t drawCount() const override;
+    uint32_t culledDraws() const override;
 
     void requestScreenshot(const std::string& path) override;
     bool screenshotPending() const override;
