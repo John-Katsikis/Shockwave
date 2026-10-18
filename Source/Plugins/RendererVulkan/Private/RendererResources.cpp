@@ -232,14 +232,20 @@ void VulkanRenderer::Impl::writeTextureDescriptor(uint32_t id) {
 
 vk::Image
 VulkanRenderer::Impl::uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+    return uploadTexture(
+        width, height, rgba.first(size_t(width) * height * 4),
+        srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM);
+}
+
+vk::Image
+VulkanRenderer::Impl::uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> pixels, VkFormat format) {
     const uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-    const VkFormat format = srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     vk::Image image = createImage(
         {width, height}, format,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 
-    vk::Buffer staging = createStaging(rgba.data(), size_t(width) * height * 4);
+    vk::Buffer staging = createStaging(pixels.data(), pixels.size());
     immediateSubmit([&](VkCommandBuffer cmd) {
         transitionImage(
             cmd, image.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,

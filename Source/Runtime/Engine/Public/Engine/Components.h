@@ -75,14 +75,22 @@ struct Camera {
 };
 
 // Scene-wide settings. Give one entity one; with several, any of them may win.
-// Scene-wide look: the sky behind everything, the ambient light that fills shadows (a
-// blend from groundColor below to skyColor above), and how HDR light becomes screen
-// colors. One per scene; without one the defaults below apply.
+// Scene-wide look: the sky behind everything, the light that arrives from all around
+// (image-based lighting: it fills shadows and shows in reflections), and how HDR light
+// becomes screen colors. One per scene; without one the defaults below apply.
+// Without an environment map, the surroundings are skyColor above the horizon and
+// groundColor below it, times ambientIntensity. docs/Lighting.md explains both.
 struct Environment {
     enum class Tonemapper : int { ACES, AgX, Reinhard, None };
     glm::vec4 skyColor{0.32f, 0.42f, 0.58f, 1.0f};
     glm::vec4 groundColor{0.18f, 0.16f, 0.14f, 1.0f};
     float ambientIntensity = 0.6f;
+    // A panorama of the surroundings (equirectangular, 2:1, ideally a .hdr file) that lights
+    // the scene and shows in reflections in place of the sky and ground colors.
+    TextureHandle environmentMap{};   // 0, the white texture: none
+    float environmentIntensity = 1.0f;   // multiplies the map's light
+    float environmentRotation = 0.0f;   // degrees about the vertical axis
+    bool showEnvironment = true;   // draw the map behind everything instead of skyColor
     float exposure = 0.0f;   // in stops: +1 doubles brightness, -1 halves it
     Tonemapper tonemapper = Tonemapper::ACES;
     // The sun's shadows: how far from the camera they reach, and in how many cascades

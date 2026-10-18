@@ -104,7 +104,9 @@ Each item links to the guide that covers it in detail.
   shaders, and the editor reloads them in place. Your scene and undo history are kept.
   See [Plugins and hot reload](docs/Plugins.md).
 - **Light your scenes.** Directional, point and spot lights with physically based
-  shading, and soft shadows from all three. See [Shadows](docs/Shadows.md).
+  shading, and soft shadows from all three. See [Shadows](docs/Shadows.md). Light from
+  all around, a `.hdr` panorama or the sky and ground colors, fills shadows and shows in
+  reflections. See [Lighting](docs/Lighting.md).
 - **Import models and textures.** Drop glTF, FBX, OBJ and other models into your
   project's `Content/` folder and place them in the editor. See [Assets](docs/Assets.md).
 - **Use less GPU memory and fewer triangles.** Textures are compressed to BC7 and distant
@@ -582,7 +584,8 @@ Passes declare which images they read and write, and the graph places the
 synchronization2 barriers, the GPU's "wait for this first" markers.
 
 The scene renders to an HDR image with forward PBR shading: GGX specular, Lambert
-diffuse, up to 256 directional, point and spot lights, and hemisphere ambient light.
+diffuse, up to 256 directional, point and spot lights, and image-based lighting from an
+environment map or the sky and ground colors (see [Lighting](docs/Lighting.md)).
 Then a tonemap pass applies exposure and the chosen curve, writing an sRGB image at the
 window or viewport size.
 

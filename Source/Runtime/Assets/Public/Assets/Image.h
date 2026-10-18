@@ -22,4 +22,14 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
 // Whether loadImage knows the file's extension.
 bool isImageFile(const std::filesystem::path& path);
 
+// Radiance .hdr pixels at full range, for environment maps (docs/Lighting.md).
+struct HdrImage {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::vector<float> rgba;   // linear, 4 floats per pixel, rows top to bottom
+};
+// Whether the bytes are a Radiance .hdr file (by its header, not its name).
+bool isHdrImage(std::span<const uint8_t> bytes);
+bool decodeHdrImage(std::span<const uint8_t> bytes, HdrImage& image, std::string& error);
+
 }   // namespace shockwave

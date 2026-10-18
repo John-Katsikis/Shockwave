@@ -230,11 +230,36 @@ void projectKeys() {
     }
     fs::remove_all(folder);
 }
+
+// HDR images (environment maps): full range from a Radiance file, and the RGBA16F format
+// they're uploaded in.
+void hdrImages() {
+    // 2 x 1 pixels, flat (not run-length encoded) RGBE: 1.0 and 8.0.
+    std::string file = "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 2\n";
+    for (const unsigned char byte : {128, 128, 128, 129, 128, 128, 128, 132}) file += static_cast<char>(byte);
+    const std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(file.data()), file.size());
+    check(isHdrImage(bytes), "A Radiance header is HDR");
+    HdrImage hdr;
+    std::string error;
+    check(decodeHdrImage(bytes, hdr, error), "The HDR image decodes");
+    check(hdr.width == 2 && hdr.height == 1 && hdr.rgba.size() == 8, "HDR size");
+    check(
+        hdr.rgba.size() == 8 && std::abs(hdr.rgba[0] - 1.0f) < 1e-3f && std::abs(hdr.rgba[4] - 8.0f) < 1e-3f,
+        "HDR values above 1 survive");
+    const uint8_t png[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    check(!isHdrImage(png), "A PNG isn't HDR");
+
+    check(textureLevelBytes(TextureFormat::RGBA16F, 4, 2) == 64, "RGBA16F is 8 bytes a pixel");
+    TextureData half{TextureFormat::RGBA16F, false, 4, 2, {{4, 2, 0, 64}}, std::vector<uint8_t>(64)};
+    check(half.valid() && half.gpuBytes() == 64 + 64 / 3, "A lone RGBA16F level gets mipmaps");
+    check(std::string(textureFormatName(TextureFormat::RGBA16F)) == "RGBA16F", "RGBA16F's name");
+}
 }   // namespace
 
 int main() {
     meshes();
     textures();
+    hdrImages();
     importSettings();
     projectKeys();
     if (failures == 0) std::puts("optimisation: all checks passed");

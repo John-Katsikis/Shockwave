@@ -21,6 +21,7 @@ VkFormat vulkanFormat(TextureFormat format, bool srgb) {
     switch (format) {
     case TextureFormat::RGBA8: return srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     case TextureFormat::BC7: return srgb ? VK_FORMAT_BC7_SRGB_BLOCK : VK_FORMAT_BC7_UNORM_BLOCK;
+    case TextureFormat::RGBA16F: return VK_FORMAT_R16G16B16A16_SFLOAT;
     }
     return VK_FORMAT_UNDEFINED;
 }
@@ -81,6 +82,13 @@ bool VulkanRenderer::Impl::supportsTextureFormat(TextureFormat format) const {
     case TextureFormat::BC7:
         return context->textureCompressionBC() && formatSampleable(VK_FORMAT_BC7_SRGB_BLOCK) &&
                formatSampleable(VK_FORMAT_BC7_UNORM_BLOCK);
+    case TextureFormat::RGBA16F: {
+        // Its mipmaps are made with blits, like RGBA8's.
+        VkFormatProperties properties{};
+        vkGetPhysicalDeviceFormatProperties(context->physicalDevice(), VK_FORMAT_R16G16B16A16_SFLOAT, &properties);
+        const VkFormatFeatureFlags blit = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+        return formatSampleable(VK_FORMAT_R16G16B16A16_SFLOAT) && (properties.optimalTilingFeatures & blit) == blit;
+    }
     }
     return false;
 }
@@ -104,9 +112,11 @@ vk::Image VulkanRenderer::Impl::uploadTextureData(const TextureData& data) {
     if (!data.valid()) throw std::runtime_error("texture data is incomplete");
     if (!supportsTextureFormat(data.format))
         throw std::runtime_error(std::string("this GPU can't sample ") + textureFormatName(data.format));
-    if (data.format == TextureFormat::RGBA8 && data.levels.size() == 1) {
+    if (data.format != TextureFormat::BC7 && data.levels.size() == 1) {
         const auto& level = data.levels[0];
-        return uploadTexture(level.width, level.height, {data.bytes.data() + level.offset, level.size}, data.srgb);
+        return uploadTexture(
+            level.width, level.height, {data.bytes.data() + level.offset, level.size},
+            vulkanFormat(data.format, data.srgb));
     }
     const auto levels = static_cast<uint32_t>(data.levels.size());
     vk::Image image = createImage(

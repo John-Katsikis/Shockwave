@@ -13,8 +13,9 @@ namespace shockwave {
 enum class TextureFormat : uint8_t {
     RGBA8,   // 4 bytes per pixel, uncompressed
     BC7,   // 1 byte per pixel in 4 x 4 blocks; what desktop GPUs sample compressed colour from
+    RGBA16F,   // 8 bytes per pixel, half floats: HDR images (.hdr environment maps); always linear
 };
-const char* textureFormatName(TextureFormat format);   // "RGBA8", "BC7"
+const char* textureFormatName(TextureFormat format);   // "RGBA8", "BC7", "RGBA16F"
 
 struct TextureData {
     struct Level {
@@ -24,7 +25,8 @@ struct TextureData {
     TextureFormat format = TextureFormat::RGBA8;
     bool srgb = true;   // colour textures are sRGB; data (normals, masks) is linear
     uint32_t width = 0, height = 0;
-    // Largest first. An RGBA8 texture with a single level gets the rest made on the GPU.
+    // Largest first. An RGBA8 or RGBA16F texture with a single level gets the rest made on
+    // the GPU.
     std::vector<Level> levels;
     std::vector<uint8_t> bytes;
 

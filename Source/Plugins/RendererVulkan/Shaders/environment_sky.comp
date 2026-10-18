@@ -1,0 +1,60 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
+
+// Image-based lighting, step 1 (RendererEnvironment.cpp): the scene's surroundings into
+// the environment cube's top level. They're an equirectangular environment map, or
+// without one the sky color above the horizon and the ground color below it.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform texture2D textures[];
+layout(set = 0, binding = 1) uniform sampler linearSampler;
+layout(set = 1, binding = 0, rgba16f) uniform writeonly image2DArray target;
+
+// Must match EnvironmentSkyPushConstants in RendererEnvironment.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    vec3 skyColor;
+    uint map;   // bindless slot of the environment map; 0: the sky and ground colors
+    vec3 groundColor;
+    float intensity;
+    vec2 rotation;   // cosine and sine of the map's turn about +Y
+    float mapLevel;
+    uint size;
+} pc;
+
+const float PI = 3.14159265;
+
+// The direction through a texel of a cube face, in Vulkan's face order and orientation
+// (+X, -X, +Y, -Y, +Z, -Z).
+vec3 cubeDirection(uvec3 id, uint size) {
+    vec2 st = (vec2(id.xy) + 0.5) / float(size) * 2.0 - 1.0;
+    vec3 d;
+    switch (id.z) {
+    case 0u: d = vec3(1.0, -st.y, -st.x); break;
+    case 1u: d = vec3(-1.0, -st.y, st.x); break;
+    case 2u: d = vec3(st.x, 1.0, st.y); break;
+    case 3u: d = vec3(st.x, -1.0, -st.y); break;
+    case 4u: d = vec3(st.x, -st.y, 1.0); break;
+    default: d = vec3(-st.x, -st.y, -1.0); break;
+    }
+    return normalize(d);
+}
+
+void main() {
+    uvec3 id = gl_GlobalInvocationID;
+    if (id.x >= pc.size || id.y >= pc.size) return;
+    vec3 d = cubeDirection(id, pc.size);
+    vec3 color;
+    if (pc.map != 0u) {
+        // Turn the world direction back by the map's rotation, then look it up: the map's
+        // middle faces -Z (forward) and its top row is straight up.
+        vec3 p = vec3(pc.rotation.x * d.x - pc.rotation.y * d.z, d.y, pc.rotation.y * d.x + pc.rotation.x * d.z);
+        vec2 uv = vec2(0.5 + atan(p.x, -p.z) / (2.0 * PI), acos(clamp(p.y, -1.0, 1.0)) / PI);
+        color = textureLod(sampler2D(textures[nonuniformEXT(pc.map)], linearSampler), uv, pc.mapLevel).rgb * pc.intensity;
+    } else {
+        // A slightly soft horizon. Lit by this, a surface gets the same blend of sky and
+        // ground by its normal that the old hemisphere ambient gave it.
+        color = mix(pc.groundColor, pc.skyColor, smoothstep(-0.02, 0.02, d.y));
+    }
+    imageStore(target, ivec3(id), vec4(max(color, vec3(0.0)), 1.0));
+}

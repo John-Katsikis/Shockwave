@@ -126,11 +126,21 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 scene.string() + ": " + std::to_string(lights) + " enabled lights; only " +
                 std::to_string(shockwave::Renderer::kMaxLights) + " are drawn");
         int environments = 0;
-        world.each<const shockwave::Environment>([&](shockwave::Entity e, const shockwave::Environment&) {
+        world.each<const shockwave::Environment>([&](shockwave::Entity e, const shockwave::Environment& environment) {
             if (++environments == 2)
                 report(
                     scene.string() + ": entity '" + entityName(e) +
                     "': more than one Environment; only the first is used");
+            // An environment map is a panorama: any other picture wraps around the scene
+            // stretched, and lights and reflects it wrongly.
+            if (environment.environmentMap.id == 0 || !m_assets) return;
+            const std::string map = engine().assets().textureName(environment.environmentMap);
+            const shockwave::AssetFolder::File* file = m_assets->find(map);
+            if (file && file->height && file->width != 2 * file->height)
+                report(
+                    scene.string() + ": entity '" + entityName(e) + "': environment_map " + map + " is " +
+                    std::to_string(file->width) + " x " + std::to_string(file->height) +
+                    "; it should be an equirectangular panorama, twice as wide as it is tall");
         });
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);

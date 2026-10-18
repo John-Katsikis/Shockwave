@@ -80,6 +80,13 @@ struct LightingDesc {
     Tonemapper tonemapper = Tonemapper::ACES;
     float shadowDistance = 80.0f;   // meters from the camera the sun's shadows reach
     uint32_t shadowCascades = 4;   // 1..4: more keeps nearby shadows sharp over long distances
+    // Image-based lighting: the light arriving from every direction around the scene, which
+    // lights surfaces softly and shows in their reflections. Without a map it's the sky
+    // above and the ground below (skyAmbient, groundAmbient).
+    TextureHandle environmentMap{};   // equirectangular (2:1), ideally HDR (.hdr); 0: none
+    float environmentIntensity = 1.0f;   // multiplies the map's light
+    float environmentRotation = 0.0f;   // radians about +Y, counterclockwise seen from above
+    bool showEnvironment = true;   // draw the map behind everything instead of the clear color
 };
 
 // What the scene shows: the lit result, or a view for checking content. ShadowCascades

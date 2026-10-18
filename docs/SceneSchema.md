@@ -37,8 +37,9 @@ end
   down); position only matters for Point and Spot. Colors are linear. Intensity 1 lights
   a white surface facing the light to full white before exposure; a sun is usually 2 to
   4, a lamp 3 to 20. Point and Spot fall off to nothing at `range`. With no Light at all
-  the renderer adds a default sun. The first `Environment` sets the sky and ground
-  ambient, exposure (in stops) and tonemapper.
+  the renderer adds a default sun. The first `Environment` sets the light from all
+  around (an `environment_map` panorama, ideally a .hdr file, or else the sky and
+  ground colors), exposure (in stops) and tonemapper. See docs/Lighting.md.
 - See a scene as the game renders it with `player --screenshot out.png --scene path`
   (`--view normals|lighting|unlit` to isolate a problem).
 - Check a file with `player --check path/to/scene.swscene` (no path: every scene in the
@@ -332,6 +333,10 @@ No fields; the component's presence is what matters.
 | `sky_color` | r g b [a], linear 0..1, alpha optional | `0.32 0.42 0.58 1` |
 | `ground_color` | r g b [a], linear 0..1, alpha optional | `0.18 0.16 0.14 1` |
 | `ambient_intensity` | number; range 0 to 100 | `0.6` |
+| `environment_map` | texture name (white when unset) | `white` |
+| `environment_intensity` | number; range 0 to 1000 | `1` |
+| `environment_rotation` | number; range -360 to 360 | `0` |
+| `show_environment` | 1 or 0 (true/false also accepted) | `1` |
 | `exposure` | number; range -16 to 16 | `0` |
 | `tonemapper` | one of: ACES, AgX, Reinhard, None (or its number, counting from 0) | `ACES` |
 | `shadow_distance` | number; range 1 to 10000 | `80` |

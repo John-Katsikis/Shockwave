@@ -111,10 +111,10 @@ void VulkanRenderer::Impl::createBindless() {
     shadowInfo.maxLod = 0.0f;
     vk::check(vkCreateSampler(device, &shadowInfo, nullptr, &shadowSampler), "vkCreateSampler");
 
-    VkDescriptorSetLayoutBinding bindings[3]{};
+    VkDescriptorSetLayoutBinding bindings[6]{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    bindings[0].descriptorCount = capacity;
+    bindings[0].descriptorCount = bindlessSlots();
     bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
     bindings[1].binding = 1;
     bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
@@ -126,25 +126,37 @@ void VulkanRenderer::Impl::createBindless() {
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = VK_SHADER_STAGE_ALL;
     bindings[2].pImmutableSamplers = &shadowSampler;
+    // Image-based lighting's cubes (RendererEnvironment.cpp): environment, specular,
+    // irradiance. Written once when they're made; their images are rebuilt in place.
+    for (uint32_t i = 3; i < 6; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
+    }
+    static_assert(kEnvironmentCubes == 3, "one binding per cube");
 
     // Partially bound: unused slots may be empty. Update-after-bind + unused-while-pending:
     // new textures can be added while frames using the table are still in flight.
-    const VkDescriptorBindingFlags bindingFlags[3] = {
+    const VkDescriptorBindingFlags bindingFlags[6] = {
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
+        0,
+        0,
+        0,
         0,
         0,
     };
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flagsInfo.bindingCount = 3;
+    flagsInfo.bindingCount = 6;
     flagsInfo.pBindingFlags = bindingFlags;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.pNext = &flagsInfo;
     layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layoutInfo.bindingCount = 3;
+    layoutInfo.bindingCount = 6;
     layoutInfo.pBindings = bindings;
     vk::check(
         vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "vkCreateDescriptorSetLayout");
