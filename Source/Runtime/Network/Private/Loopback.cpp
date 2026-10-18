@@ -66,7 +66,7 @@ struct Endpoint {
     uint64_t pollSerial = 0;
     std::array<Slot, kMaxTransportConnections> slots;
     std::vector<Arrival> inbox;   // reserved up front, never grows past it
-    std::array<LocalEvent, 64> events{};
+    std::array<LocalEvent, 2 * kMaxTransportConnections> events{};
     uint32_t eventCount = 0;
 };
 

@@ -20,5 +20,13 @@ if(BUILD_TESTING)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/ArenaCLI
         -P ${CMAKE_CURRENT_SOURCE_DIR}/Tests/ArenaCheck.cmake)
     set_tests_properties(arena_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    # Multiplayer settings, manifest and schema on a copy of Arena (Tests/NetworkCheck.cmake).
+    add_test(NAME network_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/NetworkSchema.md
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/NetworkCLI
+        -P ${CMAKE_SOURCE_DIR}/Tests/NetworkCheck.cmake)
+    set_tests_properties(network_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
 
 endif()

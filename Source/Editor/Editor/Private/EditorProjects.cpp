@@ -44,6 +44,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
     }
     m_project = project;
     m_projectEdit = project;
+    m_networkEdit.loaded = false;
     m_hasProject = true;
     m_hubError.clear();
     m_scenePath.clear();

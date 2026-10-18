@@ -5,6 +5,7 @@
 
 #include <Engine/Hierarchy.h>
 #include <Engine/Prefab.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <UI/Gui.h>
 
 namespace editor {
@@ -88,6 +89,8 @@ Entity Editor::placePrefab(const std::string& path, const glm::vec3& position) {
     const Entity root = shockwave::spawnPrefab(m_world, prefab, &at);
     const shockwave::Name* name = m_world.get<shockwave::Name>(root);
     m_world.add<shockwave::Name>(root, {uniqueName(name ? name->value : fs::path(path).stem().string())});
+    // Each copy is its own network object; prefabs leave the key empty (docs/Networking.md).
+    if (!isEditingPrefab()) shockwave::net::assignMissingNetworkKey(m_world, root);
     select(root);
     log("Placed a copy of " + path);
     return root;

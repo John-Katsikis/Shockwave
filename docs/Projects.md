@@ -193,6 +193,7 @@ Unreal, think of entities as GameObjects or Actors, but with no per-object `Upda
 | `SW_FIELD(name)` or `SW_FIELD(name, min, max)` | A saved field, with optional limits for the Inspector. Scene files spell it in snake_case: `SW_FIELD(jumpSpeed)` is saved as `jump_speed`. |
 | `SW_ENUM_FIELD(name, "First", "Second")` | A saved int-backed enum, with a name for each value. |
 | `SW_COMPONENT_IN("Category", Type, ...)` | Like `SW_COMPONENT`, but listed under another heading in the Add Component menu. |
+| `SW_NETWORK_TYPES(function)` | Registers the game's multiplayer replication profiles, commands and events; the function takes a `net::ReplicationRegistry&` ([Networking](Networking.md#replication-profiles-commands-and-events)). |
 | `SW_GAME("id", Type)` | Declares the module. Put it at global scope, outside any namespace. |
 | `GameContext` | Your way into the running game (`game` in the example). |
 | `EntityRef` | An entity together with its world, returned by `game.find`. |
@@ -312,7 +313,8 @@ Instead of `SW_GAME`, you can define `shockwave::projectGameModule()` yourself. 
 lets you add:
 
 - `createAssets`: makes persistent named assets once the engine exists;
-- `registerTypes`: runs after the `SW_COMPONENT`s, if you'd rather register by hand.
+- `registerTypes`: runs after the `SW_COMPONENT`s, if you'd rather register by hand;
+- `registerNetworkTypes`: adds replication types to a registry, after the `SW_NETWORK_TYPES`.
 
 ```cpp
 namespace shockwave {

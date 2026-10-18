@@ -31,14 +31,23 @@
 #define SW_GAME_SYMBOL(name, id) SW_GAME_SYMBOL_INNER(name, id)
 #define projectGameModule SW_GAME_SYMBOL(projectGameModule, SW_GAME_MODULE_ID)
 #define AutoComponent SW_GAME_SYMBOL(AutoComponent, SW_GAME_MODULE_ID)
+#define AutoNetworkTypes SW_GAME_SYMBOL(AutoNetworkTypes, SW_GAME_MODULE_ID)
 #endif
 
 namespace shockwave {
+
+namespace net {
+class ReplicationRegistry;
+}
 
 struct GameModule {
     std::string_view id;
     // Registers the game's components (registerComponent) before any scene loads.
     std::function<void()> registerTypes;
+    // Adds the game's replication profiles, commands and events (Multiplayer/Replication.h)
+    // to a registry the application owns, before it's frozen for a session. Called again
+    // for each new registry; the registry is destroyed before the module unloads.
+    std::function<void(net::ReplicationRegistry&)> registerNetworkTypes;
     // Creates assets the game needs (meshes, textures) once the engine exists.
     std::function<void(Engine&)> createAssets;
     // The GameInstance for this run. Empty: a plain GameInstance.
@@ -65,6 +74,17 @@ struct AutoComponent {
     AutoComponent* next;
     explicit AutoComponent(void (*fn)()) : registerFn(fn), next(gameComponents()) { gameComponents() = this; }
     static AutoComponent*& gameComponents();
+};
+
+// One per SW_NETWORK_TYPES, chained like AutoComponent; they all run when the module's
+// registerNetworkTypes is called.
+struct AutoNetworkTypes {
+    void (*registerFn)(net::ReplicationRegistry&);
+    AutoNetworkTypes* next;
+    explicit AutoNetworkTypes(void (*fn)(net::ReplicationRegistry&)) : registerFn(fn), next(gameNetworkTypes()) {
+        gameNetworkTypes() = this;
+    }
+    static AutoNetworkTypes*& gameNetworkTypes();
 };
 
 // jumpSpeed -> jump_speed: scene files name fields in snake_case, like the built-in ones.
@@ -126,6 +146,11 @@ GameModule simpleGameModule(std::string_view id) {
 #define SW_FIELD(member, ...) ::shockwave::detail::autoField(#member, &SwComponent::member __VA_OPT__(, ) __VA_ARGS__)
 // An int-backed enum field with a name for each value: SW_ENUM_FIELD(mode, "Walk", "Run").
 #define SW_ENUM_FIELD(member, ...) ::shockwave::enumField(::shockwave::detail::sceneFieldName(#member), &SwComponent::member, {__VA_ARGS__})
+
+// Registers the game's network types: SW_NETWORK_TYPES(myRegisterFunction), where the
+// function takes a net::ReplicationRegistry&. At namespace scope in a .cpp of the module.
+#define SW_NETWORK_TYPES(function)                                                                                     \
+    static const ::shockwave::detail::AutoNetworkTypes SW_CONCAT(swNetworkTypes_, __COUNTER__){function};
 
 // Declares the game module: its id (as in the .swproject's game_module) and the GameMode
 // every scene plays with, or your own GameInstance to pick one per scene. Write it once,

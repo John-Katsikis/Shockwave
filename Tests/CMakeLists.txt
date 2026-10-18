@@ -219,3 +219,10 @@ target_link_libraries(network_capture_test PRIVATE Shockwave::Network)
 shockwave_warnings(network_capture_test)
 add_test(NAME network_capture COMMAND network_capture_test)
 set_tests_properties(network_capture PROPERTIES TIMEOUT 60)
+
+# Batch 2: network settings, manifest, digests, the replication registry and its codec.
+add_executable(network_settings_test NetworkSettingsTest.cpp)
+target_link_libraries(network_settings_test PRIVATE Shockwave::Multiplayer)
+shockwave_warnings(network_settings_test)
+add_test(NAME network_settings COMMAND network_settings_test)
+set_tests_properties(network_settings PROPERTIES TIMEOUT 60)

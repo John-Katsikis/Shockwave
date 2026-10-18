@@ -127,6 +127,16 @@ build/bin/network_wire_test --write-reference docs/NetworkProtocol.md
 ctest --test-dir build -R network_ --output-on-failure
 ```
 
+A project's multiplayer settings are `Config/Network.swnetwork` and its manifest
+(`docs/NetworkSchema.md`). After changing settings fields, components, or a game's
+`SW_NETWORK_TYPES`, regenerate the schema, then check and inspect the project:
+
+```sh
+build/bin/player --project Games/Arena/Arena.swproject --network-schema docs/NetworkSchema.md
+build/bin/player --project <file.swproject> --check
+build/bin/player --project <file.swproject> --network-info [--json out.json]
+```
+
 ## Engine and editor UI
 
 - Follow `docs/UI.md` when adding or changing engine or editor UI.

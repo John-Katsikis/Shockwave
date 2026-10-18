@@ -130,12 +130,13 @@ module can only see the headers of modules it depends on, directly or through th
 | Engine | World, components, systems, hierarchy, scene files, subsystems, engine loop | everything above | Engine |
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
 | Physics | Jolt bodies, characters, queries | Engine | PhysicsCore, Chaos |
+| Multiplayer | `.swnetwork` settings, the network manifest and content digest, `NetworkObject`/`NetworkSpawnPoint`, the replication registry and its codec, offline network checks. No Steam or sockets | Engine, Network | ReplicationGraph, NetDriver settings |
 | GameUI | menus and HUDs from `.rml`/`.rcss` (RmlUi, FreeType, HarfBuzz), `UIDocument`, `game.ui()` | Engine | UMG, Slate |
 | Navigation | navmesh baking, paths and crowds (Recast & Detour), `NavAgent`, `game.navigation()` | Engine | NavigationSystem |
 | Effects | particle effects from `.efkefc` files (Effekseer), `ParticleEffect`, `game.effects()` | Engine | Niagara |
 | Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
 | Circuits | visual scripting: `.swcircuit` node graphs compiled to bytecode, the `Circuit` component, the game circuit | Engine | Blueprints (Kismet) |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Multiplayer, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.

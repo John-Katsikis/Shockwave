@@ -1,6 +1,6 @@
 // Compiled into every game module (shockwave_game_module in CMake): makes the module's
 // projectGameModule() loadable as the plugin game_<id>, and registers its SW_COMPONENTs
-// along with whatever its own registerTypes does.
+// along with whatever its own registerTypes does, and its SW_NETWORK_TYPES the same way.
 
 #include <Core/Plugin.h>
 #include <GameFramework/GameModule.h>
@@ -11,6 +11,11 @@ namespace shockwave {
 
 detail::AutoComponent*& detail::AutoComponent::gameComponents() {
     static AutoComponent* head = nullptr;
+    return head;
+}
+
+detail::AutoNetworkTypes*& detail::AutoNetworkTypes::gameNetworkTypes() {
+    static AutoNetworkTypes* head = nullptr;
     return head;
 }
 
@@ -25,6 +30,12 @@ const GameModule& entryModule() {
             for (auto* c = detail::AutoComponent::gameComponents(); c; c = c->next) components.push_back(c->registerFn);
             for (auto it = components.rbegin(); it != components.rend(); ++it) (*it)();
             if (own) own();
+        };
+        result.registerNetworkTypes = [own = result.registerNetworkTypes](net::ReplicationRegistry& registry) {
+            std::vector<void (*)(net::ReplicationRegistry&)> types;
+            for (auto* t = detail::AutoNetworkTypes::gameNetworkTypes(); t; t = t->next) types.push_back(t->registerFn);
+            for (auto it = types.rbegin(); it != types.rend(); ++it) (*it)(registry);
+            if (own) own(registry);
         };
         return result;
     }();

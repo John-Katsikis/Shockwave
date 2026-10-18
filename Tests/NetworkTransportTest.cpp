@@ -161,7 +161,9 @@ static void testConnect() {
     auto other = hub.createTransport(PeerId{3001});
     CHECK(other->listen(kHostAddress, {}).error().code == NetErrorCode::AddressInUse);
     CHECK(other->listen({TransportAddress::SteamPeer, 1, 0}, {}).error().code == NetErrorCode::InvalidArgument);
-    CHECK(other->listen({TransportAddress::Loopback, 2, 0}, {17, 16384}).error().code == NetErrorCode::InvalidArgument);
+    CHECK(
+        other->listen({TransportAddress::Loopback, 2, 0}, {kMaxTransportConnections + 1, 16384}).error().code ==
+        NetErrorCode::InvalidArgument);
 }
 
 static void testReliableOrder() {

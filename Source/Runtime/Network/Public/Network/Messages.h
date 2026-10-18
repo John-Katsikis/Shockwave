@@ -46,7 +46,7 @@ inline constexpr uint8_t kMaxInputsPerMessage = 4;
 inline constexpr uint32_t kInputCommandBytes = 24;
 inline constexpr uint32_t kStateRecordHeaderBytes = 16;
 inline constexpr uint32_t kPoseStateBytes = 53;
-inline constexpr uint16_t kMaxPlayers = 12;   // slot 1 is the host
+inline constexpr uint16_t kMaxPlayers = 64;   // slot 1 is the host; 2..64 are remote players
 // Simulation tick rates protocol v1 accepts. A session's rate must also equal the
 // project's tick_rate, and its snapshot rate must divide it.
 inline constexpr uint16_t kMinTickRate = 60;

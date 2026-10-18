@@ -209,6 +209,25 @@ No fields; the component's presence is what matters.
 | `frequency` | number; range 0 to 100 | `0.5` |
 | `phase` | number | `0` |
 
+### Multiplayer
+
+#### NetworkObject
+
+| Field | Value | Default |
+|---|---|---|
+| `key` | quoted text | `""` |
+| `prefab` | quoted text | `""` |
+| `profile` | quoted text | `""` |
+| `mode` | one of: Static, Interpolated, PredictedCharacter (or its number, counting from 0) | `Interpolated` |
+| `always_relevant` | 1 or 0 (true/false also accepted) | `1` |
+
+#### NetworkSpawnPoint
+
+| Field | Value | Default |
+|---|---|---|
+| `team` | whole number; range 0 to 31 | `0` |
+| `order` | whole number; range 0 to 4095 | `0` |
+
 ### Navigation
 
 #### NavMeshSettings
@@ -352,6 +371,7 @@ No fields; the component's presence is what matters.
 | `show_environment` | 1 or 0 (true/false also accepted) | `1` |
 | `exposure` | number; range -16 to 16 | `0` |
 | `tonemapper` | one of: ACES, AgX, Reinhard, None (or its number, counting from 0) | `ACES` |
+| `bloom_intensity` | number; range 0 to 1 | `0.04` |
 | `shadow_distance` | number; range 1 to 10000 | `80` |
 | `shadow_cascades` | whole number; range 1 to 4 | `4` |
 

@@ -7,6 +7,7 @@
 #include <Circuits/Circuit.h>
 #include <Engine/Prefab.h>
 #include <GameUI/GameUI.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -41,6 +42,7 @@ void Editor::onStart() {
     shockwave::registerNavigationComponents();
     shockwave::registerAnimationComponents();
     shockwave::registerCircuitComponents();
+    shockwave::net::registerNetworkComponents();
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
     shockwave::registerEffectsComponents();
     m_effects = std::make_unique<shockwave::Effects>(&engine());

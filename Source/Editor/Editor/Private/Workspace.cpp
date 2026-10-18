@@ -129,6 +129,7 @@ void Editor::drawMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Project settings...", nullptr, false, m_hasProject)) {
             m_projectEdit = m_project;
+            m_networkEdit.loaded = false;
             m_showProjectSettings = true;
         }
         if (ImGui::MenuItem("Preferences...", "Ctrl+,")) m_showPreferences = true;
@@ -822,6 +823,7 @@ void Editor::drawProjectSettingsWindow() {
     ImGui::BeginDisabled(!changed);
     if (gui::button("Revert")) m_projectEdit = m_project;
     ImGui::EndDisabled();
+    drawNetworkProjectSettings();
     ImGui::End();
 }
 
