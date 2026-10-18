@@ -23,6 +23,16 @@
 #include <string_view>
 #include <type_traits>
 
+// Builds with SHOCKWAVE_MODULAR off link every game module into one executable, so each
+// game target gets its own names for the two symbols every module defines.
+// shockwave_game_module() sets SW_GAME_MODULE_ID; nothing outside the module names them.
+#if defined(SW_GAME_MODULE_ID)
+#define SW_GAME_SYMBOL_INNER(name, id) name##_##id
+#define SW_GAME_SYMBOL(name, id) SW_GAME_SYMBOL_INNER(name, id)
+#define projectGameModule SW_GAME_SYMBOL(projectGameModule, SW_GAME_MODULE_ID)
+#define AutoComponent SW_GAME_SYMBOL(AutoComponent, SW_GAME_MODULE_ID)
+#endif
+
 namespace shockwave {
 
 struct GameModule {

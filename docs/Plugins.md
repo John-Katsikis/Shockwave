@@ -150,6 +150,8 @@ This section is for the curious.
   library too. The editor, the player, plugins and game modules then all share one copy
   of the engine. It's on by default everywhere except Windows, for now. Turn it off and
   plugins are built into the programs instead. Everything works the same, except
-  reloading.
+  reloading. Every game module in `SHOCKWAVE_GAMES` is linked into the same programs;
+  `shockwave_game_module()` sets `SW_GAME_MODULE_ID`, which gives each one its own
+  `projectGameModule` and component list so they don't clash.
 - **Version check.** A plugin built against a different engine version is refused
   (`kPluginAbiVersion`). Rebuild it along with the engine.
