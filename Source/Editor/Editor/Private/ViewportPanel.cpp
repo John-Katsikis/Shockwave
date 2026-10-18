@@ -303,7 +303,10 @@ void Editor::drawViewportToolbar() {
         ImGui::SetNextItemWidth(160.0f * dpi);
         float scale = renderer.renderScale();
         if (ImGui::SliderFloat("Render scale", &scale, 0.25f, 2.0f, "%.2fx")) {
-            renderer.setRenderScale(scale);
+            auto settings = engine().graphics().requested();
+            settings.renderScale = scale;
+            std::string error;
+            engine().graphics().apply(settings, error);
             m_prefs.renderScale = scale;
             m_prefsDirty = true;
         }
@@ -318,7 +321,10 @@ void Editor::drawViewportToolbar() {
         int shadows = static_cast<int>(renderer.shadowQuality());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shadows", &shadows, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames))) {
-            renderer.setShadowQuality(static_cast<shockwave::ShadowQuality>(shadows));
+            auto settings = engine().graphics().requested();
+            settings.shadows = static_cast<shockwave::ShadowQuality>(shadows);
+            std::string error;
+            engine().graphics().apply(settings, error);
             m_prefs.shadowQuality = shadows;
             m_prefsDirty = true;
         }

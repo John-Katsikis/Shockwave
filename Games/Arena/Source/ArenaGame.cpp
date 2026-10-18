@@ -1,5 +1,7 @@
 #include "ArenaGame.h"
 
+#include "ArenaGraphicsMenu.h"
+
 #include <Shockwave/Game.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -127,6 +129,7 @@ public:
                 game.world.add<MeshRenderer>(tracer, mesh);
             }
         }
+        m_graphicsMenu.bind(game);
         game.ui().on("arena_resume", [this, &game](const UIEvent&) { pause(game, false); });
         game.ui().on("arena_restart", [this, &game](const UIEvent&) {
             reset(game);
@@ -310,7 +313,9 @@ private:
         m_feed = "FIRST TO " + std::to_string(r.scoreLimit) + " / BLUE VS ORANGE";
         updateCamera(game);
     }
+    GraphicsMenu m_graphicsMenu;
     void pause(GameContext& game, bool paused) {
+        m_graphicsMenu.close(game);
         m_paused = paused;
         m_fire = false;
         game.ui().set("arena_menu_open", paused);

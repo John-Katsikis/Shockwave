@@ -1,0 +1,43 @@
+shockwave_prefab 1
+
+entity "Display"
+  Transform
+end
+
+entity "Model"
+  Transform
+    position -0.93365636 0.99884991 -1.4778088
+    scale 0.0063096872 0.0063096872 0.0063096872
+  ModelRenderer
+    model Library/gun_18/model.gltf
+  Parent
+    entity "Display"
+end
+
+entity "Plinth"
+  Transform
+    position 0 0.25 0
+    scale 3.6 0.5 3.6
+  MeshRenderer
+    mesh cube
+    tint 0.055 0.07 0.09 1
+    metallic 0.25
+    roughness 0.5
+  Parent
+    entity "Display"
+end
+
+entity "Index strip"
+  Transform
+    position 0 0.35 1.81
+    scale 2.7 0.05 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.04 0.6 0.8 1
+    emissive 0.04 0.6 0.8 1
+    emissive_intensity 2
+    cast_shadows 0
+  Parent
+    entity "Display"
+end
+

@@ -149,3 +149,7 @@ workflow when ready to distribute a game.
 Only change shared engine modules when fixing an engine defect or introducing a
 general-purpose capability. For example, the prefab-unload and frame-timing fixes
 found while building Arena remain engine changes; its rifle and team rules do not.
+
+For an optional asset/rendering workload project, see [Render Lab](../Games/RenderLab/README.md).
+It keeps local asset-library derivatives outside Git and provides reproducible scene generators
+and benchmark profiles alongside its game code.

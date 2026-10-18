@@ -281,6 +281,7 @@ void Engine::run(Application& app) {
     app.onStart();
 
     while (m_running) {
+        m_graphics.commit();   // apply UI/game requests before any frame recording
         // The swap's stall isn't counted as frame time.
         if ((!m_pendingRenderer.empty() || m_autoReloadRenderer) && applyRendererChange())
             previous = SDL_GetPerformanceCounter();

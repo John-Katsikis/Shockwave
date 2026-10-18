@@ -74,3 +74,5 @@ general-purpose physics pause. Match save/load is not implemented.
 The benchmark exercises this small workload, not production art, twelve networked
 clients or low-end hardware compatibility. Use it as a starting point for heavier
 assets and real hardware tests.
+
+Press **P → Graphics Settings** to select quality, render scale, shadows, LOD and frame pacing. Apply saves per-player preferences; see [Graphics settings](../../docs/Graphics.md).

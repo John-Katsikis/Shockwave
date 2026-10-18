@@ -1,0 +1,9 @@
+shockwave_input 1
+deadzone 0.15
+bind lab_quality_0 key F1
+bind lab_quality_1 key F2
+bind lab_quality_2 key F3
+bind lab_quality_3 key F4
+bind lab_reset key R
+bind lab_orbit key O
+# The engine supplies the standard FlyCamera WASD / RMB / Q E / Shift bindings.

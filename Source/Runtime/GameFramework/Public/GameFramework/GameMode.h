@@ -15,6 +15,7 @@
 namespace shockwave {
 
 class Engine;
+class Graphics;
 class SaveGames;
 class Input;
 class PhysicsWorld;
@@ -35,6 +36,7 @@ struct GameContext {
     T* subsystem() const {
         return subsystems.find<T>();
     }
+    Graphics& graphics() const;   // player quality and pacing; main thread, see docs/Graphics.md
     AudioWorld& audio() const;   // always there during Play
     // Particle effects (docs/Effects.md). Always there during Play; without a window it
     // does nothing, so game code doesn't need to check.

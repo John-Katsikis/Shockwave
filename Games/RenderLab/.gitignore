@@ -1,0 +1,10 @@
+Saved/
+build/
+.cache/
+compile_commands.json
+.DS_Store
+# Local library assets and generated derivatives; do not redistribute these packs.
+Content/Library/
+Saved/
+__pycache__/
+*.pyc

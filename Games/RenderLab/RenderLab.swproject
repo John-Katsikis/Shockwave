@@ -1,0 +1,12 @@
+# Paths are relative to this file. Both editor and player load this manifest.
+shockwave_project 1
+name "Render Lab"
+game_module "renderlab"
+startup_scene "Scenes/gallery.swscene"
+assets "Content"
+tick_rate 60
+window_size 1280 720
+vsync false
+texture_compression high
+mesh_lods 4
+lod_error_pixels 1

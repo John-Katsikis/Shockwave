@@ -1,0 +1,21 @@
+file(MAKE_DIRECTORY "${TEMP}")
+file(WRITE "${TEMP}/good.swgraphics" "swgraphics 1\nrender_scale 0.5\nshadow_quality low\nframe_limit 60\n")
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/good.swgraphics" --check
+    RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Valid graphics failed --check: ${out}\n${err}")
+endif()
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/good.swgraphics" --render-scale 0.75 --fps 120 --graphics-info
+    RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 0 OR NOT out MATCHES "render_scale 0.75" OR NOT out MATCHES "frame_limit 120" OR NOT out MATCHES "shadow_quality low")
+    message(FATAL_ERROR "CLI overrides failed: ${out}\n${err}")
+endif()
+foreach(value "render_scale nan" "shadow_quality invalid" "frame_limit 9" "lod_error_pixels -1" "vsync wrong" "low_latency 1")
+    file(WRITE "${TEMP}/bad.swgraphics" "swgraphics 1\n${value}\n")
+    execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/bad.swgraphics" --check
+        RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "bad.swgraphics:2:")
+        message(FATAL_ERROR "Invalid graphics accepted: ${value}: ${out}\n${err}")
+    endif()
+endforeach()
+file(REMOVE_RECURSE "${TEMP}")

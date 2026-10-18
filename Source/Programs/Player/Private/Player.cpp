@@ -90,9 +90,15 @@ void Player::onStart() {
             m_project.startupScene = m_project.root / info.scene;
     }
     engine().renderer().setDebugView(m_tool.view);
-    engine().renderer().setShadowQuality(
-        static_cast<shockwave::ShadowQuality>(m_tool.shadows >= 0 ? m_tool.shadows : m_project.shadowQuality));
     std::string error;
+    // Tool modes may force presentation off; preserve their effective pacing.
+    auto graphics = m_tool.graphics;
+    graphics.vsync = engine().renderer().vsync();
+    graphics.frameLimit = engine().frameLimit();
+    graphics.lowLatency = engine().lowLatency();
+    if (!engine().graphics().configure(m_tool.graphicsDefaults, m_tool.graphicsFile, error) ||
+        !engine().graphics().apply(graphics, error))
+        throw std::runtime_error(error);
     std::vector<std::string> warnings;
     shockwave::SceneFileHooks hooks;
     // Scenes without a Camera entity fall back to the view an older editor saved.

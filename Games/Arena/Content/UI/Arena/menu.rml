@@ -1,7 +1,21 @@
 <rml><head><title>Arena menu</title><link type="text/rcss" href="arena.rcss"/></head>
-<body class="menu" data-model="game" data-back="arena_resume">
+<body class="menu" data-model="game" data-back="arena_menu_back">
 <div id="menu-panel"><h1>SHOCKWAVE / ARENA</h1><p>LOCAL BOT MATCH</p><p>WASD move / mouse aim<br/>Left click fire / R reload<br/>Shift sprint / Space jump<br/>P menu / F2 restart / Esc quit</p>
 <button id="resume" autofocus onclick="arena_resume">RESUME</button>
+<button id="graphics" onclick="arena_graphics">GRAPHICS SETTINGS</button>
 <button id="restart" onclick="arena_restart">RESTART MATCH</button>
 <p>Blue is your team. First to 20 wins.<br/>Respawn: 3 seconds. Spawn protection: 1 second.</p></div>
+<div id="graphics-panel" class="hidden">
+<h1>GRAPHICS SETTINGS</h1>
+<p class="hint">Select a setting to cycle its value. Apply when ready.</p>
+<div class="presets"><button id="preset-low" onclick="graphics_preset_0">LOW</button><button id="preset-medium" onclick="graphics_preset_1">MEDIUM</button><button id="preset-high" onclick="graphics_preset_2">HIGH</button><button id="preset-ultra" onclick="graphics_preset_3">ULTRA</button></div>
+<button id="graphics-scale" onclick="graphics_scale">Render scale: 100%</button>
+<button id="graphics-shadows" onclick="graphics_shadows">Shadows: high</button>
+<button id="graphics-lod" onclick="graphics_lod">Mesh LOD error: 1 px</button>
+<button id="graphics-vsync" onclick="graphics_vsync">VSync: on</button>
+<button id="graphics-fps" onclick="graphics_fps">Frame limit: uncapped</button>
+<button id="graphics-latency" onclick="graphics_latency">Low latency: off</button>
+<p id="graphics-status" class="hint">Changes take effect when you apply.</p>
+<div class="graphics-actions"><button id="graphics-apply" onclick="graphics_apply">APPLY</button><button id="graphics-defaults" onclick="graphics_defaults">DEFAULTS</button><button id="graphics-cancel" onclick="graphics_cancel">BACK / CANCEL</button></div>
+</div>
 </body></rml>

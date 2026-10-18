@@ -5,6 +5,7 @@
 // GameMode; update() runs a fixed tick; stop() ends play and restores the snapshot
 // exactly, so nothing done while playing sticks. The player uses the same class.
 
+#include <Engine/GraphicsSettings.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/SaveGame.h>
 
@@ -69,6 +70,7 @@ private:
     GameContext m_context;
     std::unique_ptr<GameMode> m_mode;
     std::optional<World> m_snapshot;
+    std::optional<GraphicsSettings> m_graphicsSnapshot;
     std::filesystem::path m_saveFolder;   // setSaveFolder
     std::string m_saveScene;
     std::string m_gameCircuit;   // setGameCircuit

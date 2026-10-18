@@ -1,0 +1,4 @@
+# Shared game defaults. Players save their overrides in their OS preferences folder.
+swgraphics 1
+render_scale 1
+# Pacing, shadows and LOD inherit Arena.swproject unless listed here.

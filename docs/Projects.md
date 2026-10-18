@@ -507,3 +507,5 @@ scene is restored too, and cleanup errors are logged.
 The snapshot can't undo effects outside the world, like files or sounds. Clean up
 anything your game owns in `endPlay`. The `GameInstance` and the assets from
 `createAssets` are separate and last for the whole run.
+
+Game menus can access quality and frame pacing through `game.graphics()`. See [Graphics settings](Graphics.md).

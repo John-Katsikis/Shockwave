@@ -351,8 +351,9 @@ void Editor::drawStatusBar() {
                 count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
                 fps > 0.0 ? 1000.0 / fps : 0.0);
             const float width = ImGui::CalcTextSize(right).x;
-            ImGui::SameLine(std::max(
-                ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
+            ImGui::SameLine(
+                std::max(
+                    ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
             ImGui::TextDisabled("%s", right);
             ImGui::EndMenuBar();
         }
@@ -605,9 +606,10 @@ void Editor::drawPreferencesWindow() {
     }
     ImGui::SetItemTooltip("Themes are .swtheme files in themes/. Edit one while the editor runs to restyle it live.");
     changed |= ImGui::Checkbox("Panels can leave the main window", &m_prefs.detachablePanels);
-    ImGui::SetItemTooltip("Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
-                          "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
-                          "desktop the editor then runs through XWayland, since Wayland can't place windows.");
+    ImGui::SetItemTooltip(
+        "Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
+        "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
+        "desktop the editor then runs through XWayland, since Wayland can't place windows.");
 
     ImGui::SeparatorText("Audio");
     if (gui::beginPropertyGrid("audio_preferences")) {
@@ -622,31 +624,47 @@ void Editor::drawPreferencesWindow() {
 
     ImGui::SeparatorText("Viewport");
     if (ImGui::Checkbox("VSync", &m_prefs.vsync)) {
-        renderer.setVsync(m_prefs.vsync);
+        auto settings = engine().graphics().requested();
+        settings.vsync = m_prefs.vsync;
+        std::string error;
+        engine().graphics().apply(settings, error);
         changed = true;
     }
     ImGui::SetItemTooltip("Off renders as fast as the GPU can go");
     if (ImGui::SliderFloat(
             "Frame limit", &m_prefs.frameLimit, 0.0f, 360.0f, m_prefs.frameLimit > 0 ? "%.0f fps" : "none")) {
         if (m_prefs.frameLimit > 0.0f && m_prefs.frameLimit < 10.0f) m_prefs.frameLimit = 10.0f;
-        engine().setFrameLimit(m_prefs.frameLimit);
+        auto settings = engine().graphics().requested();
+        settings.frameLimit = m_prefs.frameLimit;
+        std::string error;
+        engine().graphics().apply(settings, error);
         changed = true;
     }
     ImGui::SetItemTooltip("A precise cap; steadier than uncapped and saves power. 0 is no cap");
     if (ImGui::Checkbox("Low latency", &m_prefs.lowLatency)) {
-        engine().setLowLatency(m_prefs.lowLatency);
+        auto settings = engine().graphics().requested();
+        settings.lowLatency = m_prefs.lowLatency;
+        std::string error;
+        engine().graphics().apply(settings, error);
         changed = true;
     }
-    ImGui::SetItemTooltip("Wait for each frame to reach the screen before starting the next, so input feels\n"
-                          "more immediate. Costs some frame rate when the GPU is the bottleneck");
+    ImGui::SetItemTooltip(
+        "Wait for each frame to reach the screen before starting the next, so input feels\n"
+        "more immediate. Costs some frame rate when the GPU is the bottleneck");
     if (ImGui::SliderFloat("Render scale", &m_prefs.renderScale, 0.25f, 2.0f, "%.2fx")) {
-        renderer.setRenderScale(m_prefs.renderScale);
+        auto settings = engine().graphics().requested();
+        settings.renderScale = m_prefs.renderScale;
+        std::string error;
+        engine().graphics().apply(settings, error);
         changed = true;
     }
     int shadows = m_prefs.shadowQuality;
     if (ImGui::Combo("Shadows", &shadows, kShadowQualityNames, IM_ARRAYSIZE(kShadowQualityNames))) {
         m_prefs.shadowQuality = shadows;
-        renderer.setShadowQuality(static_cast<shockwave::ShadowQuality>(shadows));
+        auto settings = engine().graphics().requested();
+        settings.shadows = static_cast<shockwave::ShadowQuality>(shadows);
+        std::string error;
+        engine().graphics().apply(settings, error);
         changed = true;
     }
     ImGui::SetItemTooltip("Shadow quality in the editor's viewport. The player uses the project's setting");

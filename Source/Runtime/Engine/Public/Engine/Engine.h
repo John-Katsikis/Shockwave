@@ -8,6 +8,7 @@
 #include <Engine/Camera.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/GraphicsSettings.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
 #include <Engine/Systems.h>
@@ -100,6 +101,7 @@ public:
     JobSystem& jobs() { return *m_jobs; }
     Window& window() { return *m_window; }
     Renderer& renderer() { return *m_renderer; }
+    Graphics& graphics() { return m_graphics; }
     Input& input() { return *m_input; }
     Assets& assets() { return *m_assets; }
     void setMasterVolume(float volume);   // any thread; 0..1
@@ -156,6 +158,7 @@ private:
     void loadGuiTheme(bool reload);
     void pollGuiTheme(double frameDt);
 
+    Graphics m_graphics{this};
     EngineConfig m_config;
     std::unique_ptr<JobSystem> m_jobs;
     std::unique_ptr<Window> m_window;

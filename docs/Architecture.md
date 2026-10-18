@@ -193,3 +193,5 @@ fast as it can, unless VSync or a frame limit slows it down:
   (`Core/Jobs.h`). A system may only touch the components it declares.
 - `Renderer::drawMesh`, `Renderer::addLight` and `SW_LOG` are safe to call from any
   thread.
+
+Player quality and frame pacing are exposed through the Engine-owned `Graphics` service, available as `game.graphics()`. [Graphics settings](Graphics.md) describes its deferred application, text format and user preferences.

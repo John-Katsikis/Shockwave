@@ -184,3 +184,18 @@ add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
 set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60
                      LABELS gpu)
 endif()
+
+add_executable(graphics_test GraphicsTest.cpp)
+target_link_libraries(graphics_test PRIVATE Shockwave::Engine)
+shockwave_warnings(graphics_test)
+shockwave_link_plugins(graphics_test)
+add_test(NAME graphics COMMAND graphics_test)
+set_tests_properties(graphics PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+if(TARGET game_arena)
+    add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Arena/Arena.swproject
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsCLI
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsCheck.cmake)
+    set_tests_properties(graphics_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+endif()
