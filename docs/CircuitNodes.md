@@ -1336,6 +1336,7 @@ Every field of the entity's Environment; found is false when it has none.
 - Out `show_environment` Bool
 - Out `exposure` Float
 - Out `tonemapper` Int
+- Out `bloom_intensity` Float
 - Out `shadow_distance` Float
 - Out `shadow_cascades` Int
 
@@ -1345,6 +1346,13 @@ The entity's Environment ambient_intensity.
 
 - In `target` Entity, default self
 - Out `ambient_intensity` Float
+
+### Component.Environment.Get.bloom_intensity
+
+The entity's Environment bloom_intensity.
+
+- In `target` Entity, default self
+- Out `bloom_intensity` Float
 
 ### Component.Environment.Get.environment_intensity
 
@@ -1447,6 +1455,7 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `show_environment` Bool
 - In `exposure` Float
 - In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None
+- In `bloom_intensity` Float
 - In `shadow_distance` Float
 - In `shadow_cascades` Int
 
@@ -1458,6 +1467,15 @@ Sets the entity's Environment ambient_intensity.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `ambient_intensity` Float, required
+
+### Component.Environment.Set.bloom_intensity
+
+Sets the entity's Environment bloom_intensity.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `bloom_intensity` Float, required
 
 ### Component.Environment.Set.environment_intensity
 

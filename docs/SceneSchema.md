@@ -339,6 +339,7 @@ No fields; the component's presence is what matters.
 | `show_environment` | 1 or 0 (true/false also accepted) | `1` |
 | `exposure` | number; range -16 to 16 | `0` |
 | `tonemapper` | one of: ACES, AgX, Reinhard, None (or its number, counting from 0) | `ACES` |
+| `bloom_intensity` | number; range 0 to 1 | `0.04` |
 | `shadow_distance` | number; range 1 to 10000 | `80` |
 | `shadow_cascades` | whole number; range 1 to 4 | `4` |
 

@@ -35,7 +35,7 @@ namespace detail {
 
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint32_t kMaxMeshes = 65536;
-constexpr uint32_t kInternalTextureSlots = 4;   // scene color, the two shadow atlases, the BRDF table
+constexpr uint32_t kInternalTextureSlots = 5;   // scene color, two shadow atlases, BRDF table, bloom
 // Image-based lighting's cube maps (environment, specular, irradiance) sit beside the
 // bindless table in the same set, so they come out of the same descriptor budget.
 constexpr uint32_t kEnvironmentCubes = 3;
@@ -148,6 +148,8 @@ struct TonemapPushConstants {
     uint32_t sceneTexture;
     float exposureScale;
     uint32_t tonemapper;
+    uint32_t bloomTexture;   // the bloom chain's top level
+    float bloomIntensity;   // 0: none
 };
 
 // Must match the push constants in shaders/grid.vert and grid.frag.
@@ -759,6 +761,30 @@ struct VulkanRenderer::Impl {
     // The environment map behind everything, before the scene's draws.
     bool showsSky() const;
     void recordSky(VkCommandBuffer cmd);
+
+    // ---- Bloom (RendererBloom.cpp) ----------------------------------------------------
+    // Bright light spreads into its surroundings, the way it does in a camera lens. The HDR
+    // scene is filtered down a chain of half-size levels and back up again, each level
+    // adding a wider blur, and the tonemap pass mixes the result in.
+
+    vk::Image bloomChain;   // half the scene's size, then halving per level
+    std::vector<VkImageView> bloomLevelViews;
+    std::vector<VkExtent2D> bloomExtents;
+    std::vector<VkDescriptorSet> bloomDownSets, bloomUpSets;
+    VkSampler bloomSampler = VK_NULL_HANDLE;   // linear, clamped to the edges
+    VkDescriptorSetLayout bloomSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool bloomPool = VK_NULL_HANDLE;
+    VkPipelineLayout bloomLayout = VK_NULL_HANDLE;
+    VkPipeline bloomPipeline = VK_NULL_HANDLE;
+    uint32_t bloomSlot = 0;
+
+    void createBloomPipeline();
+    void destroyBloomPipeline();
+    // With the scene's render targets, at their size.
+    void createBloomTargets();
+    void destroyBloomTargets();
+    float bloomIntensity() const;   // this frame's; 0 when off or in a debug view
+    void recordBloom(VkCommandBuffer cmd);
 
     // ---- Screenshots ------------------------------------------------------------------
 

@@ -1,0 +1,66 @@
+#version 460
+#extension GL_EXT_scalar_block_layout : require
+
+// Bloom (RendererBloom.cpp): one step down or up the chain of half-size levels.
+//   0: first downsample, from the scene, with a Karis average against fireflies;
+//   1: downsample, 13 taps (Jimenez 2014);
+//   2: upsample: this level plus a 3 x 3 tent blur of the smaller one.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, rgba16f) uniform image2D target;
+
+// Must match BloomPushConstants in RendererBloom.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    vec2 sourceTexel;
+    uvec2 targetSize;
+    uint mode;
+} pc;
+
+vec3 tap(vec2 uv, vec2 offset) {
+    vec3 color = textureLod(source, uv + offset * pc.sourceTexel, 0.0).rgb;
+    // A NaN or infinity anywhere in the scene would otherwise spread over the whole screen.
+    return clamp(color, vec3(0.0), vec3(65000.0));
+}
+
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+vec3 downsample(vec2 uv, bool karis) {
+    vec3 a = tap(uv, vec2(-2.0, 2.0)), b = tap(uv, vec2(0.0, 2.0)), c = tap(uv, vec2(2.0, 2.0));
+    vec3 d = tap(uv, vec2(-2.0, 0.0)), e = tap(uv, vec2(0.0, 0.0)), f = tap(uv, vec2(2.0, 0.0));
+    vec3 g = tap(uv, vec2(-2.0, -2.0)), h = tap(uv, vec2(0.0, -2.0)), i = tap(uv, vec2(2.0, -2.0));
+    vec3 j = tap(uv, vec2(-1.0, 1.0)), k = tap(uv, vec2(1.0, 1.0));
+    vec3 l = tap(uv, vec2(-1.0, -1.0)), m = tap(uv, vec2(1.0, -1.0));
+    // Five overlapping 2 x 2 boxes: the inner one counts half, the four corner ones an eighth.
+    vec3 boxes[5] = vec3[](
+        (j + k + l + m) * 0.25, (a + b + d + e) * 0.25, (b + c + e + f) * 0.25, (d + e + g + h) * 0.25,
+        (e + f + h + i) * 0.25);
+    const float weights[5] = float[](0.5, 0.125, 0.125, 0.125, 0.125);
+    vec3 result = vec3(0.0);
+    float total = 0.0;
+    for (int n = 0; n < 5; ++n) {
+        // Karis average: each box weighted down by its brightness, so one very bright pixel
+        // can't make its whole neighbourhood flicker as it moves.
+        float w = weights[n] * (karis ? 1.0 / (1.0 + luma(boxes[n])) : 1.0);
+        result += boxes[n] * w;
+        total += w;
+    }
+    return result / total;
+}
+
+vec3 upsample(vec2 uv) {
+    vec3 sum = tap(uv, vec2(0.0)) * 4.0;
+    sum += (tap(uv, vec2(0.0, 1.0)) + tap(uv, vec2(-1.0, 0.0)) + tap(uv, vec2(1.0, 0.0)) + tap(uv, vec2(0.0, -1.0))) * 2.0;
+    sum += tap(uv, vec2(-1.0, 1.0)) + tap(uv, vec2(1.0, 1.0)) + tap(uv, vec2(-1.0, -1.0)) + tap(uv, vec2(1.0, -1.0));
+    return sum / 16.0;
+}
+
+void main() {
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= pc.targetSize.x || id.y >= pc.targetSize.y) return;
+    vec2 uv = (vec2(id) + 0.5) / vec2(pc.targetSize);
+    vec3 color;
+    if (pc.mode == 2u) color = imageLoad(target, ivec2(id)).rgb + upsample(uv);
+    else color = downsample(uv, pc.mode == 0u);
+    imageStore(target, ivec2(id), vec4(color, 1.0));
+}

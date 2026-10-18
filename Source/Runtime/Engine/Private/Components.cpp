@@ -173,6 +173,7 @@ void registerBuiltins() {
             field("show_environment", &Environment::showEnvironment),
             field("exposure", &Environment::exposure, 0.05f, -16.0f, 16.0f),
             enumField("tonemapper", &Environment::tonemapper, {"ACES", "AgX", "Reinhard", "None"}),
+            field("bloom_intensity", &Environment::bloomIntensity, 0.005f, 0.0f, 1.0f),
             field("shadow_distance", &Environment::shadowDistance, 1.0f, 1.0f, 10000.0f),
             field("shadow_cascades", &Environment::shadowCascades, 1.0f, 1.0f, 4.0f),
         },

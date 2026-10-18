@@ -49,6 +49,26 @@ end
 
 `player --check` reports an environment map that isn't twice as wide as it is tall.
 
+## Bloom
+
+Very bright light spreads into its surroundings, the way it does through a camera lens:
+glowing emissive materials, the sun in a reflection, a bright sky behind a window. Set it
+on the Environment:
+
+| Setting | Text | Range | What it does |
+|---|---|---|---|
+| Bloom intensity | `bloom_intensity 0.04` | 0 to 1 | How much of the blurred image is mixed into the sharp one; 0 turns bloom off |
+
+There's no brightness threshold: everything blurs a little, and the mix means only light
+far brighter than its surroundings shows a visible glow. 0.02 to 0.08 looks natural;
+higher values look dreamy. To make something glow, give it an emissive color with an
+`emissive_intensity` well above 1. Bloom costs about 0.05 ms a frame at 1280 x 720 on an
+RTX 3080 (0.13 ms at 2560 x 1440), and it's skipped in the debug views.
+
+It's the Call of Duty: Advanced Warfare method: the HDR image is filtered down a chain of
+half-size levels (`bloom.comp`, `RendererBloom.cpp`) and back up, and the tonemap pass mixes
+the result in before exposure.
+
 ## How it works
 
 The renderer draws the surroundings into a cube map, then filters it into two more: an

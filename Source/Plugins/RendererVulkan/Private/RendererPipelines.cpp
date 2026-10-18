@@ -296,6 +296,7 @@ void VulkanRenderer::Impl::createPipelines() {
     shadowDepthOnlyPipeline = vk::createGraphicsPipeline(context->device(), shadowDesc);
     createParticlePipelines();
     createSkinningPipeline();
+    createBloomPipeline();
 
     createUiPipeline();
 }

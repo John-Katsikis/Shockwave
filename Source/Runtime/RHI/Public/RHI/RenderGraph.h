@@ -14,6 +14,7 @@ enum class ImageUse {
     ColorAttachment,   // rendered into (load or clear, then store)
     DepthAttachment,   // depth tested and written
     Sampled,   // read in a fragment shader
+    ComputeSampled,   // read in a compute shader
     TransferSrc,   // copied or blitted from
     TransferDst,   // copied or blitted to
     Present,   // handed to the presentation engine

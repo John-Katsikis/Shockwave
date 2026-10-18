@@ -76,6 +76,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
 void VulkanRenderer::Impl::recreateSwapchain() {
     vkDeviceWaitIdle(context->device());
     destroyRenderFinishedSemaphores();
+    destroyBloomTargets();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -480,6 +481,10 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
             [this](VkCommandBuffer cmd) { recordParticles(cmd); });
     }
+    // The bloom chain keeps its own barriers, like the lighting cubes: only this pass
+    // writes it and only the tonemap reads it.
+    if (bloomIntensity() > 0.0f)
+        graph.addPass("bloom", {{color, ImageUse::ComputeSampled}}, [this](VkCommandBuffer cmd) { recordBloom(cmd); });
     graph.addPass(
         "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
         [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
@@ -573,6 +578,8 @@ void VulkanRenderer::Impl::recordTonemap(VkCommandBuffer cmd) {
         debugView == DebugView::Lit || debugView == DebugView::Lighting || debugView == DebugView::ShadowCascades
             ? static_cast<uint32_t>(lighting.tonemapper)
             : 99u;
+    push.bloomTexture = bloomSlot;
+    push.bloomIntensity = bloomIntensity();
     vkCmdPushConstants(cmd, tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);

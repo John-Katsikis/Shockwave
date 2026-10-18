@@ -93,6 +93,9 @@ struct Environment {
     bool showEnvironment = true;   // draw the map behind everything instead of skyColor
     float exposure = 0.0f;   // in stops: +1 doubles brightness, -1 halves it
     Tonemapper tonemapper = Tonemapper::ACES;
+    // Very bright light (the sun in a reflection, glowing emissives) spreading into its
+    // surroundings like it does through a camera lens. 0 turns it off.
+    float bloomIntensity = 0.04f;
     // The sun's shadows: how far from the camera they reach, and in how many cascades
     // (more keeps nearby shadows sharp across long distances).
     float shadowDistance = 80.0f;   // meters
