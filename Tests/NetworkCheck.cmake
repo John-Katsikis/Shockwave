@@ -55,7 +55,7 @@ bad_settings("max_players 12" "max_players 65" "Network.swnetwork:[0-9]+: max_pl
 bad_settings("max_players 12" "max_players 1" "max_players must be a whole number from 2 to 64")
 bad_settings("tick_rate 60" "tick_rate 130" "Network.swnetwork:[0-9]+: tick_rate must be a whole number from 60 to 120")
 bad_settings("tick_rate 60" "tick_rate 120" "doesn't match the project's tick_rate 60")
-bad_settings("snapshot_rate 20" "snapshot_rate 25" "snapshot_rate must be 10, 15, 20, 30 or 60")
+bad_settings("snapshot_rate 20" "snapshot_rate 25" "snapshot_rate must be 10, 15, 20, 30, 60 or 120")
 bad_settings("enabled 0" "enabled 1" "steam_app_id is required")
 bad_settings("max_players 12" "max_players 64" "64 players at snapshot_rate 20 need about [0-9]+ bytes/s")
 bad_settings("max_players 12" "max_players 12\nbogus 1" "Network.swnetwork:[0-9]+: unknown setting bogus")

@@ -12,7 +12,7 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 |---|---|---|---|
 | 0 | `magic` | 4 bytes | ASCII `SWMP` |
 | 4 | `version` | u16 | 1 |
-| 6 | `kind` | u8 | 1..21, below |
+| 6 | `kind` | u8 | 1..23, below |
 | 7 | `flags` | u8 | 0 |
 | 8 | `session` | 16 bytes | the host's session nonce; zero only in a developer direct-join Hello |
 | 24 | `sender_tick` | u32 | 0 before play |
@@ -43,6 +43,8 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 | 19 | Reject | reliable | host to client | any time; the host closes after it |
 | 20 | Goodbye | reliable | either way | any time; the sender closes after it |
 | 21 | ResyncRequest | reliable | client to host | active |
+| 22 | DeltaSnapshot | unreliable | host to client | active |
+| 23 | SnapshotAck | unreliable | client to host | active |
 
 ### 1 Hello
 
@@ -57,7 +59,7 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 
 ### 2 Challenge
 
-`snapshot_rate` must be 10, 15, 20, 30 or 60, and divide `tick_rate`.
+`snapshot_rate` must be 10, 15, 20, 30, 60 or 120, and divide `tick_rate`.
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
@@ -68,7 +70,7 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 |  | `scene_id` | u16 | >= 1 |
 |  | `host_peer` | u64 | >= 1 |
 |  | `tick_rate` | u16 | 60..120 |
-|  | `snapshot_rate` | u16 | 10..60 |
+|  | `snapshot_rate` | u16 | 10..120 |
 |  | `interpolation_ms` | u16 | 50..200 |
 |  | `max_rewind_ms` | u16 | 0..250 |
 
@@ -237,6 +239,32 @@ An authored object (`prefab_id` 0) has an `authored_key`; a spawned prefab has a
 |---|---|---|---|
 | 0 | `last_applied_server_tick` | u32 |  |
 | 4 | `reason` | u8 |  |
+
+### 22 DeltaSnapshot
+
+`part_index` must be less than `part_count`, `first_slot + slot_count` at most 1024, `changed_count` at most `slot_count`. `baseline_tick` is 0 unless `flags` has bit 0 (has baseline), and then comes before `snapshot_tick`. The payload's bit layout is in docs/Networking.md (Delta snapshots).
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `snapshot_tick` | u32 |  |
+| 4 | `baseline_tick` | u32 |  |
+| 8 | `required_control_serial` | u32 |  |
+| 12 | `flags` | u8 bits | only 0x01 |
+| 13 | `part_index` | u8 | 0..254 |
+| 14 | `part_count` | u8 | >= 1 |
+| 15 | `first_slot` | u16 | 0..1023 |
+| 17 | `slot_count` | u16 | 0..1024 |
+| 19 | `changed_count` | u16 | 0..1024 |
+| 21 | `payload` | bytes(1152) | 0..1152 bytes |
+
+### 23 SnapshotAck
+
+Bit i of `received_bits` is `latest_tick - 1 - i`.
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `latest_tick` | u32 |  |
+| 4 | `received_bits` | u32 |  |
 
 ## Input command (24 bytes)
 

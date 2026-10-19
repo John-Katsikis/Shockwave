@@ -16,9 +16,9 @@ A project without this file plays offline only. The first line is `shockwave_net
 | `virtual_port` | 0..999 | 0 | Steam virtual port the host listens on |
 | `max_players` | 2..64 | 12 | Players in a session, the listen host included: 2 (1v1) to 64 (32v32) |
 | `tick_rate` | 60..120 | 60 | Simulation ticks per second, 60 to 120; must equal the project's tick_rate |
-| `snapshot_rate` | 10..60 | 20 | State snapshots per second: 10, 15, 20, 30 or 60, dividing tick_rate |
+| `snapshot_rate` | 10..120 | 20 | State snapshots per second: 10, 15, 20, 30, 60 or 120, dividing tick_rate |
 | `input_rate` | 60..120 | 60 | Input commands per second; equals tick_rate in protocol v1 |
-| `interpolation_ms` | 50..200 | 100 | How far behind remote objects are shown, in milliseconds |
+| `interpolation_ms` | 25..200 | 100 | How far behind remote objects are shown, in milliseconds |
 | `max_extrapolation_ms` | 0..100 | 100 | How long a remote object keeps moving past its last snapshot, in milliseconds |
 | `max_rewind_ms` | 0..250 | 200 | How far back the host rewinds players to check a shot, in milliseconds |
 | `connect_timeout_seconds` | 1..120 seconds | 15 | Seconds a connection may take to open |
@@ -35,10 +35,11 @@ A project without this file plays offline only. The first line is `shockwave_net
 Rules between keys, checked by `player --check`:
 
 - `tick_rate` equals the project's `tick_rate`; `input_rate` equals `tick_rate`.
-- `snapshot_rate` is 10, 15, 20, 30 or 60 and divides `tick_rate`.
+- `snapshot_rate` is 10, 15, 20, 30, 60 or 120 and divides `tick_rate`.
 - `steam_app_id` is set when `enabled 1` uses `transport steam`; 480 (Valve's test app) is a warning.
 - `steam_required 1` needs `transport steam`.
 - `max_replicated_entities` is at least `max_players`.
+- `interpolation_ms` under two snapshot intervals (`2000 / snapshot_rate` ms) is a warning.
 - `max_rewind_ms` below `interpolation_ms` is a warning.
 - `max_players` records of the largest registered per-player profile, at `snapshot_rate`, fit in `outbound_bytes_per_second` minus 16384 bytes/s kept for lifecycle messages and events.
 

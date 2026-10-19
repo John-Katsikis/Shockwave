@@ -166,7 +166,7 @@ void testSettingsRanges() {
         long long min, max;
     };
     for (const Range r :
-         {Range{"snapshot_rate", 10, 60}, Range{"virtual_port", 0, 999}, Range{"interpolation_ms", 50, 200},
+         {Range{"snapshot_rate", 10, 120}, Range{"virtual_port", 0, 999}, Range{"interpolation_ms", 25, 200},
           Range{"max_extrapolation_ms", 0, 100}, Range{"max_rewind_ms", 0, 250},
           Range{"max_replicated_entities", 12, 4096}, Range{"max_snapshot_bytes", 512, 1152},
           Range{"outbound_bytes_per_second", 16384, 262144}, Range{"max_pending_reliable_bytes", 16384, 262144},
@@ -223,7 +223,7 @@ void testSettingsRules() {
     s.inputRate = 120;
     CHECK(!hasErrors(problems(s, 120)));
     s.snapshotRate = 25;
-    CHECK(anyProblem(problems(s, 120), "snapshot_rate must be 10, 15, 20, 30 or 60"));
+    CHECK(anyProblem(problems(s, 120), "snapshot_rate must be 10, 15, 20, 30, 60 or 120"));
     s.tickRate = s.inputRate = 90;
     s.snapshotRate = 20;   // doesn't divide 90
     CHECK(anyProblem(problems(s, 90), "divide"));
@@ -251,6 +251,19 @@ void testSettingsRules() {
     rewind.maxRewindMs = 50;
     CHECK(!hasErrors(problems(rewind)));
     CHECK(anyProblem(problems(rewind), "max_rewind_ms", true));
+    // Less than two snapshot intervals of interpolation: a warning; 120 Hz snapshots with
+    // 25 ms (three ticks) are fine.
+    NetworkSettings jitter;
+    jitter.snapshotRate = 30;
+    jitter.interpolationMs = 50;
+    CHECK(!hasErrors(problems(jitter)));
+    CHECK(anyProblem(problems(jitter), "less than two snapshot intervals at snapshot_rate 30 (67 ms)", true));
+    jitter.tickRate = 120;
+    jitter.snapshotRate = 120;
+    jitter.interpolationMs = 25;
+    CHECK(!anyProblem(problems(jitter), "two snapshot intervals", true));
+    jitter.interpolationMs = 24;
+    CHECK(anyProblem(problems(jitter), "interpolation_ms"));
 }
 
 // ---- SHA-256 and the content digest -----------------------------------------------------

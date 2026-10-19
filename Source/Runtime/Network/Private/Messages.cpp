@@ -44,6 +44,8 @@ constexpr MessageDescriptor kCatalog[] = {
     {MessageKind::Reject, "Reject", R, ToClient, "any time; the host closes after it"},
     {MessageKind::Goodbye, "Goodbye", R, Either, "any time; the sender closes after it"},
     {MessageKind::ResyncRequest, "ResyncRequest", R, ToHost, "active"},
+    {MessageKind::DeltaSnapshot, "DeltaSnapshot", U, ToClient, "active"},
+    {MessageKind::SnapshotAck, "SnapshotAck", U, ToHost, "active"},
 };
 static_assert(std::size(kCatalog) == kLastMessageKind);
 
@@ -127,6 +129,15 @@ const char* Spawn::invalid() const {
 }
 
 const char* Snapshot::invalid() const { return partIndex < partCount ? nullptr : "part_index"; }
+
+const char* DeltaSnapshot::invalid() const {
+    if (partIndex >= partCount) return "part_index";
+    if (uint32_t(firstSlot) + slotCount > kMaxDeltaSlots) return "slot_count";
+    if (changedCount > slotCount) return "changed_count";
+    if (!(flags & kHasBaseline) && baselineTick != 0) return "baseline_tick";
+    if ((flags & kHasBaseline) && !tickNewer(snapshotTick, baselineTick)) return "baseline_tick";
+    return nullptr;
+}
 
 const char* Pong::invalid() const { return responderSendUs < responderReceiveUs ? "responder_send_us" : nullptr; }
 
@@ -440,7 +451,8 @@ std::string protocolReferenceMarkdown() {
     };
     const auto& c = kCatalog;
     section(c[0], fieldTable<Hello>(), "");
-    section(c[1], fieldTable<Challenge>(), "`snapshot_rate` must be 10, 15, 20, 30 or 60, and divide `tick_rate`.");
+    section(
+        c[1], fieldTable<Challenge>(), "`snapshot_rate` must be 10, 15, 20, 30, 60 or 120, and divide `tick_rate`.");
     section(
         c[2], fieldTable<AuthTicket>(),
         "The sender's identity comes from the transport, never from this message. "
@@ -466,6 +478,12 @@ std::string protocolReferenceMarkdown() {
     section(c[18], fieldTable<Reject>(), "");
     section(c[19], fieldTable<Goodbye>(), "");
     section(c[20], fieldTable<ResyncRequest>(), "");
+    section(
+        c[21], fieldTable<DeltaSnapshot>(),
+        "`part_index` must be less than `part_count`, `first_slot + slot_count` at most 1024, `changed_count` at "
+        "most `slot_count`. `baseline_tick` is 0 unless `flags` has bit 0 (has baseline), and then comes before "
+        "`snapshot_tick`. The payload's bit layout is in docs/Networking.md (Delta snapshots).");
+    section(c[22], fieldTable<SnapshotAck>(), "Bit i of `received_bits` is `latest_tick - 1 - i`.");
 
     md += std::format("## Input command ({} bytes)\n\n", kInputCommandBytes);
     md += "`yaw` 0..65535 maps to -pi..pi (exclusive), `pitch` -32767..32767 to -89..89 degrees. ";

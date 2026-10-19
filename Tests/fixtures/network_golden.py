@@ -53,6 +53,8 @@ msgs = [
  ("Reject", header(19, S, 0, u16(3)+s("server is full"))),
  ("Goodbye", header(20, S, 1014, u16(10))),
  ("ResyncRequest", header(21, S, 1009, u32(1009)+u8(2))),
+ ("DeltaSnapshot", header(22, S, 1020, u32(1020)+u32(1014)+u32(3)+u8(1)+u8(0)+u8(2)+u16(5)+u16(12)+u16(2)+by([0xA5,0x3C,0x0F]))),
+ ("SnapshotAck", header(23, S, 1021, u32(1020)+u32(0x80000001))),
 ]
 print("// Golden bytes (see the comment at the top of this file).")
 print("const GoldenMessage kGolden[] = {")
