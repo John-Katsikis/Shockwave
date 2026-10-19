@@ -16,7 +16,7 @@ renderer or Steam.
 |---|---|
 | `Network/NetworkTypes.h` | `NetResult<T>` and `NetError` (routine failures are values, not exceptions), `PeerId`, the protocol's `ReasonCode`s, `secureRandomBytes()` for session nonces |
 | `Network/Wire.h` | `WireWriter` and `WireReader`: bounded little-endian byte codecs that never allocate; `validUtf8()`; `tickNewer()` for wrapping tick comparisons |
-| `Network/Messages.h` | Wire protocol v1: the 32-byte header, all 21 message kinds, input commands, state records, the built-in pose state, and `encodeMessage()` / `decodeMessage()` |
+| `Network/Messages.h` | Wire protocol v1: the 32-byte header, all 23 message kinds, input commands, state records, the built-in pose state, and `encodeMessage()` / `decodeMessage()` |
 | `Network/Transport.h` | `ITransport`, the interface gameplay networking will use for Steam and for tests |
 | `Network/Loopback.h` | `LoopbackHub`: in-process transports on a virtual clock with seeded latency, jitter, loss, duplication, outages and bandwidth limits |
 | `Network/NetworkCapture.h` | `.swnetcap` packet captures, and conversion to and from JSON |
@@ -33,6 +33,9 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/Replication.h` | `ReplicationRegistry`: replication profiles, commands and events with stable IDs, frozen before a session; the profile codec |
 | `Multiplayer/NetworkValidation.h` | The checks `player --check` and the editor share, and `readyForSession()` |
 | `Multiplayer/NetworkSchema.h` | The generated [NetworkSchema.md](NetworkSchema.md) and `--network-info`'s report |
+| `Multiplayer/SnapshotDelta.h` | Quantized entity states, the host's snapshot history, delta encoding against acknowledged baselines, and the client's decoder (Batch 4) |
+| `Multiplayer/Interpolation.h` | `InterpolationEngine`: remote objects shown a jitter buffer behind the server clock (Batch 4) |
+| `Multiplayer/RewindHistory.h` | `RewindHistoryBuffer`: player capsules over the last `max_rewind_ms`, for lag-compensated hit checks (Batch 4) |
 
 The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
 sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing else does.
@@ -44,9 +47,10 @@ sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing e
 | `SteamServices/SteamApi.h` | `SteamApi`, every Steamworks call the module makes, with no SDK types |
 | `SteamServices/MockSteamApi.h` | `MockSteamApi` and `MockSteamNetwork`: Steam played in-process for tests and SDK-less builds |
 
-Not built yet: hosting and joining sessions, replicated entities, prediction, lag
-compensation and the `player --net-*` session commands. Nothing advertises those as
-working; `--network-info` lists them under `unsupported`.
+Not built yet: hosting and joining sessions, replicated entities, prediction and the
+`player --net-*` session commands. Nothing advertises those as working; `--network-info`
+lists them under `unsupported`. The Batch 4 pieces (delta snapshots, interpolation and
+rewind history) are libraries tested on their own; no session uses them yet.
 
 ## Network settings
 
@@ -68,8 +72,9 @@ Every key, its range and default is in [NetworkSchema.md](NetworkSchema.md). Key
 out keep their defaults; unknown or repeated keys, values out of range and non-finite
 numbers are errors with file:line, and nothing is clamped. `max_players` is 2 to 64
 (1v1 up to 32v32), the listen host included. `tick_rate` is 60 to 120 and must equal the
-project's `tick_rate`; `input_rate` equals it, and `snapshot_rate` is 10, 15, 20, 30 or
-60 and divides it. `--check` also estimates the player-state bandwidth: `max_players`
+project's `tick_rate`; `input_rate` equals it, and `snapshot_rate` is 10, 15, 20, 30, 60
+or 120 and divides it, and `interpolation_ms` (25 to 200) should hold at least two
+snapshot intervals or `--check` warns. `--check` also estimates the player-state bandwidth: `max_players`
 records of the game's largest per-player profile at `snapshot_rate` must fit in
 `outbound_bytes_per_second` minus 16384 bytes/s kept for everything else. Arena at 64
 players needs `outbound_bytes_per_second` of at least about 141000 at 20 snapshots a
@@ -224,7 +229,78 @@ if (WireStatus status = decodeMessage(received.bytes, options, message); !status
 ```
 
 Protocol v1 sessions run at a tick rate from 60 to 120 Hz. The snapshot rate is 10,
-15, 20, 30 or 60 and must divide the tick rate.
+15, 20, 30, 60 or 120 and must divide the tick rate.
+
+## Delta snapshots
+
+A snapshot of every replicated slot would be 4.4 KB for 64 players, nearly four times
+what an unreliable message may carry (1152 bytes). So the host sends each client only
+what changed since the newest snapshot that client acknowledged, and a keyframe (from
+empty slots) when it has none.
+
+- Each slot is a `NetEntityState`, 32 bytes, `alignas(16)`, with no pointers or strings:
+  position in 1/1024 m (within 32 km), rotation as "smallest three" (two index bits and
+  three 10-bit components), velocity in 1/64 m/s, angular velocity in 1/32 rad/s, the
+  pose flags and an incarnation (0 is an empty slot). `quantizeState()` and
+  `dequantizeState()` convert from and to `PoseState`.
+- The host stores every tick in one `SnapshotHistory` (the last 64 ticks). One
+  `SnapshotDeltaEncoder` per session turns a tick and a baseline into parts; clients
+  acknowledging the same tick share the same parts, so a tick costs one encode per
+  distinct baseline. Each client has a `SnapshotDeltaCompressor`, which holds the newest
+  tick it acknowledged and asks the encoder.
+- The client's `SnapshotDeltaDecoder` keeps the last 64 complete snapshots. It decodes a
+  part straight from the received bytes into staging, and only a part that is right in
+  every respect changes anything. It answers with `SnapshotAck`: the newest complete
+  tick and a bit for each of the 32 before it.
+
+A `DeltaSnapshot` names its tick, its baseline tick (when `flags` has bit 0), the part's
+index and count, and the slots it covers, `first_slot` to `first_slot + slot_count - 1`.
+Parts of one snapshot cover different slots, and slots no part covers are unchanged. The
+payload is a bit stream, least significant bit first, zero-padded to a byte:
+
+| Bits | Meaning |
+|---|---|
+| 1 per covered slot | changed |
+| then, if changed: 1 | fresh: decoded against an empty slot (a respawn, a new or reused slot, a keyframe) instead of the baseline |
+| 6 | which fields follow: position 1, rotation 2, velocity 4, angular velocity 8, flags 16, incarnation 32. Fresh with none means the slot was emptied |
+| position | per axis, the difference as a 5-bit width n and the low n - 1 bits of its zigzag value (the top bit is implied) |
+| rotation | 1 bit relative; then three 4-bit-width differences, or 32 raw bits when that would be smaller or the index changed |
+| velocity, angular velocity | per axis, like position with 5-bit widths |
+| flags, incarnation | 8 and 16 raw bits |
+
+Only fields that changed are sent, and the decoder refuses a part whose field bits
+don't match what changed, a delta for an empty or different incarnation, values out of
+range, extra bytes or set padding bits.
+
+With 64 players all running, strafing and turning at 120 Hz and acks six ticks old, a
+delta is about 870 bytes, one part; a keyframe is two parts. `test_snapshot_delta`
+prints the sizes it measures.
+
+## Interpolation
+
+Remote objects are shown slightly in the past, so a late or lost snapshot still leaves a
+sample ahead to move towards. `InterpolationEngine` keeps 32 samples per slot, in tick
+order whatever order they arrive in. `observeServerTick()` estimates the server clock
+from the earliest arrivals; `renderTime()` is that clock minus `interpolation_ms`
+(25 ms at 120 Hz is a 3-tick jitter buffer). `sample()` blends the two samples around
+that time: positions along cubic Hermite curves through both velocities (or linearly),
+rotations by the shortest slerp, velocities linearly. Past the newest sample an object
+keeps its velocity for up to `max_extrapolation_ms` and then holds, reported as `Held`.
+A teleport, a new incarnation or an emptied slot clears the slot's samples.
+
+## Rewind history
+
+For lag compensation the host records every player's capsule each tick in a
+`RewindHistoryBuffer`: the last `max_rewind_ms` (at most 32 ticks, 250 ms at 120 Hz).
+`queryAtTimestamp(ms, hitboxes)` returns every capsule as the shooter saw it, blending
+the two ticks around the time; `raycast()` returns the nearest living player a ray hits
+then, ignoring the shooter. Tick 0 is 0 ms. A time after the latest tick is clamped to
+it, one up to two ticks older than the window is clamped to its edge, and anything older
+is rejected, so a client can't pick an old, favourable pose. Between a death, respawn
+or teleport and the tick before it a player can't be hit. Static-world cover is the
+caller's: compare the hit distance with the world ray's.
+
+None of these three allocates after construction.
 
 ## Transports
 
@@ -349,7 +425,7 @@ come in a later batch.
 ## Tests
 
 ```sh
-ctest --test-dir build -R "network_|test_steam|test_sdr" --output-on-failure
+ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewind|test_replication" --output-on-failure
 ```
 
 | Test | Covers |
@@ -361,3 +437,6 @@ ctest --test-dir build -R "network_|test_steam|test_sdr" --output-on-failure
 | `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; mode combinations exit 2 |
 | `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
 | `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |
+| `test_snapshot_delta` | Quantization limits and round trips; 64 moving players at 120 Hz in one part under 1152 bytes; keyframes split to fit 1152 and 512; 1024 worst-case slots; loss, reordering, duplicates and lost acks with every completed snapshot identical to the host's; acks and baselines leaving the history; respawns and despawns; every kind of malformed part; one encoder shared by clients; interpolation (Hermite, slerp, extrapolation limit, out-of-order and duplicate samples, teleports, the server clock, the 3-tick jitter buffer); host and client time per tick (under 150 us asserted in optimised builds) |
+| `test_rewind_buffer` | Ring sizes; exact ticks, fractions and milliseconds at 120 and 60 Hz; future, slightly-old and too-old times; respawns, deaths and teleports; crouching; ray-capsule geometry; raycasts hitting the past and missing the present, skipping the shooter, picking the nearest; tick wraparound |
+| `test_replication_allocations` | 0 heap bytes over 10,000 ticks of 64 players with four clients (encoding, loss, decoding, acks, interpolation, rewind recording, queries and raycasts) |

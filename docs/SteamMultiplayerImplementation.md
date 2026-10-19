@@ -84,6 +84,40 @@ Recorded here as the document asks, newest last. Status of each batch is in
     `steam_appid.txt` and fails if Steam started for a different AppID than
     `steam_app_id`. `SteamAPI_RestartAppIfNecessary` for packaged launches waits for
     Batch 9 (packaging).
+16. "Batch 4", 2026-10-19, at the project owner's request: the owner's Batch 4 brief is
+    delta snapshots, client interpolation and lag-compensation history, which are pieces
+    of plan Batches 5 (snapshots), 7 (section 9.3 presentation) and 8 (section 10.1
+    historical hit testing). They are built ahead of the plan's Batch 4 (session
+    integration) as standalone, tested libraries in Multiplayer (`SnapshotDelta.h`,
+    `Interpolation.h`, `RewindHistory.h`); no session sends or uses them yet, and plan
+    Batch 4 is still to do.
+17. Delta encoding (section 6.3's "later measured optimization") is two new message
+    kinds appended to protocol v1 rather than a v2: `DeltaSnapshot` (22, unreliable,
+    host to client) and `SnapshotAck` (23, unreliable, client to host). Peers built
+    before them reject the kinds as unknown, which is the same outcome as a version
+    mismatch, and no build has shipped. Golden packets for both are in `network_wire`.
+    Entities are quantized to a fixed 32-byte `NetEntityState` (1/1024 m positions within
+    +-32 km, smallest-three rotations with 10-bit components, 1/64 m/s and 1/32 rad/s
+    velocities), so full v1 state records and deltas don't describe the same values.
+18. The baseline ring is the host's: one `SnapshotHistory` of the last 64 ticks per
+    session, shared by every client, and one `SnapshotDeltaEncoder` that encodes each
+    tick once per distinct acknowledged baseline, rather than a ring and an encode per
+    client. Per client there is only the ack state (`SnapshotDeltaCompressor`).
+19. `snapshot_rate` may be 120 (still dividing `tick_rate`), and `interpolation_ms` may be
+    as low as 25 (was 50), so a 120 Hz stream can use the owner's 3-tick jitter buffer.
+    `--check` warns when `interpolation_ms` is under two snapshot intervals. Its
+    bandwidth estimate still counts full v1 state records, since sessions don't send
+    deltas yet.
+20. Rewind history keeps ceil(max_rewind_ms x tick_rate / 1000) + 2 ticks per player, at
+    most 32 (200 ms at 120 Hz is 24 ticks plus two), stored 32 per slot so a tick is
+    found by `tick & 31` even when the tick counter wraps. Times newer than the latest
+    tick clamp to it; times up to two ticks older than the window clamp to its edge and
+    older ones are rejected. A player can't be hit between two ticks across a respawn,
+    a death or a teleport.
+21. The owner's names follow the engine's style: `queryAtTimestamp(uint64_t
+    clientTimestampMs, ...)` for `QueryAtTimestamp(uint64_t client_timestamp_ms)`. The
+    brief's "Astra pre-allocated arena storage" is constructor-time allocation: the
+    engine has no Astra arena.
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 

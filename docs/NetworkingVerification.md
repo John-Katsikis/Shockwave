@@ -223,3 +223,64 @@ Outstanding for this batch:
 - `SteamAPI_RestartAppIfNecessary` and packaging the Steam runtime next to a packaged
   game wait for Batch 9.
 - Not built on macOS or Windows here; CI covers those on push.
+
+## Batch 4 (2026-10-19): delta snapshots, interpolation, rewind history
+
+Base: `2a9703f` (master after PR #21), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+The owner's Batch 4 brief; see design adjustments 16 to 21 for how it maps onto the plan.
+Plan Batch 4 (session integration) is still to do.
+
+Implemented:
+
+- Wire messages `DeltaSnapshot` (22) and `SnapshotAck` (23) in protocol v1, with golden
+  packets, sample cases and the regenerated [NetworkProtocol.md](NetworkProtocol.md).
+- `Multiplayer/SnapshotDelta.h`: `NetEntityState` (32 bytes, `alignas(16)`),
+  quantization, `SnapshotHistory`, `SnapshotDeltaEncoder` (shared, one encode per
+  distinct baseline per tick), `SnapshotDeltaCompressor` (per-client acks),
+  `SnapshotDeltaDecoder` (staged, zero-copy from the received payload).
+- `Multiplayer/Interpolation.h`: `InterpolationEngine`, the server clock and the jitter
+  buffer.
+- `Multiplayer/RewindHistory.h`: `RewindHistoryBuffer`, `queryAtTimestamp`, raycasts,
+  `rayCapsule`.
+- Settings: `snapshot_rate` 120, `interpolation_ms` from 25, and a `--check` warning
+  under two snapshot intervals; [NetworkSchema.md](NetworkSchema.md) regenerated.
+- Tests `test_snapshot_delta`, `test_rewind_buffer`, `test_replication_allocations`.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 40/42 (the known no-display failures `renderer_swap` and `save_games_cli`); `-R "network_\|test_steam\|test_sdr\|test_snapshot\|test_rewind\|test_replication"` 10/10 |
+| Release (`-O3`), the three new tests | pass, no warnings |
+| Debug with `-fsanitize=address,undefined`: `test_snapshot_delta`, `test_rewind_buffer`, `network_wire`, `network_settings` | pass, no sanitizer reports |
+
+Measured (Release, `test_snapshot_delta`; the container is shared, so worst cases are noisy):
+
+| What | Result |
+|---|---|
+| 64 players all moving at 120 Hz, acks 6 ticks old, 2,400 ticks | every delta in 1 part; largest 896 bytes, mean 870 (a full v1 snapshot is 4,466); payload, header and bitmask included, so under the 1152-byte cap |
+| Keyframe of the same 64 players | 2 parts, 1,321 bytes; at `max_snapshot_bytes` 512, more parts, each under 512 |
+| 1,024 slots of worst-case values | every part within 1152 (and 512); deltas between them decode exactly |
+| 10% loss, 3% duplicates, reordering, 15% lost acks, respawns and despawns, 3,000 ticks | 2,689 snapshots completed, each identical to the host's; 10 keyframes |
+| Host, 63 clients with acks 3 to 10 ticks old (8 baselines) | 71 us per tick mean (8 encodes of about 8 us); the budget is 150 us |
+| Client, decode + apply + interpolate 64 players | 20 to 23 us per tick mean |
+| Allocations (`test_replication_allocations`, Debug): 9,900 ticks after 100 of warm-up, 64 players, 4 clients with acks 3 to 40 ticks old, 5% loss, 10% lost acks, interpolation of all 64, rewind recording, 8 timestamp queries and 16 raycasts per tick | 0 allocations, 0 bytes |
+
+Bugs the tests found and that are fixed:
+
+- A position delta across the full range needs 28 width bits, and the decoder allowed 27.
+- The rewind ring indexed `tick % capacity`, which collides when the tick counter wraps;
+  it is now `tick & 31` with 32 entries.
+- Inserting a late interpolation sample into a full slot overwrote the newest one.
+- The first encoder wrote bit by bit (27 us per client); it now writes up to 56 bits at
+  a time.
+
+Outstanding for this batch:
+
+- No session sends deltas, interpolates or rewinds yet: that is plan Batches 4 to 8.
+  `--check`'s bandwidth estimate still counts full v1 records, so 64 players at 120 Hz
+  snapshots fail it even though deltas would fit.
+- Timings come from one Linux container, not from the target machines.
+- No editor change: the new `snapshot_rate` and `interpolation_ms` ranges reach Project
+  settings > Multiplayer through the settings table, but the container has no display,
+  so nobody has looked.

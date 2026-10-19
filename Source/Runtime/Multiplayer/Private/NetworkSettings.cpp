@@ -81,10 +81,10 @@ const NetworkSettingField kFields[] = {
      SettingKind::Integer,
      &S::snapshotRate,
      10,
-     60,
+     120,
      {},
      "Snapshot rate",
-     "State snapshots per second: 10, 15, 20, 30 or 60, dividing tick_rate"},
+     "State snapshots per second: 10, 15, 20, 30, 60 or 120, dividing tick_rate"},
     {"input_rate",
      SettingKind::Integer,
      &S::inputRate,
@@ -96,7 +96,7 @@ const NetworkSettingField kFields[] = {
     {"interpolation_ms",
      SettingKind::Integer,
      &S::interpolationMs,
-     50,
+     25,
      200,
      {},
      "Interpolation",
@@ -344,7 +344,7 @@ void validateNetworkSettings(
             "tick_rate", "tick_rate " + std::to_string(s.tickRate) + " doesn't match the project's tick_rate " +
                              formatNumber(projectTickRate) + "; they must be equal");
     if (std::find(kSnapshotRates.begin(), kSnapshotRates.end(), s.snapshotRate) == kSnapshotRates.end())
-        error("snapshot_rate", "snapshot_rate must be 10, 15, 20, 30 or 60");
+        error("snapshot_rate", "snapshot_rate must be 10, 15, 20, 30, 60 or 120");
     else if (s.tickRate % s.snapshotRate != 0)
         error(
             "snapshot_rate", "snapshot_rate " + std::to_string(s.snapshotRate) + " doesn't divide tick_rate " +
@@ -361,6 +361,15 @@ void validateNetworkSettings(
             "max_replicated_entities", "max_replicated_entities " + std::to_string(s.maxReplicatedEntities) +
                                            " is less than max_players " + std::to_string(s.maxPlayers) +
                                            ": every player needs a network object");
+    // Remote objects are shown interpolation_ms in the past; with less than two snapshot
+    // intervals of samples ahead, one lost snapshot leaves nothing to move towards.
+    if (s.snapshotRate > 0 && uint64_t(s.interpolationMs) * s.snapshotRate < 2000)
+        warn(
+            "interpolation_ms", "interpolation_ms " + std::to_string(s.interpolationMs) +
+                                    " is less than two snapshot intervals at snapshot_rate " +
+                                    std::to_string(s.snapshotRate) + " (" +
+                                    std::to_string((2000 + s.snapshotRate - 1) / s.snapshotRate) +
+                                    " ms): one lost snapshot would make remote objects stop or jump");
     if (s.maxRewindMs < s.interpolationMs)
         warn(
             "max_rewind_ms", "max_rewind_ms " + std::to_string(s.maxRewindMs) + " is less than interpolation_ms " +

@@ -47,11 +47,14 @@ inline constexpr uint32_t kInputCommandBytes = 24;
 inline constexpr uint32_t kStateRecordHeaderBytes = 16;
 inline constexpr uint32_t kPoseStateBytes = 53;
 inline constexpr uint16_t kMaxPlayers = 64;   // slot 1 is the host; 2..64 are remote players
+// Delta snapshots: entities are numbered by slot, 0..kMaxDeltaSlots-1, in a table both
+// sides agree on through reliable lifecycle messages.
+inline constexpr uint16_t kMaxDeltaSlots = 1024;
 // Simulation tick rates protocol v1 accepts. A session's rate must also equal the
 // project's tick_rate, and its snapshot rate must divide it.
 inline constexpr uint16_t kMinTickRate = 60;
 inline constexpr uint16_t kMaxTickRate = 120;
-inline constexpr std::array<uint16_t, 5> kSnapshotRates = {10, 15, 20, 30, 60};
+inline constexpr std::array<uint16_t, 6> kSnapshotRates = {10, 15, 20, 30, 60, 120};
 
 using Nonce = std::array<uint8_t, 16>;
 using Digest = std::array<uint8_t, 32>;
@@ -87,8 +90,10 @@ enum class MessageKind : uint8_t {
     Reject = 19,
     Goodbye = 20,
     ResyncRequest = 21,
+    DeltaSnapshot = 22,
+    SnapshotAck = 23,
 };
-inline constexpr uint8_t kLastMessageKind = 21;
+inline constexpr uint8_t kLastMessageKind = 23;
 
 enum class PeerRole : uint8_t { Host, Client };
 enum class MessageDirection : uint8_t { ClientToHost, HostToClient, Either };
@@ -521,10 +526,61 @@ struct ResyncRequest {
     const char* invalid() const { return nullptr; }
 };
 
+// One part of a delta-compressed snapshot (Multiplayer/SnapshotDelta.h): the changes in
+// slots first_slot..first_slot+slot_count-1 since the baseline snapshot, bit-packed in
+// `payload`. Slots no part of the snapshot covers are unchanged. Without kHasBaseline the
+// changes are against empty slots (a keyframe). Each part stands alone; the snapshot is
+// complete, and may be acknowledged, once all part_count parts have arrived.
+struct DeltaSnapshot {
+    static constexpr MessageKind kKind = MessageKind::DeltaSnapshot;
+    static constexpr uint8_t kHasBaseline = 1;
+    uint32_t snapshotTick = 0;
+    uint32_t baselineTick = 0;   // 0 without kHasBaseline
+    uint32_t requiredControlSerial = 0;
+    uint8_t flags = 0;
+    uint8_t partIndex = 0;
+    uint8_t partCount = 1;
+    uint16_t firstSlot = 0;
+    uint16_t slotCount = 0;
+    uint16_t changedCount = 0;   // slots in the part that changed
+    std::span<const uint8_t> payload;
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("snapshot_tick", m.snapshotTick);
+        v.u32("baseline_tick", m.baselineTick);
+        v.u32("required_control_serial", m.requiredControlSerial);
+        v.bits8("flags", m.flags, kHasBaseline);
+        v.u8("part_index", m.partIndex, 0, 254);
+        v.u8("part_count", m.partCount, 1, 255);
+        v.u16("first_slot", m.firstSlot, 0, kMaxDeltaSlots - 1);
+        v.u16("slot_count", m.slotCount, 0, kMaxDeltaSlots);
+        v.u16("changed_count", m.changedCount, 0, kMaxDeltaSlots);
+        v.bytes("payload", m.payload, 0, kMaxUnreliableMessageBytes);
+    }
+    // part_index < part_count; the slots fit kMaxDeltaSlots; changed_count <= slot_count;
+    // a baseline tick only with kHasBaseline, and before snapshot_tick.
+    const char* invalid() const;
+};
+
+// The client's newest complete snapshot, and which of the 32 before it are also complete
+// (bit i: latest_tick - 1 - i), sent every tick so a lost ack costs nothing.
+struct SnapshotAck {
+    static constexpr MessageKind kKind = MessageKind::SnapshotAck;
+    uint32_t latestTick = 0;
+    uint32_t receivedBits = 0;
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("latest_tick", m.latestTick);
+        v.u32("received_bits", m.receivedBits);
+    }
+    const char* invalid() const { return nullptr; }
+};
+
 // Alternative i is message kind i + 1.
 using MessageBody = std::variant<
     Hello, Challenge, AuthTicket, Welcome, BaselineBegin, Spawn, Despawn, Ownership, InitialState, BaselineEnd, Ready,
-    Active, Inputs, Snapshot, Command, GameEvent, Ping, Pong, Reject, Goodbye, ResyncRequest>;
+    Active, Inputs, Snapshot, Command, GameEvent, Ping, Pong, Reject, Goodbye, ResyncRequest, DeltaSnapshot,
+    SnapshotAck>;
 static_assert(std::variant_size_v<MessageBody> == kLastMessageKind);
 
 inline MessageKind kindOf(const MessageBody& body) { return MessageKind(body.index() + 1); }

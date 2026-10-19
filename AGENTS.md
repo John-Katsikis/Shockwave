@@ -124,7 +124,7 @@ reference and run the network tests:
 
 ```sh
 build/bin/network_wire_test --write-reference docs/NetworkProtocol.md
-ctest --test-dir build -R "network_|test_steam|test_sdr" --output-on-failure
+ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewind|test_replication" --output-on-failure
 ```
 
 Steam code lives in `Source/Runtime/SteamServices` and talks to Steam only through

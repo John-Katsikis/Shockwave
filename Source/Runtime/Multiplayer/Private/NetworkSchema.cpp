@@ -149,10 +149,11 @@ std::string networkSchemaMarkdown(const ReplicationRegistry& registry, std::stri
             << field.meaning << " |\n";
     out << "\nRules between keys, checked by `player --check`:\n\n"
         << "- `tick_rate` equals the project's `tick_rate`; `input_rate` equals `tick_rate`.\n"
-        << "- `snapshot_rate` is 10, 15, 20, 30 or 60 and divides `tick_rate`.\n"
+        << "- `snapshot_rate` is 10, 15, 20, 30, 60 or 120 and divides `tick_rate`.\n"
         << "- `steam_app_id` is set when `enabled 1` uses `transport steam`; 480 (Valve's test app) is a warning.\n"
         << "- `steam_required 1` needs `transport steam`.\n"
         << "- `max_replicated_entities` is at least `max_players`.\n"
+        << "- `interpolation_ms` under two snapshot intervals (`2000 / snapshot_rate` ms) is a warning.\n"
         << "- `max_rewind_ms` below `interpolation_ms` is a warning.\n"
         << "- `max_players` records of the largest registered per-player profile, at `snapshot_rate`, fit in "
            "`outbound_bytes_per_second` minus "
@@ -352,7 +353,9 @@ std::string networkInfoJson(const NetworkInfo& info) {
         unsupported.push_back(
             "steam transport: this build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON)");
     unsupported.push_back("hosting and joining sessions (Batch 4)");
-    unsupported.push_back("replication, prediction and lag compensation (Batches 5 to 8)");
+    unsupported.push_back(
+        "replication, prediction and lag compensation in sessions (Batches 5 to 8; the delta, interpolation and "
+        "rewind libraries exist but no session uses them)");
     unsupported.push_back("interest management: every object is always relevant in v1");
     for (size_t i = 0; i < unsupported.size(); ++i) out += std::string(i ? ", " : "") + jsonQuote(unsupported[i]);
     out += "]\n}\n";

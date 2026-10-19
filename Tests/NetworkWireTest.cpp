@@ -98,6 +98,9 @@ const GoldenMessage kGolden[] = {
                "6c6c"},
     {"Goodbye", "53574d5001001400101112131415161718191a1b1c1d1e1ff6030000020000000a00"},
     {"ResyncRequest", "53574d5001001500101112131415161718191a1b1c1d1e1ff103000005000000f103000002"},
+    {"DeltaSnapshot", "53574d5001001600101112131415161718191a1b1c1d1e1ffc0300001a000000fc030000f60300000300000001000205"
+                      "000c0002000300a53c0f"},
+    {"SnapshotAck", "53574d5001001700101112131415161718191a1b1c1d1e1ffd03000008000000fc03000001000080"},
 };
 const char* kPoseHex =
     "0000c03f000010c000007a440000000000000000000000000000803f0000003f00000000000040c0000000000000a03f0000000002";
@@ -144,6 +147,7 @@ static const uint8_t kTicket[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x01};
 static const uint8_t kSpawnState[] = {1, 2, 3};
 static const uint8_t kCommandPayload[] = {1};
 static const uint8_t kEventPayload[] = {0, 1, 2, 3, 4, 5, 6, 7};
+static const uint8_t kDeltaPayload[] = {0xA5, 0x3C, 0x0F};
 static const uint8_t kPropState[] = {10, 11, 12, 13};
 
 static void buildRecords() {
@@ -220,6 +224,10 @@ static Built goldenMessage(size_t index) {
     case 19: return {Reject{ReasonCode::ServerFull, "server is full"}, kSession, 0};
     case 20: return {Goodbye{ReasonCode::HostLeft}, kSession, 1014};
     case 21: return {ResyncRequest{1009, 2}, kSession, 1009};
+    case 22:
+        return {
+            DeltaSnapshot{1020, 1014, 3, DeltaSnapshot::kHasBaseline, 0, 2, 5, 12, 2, kDeltaPayload}, kSession, 1020};
+    case 23: return {SnapshotAck{1020, 0x80000001u}, kSession, 1021};
     }
     std::abort();
 }
@@ -376,7 +384,7 @@ static void testBadHeaders() {
     CHECK(version.reason() == ReasonCode::ProtocolMismatch);
     WireStatus kind0 = decodeAs(with(6, 0), MessageKind::Goodbye);
     CHECK(kind0.code == WireStatusCode::UnknownKind && kind0.reason() == ReasonCode::ProtocolMismatch);
-    CHECK(decodeAs(with(6, 22), MessageKind::Goodbye).code == WireStatusCode::UnknownKind);
+    CHECK(decodeAs(with(6, kLastMessageKind + 1), MessageKind::Goodbye).code == WireStatusCode::UnknownKind);
     CHECK(decodeAs(with(6, 255), MessageKind::Goodbye).code == WireStatusCode::UnknownKind);
     for (int bit = 0; bit < 8; ++bit) {
         const WireStatus flags = decodeAs(with(7, uint8_t(1 << bit)), MessageKind::Goodbye);

@@ -227,6 +227,25 @@ shockwave_warnings(network_settings_test)
 add_test(NAME network_settings COMMAND network_settings_test)
 set_tests_properties(network_settings PROPERTIES TIMEOUT 60)
 
+# Batch 4: delta snapshots, interpolation, rewind history.
+add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)
+target_link_libraries(test_snapshot_delta PRIVATE Shockwave::Multiplayer)
+shockwave_warnings(test_snapshot_delta)
+add_test(NAME test_snapshot_delta COMMAND test_snapshot_delta)
+set_tests_properties(test_snapshot_delta PROPERTIES TIMEOUT 120)
+
+add_executable(test_rewind_buffer RewindBufferTest.cpp)
+target_link_libraries(test_rewind_buffer PRIVATE Shockwave::Multiplayer)
+shockwave_warnings(test_rewind_buffer)
+add_test(NAME test_rewind_buffer COMMAND test_rewind_buffer)
+set_tests_properties(test_rewind_buffer PROPERTIES TIMEOUT 120)
+
+add_executable(test_replication_allocations ReplicationAllocationTest.cpp)
+target_link_libraries(test_replication_allocations PRIVATE Shockwave::Multiplayer)
+shockwave_warnings(test_replication_allocations)
+add_test(NAME test_replication_allocations COMMAND test_replication_allocations)
+set_tests_properties(test_replication_allocations PROPERTIES TIMEOUT 120)
+
 # Batch 3: Steam services and the Steam Datagram Relay transport, against MockSteamApi, so
 # they run without the Steamworks SDK, a Steam client or an AppID.
 add_executable(test_steam_services SteamServicesTest.cpp)
