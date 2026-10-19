@@ -11,6 +11,9 @@
 //               and scene mismatches, a full server, a refused ticket, a ticket that's
 //               never answered, and the host stopping mid-handshake
 //   stop-start  100 rounds of host and client joining, then stopping in turn
+//   replication a host with a moving authored box and spawned, respawned and despawned
+//               crates owned by its players; `clients` clients (one joining late) must
+//               end with the host's objects, owners and poses exactly
 //
 // The JSON follows the network tool layout of docs/Networking.md: version, mode,
 // scenario, ok, errors, warnings, seed, duration_ticks, peers, counters.
@@ -43,7 +46,16 @@ struct NetTestPeer {
     ReasonCode expected = ReasonCode::Normal;   // rejections: the reason it should fail with
     uint16_t slot = 0;
     uint64_t peer = 0;
-    double joinMs = -1;   // virtual time to Synchronizing (clients), -1 if it didn't
+    double joinMs = -1;   // virtual time to Active (clients), -1 if it didn't
+};
+
+// Replication counters, summed over peers (objects: the most any peer had).
+struct NetTestReplication {
+    uint64_t objects = 0, spawns = 0, despawns = 0;
+    uint64_t snapshotsSent = 0, snapshotPartsSent = 0, recordsApplied = 0, staleRecords = 0;
+    uint64_t heldSnapshots = 0, expiredSnapshots = 0, resyncRequests = 0;
+    uint32_t controlQueueHigh = 0;
+    double maxPositionError = 0;   // replication: client vs host after traffic settled
 };
 
 struct NetTestReport {
@@ -58,6 +70,7 @@ struct NetTestReport {
     uint64_t messagesSent = 0, messagesReceived = 0, rejected = 0, malformed = 0;
     uint64_t packetsInFlightAfterStop = 0;   // must be 0
     uint64_t openAuthSessionsAfterStop = 0, liveTicketsAfterStop = 0;   // must be 0
+    NetTestReplication replication;
 };
 
 // False only for an unknown scenario or preset (errors say which); a scenario that runs

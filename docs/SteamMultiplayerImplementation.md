@@ -147,6 +147,57 @@ Recorded here as the document asks, newest last. Status of each batch is in
     `collectInput`; `PlaySession::pause()` now returns false online. Deferred reloads
     show as a Console line, not a list of pending changes. Renderer swaps wait in the
     engine while the simulation time is Monotonic, so no renderer module changed.
+30. Plan Batch 5 (replication without prediction), 2026-10-19: baseline Spawns carry each
+    object's full state, so the host sends no InitialState chunks. Clients still accept
+    InitialState for baseline objects, during and after the baseline.
+31. A baseline isn't restarted. A peer whose control queue overflows (its baseline plus
+    `max_pending_reliable_bytes`) is dropped with RateLimited and can join again.
+32. `required_control_serial` is per part: the newest control serial among that part's
+    records, not the host's latest. A record goes to a peer only once the lifecycle
+    message it depends on has been handed to that peer's transport, so a slow control
+    queue doesn't hold every snapshot back.
+33. The host answers a ResyncRequest with a full snapshot to that peer (as after Active),
+    not a new baseline. More than one a second or three a minute drops the peer with
+    RateLimited; clients send no more than that.
+34. Lifecycle messages wait in a per-peer queue and go out in order within
+    `outbound_bytes_per_second` (16 KiB burst) while the transport holds less than
+    `max_pending_reliable_bytes` unsent. Snapshots get the budget minus the control
+    reserve, which is 16 KiB/s or half of a smaller budget. A full snapshot (after Active
+    or a resync) may go over the budget once.
+35. On clients, replicas of Dynamic rigid bodies become Kinematic, so the host's
+    simulation isn't fought until prediction (Batch 7).
+36. Ownership changes also increment the incarnation, like respawns. A leaving player's
+    objects get owner 0 through Ownership messages; the game decides what then happens
+    to them.
+37. Authored objects are numbered at `begin()` in key order; spawned ones follow.
+    Objects game code destroys without `despawn()` are despawned at the end of the tick.
+    A despawned ID is one at or below the highest ID seen that isn't live, so tombstones
+    need no storage; a session hands out at most 65536 IDs.
+38. Authored objects the host's baseline doesn't list (despawned before the client joined)
+    are destroyed on the client when it commits the baseline.
+39. The baseline digest is SHA-256 of `shockwave_baseline 1\n`, the object count (u32),
+    then for each object in ID order: ID u64, incarnation u32, owner u16, prefab u16, key
+    (u16 length and bytes; empty for prefabs), profile u16, state (u16 length and bytes),
+    all little endian.
+40. Static objects are sent in the baseline and, after `markChanged()`, in the next
+    snapshot once (unreliably: a lost one waits for the next change or a full snapshot).
+41. Malformed authority data on a client (a wrong digest, an unknown prefab, a reused ID,
+    a control serial gap, a snapshot of an object never spawned, state out of range...)
+    ends network play with MalformedPacket, or ContentMismatch for a key or profile its
+    content lacks. Hosts never take state from clients: the catalog's direction rules
+    refuse it.
+42. The game's API is `game.network()` `spawn`, `despawn`, `respawn`, `setOwner`,
+    `markChanged`, `networkId`, `entity`, `identity`, `hasAuthority`,
+    `isLocallyControlled`, `localPlayer` and `controlledEntity`. `submitCommand` waits for
+    Batch 6 with input commands.
+43. A client that hasn't validated the host yet still receives the baseline; it commits
+    it (and sends Ready) once the host is validated.
+44. `NetworkWorld` takes the World as a constructor argument and `NetworkStart` gains
+    `registry`, `prefabs` and `spawnPrefab`. PlaySession passes its world and calls
+    `endTick` after gameplay; offline, `spawn()` is a plain prefab copy.
+45. A synchronizing client gives up 5 seconds after the host would, so the host's Reject
+    (Timeout) arrives first, as in adjustment 28. Adjustment 23 no longer applies.
+
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 

@@ -1,6 +1,8 @@
 // A Play session's network side: roles, states, the handshake and shutdown order
-// (Multiplayer/NetworkWorld.h).
+// (Multiplayer/NetworkWorld.h). Replication is NetworkReplication.cpp.
 #include <Multiplayer/NetworkWorld.h>
+
+#include "NetworkWorldImpl.h"
 
 #include <Core/Log.h>
 
@@ -34,23 +36,6 @@ const char* networkStateName(NetworkState state) {
 
 namespace {
 
-// One remote machine: on the host, each connection; on a client, the host.
-struct Peer {
-    enum class Phase : uint8_t { Free, AwaitingHello, Authenticating, Synchronizing };
-    Phase phase = Phase::Free;
-    ConnectionId connection;
-    PeerId peer;
-    bool connected = false;   // the transport said Connected (a client's view of the host)
-    double since = -1;   // when the phase began; -1 until the first pump gives a time
-    uint16_t slot = 0;
-    RequestId ticketRequest;   // our ticket for this peer
-    bool ticketSent = false;
-    bool authBegun = false;   // we're validating its ticket
-    bool validated = false;   // and it was good
-    double tokens = NetworkWorld::kPreAuthBurstBytes;   // pre-auth receive budget
-    double tokensAt = -1;
-};
-
 // A client waiting on the host gives up this much later than the host would.
 constexpr double kHostReasonGraceSeconds = 5;
 
@@ -61,462 +46,468 @@ const char* reasonText(ReasonCode reason) {
 
 }   // namespace
 
-struct NetworkWorld::Impl final : TransportSink {
-    explicit Impl(NetworkWorld& world) : w(world) {}
+NetworkWorld::Impl::Impl(NetworkWorld& world) : w(world) {}
 
-    NetworkWorld& w;
-    std::array<Peer, kMaxTransportConnections> peers{};   // host: one per connection; client: [0] is the host
-    std::array<uint8_t, kMaxReliableMessageBytes> out{};
-    Nonce session{};   // host: made at begin(); client: learned from Challenge
-    Nonce clientNonce{};
-    bool challenged = false, welcomed = false;   // client
-    double now = 0;
-    bool haveClock = false;
-    uint32_t tick = 0;
-    uint32_t endpointGeneration = 0;
-    bool discarding = false;   // close(): drain and drop
-    bool released = false;
-    // A failure found inside poll() waits for it to return: the transport can't be
-    // destroyed from its own callback.
-    bool polling = false, failPending = false;
-    NetworkWorldStats stats;
+uint32_t NetworkWorld::Impl::maxClients() const {
+    return std::clamp<uint32_t>(settings().maxPlayers, 2, kMaxPlayers) - 1;
+}
 
-    const NetworkSettings& settings() const { return w.m_start.settings; }
-    bool host() const { return w.m_role == NetworkRole::Authority; }
-    uint32_t maxClients() const { return std::clamp<uint32_t>(settings().maxPlayers, 2, kMaxPlayers) - 1; }
+Peer* NetworkWorld::Impl::find(ConnectionId connection) {
+    for (Peer& p : peers)
+        if (p.phase != Peer::Phase::Free && p.connection == connection) return &p;
+    return nullptr;
+}
 
-    Peer* find(ConnectionId connection) {
+uint32_t NetworkWorld::Impl::count(Peer::Phase phase) const {
+    uint32_t n = 0;
+    for (const Peer& p : peers) n += p.phase == phase;
+    return n;
+}
+
+uint32_t NetworkWorld::Impl::admittedCount() const {
+    return count(Peer::Phase::Synchronizing) + count(Peer::Phase::Active);
+}
+
+uint32_t NetworkWorld::Impl::used() const { return uint32_t(peers.size()) - count(Peer::Phase::Free); }
+
+void NetworkWorld::Impl::enter(Peer& p, Peer::Phase phase) {
+    p.phase = phase;
+    p.since = haveClock ? now : -1;
+}
+
+bool NetworkWorld::Impl::send(ConnectionId connection, const MessageBody& body) {
+    if (!w.m_transport || !connection.valid()) return false;
+    uint32_t written = 0;
+    if (!encodeMessage(body, session, tick, out, written)) return false;
+    const MessageDescriptor* d = findMessage(uint8_t(kindOf(body)));
+    const SendResult result = w.m_transport->send(connection, std::span(out.data(), written), d->delivery);
+    stats.messagesSent += result == SendResult::Queued;
+    return result == SendResult::Queued;
+}
+
+// Host: forgets a peer whose connection is already closed (or being closed).
+void NetworkWorld::Impl::drop(Peer& p, ReasonCode reason) {
+    if (p.authBegun && w.m_services) w.m_services->endAuthSession(p.peer);
+    if (p.ticketRequest.valid() && w.m_services) w.m_services->cancel(p.ticketRequest);
+    const bool left = p.admitted() && host();
+    const PeerId peer = p.peer;
+    const uint16_t slot = p.slot;
+    p = Peer{};
+    if (left) {
+        SW_LOG(LogNetwork, Info, "Player in slot {} left ({})", slot, reasonText(reason));
+        w.push({NetworkEventKind::PlayerLeft, w.m_state, peer, slot, reason});
+        ownerLeft(slot);
+    }
+}
+
+// Host: refuses a peer with a reason it can show, then closes its connection.
+void NetworkWorld::Impl::reject(Peer& p, ReasonCode reason, std::string_view diagnostic) {
+    Reject message;
+    message.reason = reason;
+    message.diagnostic = diagnostic;
+    send(p.connection, message);
+    ++stats.rejected;
+    SW_LOG(LogNetwork, Info, "Refused a connection: {} ({})", diagnostic, reasonText(reason));
+    if (w.m_transport) w.m_transport->close(p.connection, reason);
+    drop(p, reason);
+}
+
+void NetworkWorld::Impl::admit(Peer& p) {
+    if (admittedCount() >= maxClients()) return reject(p, ReasonCode::ServerFull, "server full");
+    uint16_t slot = 2;
+    for (; slot <= maxClients() + 1; ++slot) {
+        const bool taken =
+            std::any_of(peers.begin(), peers.end(), [&](const Peer& o) { return o.admitted() && o.slot == slot; });
+        if (!taken) break;
+    }
+    Welcome welcome;
+    welcome.playerSlot = slot;
+    welcome.baselineId = 1;
+    welcome.serverTick = tick;
+    welcome.maxEntities = uint16_t(std::clamp<uint32_t>(settings().maxReplicatedEntities, 12, kMaxNetworkObjects));
+    if (!send(p.connection, welcome)) return reject(p, ReasonCode::ServiceUnavailable, "couldn't send Welcome");
+    p.slot = slot;
+    enter(p, Peer::Phase::Synchronizing);
+    SW_LOG(LogNetwork, Info, "Player {} joined in slot {}", p.peer.value, slot);
+    w.push({NetworkEventKind::PlayerJoined, w.m_state, p.peer, slot, ReasonCode::Normal});
+    startBaseline(p);
+}
+
+void NetworkWorld::Impl::maybeAdmit(Peer& p) {
+    if (p.phase != Peer::Phase::Authenticating) return;
+    if (w.m_start.authenticate && !(p.validated && p.ticketSent)) return;
+    admit(p);
+}
+
+// Client: Synchronizing once welcomed and (with authentication) the host is proven.
+void NetworkWorld::Impl::maybeSynchronized() {
+    Peer& h = peers[0];
+    if (!welcomed || w.m_state != NetworkState::Authenticating) return;
+    if (w.m_start.authenticate && !(h.validated && h.ticketSent)) return;
+    enter(h, Peer::Phase::Synchronizing);
+    w.setState(NetworkState::Synchronizing);
+    tryCommit();   // the baseline may already be here
+}
+
+// ---- Transport ----
+
+void NetworkWorld::Impl::poll() {
+    ReceiveBudget budget;
+    budget.maxMessages = settings().maxReceiveMessagesPerPump;
+    budget.maxBytes = settings().maxReceiveBytesPerPump;
+    polling = true;
+    w.m_transport->poll(*this, budget);
+    polling = false;
+    if (failPending) finishFail();
+}
+
+void NetworkWorld::Impl::finishFail() {
+    failPending = false;
+    SW_LOG(LogNetwork, Warning, "Network play ended: {} ({})", w.m_failureText, reasonText(w.m_failure));
+    w.release(w.m_failure);
+    w.setState(NetworkState::Failed);
+}
+
+void NetworkWorld::Impl::onEvent(const TransportEvent& event) {
+    if (discarding || failPending) return;
+    if (event.endpointGeneration != endpointGeneration) {
+        ++stats.staleEvents;
+        return;
+    }
+    if (host())
+        hostEvent(event);
+    else
+        clientEvent(event);
+}
+
+void NetworkWorld::Impl::hostEvent(const TransportEvent& event) {
+    switch (event.kind) {
+    case TransportEventKind::Incoming: {
+        Peer* free = nullptr;
         for (Peer& p : peers)
-            if (p.phase != Peer::Phase::Free && p.connection == connection) return &p;
-        return nullptr;
-    }
-    uint32_t count(Peer::Phase phase) const {
-        uint32_t n = 0;
-        for (const Peer& p : peers) n += p.phase == phase;
-        return n;
-    }
-    uint32_t used() const { return uint32_t(peers.size()) - count(Peer::Phase::Free); }
-
-    void enter(Peer& p, Peer::Phase phase) {
-        p.phase = phase;
-        p.since = haveClock ? now : -1;
-    }
-
-    bool send(ConnectionId connection, const MessageBody& body) {
-        if (!w.m_transport || !connection.valid()) return false;
-        uint32_t written = 0;
-        if (!encodeMessage(body, session, tick, out, written)) return false;
-        const MessageDescriptor* d = findMessage(uint8_t(kindOf(body)));
-        const SendResult result = w.m_transport->send(connection, std::span(out.data(), written), d->delivery);
-        stats.messagesSent += result == SendResult::Queued;
-        return result == SendResult::Queued;
-    }
-
-    // Host: forgets a peer whose connection is already closed (or being closed).
-    void drop(Peer& p, ReasonCode reason) {
-        if (p.authBegun && w.m_services) w.m_services->endAuthSession(p.peer);
-        if (p.ticketRequest.valid() && w.m_services) w.m_services->cancel(p.ticketRequest);
-        if (p.phase == Peer::Phase::Synchronizing && host()) {
-            SW_LOG(LogNetwork, Info, "Player in slot {} left ({})", p.slot, reasonText(reason));
-            w.push({NetworkEventKind::PlayerLeft, w.m_state, p.peer, p.slot, reason});
-        }
-        p = Peer{};
-    }
-
-    // Host: refuses a peer with a reason it can show, then closes its connection.
-    void reject(Peer& p, ReasonCode reason, std::string_view diagnostic) {
-        Reject message;
-        message.reason = reason;
-        message.diagnostic = diagnostic;
-        send(p.connection, message);
-        ++stats.rejected;
-        SW_LOG(LogNetwork, Info, "Refused a connection: {} ({})", diagnostic, reasonText(reason));
-        if (w.m_transport) w.m_transport->close(p.connection, reason);
-        drop(p, reason);
-    }
-
-    // Client: the session failed; say why to the host when it can still hear it.
-    void failClient(ReasonCode reason, const char* why) { w.fail(reason, why); }
-
-    void admit(Peer& p) {
-        if (count(Peer::Phase::Synchronizing) >= maxClients()) return reject(p, ReasonCode::ServerFull, "server full");
-        uint16_t slot = 2;
-        for (; slot <= maxClients() + 1; ++slot) {
-            const bool taken = std::any_of(peers.begin(), peers.end(), [&](const Peer& o) {
-                return o.phase == Peer::Phase::Synchronizing && o.slot == slot;
-            });
-            if (!taken) break;
-        }
-        Welcome welcome;
-        welcome.playerSlot = slot;
-        welcome.baselineId = 1;
-        welcome.serverTick = tick;
-        welcome.maxEntities = uint16_t(std::clamp<uint32_t>(settings().maxReplicatedEntities, 12, kMaxNetworkObjects));
-        if (!send(p.connection, welcome)) return reject(p, ReasonCode::ServiceUnavailable, "couldn't send Welcome");
-        p.slot = slot;
-        enter(p, Peer::Phase::Synchronizing);
-        SW_LOG(LogNetwork, Info, "Player {} joined in slot {}", p.peer.value, slot);
-        w.push({NetworkEventKind::PlayerJoined, w.m_state, p.peer, slot, ReasonCode::Normal});
-    }
-
-    void maybeAdmit(Peer& p) {
-        if (p.phase != Peer::Phase::Authenticating) return;
-        if (w.m_start.authenticate && !(p.validated && p.ticketSent)) return;
-        admit(p);
-    }
-
-    // Client: Synchronizing once welcomed and (with authentication) the host is proven.
-    void maybeSynchronized() {
-        Peer& h = peers[0];
-        if (!welcomed || w.m_state != NetworkState::Authenticating) return;
-        if (w.m_start.authenticate && !(h.validated && h.ticketSent)) return;
-        enter(h, Peer::Phase::Synchronizing);
-        w.setState(NetworkState::Synchronizing);
-    }
-
-    // ---- Transport ----
-
-    void poll() {
-        ReceiveBudget budget;
-        budget.maxMessages = settings().maxReceiveMessagesPerPump;
-        budget.maxBytes = settings().maxReceiveBytesPerPump;
-        polling = true;
-        w.m_transport->poll(*this, budget);
-        polling = false;
-        if (failPending) finishFail();
-    }
-
-    void finishFail() {
-        failPending = false;
-        SW_LOG(LogNetwork, Warning, "Network play ended: {} ({})", w.m_failureText, reasonText(w.m_failure));
-        w.release(w.m_failure);
-        w.setState(NetworkState::Failed);
-    }
-
-    void onEvent(const TransportEvent& event) override {
-        if (discarding || failPending) return;
-        if (event.endpointGeneration != endpointGeneration) {
-            ++stats.staleEvents;
-            return;
-        }
-        if (host())
-            hostEvent(event);
-        else
-            clientEvent(event);
-    }
-
-    void hostEvent(const TransportEvent& event) {
-        switch (event.kind) {
-        case TransportEventKind::Incoming: {
-            Peer* free = nullptr;
-            for (Peer& p : peers)
-                if (p.phase == Peer::Phase::Free) {
-                    free = &p;
-                    break;
-                }
-            if (!free || used() >= maxClients() + kMaxPendingBeyondCapacity) {
-                w.m_transport->close(event.connection, ReasonCode::ServerFull);
-                ++stats.rejected;
-                return;
+            if (p.phase == Peer::Phase::Free) {
+                free = &p;
+                break;
             }
-            if (!w.m_transport->accept(event.connection)) {
-                w.m_transport->close(event.connection, ReasonCode::ServiceUnavailable);
-                return;
-            }
-            *free = Peer{};
-            free->connection = event.connection;
-            free->peer = event.peer;
-            enter(*free, Peer::Phase::AwaitingHello);
-            return;
-        }
-        case TransportEventKind::Connected:
-            if (Peer* p = find(event.connection)) p->connected = true;
-            return;
-        case TransportEventKind::Closed:
-            if (Peer* p = find(event.connection))
-                drop(*p, event.reason == ReasonCode::Normal ? ReasonCode::Normal : event.reason);
-            else
-                ++stats.staleEvents;
-            return;
-        }
-    }
-
-    void clientEvent(const TransportEvent& event) {
-        Peer& h = peers[0];
-        if (event.kind == TransportEventKind::Incoming) {   // clients don't listen
-            w.m_transport->close(event.connection, ReasonCode::UnsupportedFeature);
-            return;
-        }
-        if (h.phase == Peer::Phase::Free || !(event.connection == h.connection)) {
-            ++stats.staleEvents;
-            return;
-        }
-        if (event.kind == TransportEventKind::Connected) {
-            if (h.connected) return;
-            h.connected = true;
-            h.peer = event.peer;
-            Hello hello;
-            hello.gameProtocol = w.m_start.compatibility.gameProtocol;
-            hello.schemaDigest = w.m_start.compatibility.schemaDigest;
-            hello.contentDigest = w.m_start.compatibility.contentDigest;
-            hello.sceneId = w.m_start.compatibility.sceneId;
-            hello.lobbyId = w.m_start.lobby.value;
-            hello.clientNonce = clientNonce;
-            if (!send(h.connection, hello)) return failClient(ReasonCode::ServiceUnavailable, "couldn't send Hello");
-            enter(h, Peer::Phase::Authenticating);
-            w.setState(NetworkState::Authenticating);
-            return;
-        }
-        // Closed: the connection is gone, so there's no one to say Goodbye to.
-        h.connection = {};
-        h.connected = false;
-        ReasonCode reason = event.reason;
-        const char* why = "the host closed the connection";
-        if (reason == ReasonCode::Normal) {
-            reason = w.m_state == NetworkState::Connecting ? ReasonCode::ServiceUnavailable : ReasonCode::HostLeft;
-            why = w.m_state == NetworkState::Connecting ? "couldn't reach the host" : "the host left";
-        }
-        failClient(reason, why);
-    }
-
-    void onMessage(const ReceivedMessage& message) override {
-        if (discarding || failPending) return;
-        if (message.endpointGeneration != endpointGeneration) {
-            ++stats.staleEvents;
-            return;
-        }
-        ++stats.messagesReceived;
-        stats.bytesReceived += message.bytes.size();
-        Peer* p = host() ? find(message.connection) : (peers[0].connection == message.connection ? &peers[0] : nullptr);
-        if (!p) {
-            ++stats.staleEvents;
-            return;
-        }
-        if (host())
-            hostMessage(*p, message);
-        else
-            clientMessage(*p, message);
-    }
-
-    void hostMessage(Peer& p, const ReceivedMessage& message) {
-        // Before a peer is admitted, it gets a small receive budget.
-        if (p.phase != Peer::Phase::Synchronizing) {
-            if (p.tokensAt >= 0)
-                p.tokens = std::min(kPreAuthBurstBytes, p.tokens + (now - p.tokensAt) * kPreAuthBytesPerSecond);
-            p.tokensAt = now;
-            p.tokens -= double(message.bytes.size());
-            if (p.tokens < 0) return reject(p, ReasonCode::RateLimited, "too much data before authentication");
-        }
-        DecodeOptions options;
-        options.delivery = message.delivery;
-        options.receiver = PeerRole::Host;
-        DecodedMessage decoded;
-        if (const WireStatus status = decodeMessage(message.bytes, options, decoded); !status) {
-            ++stats.malformed;
-            return reject(p, status.reason(), "malformed message");
-        }
-        const MessageKind kind = kindOf(decoded.body);
-        if (kind != MessageKind::Hello && decoded.header.session != session) {
-            ++stats.malformed;
-            return reject(p, ReasonCode::MalformedPacket, "wrong session");
-        }
-        switch (kind) {
-        case MessageKind::Hello: return hello(p, std::get<Hello>(decoded.body));
-        case MessageKind::AuthTicket: {
-            const auto& ticket = std::get<AuthTicket>(decoded.body);
-            if (!w.m_start.authenticate || p.phase != Peer::Phase::Authenticating || p.authBegun)
-                return reject(p, ReasonCode::MalformedPacket, "unexpected AuthTicket");
-            if (!w.m_services || !w.m_services->beginAuthSession(p.peer, ticket.ticket))
-                return reject(p, ReasonCode::AuthUnavailable, "couldn't validate the ticket");
-            p.authBegun = true;
-            return;
-        }
-        case MessageKind::Goodbye: {
-            const ConnectionId connection = p.connection;
-            drop(p, std::get<Goodbye>(decoded.body).reason);
-            w.m_transport->close(connection, ReasonCode::Normal);
-            return;
-        }
-        default:
-            if (p.phase != Peer::Phase::Synchronizing)
-                return reject(p, ReasonCode::MalformedPacket, "message before the handshake finished");
-            ++stats.ignored;   // replication and gameplay: later batches
-            return;
-        }
-    }
-
-    void hello(Peer& p, const Hello& hello) {
-        if (p.phase != Peer::Phase::AwaitingHello) return reject(p, ReasonCode::MalformedPacket, "Hello twice");
-        const NetworkCompatibility& c = w.m_start.compatibility;
-        if (hello.gameProtocol != c.gameProtocol)
-            return reject(p, ReasonCode::ProtocolMismatch, "game protocol differs");
-        if (hello.schemaDigest != c.schemaDigest) return reject(p, ReasonCode::ContentMismatch, "schema differs");
-        if (hello.contentDigest != c.contentDigest) return reject(p, ReasonCode::ContentMismatch, "content differs");
-        if (hello.sceneId != c.sceneId) return reject(p, ReasonCode::MapNotLoaded, "the host is playing another scene");
-        if (w.m_start.lobby.valid()) {
-            bool member = false;
-            if (hello.lobbyId == w.m_start.lobby.value && w.m_services)
-                if (auto members = w.m_services->lobbyMembers(w.m_start.lobby))
-                    member = std::find(members->begin(), members->end(), p.peer) != members->end();
-            if (!member) return reject(p, ReasonCode::NotLobbyMember, "not in the host's lobby");
-        } else if (hello.lobbyId != 0) {
-            return reject(p, ReasonCode::NotLobbyMember, "the host has no lobby");
-        }
-        if (count(Peer::Phase::Synchronizing) >= maxClients()) return reject(p, ReasonCode::ServerFull, "server full");
-        const NetworkSettings& s = settings();
-        Challenge challenge;
-        challenge.clientNonce = hello.clientNonce;
-        challenge.gameProtocol = c.gameProtocol;
-        challenge.schemaDigest = c.schemaDigest;
-        challenge.contentDigest = c.contentDigest;
-        challenge.sceneId = c.sceneId;
-        challenge.hostPeer = w.m_transport->localPeer().value;
-        challenge.tickRate = uint16_t(s.tickRate);
-        challenge.snapshotRate = uint16_t(s.snapshotRate);
-        challenge.interpolationMs = uint16_t(s.interpolationMs);
-        challenge.maxRewindMs = uint16_t(s.maxRewindMs);
-        if (!send(p.connection, challenge)) return reject(p, ReasonCode::ServiceUnavailable, "couldn't send Challenge");
-        enter(p, Peer::Phase::Authenticating);
-        if (!w.m_start.authenticate) return admit(p);
-        auto ticket = w.m_services->requestAuthTicket(p.peer);
-        if (!ticket) return reject(p, ReasonCode::AuthUnavailable, "couldn't make a session ticket");
-        p.ticketRequest = ticket.value();
-    }
-
-    void clientMessage(Peer& h, const ReceivedMessage& message) {
-        DecodeOptions options;
-        options.delivery = message.delivery;
-        options.receiver = PeerRole::Client;
-        DecodedMessage decoded;
-        if (const WireStatus status = decodeMessage(message.bytes, options, decoded); !status) {
-            ++stats.malformed;
-            return failClient(status.reason(), "malformed message from the host");
-        }
-        const MessageKind kind = kindOf(decoded.body);
-        if (challenged && decoded.header.session != session) {
-            ++stats.malformed;
-            return failClient(ReasonCode::MalformedPacket, "wrong session from the host");
-        }
-        switch (kind) {
-        case MessageKind::Challenge: return challenge(h, decoded.header, std::get<Challenge>(decoded.body));
-        case MessageKind::AuthTicket: {
-            const auto& ticket = std::get<AuthTicket>(decoded.body);
-            if (!w.m_start.authenticate || !challenged || h.authBegun)
-                return failClient(ReasonCode::MalformedPacket, "unexpected AuthTicket from the host");
-            if (!w.m_services || !w.m_services->beginAuthSession(h.peer, ticket.ticket))
-                return failClient(ReasonCode::AuthUnavailable, "couldn't validate the host's ticket");
-            h.authBegun = true;
-            return;
-        }
-        case MessageKind::Welcome: {
-            const auto& welcome = std::get<Welcome>(decoded.body);
-            if (!challenged || welcomed) return failClient(ReasonCode::MalformedPacket, "unexpected Welcome");
-            welcomed = true;
-            w.m_localSlot = welcome.playerSlot;
-            h.slot = welcome.playerSlot;
-            return maybeSynchronized();
-        }
-        case MessageKind::Reject: {
+        if (!free || used() >= maxClients() + kMaxPendingBeyondCapacity) {
+            w.m_transport->close(event.connection, ReasonCode::ServerFull);
             ++stats.rejected;
-            const ReasonCode reason = std::get<Reject>(decoded.body).reason;
-            // The diagnostic is the host's text: shown nowhere, only the reason is.
-            return failClient(
-                reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host refused to admit us");
-        }
-        case MessageKind::Goodbye: {
-            const ReasonCode reason = std::get<Goodbye>(decoded.body).reason;
-            return failClient(
-                reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host ended the session");
-        }
-        default:
-            if (!welcomed) return failClient(ReasonCode::MalformedPacket, "message before the handshake finished");
-            ++stats.ignored;   // replication and gameplay: later batches
             return;
         }
+        if (!w.m_transport->accept(event.connection)) {
+            w.m_transport->close(event.connection, ReasonCode::ServiceUnavailable);
+            return;
+        }
+        *free = Peer{};
+        free->connection = event.connection;
+        free->peer = event.peer;
+        enter(*free, Peer::Phase::AwaitingHello);
+        return;
     }
-
-    void challenge(Peer& h, const MessageHeader& header, const Challenge& c) {
-        if (challenged) return failClient(ReasonCode::MalformedPacket, "Challenge twice");
-        const NetworkCompatibility& ours = w.m_start.compatibility;
-        if (c.clientNonce != clientNonce) return failClient(ReasonCode::MalformedPacket, "Challenge for another Hello");
-        if (c.hostPeer != h.peer.value)
-            return failClient(ReasonCode::AuthenticationFailed, "the host isn't who the transport says");
-        if (c.gameProtocol != ours.gameProtocol)
-            return failClient(ReasonCode::ProtocolMismatch, "game protocol differs");
-        if (c.schemaDigest != ours.schemaDigest || c.contentDigest != ours.contentDigest)
-            return failClient(ReasonCode::ContentMismatch, "the host's content differs");
-        if (c.sceneId != ours.sceneId) return failClient(ReasonCode::MapNotLoaded, "the host is playing another scene");
-        if (c.tickRate != settings().tickRate || c.snapshotRate != settings().snapshotRate)
-            return failClient(ReasonCode::ContentMismatch, "the host's network settings differ");
-        session = header.session;
-        challenged = true;
-        if (!w.m_start.authenticate) return;
-        auto ticket = w.m_services->requestAuthTicket(h.peer);
-        if (!ticket) return failClient(ReasonCode::AuthUnavailable, "couldn't make a session ticket");
-        h.ticketRequest = ticket.value();
+    case TransportEventKind::Connected:
+        if (Peer* p = find(event.connection)) p->connected = true;
+        return;
+    case TransportEventKind::Closed:
+        if (Peer* p = find(event.connection))
+            drop(*p, event.reason == ReasonCode::Normal ? ReasonCode::Normal : event.reason);
+        else
+            ++stats.staleEvents;
+        return;
     }
+}
 
-    // ---- Timeouts ----
+void NetworkWorld::Impl::clientEvent(const TransportEvent& event) {
+    Peer& h = peers[0];
+    if (event.kind == TransportEventKind::Incoming) {   // clients don't listen
+        w.m_transport->close(event.connection, ReasonCode::UnsupportedFeature);
+        return;
+    }
+    if (h.phase == Peer::Phase::Free || !(event.connection == h.connection)) {
+        ++stats.staleEvents;
+        return;
+    }
+    if (event.kind == TransportEventKind::Connected) {
+        if (h.connected) return;
+        h.connected = true;
+        h.peer = event.peer;
+        Hello hello;
+        hello.gameProtocol = w.m_start.compatibility.gameProtocol;
+        hello.schemaDigest = w.m_start.compatibility.schemaDigest;
+        hello.contentDigest = w.m_start.compatibility.contentDigest;
+        hello.sceneId = w.m_start.compatibility.sceneId;
+        hello.lobbyId = w.m_start.lobby.value;
+        hello.clientNonce = clientNonce;
+        if (!send(h.connection, hello)) return failClient(ReasonCode::ServiceUnavailable, "couldn't send Hello");
+        enter(h, Peer::Phase::Authenticating);
+        w.setState(NetworkState::Authenticating);
+        return;
+    }
+    // Closed: the connection is gone, so there's no one to say Goodbye to.
+    h.connection = {};
+    h.connected = false;
+    ReasonCode reason = event.reason;
+    const char* why = "the host closed the connection";
+    if (reason == ReasonCode::Normal) {
+        reason = w.m_state == NetworkState::Connecting ? ReasonCode::ServiceUnavailable : ReasonCode::HostLeft;
+        why = w.m_state == NetworkState::Connecting ? "couldn't reach the host" : "the host left";
+    }
+    failClient(reason, why);
+}
 
-    void checkTimeouts() {
-        const NetworkSettings& s = settings();
-        auto expired = [&](const Peer& p, double limit) { return p.since >= 0 && now - p.since > limit; };
-        if (host()) {
-            for (Peer& p : peers) {
-                switch (p.phase) {
-                case Peer::Phase::Free: break;
-                case Peer::Phase::AwaitingHello:
-                    if (expired(p, s.handshakeTimeoutSeconds)) reject(p, ReasonCode::Timeout, "no Hello");
-                    break;
-                case Peer::Phase::Authenticating:
-                    if (expired(p, s.handshakeTimeoutSeconds))
-                        reject(
-                            p, p.authBegun && !p.validated ? ReasonCode::AuthUnavailable : ReasonCode::Timeout,
-                            "authentication didn't finish");
-                    break;
-                case Peer::Phase::Synchronizing:
-                    if (expired(p, w.m_start.synchronizeTimeoutSeconds))
-                        reject(p, ReasonCode::Timeout, "synchronization didn't finish");
-                    break;
-                }
+void NetworkWorld::Impl::onMessage(const ReceivedMessage& message) {
+    if (discarding || failPending) return;
+    if (message.endpointGeneration != endpointGeneration) {
+        ++stats.staleEvents;
+        return;
+    }
+    ++stats.messagesReceived;
+    stats.bytesReceived += message.bytes.size();
+    Peer* p = host() ? find(message.connection) : (peers[0].connection == message.connection ? &peers[0] : nullptr);
+    if (!p) {
+        ++stats.staleEvents;
+        return;
+    }
+    if (host())
+        hostMessage(*p, message);
+    else
+        clientMessage(*p, message);
+}
+
+void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
+    // Before a peer is admitted, it gets a small receive budget.
+    if (!p.admitted()) {
+        if (p.tokensAt >= 0)
+            p.tokens = std::min(kPreAuthBurstBytes, p.tokens + (now - p.tokensAt) * kPreAuthBytesPerSecond);
+        p.tokensAt = now;
+        p.tokens -= double(message.bytes.size());
+        if (p.tokens < 0) return reject(p, ReasonCode::RateLimited, "too much data before authentication");
+    }
+    DecodeOptions options;
+    options.delivery = message.delivery;
+    options.receiver = PeerRole::Host;
+    DecodedMessage decoded;
+    if (const WireStatus status = decodeMessage(message.bytes, options, decoded); !status) {
+        ++stats.malformed;
+        return reject(p, status.reason(), "malformed message");
+    }
+    const MessageKind kind = kindOf(decoded.body);
+    if (kind != MessageKind::Hello && decoded.header.session != session) {
+        ++stats.malformed;
+        return reject(p, ReasonCode::MalformedPacket, "wrong session");
+    }
+    switch (kind) {
+    case MessageKind::Hello: return hello(p, std::get<Hello>(decoded.body));
+    case MessageKind::AuthTicket: {
+        const auto& ticket = std::get<AuthTicket>(decoded.body);
+        if (!w.m_start.authenticate || p.phase != Peer::Phase::Authenticating || p.authBegun)
+            return reject(p, ReasonCode::MalformedPacket, "unexpected AuthTicket");
+        if (!w.m_services || !w.m_services->beginAuthSession(p.peer, ticket.ticket))
+            return reject(p, ReasonCode::AuthUnavailable, "couldn't validate the ticket");
+        p.authBegun = true;
+        return;
+    }
+    case MessageKind::Goodbye: {
+        const ConnectionId connection = p.connection;
+        drop(p, std::get<Goodbye>(decoded.body).reason);
+        w.m_transport->close(connection, ReasonCode::Normal);
+        return;
+    }
+    default:
+        if (!p.admitted()) return reject(p, ReasonCode::MalformedPacket, "message before the handshake finished");
+        if (kind == MessageKind::Ready) return ready(p, std::get<Ready>(decoded.body));
+        if (kind == MessageKind::ResyncRequest) return resyncRequest(p);
+        ++stats.ignored;   // inputs, commands and pings: later batches
+        return;
+    }
+}
+
+void NetworkWorld::Impl::hello(Peer& p, const Hello& hello) {
+    if (p.phase != Peer::Phase::AwaitingHello) return reject(p, ReasonCode::MalformedPacket, "Hello twice");
+    const NetworkCompatibility& c = w.m_start.compatibility;
+    if (hello.gameProtocol != c.gameProtocol) return reject(p, ReasonCode::ProtocolMismatch, "game protocol differs");
+    if (hello.schemaDigest != c.schemaDigest) return reject(p, ReasonCode::ContentMismatch, "schema differs");
+    if (hello.contentDigest != c.contentDigest) return reject(p, ReasonCode::ContentMismatch, "content differs");
+    if (hello.sceneId != c.sceneId) return reject(p, ReasonCode::MapNotLoaded, "the host is playing another scene");
+    if (w.m_start.lobby.valid()) {
+        bool member = false;
+        if (hello.lobbyId == w.m_start.lobby.value && w.m_services)
+            if (auto members = w.m_services->lobbyMembers(w.m_start.lobby))
+                member = std::find(members->begin(), members->end(), p.peer) != members->end();
+        if (!member) return reject(p, ReasonCode::NotLobbyMember, "not in the host's lobby");
+    } else if (hello.lobbyId != 0) {
+        return reject(p, ReasonCode::NotLobbyMember, "the host has no lobby");
+    }
+    if (admittedCount() >= maxClients()) return reject(p, ReasonCode::ServerFull, "server full");
+    const NetworkSettings& s = settings();
+    Challenge challenge;
+    challenge.clientNonce = hello.clientNonce;
+    challenge.gameProtocol = c.gameProtocol;
+    challenge.schemaDigest = c.schemaDigest;
+    challenge.contentDigest = c.contentDigest;
+    challenge.sceneId = c.sceneId;
+    challenge.hostPeer = w.m_transport->localPeer().value;
+    challenge.tickRate = uint16_t(s.tickRate);
+    challenge.snapshotRate = uint16_t(s.snapshotRate);
+    challenge.interpolationMs = uint16_t(s.interpolationMs);
+    challenge.maxRewindMs = uint16_t(s.maxRewindMs);
+    if (!send(p.connection, challenge)) return reject(p, ReasonCode::ServiceUnavailable, "couldn't send Challenge");
+    enter(p, Peer::Phase::Authenticating);
+    if (!w.m_start.authenticate) return admit(p);
+    auto ticket = w.m_services->requestAuthTicket(p.peer);
+    if (!ticket) return reject(p, ReasonCode::AuthUnavailable, "couldn't make a session ticket");
+    p.ticketRequest = ticket.value();
+}
+
+void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) {
+    DecodeOptions options;
+    options.delivery = message.delivery;
+    options.receiver = PeerRole::Client;
+    DecodedMessage decoded;
+    if (const WireStatus status = decodeMessage(message.bytes, options, decoded); !status) {
+        ++stats.malformed;
+        return failClient(status.reason(), "malformed message from the host");
+    }
+    const MessageKind kind = kindOf(decoded.body);
+    if (challenged && decoded.header.session != session) {
+        ++stats.malformed;
+        return failClient(ReasonCode::MalformedPacket, "wrong session from the host");
+    }
+    switch (kind) {
+    case MessageKind::Challenge: return challenge(h, decoded.header, std::get<Challenge>(decoded.body));
+    case MessageKind::AuthTicket: {
+        const auto& ticket = std::get<AuthTicket>(decoded.body);
+        if (!w.m_start.authenticate || !challenged || h.authBegun)
+            return failClient(ReasonCode::MalformedPacket, "unexpected AuthTicket from the host");
+        if (!w.m_services || !w.m_services->beginAuthSession(h.peer, ticket.ticket))
+            return failClient(ReasonCode::AuthUnavailable, "couldn't validate the host's ticket");
+        h.authBegun = true;
+        return;
+    }
+    case MessageKind::Welcome: {
+        const auto& welcome = std::get<Welcome>(decoded.body);
+        if (!challenged || welcomed) return failClient(ReasonCode::MalformedPacket, "unexpected Welcome");
+        welcomed = true;
+        w.m_localSlot = welcome.playerSlot;
+        h.slot = welcome.playerSlot;
+        baselineId = welcome.baselineId;
+        maxEntities = welcome.maxEntities;
+        return maybeSynchronized();
+    }
+    case MessageKind::Reject: {
+        ++stats.rejected;
+        const ReasonCode reason = std::get<Reject>(decoded.body).reason;
+        // The diagnostic is the host's text: shown nowhere, only the reason is.
+        return failClient(reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host refused to admit us");
+    }
+    case MessageKind::Goodbye: {
+        const ReasonCode reason = std::get<Goodbye>(decoded.body).reason;
+        return failClient(reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host ended the session");
+    }
+    default:
+        if (!welcomed) return failClient(ReasonCode::MalformedPacket, "message before the handshake finished");
+        if (kind == MessageKind::Snapshot) {
+            // Applied now, or held (with its bytes) until its control serial arrives.
+            const auto& snapshot = std::get<Snapshot>(decoded.body);
+            ++stats.snapshotPartsReceived;
+            if (!activated) return;   // Active comes first; until then the baseline is the state
+            if (newer(snapshot.requiredControlSerial, serial))
+                return holdSnapshot(message.bytes, snapshot.requiredControlSerial);
+            applySnapshot(snapshot);
+            return;
+        }
+        if (!replicationMessage(decoded)) ++stats.ignored;   // events and pongs: later batches
+        return;
+    }
+}
+
+void NetworkWorld::Impl::challenge(Peer& h, const MessageHeader& header, const Challenge& c) {
+    if (challenged) return failClient(ReasonCode::MalformedPacket, "Challenge twice");
+    const NetworkCompatibility& ours = w.m_start.compatibility;
+    if (c.clientNonce != clientNonce) return failClient(ReasonCode::MalformedPacket, "Challenge for another Hello");
+    if (c.hostPeer != h.peer.value)
+        return failClient(ReasonCode::AuthenticationFailed, "the host isn't who the transport says");
+    if (c.gameProtocol != ours.gameProtocol) return failClient(ReasonCode::ProtocolMismatch, "game protocol differs");
+    if (c.schemaDigest != ours.schemaDigest || c.contentDigest != ours.contentDigest)
+        return failClient(ReasonCode::ContentMismatch, "the host's content differs");
+    if (c.sceneId != ours.sceneId) return failClient(ReasonCode::MapNotLoaded, "the host is playing another scene");
+    if (c.tickRate != settings().tickRate || c.snapshotRate != settings().snapshotRate)
+        return failClient(ReasonCode::ContentMismatch, "the host's network settings differ");
+    session = header.session;
+    challenged = true;
+    if (!w.m_start.authenticate) return;
+    auto ticket = w.m_services->requestAuthTicket(h.peer);
+    if (!ticket) return failClient(ReasonCode::AuthUnavailable, "couldn't make a session ticket");
+    h.ticketRequest = ticket.value();
+}
+
+// ---- Timeouts ----
+
+void NetworkWorld::Impl::checkTimeouts() {
+    const NetworkSettings& s = settings();
+    auto expired = [&](const Peer& p, double limit) { return p.since >= 0 && now - p.since > limit; };
+    if (host()) {
+        for (Peer& p : peers) {
+            switch (p.phase) {
+            case Peer::Phase::Free:
+            case Peer::Phase::Active: break;
+            case Peer::Phase::AwaitingHello:
+                if (expired(p, s.handshakeTimeoutSeconds)) reject(p, ReasonCode::Timeout, "no Hello");
+                break;
+            case Peer::Phase::Authenticating:
+                if (expired(p, s.handshakeTimeoutSeconds))
+                    reject(
+                        p, p.authBegun && !p.validated ? ReasonCode::AuthUnavailable : ReasonCode::Timeout,
+                        "authentication didn't finish");
+                break;
+            case Peer::Phase::Synchronizing:
+                if (expired(p, w.m_start.synchronizeTimeoutSeconds))
+                    reject(p, ReasonCode::Timeout, "synchronization didn't finish");
+                break;
             }
-            return;
         }
-        const Peer& h = peers[0];
-        switch (w.m_state) {
-        case NetworkState::Connecting:
-            if (expired(h, s.connectTimeoutSeconds)) failClient(ReasonCode::Timeout, "couldn't connect to the host");
-            break;
-        case NetworkState::Authenticating:
-            // Waiting on the host (our side is done): give its own timeout, and the
-            // Reject that says why, time to arrive first.
-            if (expired(h, s.handshakeTimeoutSeconds + (h.authBegun && !h.validated ? 0 : kHostReasonGraceSeconds)))
-                failClient(
-                    h.authBegun && !h.validated ? ReasonCode::AuthUnavailable : ReasonCode::Timeout,
-                    "authentication didn't finish");
-            break;
-        case NetworkState::Synchronizing:
-            if (expired(h, w.m_start.synchronizeTimeoutSeconds))
-                failClient(ReasonCode::Timeout, "synchronization didn't finish");
-            break;
-        default: break;
-        }
+        return;
     }
-};
+    const Peer& h = peers[0];
+    switch (w.m_state) {
+    case NetworkState::Connecting:
+        if (expired(h, s.connectTimeoutSeconds)) failClient(ReasonCode::Timeout, "couldn't connect to the host");
+        break;
+    case NetworkState::Authenticating:
+        // Waiting on the host (our side is done): give its own timeout, and the
+        // Reject that says why, time to arrive first.
+        if (expired(h, s.handshakeTimeoutSeconds + (h.authBegun && !h.validated ? 0 : kHostReasonGraceSeconds)))
+            failClient(
+                h.authBegun && !h.validated ? ReasonCode::AuthUnavailable : ReasonCode::Timeout,
+                "authentication didn't finish");
+        break;
+    case NetworkState::Synchronizing:
+        // The host gives up at the same moment and says so; give its Reject time too.
+        if (expired(h, w.m_start.synchronizeTimeoutSeconds + kHostReasonGraceSeconds))
+            failClient(ReasonCode::Timeout, "synchronization didn't finish");
+        break;
+    default: break;
+    }
+}
+
+// ---- NetworkWorld ----
 
 NetworkWorld::NetworkWorld() : m_impl(std::make_unique<Impl>(*this)) {}
 
-NetworkWorld::NetworkWorld(const NetworkStart& start, IOnlineServices* services)
-    : m_start(start), m_services(services), m_impl(std::make_unique<Impl>(*this)), m_role(start.role) {
+NetworkWorld::NetworkWorld(const NetworkStart& start, IOnlineServices* services, World* world)
+    : m_start(start), m_services(services), m_world(world), m_impl(std::make_unique<Impl>(*this)), m_role(start.role) {
     m_localSlot = m_role == NetworkRole::Client ? 0 : 1;
 }
 
 NetworkWorld::~NetworkWorld() { close(); }
 
 const NetworkWorldStats& NetworkWorld::stats() const {
-    m_impl->stats.admitted = m_impl->count(Peer::Phase::Synchronizing);
-    m_impl->stats.pending = m_impl->used() - m_impl->stats.admitted;
-    return m_impl->stats;
+    Impl& impl = *m_impl;
+    impl.stats.admitted = impl.admittedCount();
+    impl.stats.activePeers = impl.count(Peer::Phase::Active);
+    impl.stats.pending = impl.used() - impl.stats.admitted;
+    if (m_role == NetworkRole::Client) impl.stats.admitted = impl.stats.pending = impl.stats.activePeers = 0;
+    impl.stats.objects = uint32_t(impl.objects.size());
+    return impl.stats;
 }
 
 void NetworkWorld::setState(NetworkState state) {
@@ -568,6 +559,10 @@ NetResult<void> NetworkWorld::begin() {
             ReasonCode::AuthUnavailable,
             {NetErrorCode::Unavailable, "online services aren't available, so peers can't authenticate"});
     Impl& impl = *m_impl;
+    // The scene's network objects are numbered (host) or indexed by key (client) before
+    // any connection exists.
+    if (auto replication = impl.beginReplication(); !replication)
+        return failStart(ReasonCode::ContentMismatch, replication.error());
     if (!secureRandomBytes(m_role == NetworkRole::Authority ? impl.session : impl.clientNonce))
         return failStart(ReasonCode::ServiceUnavailable, {NetErrorCode::Io, "the system random source failed"});
     auto transport = m_services->createTransport();
@@ -582,7 +577,9 @@ NetResult<void> NetworkWorld::begin() {
         impl.endpointGeneration = m_transport->endpointGeneration();
         m_localSlot = 1;
         setState(NetworkState::Active);
-        SW_LOG(LogNetwork, Info, "Hosting for up to {} players", impl.maxClients() + 1);
+        SW_LOG(
+            LogNetwork, Info, "Hosting for up to {} players, {} network objects", impl.maxClients() + 1,
+            impl.objects.size());
         return {};
     }
     impl.endpointGeneration = m_transport->endpointGeneration();
@@ -606,12 +603,28 @@ void NetworkWorld::pump(double nowSeconds) {
     }
     impl.poll();
     if (m_transport) impl.checkTimeouts();
+    if (!m_transport) return;
+    if (impl.host())
+        impl.flushAll();
+    else
+        impl.expireHeld();
+    if (impl.failPending) impl.finishFail();
 }
 
 void NetworkWorld::drain(uint32_t tick) {
     m_impl->tick = tick;
     if (m_closed || !m_transport) return;
     m_impl->poll();
+}
+
+void NetworkWorld::endTick(uint32_t tick) {
+    Impl& impl = *m_impl;
+    impl.tick = tick;
+    if (m_closed || !m_transport || !impl.host()) return;
+    impl.sweepDestroyed();
+    impl.sendSnapshots();
+    impl.flushAll();
+    if (impl.failPending) impl.finishFail();
 }
 
 bool NetworkWorld::handleOnlineEvent(const OnlineEvent& event) {
@@ -703,6 +716,9 @@ void NetworkWorld::release(ReasonCode reason) {
     }
     if (m_start.lobby.valid() && m_services) (void)m_services->leaveLobby(m_start.lobby);
     m_transport.reset();
+    // The world's entities stay as they are (PlaySession restores the authored scene);
+    // the session's maps, queues and held snapshots go.
+    impl.clearReplication();
 }
 
 void NetworkWorld::close(ReasonCode reason) {

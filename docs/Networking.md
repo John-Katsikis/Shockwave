@@ -37,7 +37,7 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/SnapshotDelta.h` | Quantized entity states, the host's snapshot history, delta encoding against acknowledged baselines, and the client's decoder |
 | `Multiplayer/Interpolation.h` | `InterpolationEngine`: remote objects shown a jitter buffer behind the server clock |
 | `Multiplayer/RewindHistory.h` | `RewindHistoryBuffer`: player capsules over the last `max_rewind_ms`, for lag-compensated hit checks |
-| `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake and shutdown order |
+| `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake, replication (network IDs, the baseline, spawns, owners, snapshots, budgets) and shutdown order |
 | `Multiplayer/NetTest.h` | The `player --net-test` scenarios |
 
 The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
@@ -50,13 +50,14 @@ sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing e
 | `SteamServices/SteamApi.h` | `SteamApi`, every Steamworks call the module makes, with no SDK types |
 | `SteamServices/MockSteamApi.h` | `MockSteamApi` and `MockSteamNetwork`: Steam played in-process for tests and SDK-less builds |
 
-A Play session can go online as a host or a client and run the connection handshake
-(see [Play sessions online](#play-sessions-online)), but nothing yet starts one from the
-player or the editor, and clients stop at `synchronizing`: replicated entities,
-prediction and the `--host` and `--join` commands come in later batches. Nothing
-advertises those as working; `--network-info` lists them under `unsupported`. Delta
-snapshots, interpolation and rewind history are libraries tested on their own; no
-session uses them yet.
+A Play session can go online as a host or a client, run the connection handshake (see
+[Play sessions online](#play-sessions-online)) and replicate the host's network objects
+to its clients (see [Replication](#replication)): clients show the host's state a
+snapshot behind, without prediction. Nothing yet starts a session from the player or
+the editor: the `--host` and `--join` commands, input commands, prediction and the
+Arena game come in later batches. Nothing advertises those as working; `--network-info`
+lists them under `unsupported`. Delta snapshots, interpolation and rewind history are
+libraries tested on their own; no session uses them yet.
 
 ## Network settings
 
@@ -198,7 +199,7 @@ In the editor, Project settings > Multiplayer > Start Steam does the same and ke
 Steam running until Stop Steam or the project closes.
 
 ```sh
-build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start]
+build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start|replication]
     [--seed N] [--preset clean|cafe|poor|hostile] [--clients N] [--json out.json]
 ```
 
@@ -210,7 +211,11 @@ and `--clients` clients (default 3) through the preset's faults (default `cafe`)
 `rejections` makes one client fail in each way a join can (protocol, content, schema
 and scene mismatches, a full server, a refused ticket, a ticket never answered, the host
 stopping mid-handshake, no host) and checks the reason; `stop-start` joins and stops 100
-times. Each prints one line per peer and what was left open after stopping (packets in
+times; `replication` gives every machine its own world (built in a different order) with
+a moving authored box and a static lamp, spawns, moves, respawns and despawns crates
+owned by the players while `--clients` clients join (the last one late), then stops
+moving and checks that every client has exactly the host's objects, owners,
+incarnations and poses (`max position error 0.000000 m`). Each prints one line per peer and what was left open after stopping (packets in
 flight, auth sessions, tickets: all must be 0), and exits 1 when anything is wrong, 2
 for an unknown scenario or preset.
 
@@ -242,16 +247,18 @@ The handshake, all reliable messages:
 | 3 | checks the Challenge (its nonce, the host's identity, digests, scene, tick and snapshot rates) | sends Challenge with its settings and a random session nonce used in every later header |
 | 4 | asks for a ticket for the host, sends it, validates the host's | the same the other way |
 | 5 | once welcomed and the host validated: state `synchronizing` | once the client's ticket validated and its own was sent: Welcome with a player slot (2 up) |
+| 6 | stages the baseline, checks its digest, then binds and spawns it; sends Ready | right after Welcome: BaselineBegin, a Spawn for every network object, BaselineEnd with a digest |
+| 7 | state `active`; snapshots apply from here | on a matching Ready: the lifecycle changes since the baseline, then Active (with the object this player controls) and a full snapshot |
 
 Each phase has a timeout: `connect_timeout_seconds`, `handshake_timeout_seconds` (a
-ticket never answered fails with `AuthUnavailable`) and 30 seconds to synchronize.
+ticket never answered fails with `AuthUnavailable`) and 30 seconds from Welcome to
+Active (the host gives up first and says `Timeout`).
 Before a client is admitted it gets a 16 KiB/s receive budget. A client fails with the
 host's reason (`ProtocolMismatch`, `ContentMismatch`, `MapNotLoaded`, `ServerFull`,
 `NotLobbyMember`, `AuthenticationFailed`, `AuthUnavailable`, `HostLeft`, ...), visible as
 `state()` `Failed` and `failure()`; it stays in network play until Stop. The host is
 `active` as soon as it listens and reports `PlayerJoined` and `PlayerLeft` events
-(`game.network().pollEvent()`). The baseline that takes clients from `synchronizing` to
-`active` comes with replication.
+(`game.network().pollEvent()`).
 
 The application pumps every frame from `Application::onPump`, which the engine calls
 right after reading input and before the fixed ticks, in menus and while editing too.
@@ -283,6 +290,77 @@ every peer; connections and the listener close; whatever arrived is drained and 
 auth sessions end and ticket requests are cancelled; the lobby is left; the transport is
 destroyed. Then `endPlay` runs and the authored world comes back. Nothing is reported
 after that.
+
+## Replication
+
+The host decides what happens; clients show it. There is no prediction yet, so a client
+sees the host's state a network trip and a snapshot interval late. Each network object
+(an entity with a `NetworkObject`, see [Network objects](#network-objects)) gets a
+`NetworkIdentity` on every machine: a network ID (counting up from 1, never reused in
+a session), an owner slot (0 for nobody, 1 the host, 2 up the clients) and an
+incarnation that goes up on respawn, teleport and owner changes.
+
+- Authored objects (placed in the scene) are numbered by the host at start, in key
+  order. A client binds each one by its `key`, whatever its local entity is; a key the
+  client's scene lacks, or a different profile, ends its session with `ContentMismatch`.
+  Authored objects the host despawned before the client joined are destroyed on the
+  client when it commits the baseline.
+- Spawned objects come only from the manifest's prefabs (`NetworkStart::prefabs`, by
+  ID); a client never spawns anything from a path, or from a snapshot.
+
+Game code on the host (or offline) changes them through `game.network()`:
+
+```cpp
+auto crate = game.network().spawn(1, at, ownerSlot);   // a manifest prefab, owned by a player or 0
+game.network().respawn(entity, &at);                    // a new incarnation, sent reliably
+game.network().setOwner(entity, slot);
+game.network().despawn(entity);                         // or destroy it: it's despawned at the end of the tick
+game.network().markChanged(entity);                     // a Static object changed: sent once
+```
+
+Clients can't call them (they return an error). Everyone can ask `networkId(entity)`,
+`entity(networkId)`, `identity(entity)`, `hasAuthority(entity)`,
+`isLocallyControlled(entity)` (the owner is the local player), `localPlayer()` and, on a
+client, `controlledEntity()`, the object Active said this player controls. Offline,
+`spawn()` makes a plain copy of the prefab.
+
+How state travels:
+
+- Lifecycle changes (Spawn, Despawn, Ownership, and Spawn again for a respawn) are
+  reliable and in order. Each carries the next control serial; a client that sees a gap
+  fails with `MalformedPacket`.
+- The baseline is the host's objects frozen at Welcome: BaselineBegin, one Spawn each
+  (with its full state), BaselineEnd with the newest control serial and a SHA-256 digest
+  of the catalog. The client stages it without touching its world, checks every prefab,
+  key, profile, owner and state and the digest, and only then binds, spawns and applies
+  it. Changes after the baseline follow it in the same queue. A client that leaves or
+  fails halfway has an unchanged world.
+- Snapshots are unreliable full state (state records, as in the
+  [wire protocol](#the-wire-protocol)), on every `tick_rate / snapshot_rate`th tick, split
+  into parts of at most `max_snapshot_bytes`. Each part names the control serial its
+  records need. A client applies records one object at a time, keeping each object's
+  newest tick, so reordered and duplicate parts change nothing and a lost part holds
+  nothing else back; records of despawned objects or old incarnations are ignored. A
+  part ahead of its control serial waits (up to 32 parts, 250 ms); one that waits too
+  long is dropped and the client asks for a resync (at most once a second and three
+  times a minute), which the host answers with a full snapshot. Static objects go in
+  the baseline and again only after `markChanged()`.
+- Replicas of dynamic rigid bodies become kinematic on clients, so the host's
+  simulation isn't fought.
+
+Budgets, per client, from the settings: lifecycle messages wait in a queue and go out
+in order within `outbound_bytes_per_second` (16 KiB burst) and while the transport has
+less than `max_pending_reliable_bytes` unsent. Snapshots get the rest of the budget,
+leaving 16 KiB/s (or half of a smaller budget) for lifecycle messages: players' objects
+go in every snapshot, the others take turns. A record goes to a client only after the
+lifecycle change it depends on has been sent to it. A client whose queue overflows (its
+baseline plus `max_pending_reliable_bytes`) is dropped with `RateLimited`; it can join
+again. No heap memory is allocated per tick once a session is running.
+
+The host fills `NetworkStart` with the frozen registry its schema digest came from
+(`registry`), the manifest's prefabs (`prefabs`) and, optionally, a `spawnPrefab`
+function (the default spawns the prefab file). A world is needed to replicate: without
+one (as in the handshake scenarios) the baseline is empty.
 
 ## The wire protocol
 
@@ -527,8 +605,9 @@ ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewin
 | `network_transport` | Connect, accept, reject, capacity; reliable order under every fault preset; unreliable loss, duplication, reordering and determinism; buffer lifetime; queue and pool limits; stale generations after close; budgets; outages; bandwidth; eleven clients; no allocation once connected |
 | `network_capture` | Format; dump and encode round trip; redaction; malformed and truncated files; the size cap; no traffic from dumping |
 | `network_settings` | Settings round trip, every range (tick 60..120, players 2..64), non-finite values, paths, unknown and duplicate keys with lines, transactional reads, atomic writes; cross-key rules; SHA-256 FIPS vectors; content digest against a Python-computed value, CRLF, links; manifest parsing and validation; registry ranges, duplicates, freeze, lookups, digest; the generic codec byte-equal to `encodePose`; scene rules; keys; `readyForSession` before any transport; no allocation in 1,000 capture/encode/decode/apply ticks |
-| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; every `--net-test` scenario, its JSON and bad arguments; mode combinations exit 2 |
-| `network_session` | Real PlaySessions with physics over the loopback hub: Start/Stop 100 times offline and 100 times online (alternating who stops first) with the world restored and nothing left open; start failing for no services, no transport, unavailable services, no authentication on Steam, a taken address and a throwing `beginPlay`; 13 handshake failures, each with its reason; the online pause, save and breakpoint rules; a client in a menu still pumping and collecting input while the host simulates; no events after Stop or `close()`; the shutdown order with a lobby; `SimulationOverrun`; the simulation clock offline (identical to the old loop) and online; the `--net-test` scenarios |
+| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; every `--net-test` scenario (replication with five clients on the `poor` preset), its JSON and bad arguments; mode combinations exit 2 |
+| `network_session` | Real PlaySessions with physics over the loopback hub: Start/Stop 100 times offline and 100 times online (alternating who stops first) with the world restored and nothing left open; start failing for no services, no transport, unavailable services, no authentication on Steam, a taken address and a throwing `beginPlay`; 13 handshake failures, each with its reason; the online pause, save and breakpoint rules; a client in a menu still pumping and collecting input while the host simulates; no events after Stop or `close()`; the shutdown order with a lobby; `SimulationOverrun`; the simulation clock offline (identical to the old loop) and online; a host's falling physics box followed by the client's kinematic copy; the `--net-test` scenarios |
+| `network_replication` | Worlds built in different orders binding authored objects by key; IDs in key order; spawns, despawns (and objects destroyed without one), respawn incarnations, owners and a leaving player's objects; a late client getting earlier spawns and despawns; a small budget (players every snapshot, the rest in turn, bytes within the budget) with 0 heap allocations over nine seconds; a baseline torn down halfway leaving the client's world unchanged; a scripted host sending snapshot parts reversed and duplicated, older snapshots, a despawn before an old snapshot, snapshots ahead of their Spawn (held, then applied) and one that never gets it (expires, one resync), old and new incarnations; eleven kinds of malformed authority data, each failing with its reason and closing the connection |
 | `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
 | `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |
 | `test_snapshot_delta` | Quantization limits and round trips; 64 moving players at 120 Hz in one part under 1152 bytes; keyframes split to fit 1152 and 512; 1024 worst-case slots; loss, reordering, duplicates and lost acks with every completed snapshot identical to the host's; acks and baselines leaving the history; respawns and despawns; every kind of malformed part; one encoder shared by clients; interpolation (Hermite, slerp, extrapolation limit, out-of-order and duplicate samples, teleports, the server clock, the 3-tick jitter buffer); host and client time per tick (under 150 us asserted in optimised builds) |

@@ -115,11 +115,14 @@ endif()
 
 # --net-test: the session handshake over the in-process loopback hub, with the
 # project's settings. No Steam, socket or window.
-run(0 "net-test handshake seed 7 preset cafe: ok.*peer client 3: client, synchronizing" --net-test --seed 7)
+run(0 "net-test handshake seed 7 preset cafe: ok.*peer client 3: client, active" --net-test --seed 7)
 run(0 "net-test handshake seed 3 preset hostile: ok" --net-test --seed 3 --preset hostile --clients 11)
 run(0 "peer ticket never answered: client, failed AuthUnavailable.*0 packets in flight, 0 auth sessions, 0 tickets"
     --net-test --scenario rejections)
 run(0 "rounds 100" --net-test --scenario stop-start --json "${TEMP}/net-test.json")
+# Replication: a moving box and spawned crates; every client (one late) ends with the host's state.
+run(0 "net-test replication seed 5 preset poor: ok.*late\\): client, active.*max position error 0.000000 m"
+    --net-test --scenario replication --seed 5 --preset poor --clients 5)
 file(READ "${TEMP}/net-test.json" json)
 if(NOT json MATCHES "\"mode\": \"net-test\"" OR NOT json MATCHES "\"ok\": true" OR NOT json MATCHES "\"rounds\": 100")
     message(FATAL_ERROR "--net-test --json is missing fields:\n${json}")

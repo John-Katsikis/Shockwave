@@ -234,6 +234,13 @@ shockwave_warnings(network_session_test)
 add_test(NAME network_session COMMAND network_session_test)
 set_tests_properties(network_session PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
 
+# Replication without prediction: baselines, keys, spawns, snapshots, budgets, bad data.
+add_executable(network_replication_test NetworkReplicationTest.cpp)
+target_link_libraries(network_replication_test PRIVATE Shockwave::Multiplayer)
+shockwave_warnings(network_replication_test)
+add_test(NAME network_replication COMMAND network_replication_test)
+set_tests_properties(network_replication PROPERTIES TIMEOUT 300)
+
 # Delta snapshots, interpolation, rewind history.
 add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)
 target_link_libraries(test_snapshot_delta PRIVATE Shockwave::Multiplayer)
