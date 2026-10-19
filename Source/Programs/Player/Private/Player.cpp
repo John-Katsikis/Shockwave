@@ -13,6 +13,7 @@
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/NetworkPump.h>
 #include <GameFramework/PlaySession.h>
 #include <GameFramework/SaveGame.h>
 #include <Input/InputBinding.h>
@@ -150,6 +151,11 @@ void Player::onStart() {
     SW_LOG(
         shockwave::LogEngine, Info, "project {}; module {}; startup scene {}", m_project.name, m_project.gameModule,
         m_project.relative(m_project.startupScene));
+}
+
+// Online services and the session's network, then GameMode::collectInput, before the ticks.
+void Player::onPump(double rawFrameDt) {
+    shockwave::pumpNetworkFrame(engine(), m_services.get(), m_session.get(), rawFrameDt);
 }
 
 void Player::onUpdate(double dt) {

@@ -24,6 +24,9 @@ class EffectsWorld;
 class AnimationWorld;
 class UIWorld;
 class NavigationWorld;
+namespace net {
+class NetworkWorld;
+}
 
 // What game code can reach during Play.
 struct GameContext {
@@ -60,6 +63,9 @@ struct GameContext {
     EntityRef spawn(std::string_view prefab, const glm::vec3& position) const;
     // Saving and loading the game (docs/SaveGames.md). Always there during Play.
     SaveGames& saves() const;
+    // Network play (docs/Networking.md). Always there during Play: offline it reports
+    // local authority (role Offline) and does nothing.
+    net::NetworkWorld& network() const;
 };
 
 class GameMode {
@@ -69,6 +75,11 @@ public:
     virtual void configureSystems(GameContext&, Schedule&) {}
     // The scene is loaded and physics exists; spawn things, add subsystems.
     virtual void beginPlay(GameContext&) {}
+    // Main thread, once per frame before that frame's fixed ticks: read the devices and
+    // latch this frame's local actions, so ticks consume them rather than polling input.
+    // Runs while Play runs, whatever the window or menus are doing; during network play
+    // check game.network().localInputSuppressed() and send neutral input instead.
+    virtual void collectInput(GameContext&, double frameDt) { (void)frameDt; }
     // Main thread, every fixed tick after the systems and the physics step.
     virtual void fixedUpdate(GameContext&, double dt) { (void)dt; }
     // Main thread, once per rendered frame with the real frame time.

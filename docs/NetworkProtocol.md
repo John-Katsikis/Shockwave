@@ -71,7 +71,7 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 |  | `host_peer` | u64 | >= 1 |
 |  | `tick_rate` | u16 | 60..120 |
 |  | `snapshot_rate` | u16 | 10..120 |
-|  | `interpolation_ms` | u16 | 50..200 |
+|  | `interpolation_ms` | u16 | 25..200 |
 |  | `max_rewind_ms` | u16 | 0..250 |
 
 ### 3 AuthTicket

@@ -5,6 +5,7 @@
 
 #include <Engine/Prefab.h>
 #include <GameFramework/GameNetwork.h>
+#include <Multiplayer/NetTest.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkSchema.h>
 #include <Multiplayer/NetworkValidation.h>
@@ -138,6 +139,33 @@ int steamStatus(const shockwave::Project& project, bool server) {
         net::steamRelayStatusName(relay));
     services->shutdown();
     return signedIn && relay != net::SteamRelayStatus::Failed ? 0 : 1;
+}
+
+int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json) {
+    net::NetTestOptions options;
+    options.scenario = command.scenario;
+    options.seed = command.seed;
+    options.preset = command.preset;
+    options.clients = command.clients;
+    // The project's settings when it has them: tick rate, player count and timeouts.
+    const fs::path settingsFile = net::networkSettingsPath(project);
+    if (std::error_code ec; fs::is_regular_file(settingsFile, ec)) {
+        net::NetworkSettingsFile file;
+        std::string error;
+        if (!net::readNetworkSettings(settingsFile, file, error)) {
+            std::fprintf(stderr, "Player: %s\n", error.c_str());
+            return 1;
+        }
+        options.settings = file.settings;
+    }
+    net::NetTestReport report;
+    if (!net::runNetTest(options, report)) {
+        for (const std::string& e : report.errors) std::fprintf(stderr, "Player: %s\n", e.c_str());
+        return 2;
+    }
+    std::fputs(net::netTestText(report).c_str(), stdout);
+    if (!json.empty() && !writeText(json, net::netTestJson(report))) return 1;
+    return report.ok ? 0 : 1;
 }
 
 void Player::checkNetworkProject(std::vector<std::string>& problems) {

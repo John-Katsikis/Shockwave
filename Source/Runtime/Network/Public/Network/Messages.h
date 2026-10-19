@@ -232,7 +232,7 @@ struct Challenge {
         v.u64("host_peer", m.hostPeer, 1);
         v.u16("tick_rate", m.tickRate, kMinTickRate, kMaxTickRate);
         v.u16("snapshot_rate", m.snapshotRate, kSnapshotRates.front(), kSnapshotRates.back());
-        v.u16("interpolation_ms", m.interpolationMs, 50, 200);
+        v.u16("interpolation_ms", m.interpolationMs, 25, 200);
         v.u16("max_rewind_ms", m.maxRewindMs, 0, 250);
     }
     // snapshot_rate must be one of kSnapshotRates and divide tick_rate.

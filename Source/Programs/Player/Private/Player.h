@@ -11,6 +11,7 @@
 #include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
 #include <Multiplayer/Replication.h>
+#include <Network/OnlineServices.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
@@ -100,6 +101,17 @@ int networkInfo(const shockwave::Project& project, const shockwave::GameModule& 
 // (or a dedicated server), wait for sign-in and relay network access, print one line, and
 // shut Steam down. Exit 1 when Steam isn't available, as in builds without the SDK.
 int steamStatus(const shockwave::Project& project, bool server);
+// --net-test --scenario name [--seed N] [--preset name] [--clients N] [--json file]: the
+// session handshake between NetworkWorlds over an in-process loopback hub
+// (Multiplayer/NetTest.h), with the project's network settings when it has them. No
+// Steam, sockets, window or game code. Exit 1 when the scenario fails.
+struct NetTestCommand {
+    bool requested = false;
+    std::string scenario = "handshake", preset = "cafe";
+    uint64_t seed = 1;
+    uint32_t clients = 3;
+};
+int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json);
 
 class Player final : public shockwave::Application {
 public:
@@ -108,6 +120,7 @@ public:
     int exitCode() const { return m_exitCode; }
 
     void onStart() override;
+    void onPump(double rawFrameDt) override;
     void onUpdate(double dt) override;
     void onFrame(double dt) override;
     void onRender(shockwave::Renderer& renderer, double alpha) override;
@@ -188,6 +201,10 @@ private:
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
+    // Online services, pumped every frame; they outlive the session. The player never
+    // starts Steam itself (only --steam-status does), so these are unavailable ones until
+    // hosting and joining from the player arrive (docs/Networking.md).
+    std::unique_ptr<shockwave::net::IOnlineServices> m_services = shockwave::net::makeUnavailableOnlineServices();
     std::unique_ptr<shockwave::GameUI> m_ui;   // before the session, whose UIWorld uses it
     std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
     std::unique_ptr<shockwave::PlaySession> m_session;

@@ -50,6 +50,14 @@ int main(int argc, char** argv) {
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
+        player::NetTestCommand netTest;   // --net-test
+        auto wholeNumber = [](const std::string& value, uint64_t max, const char* what) {
+            uint64_t n = 0;
+            const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), n);
+            if (ec != std::errc{} || end != value.data() + value.size() || n > max)
+                throw std::runtime_error(std::string(what) + " takes a whole number up to " + std::to_string(max));
+            return n;
+        };
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--graphics" && i + 1 < argc)
@@ -258,6 +266,16 @@ int main(int argc, char** argv) {
                 if (i + 1 < argc &&
                     (std::string_view(argv[i + 1]) == "client" || std::string_view(argv[i + 1]) == "server"))
                     steamStatus = std::string_view(argv[++i]) == "server" ? 2 : 1;
+            } else if (arg == "--net-test") {
+                netTest.requested = true;
+            } else if (arg == "--scenario" && i + 1 < argc) {
+                netTest.scenario = argv[++i];
+            } else if (arg == "--preset" && i + 1 < argc) {
+                netTest.preset = argv[++i];
+            } else if (arg == "--seed" && i + 1 < argc) {
+                netTest.seed = wholeNumber(argv[++i], UINT64_MAX, "--seed");
+            } else if (arg == "--clients" && i + 1 < argc) {
+                netTest.clients = uint32_t(wholeNumber(argv[++i], 63, "--clients"));
             } else if (arg == "--saves") {
                 tool.listSaves = true;
             } else if (arg == "--load" && i + 1 < argc) {
@@ -267,9 +285,8 @@ int main(int argc, char** argv) {
                 if (!shockwave::validSaveSlot(tool.save))
                     throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
-                std::puts(
-                    "player --package [--output folder] [--no-build] [--no-archive]\n"
-                    "                                    make a game folder for players (docs/Packaging.md)");
+                std::puts("player --package [--output folder] [--no-build] [--no-archive]\n"
+                          "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                     "player --new-project folder [--name display-name] [--module module_id]\n"
@@ -318,6 +335,10 @@ int main(int argc, char** argv) {
                     "player --steam-status [client|server]\n"
                     "                                    start Steam for the project's steam_app_id, print\n"
                     "                                    sign-in and relay status, shut it down\n"
+                    "player --net-test [--scenario handshake|rejections|stop-start] [--seed N]\n"
+                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--json file]\n"
+                    "                                    run the session handshake over an in-process\n"
+                    "                                    loopback network; no Steam, sockets or window\n"
                     "player --devices [seconds]          list controllers; then print each input pressed\n"
                     "                                    as binding text, for that many seconds");
                 return 0;
@@ -355,9 +376,8 @@ int main(int argc, char** argv) {
                              std::filesystem::path(base) / "templates" / "Blank", created, error))
                 throw std::runtime_error(error.empty() ? "can't locate project templates" : error);
             std::printf("project %s\nmodule %s\n", created.file.string().c_str(), created.gameModule.c_str());
-            std::puts(
-                "Add this folder to SHOCKWAVE_GAMES, then build player/editor before Play. See the project's "
-                "README.md.");
+            std::puts("Add this folder to SHOCKWAVE_GAMES, then build player/editor before Play. See the project's "
+                      "README.md.");
             return 0;
         }
         if (!newProjectName.empty() || !newProjectModule.empty())
@@ -432,16 +452,17 @@ int main(int argc, char** argv) {
             std::fputs(shockwave::graphicsSettingsText(tool.graphics).c_str(), stdout);
             return 0;
         }
-        const bool networkTool = networkInfo || !networkSchema.empty() || steamStatus;
+        const bool networkTool = networkInfo || !networkSchema.empty() || steamStatus || netTest.requested;
         if (networkTool &&
-            (int(networkInfo) + int(!networkSchema.empty()) + int(steamStatus != 0) != 1 ||
+            (int(networkInfo) + int(!networkSchema.empty()) + int(steamStatus != 0) + int(netTest.requested) != 1 ||
              tool.mode != Tool::Mode::Play || package.requested || tool.listSaves || !tool.screenshot.empty() ||
              tool.benchmarkSeconds > 0 || tool.optimise || !tool.save.empty())) {
             std::fprintf(
-                stderr, "Player: --network-info, --network-schema and --steam-status run on their own "
-                        "(--network-info with --json)\n");
+                stderr, "Player: --network-info, --network-schema, --steam-status and --net-test run on their own "
+                        "(--network-info and --net-test with --json)\n");
             return 2;
         }
+        if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It

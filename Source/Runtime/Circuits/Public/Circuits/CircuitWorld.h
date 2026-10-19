@@ -86,6 +86,10 @@ public:
     void setBreakpoint(std::string circuit, std::string node, bool enabled);
     bool hasBreakpoint(std::string_view circuit, std::string_view node) const;
     bool debugPaused() const { return m_debugPaused; }
+    // Network play turns breakpoints and single steps off: a host can't stop the match
+    // for everyone, and a client can't stop its own clock. Off also resumes a pause.
+    void setBreakpointsAllowed(bool allowed);
+    bool breakpointsAllowed() const { return m_breakpointsAllowed; }
     const DebugEntry& debugLocation() const { return m_location; }
     void debugContinue(bool singleStep = false);
 
@@ -145,6 +149,7 @@ private:
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);   // UI handlers check it
     bool m_playing = false;
     bool m_tracing = false, m_debugPaused = false, m_skipBreakpoint = false, m_singleStep = false;
+    bool m_breakpointsAllowed = true;
     DebugEntry m_location;
     std::set<std::pair<std::string, std::string>> m_breakpoints;
     std::deque<DebugEntry> m_trace;

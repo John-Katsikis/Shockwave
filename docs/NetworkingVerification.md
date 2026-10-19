@@ -224,11 +224,11 @@ Outstanding for this batch:
   game wait for Batch 9.
 - Not built on macOS or Windows here; CI covers those on push.
 
-## Batch 4 (2026-10-19): delta snapshots, interpolation, rewind history
+## The owner's "Batch 4" (2026-10-19): delta snapshots, interpolation, rewind history
 
 Base: `2a9703f` (master after PR #21), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
 The owner's Batch 4 brief; see design adjustments 16 to 21 for how it maps onto the plan.
-Plan Batch 4 (session integration) is still to do.
+Plan Batch 4 (session integration) is the next section.
 
 Implemented:
 
@@ -284,3 +284,60 @@ Outstanding for this batch:
 - No editor change: the new `snapshot_rate` and `interpolation_ms` ranges reach Project
   settings > Multiplayer through the settings table, but the container has no display,
   so nobody has looked.
+
+## Plan Batch 4 (2026-10-19): session integration
+
+Base: `35dec6c` (master after PR #22), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan section 5 and its Batch 4 gate; design adjustments 22 to 29.
+
+Implemented:
+
+- Engine: `Application::onPump(rawFrameDt)`, called after input and before the fixed
+  ticks; `Engine/SimulationClock.h` with `EngineConfig::simulationTime` and
+  `Engine::setSimulationTime` (Smoothed by default, Monotonic online: raw time, 8 ticks
+  a frame at most, overruns); renderer swaps held while Monotonic.
+- `Multiplayer/NetworkWorld.h`: roles, states, events, the handshake with mutual
+  authentication, admission limits, timeouts and the shutdown order.
+- GameFramework: `GameContext::network()`, `GameMode::collectInput`,
+  `PlaySession::setNetworkStart`, `pumpNetwork`, `handleOnlineEvent`, `collectInput`,
+  drain before each tick, close first in `stop()`; online pause, save and breakpoint
+  rules; `GameFramework/NetworkPump.h`.
+- Circuits: `CircuitWorld::setBreakpointsAllowed`.
+- Editor: pumps from `onPump`; Pause disabled online with a tooltip; game code, asset and
+  prefab reloads held until Stop; Stop Steam disabled during network play; the session's
+  role and state under Project settings > Multiplayer > Steam.
+- Player: pumps from `onPump`; `--net-test` (`Multiplayer/NetTest.h`).
+- Network: `LoopbackOnlineServices`.
+- Test `network_session`; `network_cli` runs `--net-test`.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 41/43 (the known no-display failures `renderer_swap` and `save_games_cli`); `-R "network_\|test_steam\|test_sdr\|test_snapshot\|test_rewind\|test_replication"` 11/11 |
+| Debug with `-fsanitize=address,undefined`: `network_session`, `player --net-test --scenario rejections` | pass, no sanitizer reports |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_session`, `test_steam_services` | build and pass |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Startup-failure injection | `network_session`: start throws and restores the world for no services, no transport, unavailable services, authentication off on Steam, a taken address and a throwing `beginPlay` (whose listener is then free again); 13 handshake failures end in the expected reason (protocol, content, scene and settings mismatches; a client or host ticket that can't be made or fails later; either side refusing a ticket; either side never answering, after 15 s; no baseline in time; a full server); `--net-test --scenario rejections` covers 9 more over NetworkWorlds, including the host stopping mid-handshake and no host |
+| Stop 100 times | 100 offline Plays and 100 online host-and-client Plays in `network_session`, alternating who stops first, each restoring the world with no auth session, ticket or packet left; `--net-test --scenario stop-start` 100 rounds |
+| Offline save and hot reload | `save_games` and `hot_reload` pass unchanged; offline Pause, saving and breakpoints checked again in `network_session`; the offline clock gives exactly the old loop's ticks and remainder |
+| Pumps during menus and editing | a client with local input suppressed keeps pumping, collects (neutral) input every frame and stays connected while the host simulates every tick; services are pumped with a session that is editing and with none |
+| No events after the session | after Stop the session takes no service events and has no network world; a closed NetworkWorld reports nothing and ignores pumps, failures and events; Stop closes a lobby to joins first and leaves it last |
+
+`--net-test` (`handshake`, default `cafe` preset, 3 clients): all three synchronizing
+in 233 to 250 ms of virtual time; `--clients 11` passes under `clean`, `poor` and
+`hostile`. The 100-round `stop-start` scenario takes 0.07 s.
+
+Outstanding for this batch:
+
+- No real Steam session: the handshake runs through `IOnlineServices` and `ITransport`,
+  which `SteamServices` implements, but two Steam accounts on two machines haven't
+  joined. Nothing in the player or editor starts network play yet (adjustment 25).
+- The editor changes (Pause disabled online, the network play line) haven't been
+  looked at: the container has no display, and nothing can start online Play from the
+  editor yet anyway.
+- Clients stop at Synchronizing until Batch 5's baseline (adjustment 23).
