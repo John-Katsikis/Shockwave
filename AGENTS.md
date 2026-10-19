@@ -124,8 +124,14 @@ reference and run the network tests:
 
 ```sh
 build/bin/network_wire_test --write-reference docs/NetworkProtocol.md
-ctest --test-dir build -R network_ --output-on-failure
+ctest --test-dir build -R "network_|test_steam|test_sdr" --output-on-failure
 ```
+
+Steam code lives in `Source/Runtime/SteamServices` and talks to Steam only through
+`SteamApi`; only `Private/SteamSdk.cpp` may include Steam headers. Test it with
+`MockSteamApi`. The Steamworks SDK is never downloaded or committed: builds with
+`-DSHOCKWAVE_STEAMWORKS=ON` use a copy the developer supplies. `player --steam-status`
+starts Steam; nothing else on the command line does.
 
 A project's multiplayer settings are `Config/Network.swnetwork` and its manifest
 (`docs/NetworkSchema.md`). After changing settings fields, components, or a game's

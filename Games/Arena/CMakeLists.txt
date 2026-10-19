@@ -26,6 +26,7 @@ if(BUILD_TESTING)
         -DPROJECT_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/NetworkSchema.md
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/NetworkCLI
+        -DSTEAMWORKS=${SHOCKWAVE_STEAMWORKS}
         -P ${CMAKE_SOURCE_DIR}/Tests/NetworkCheck.cmake)
     set_tests_properties(network_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
 

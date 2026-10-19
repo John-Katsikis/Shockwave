@@ -5,3 +5,8 @@
 # components it checks (RigidBody, CharacterController) are Engine data, so it needs no
 # Physics dependency yet.
 shockwave_module(Multiplayer PUBLIC_DEPS Shockwave::Engine Shockwave::Network)
+if(SHOCKWAVE_STEAMWORKS)
+    # Only so networkBuild() can say the build has Steam; Multiplayer never calls it.
+    target_compile_definitions(ShockwaveMultiplayer PRIVATE SHOCKWAVE_ENABLE_STEAM=1
+                               SHOCKWAVE_STEAMWORKS_VERSION="${SHOCKWAVE_STEAMWORKS_VERSION}")
+endif()

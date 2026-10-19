@@ -119,6 +119,7 @@ module can only see the headers of modules it depends on, directly or through th
 |---|---|---|---|
 | Core | job system, logging, frame pacing, profiling macros (Tracy), plugin loading | GLM | Core |
 | Network | multiplayer wire protocol and message catalog, transport interface, in-process loopback transport with fault injection, packet captures, online services interface. No Engine, SDL or Steam | Core | NetCore, Sockets |
+| SteamServices | Steam lifecycle and callbacks, lobbies, session-ticket auth and the Steam Datagram Relay transport, written against a `SteamApi` facade with an in-process mock; only `Private/SteamSdk.cpp` includes Steam headers, and only with `-DSHOCKWAVE_STEAMWORKS=ON` | Network | OnlineSubsystemSteam, SteamSockets |
 | Platform | window and OS events (SDL3) | Core | ApplicationCore |
 | Input | keyboard, mouse, gamepads and joysticks behind named actions; `.swinput` bindings | Platform | InputCore, Enhanced Input |
 | RHI | Vulkan device, swapchain, pipelines, render graph (static, inside the Vulkan plugin) | Platform | RHI, VulkanRHI |

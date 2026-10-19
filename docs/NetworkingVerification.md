@@ -125,3 +125,81 @@ Outstanding for this batch:
 - Session-immutable fields can't be disabled "while online" yet; there are no sessions
   until Batch 4.
 - Not built on macOS or Windows here; CI covers those on push.
+
+## Batch 3 (2026-10-19)
+
+Base: `039b897` (master after PR #20), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+
+Implemented:
+
+- `SteamServices` module after Network (`Shockwave::Network` only), linked by the Player
+  and Editor. `SteamServices` (PIMPL `SteamServicesImpl`): `initializeClient()`,
+  `initializeDedicatedServer()`, `framePass()`, `shutdown()` exactly once, lobbies,
+  session tickets and auth sessions with the 15-second fail-closed timeout.
+  `SteamNetworkAdapter` (PIMPL `SteamNetworkAdapterImpl`): the section 4.4 state table,
+  poll group, 32-message receive batches into a preallocated ring with every Steam
+  message released, ReliableNoNagle and UnreliableNoNagle sends limited to
+  `max_snapshot_bytes`, 32 KiB unreliable backpressure, broadcast, RTT.
+- `SteamApi` facade (no SDK types), its SDK backend `Private/SteamSdk.cpp` (compiled only
+  with `SHOCKWAVE_ENABLE_STEAM`), the SDK-off factory `SteamUnavailable.cpp`, and
+  `MockSteamApi`/`MockSteamNetwork`.
+- `cmake/Steamworks.cmake`: `SHOCKWAVE_STEAMWORKS` (off), `SHOCKWAVE_STEAMWORKS_SDK`,
+  `SHOCKWAVE_STEAM_TESTS`; imported target, runtime copied to `build/bin`, target
+  architecture check.
+- `IOnlineServices` authentication calls and events (design adjustment 13).
+- `player --steam-status [client|server]`; editor Project settings > Multiplayer > Start
+  Steam / Stop Steam; `--network-info` and `networkBuild()` report the SDK.
+- Tests `test_steam_services` and `test_sdr_transport_mock`.
+
+Results, in the same headless Linux container as Batches 1 and 2:
+
+| Configuration | Result |
+|---|---|
+| Debug, modular, after the change | builds (player, editor, all games and tests), no warnings; CTest 37/39 |
+| Debug, static (`-DSHOCKWAVE_MODULAR=OFF`), after | builds everything, no warnings; CTest 26/27 |
+| `test_steam_services`, `test_sdr_transport_mock`, `network_transport` with GCC `-fsanitize=address,undefined` (leak checking on) | pass, no sanitizer reports |
+| Clang 18 `-fsyntax-only -Wall -Wextra -Wpedantic -Wshadow` on every SteamServices source and both tests | no warnings |
+| Configure with `SHOCKWAVE_STEAMWORKS=ON`: no SDK path; a folder without `public/steam/steam_api.h`; a folder with the header but no runtime; `SHOCKWAVE_STEAM_TESTS=ON` without Steamworks | each fails configure with a message saying what to fix |
+
+The failures are the known no-display ones: `renderer_swap` and `save_games_cli` in the
+modular build, `save_games_cli` in the static one (`SDL_Init failed: No available video
+device`, from `player --load`; nothing networking).
+
+Gate evidence:
+
+- `ctest -R "network_|test_steam|test_sdr" --output-on-failure`: 7/7 pass in both builds.
+- The real factory in this SDK-less build: `steamBuild().sdk` is false and
+  `initializeClient()` fails with Unavailable naming `-DSHOCKWAVE_STEAMWORKS=ON`; the
+  rest of `test_steam_services` and all of `test_sdr_transport_mock` run on
+  `MockSteamApi`.
+- Fake-backend failures (plan section 14.1): init failure, listen socket failure (its
+  poll group is destroyed again), poll-group failure at listen, connect and on
+  Connected, every SDK send result, release of every message on every error path
+  (empty, oversize, closed connection, a throwing sink), stale and foreign callbacks,
+  state-change queue overflow, auth cancel and revocation, the auth timeout at 15 s and
+  not at 14.9 s, late lobby results after cancel and after a restart, shutdown exactly
+  once with transports alive.
+- Allocation check: 0 heap allocations (counting `operator new`) over a continuous
+  10,000-message poll loop (four clients, mixed reliable and unreliable messages up to
+  1152 bytes, the host echoing every tenth back reliably), with every received Steam
+  message released (received == released, none outstanding). An idle `framePass()`
+  allocates nothing over 1,000 frames. Checked that the test fails when one allocation
+  or one missed release is put into `poll()`.
+- `player --project Games/Arena/Arena.swproject --steam-status`: exit 1, `steam_app_id
+  is 0`; with `steam_app_id 480` (in `network_cli`'s copy): exit 1, `build steamworks
+  no` and `steam unavailable: this build has no Steamworks SDK`. `--steam-status` with
+  another mode exits 2. Arena's settings are unchanged (`enabled 0`, AppID 0).
+
+Outstanding for this batch:
+
+- No Steamworks SDK was supplied, so `SteamSdk.cpp` has never been compiled, the SDK
+  version it works with is unknown, and the SDK-ON build, runtime copy and
+  architecture check haven't run with a real SDK. It is written against the documented
+  API and needs an SDK with `GetAuthSessionTicket` taking a remote identity.
+- The two-account manual gate (section 14.3: friends host, join, invite, auth denial,
+  relay route status, Windows to Linux) is blocked: it needs the SDK, a test AppID and
+  two Steam accounts. `-DSHOCKWAVE_STEAM_TESTS=ON` adds a `steam_status` CTest for it.
+- The editor's Steam rows weren't looked at: the container has no display.
+- `SteamAPI_RestartAppIfNecessary` and packaging the Steam runtime next to a packaged
+  game wait for Batch 9.
+- Not built on macOS or Windows here; CI covers those on push.

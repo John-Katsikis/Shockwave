@@ -34,9 +34,19 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/NetworkValidation.h` | The checks `player --check` and the editor share, and `readyForSession()` |
 | `Multiplayer/NetworkSchema.h` | The generated [NetworkSchema.md](NetworkSchema.md) and `--network-info`'s report |
 
-Not built yet: Steam itself, hosting and joining, replicated entities, prediction,
-lag compensation and the `player --net-*` session commands. Nothing advertises those
-as working; `--network-info` lists them under `unsupported`.
+The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
+sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing else does.
+
+| Header | What it gives you |
+|---|---|
+| `SteamServices/SteamServices.h` | `SteamServices`, the `IOnlineServices` for Steam: `initializeClient()` (SteamAPI_Init) or `initializeDedicatedServer()` (SteamGameServer_Init, anonymous logon), `framePass()` to run callbacks, lobbies, auth tickets, `shutdown()` |
+| `SteamServices/SteamNetworkAdapter.h` | `SteamNetworkAdapter`, the `ITransport` over Steam Datagram Relay P2P sockets: listen, connect, accept, poll, send, broadcast, RTT |
+| `SteamServices/SteamApi.h` | `SteamApi`, every Steamworks call the module makes, with no SDK types |
+| `SteamServices/MockSteamApi.h` | `MockSteamApi` and `MockSteamNetwork`: Steam played in-process for tests and SDK-less builds |
+
+Not built yet: hosting and joining sessions, replicated entities, prediction, lag
+compensation and the `player --net-*` session commands. Nothing advertises those as
+working; `--network-info` lists them under `unsupported`.
 
 ## Network settings
 
@@ -164,6 +174,18 @@ the registry and the bandwidth estimate; in JSON, 64-bit values are strings. It 
 on their own: combined with another mode they exit with 2. None of them opens a socket
 or starts Steam.
 
+```sh
+build/bin/player --project <file.swproject> --steam-status [client|server]
+```
+
+`--steam-status` is the one tool that does start Steam: as a client (or a dedicated
+server) for the project's `steam_app_id`, then it waits up to 10 seconds for sign-in and
+relay network access, prints `steam client, AppID ..., SteamID ..., signed in yes, relay
+current`, and shuts Steam down. It exits 1 without an AppID, in a build without the SDK
+(`steam unavailable: this build has no Steamworks SDK ...`), or when Steam isn't running.
+In the editor, Project settings > Multiplayer > Start Steam does the same and keeps
+Steam running until Stop Steam or the project closes.
+
 ## The wire protocol
 
 Every message is a 32-byte header (`SWMP`, version, kind, flags, session nonce, sender
@@ -241,6 +263,78 @@ for a while; `FaultProfile::bytesPerSecond` throttles a link. The hub allocates 
 buffers up front, so once peers are connected, sending and polling allocate nothing;
 past the configured limits, `send()` reports `Backpressure` or `Dropped`.
 
+## Steam
+
+Steam is optional at build time. By default (`SHOCKWAVE_STEAMWORKS=OFF`) nothing looks
+for, downloads or links the Steamworks SDK, `SteamServices::create()` makes a service
+whose initialisation fails with `Unavailable`, and everything else works offline. To
+build with Steam, download the SDK yourself from Valve's partner site (the engine never
+fetches or ships it) and configure:
+
+```sh
+cmake -S . -B build -DSHOCKWAVE_STEAMWORKS=ON -DSHOCKWAVE_STEAMWORKS_SDK=/path/to/sdk
+```
+
+Configure fails with a message saying what's wrong if the folder has no
+`public/steam/steam_api.h`, no runtime library for the target, or the target is a
+platform Valve ships no library for (Linux on ARM64, for example). The runtime library
+is copied into `build/bin`. During development Steam reads the AppID from a
+`steam_appid.txt` in the working folder, which you write yourself; SteamServices checks
+Steam started for the same AppID as `steam_app_id` and fails if not.
+
+How SteamServices behaves (docs/SteamMultiplayerImplementation.md sections 4.1 to 4.5):
+
+- Nothing starts Steam until `initializeClient()` or `initializeDedicatedServer()`: not
+  `--check`, the schemas, `--network-info`, captures, benchmarks or tests. At most one
+  Steam runtime runs per process. `shutdown()` closes every transport, cancels tickets,
+  ends auth sessions, leaves lobbies, unregisters callbacks and shuts Steam down, exactly
+  once; the destructor calls it.
+- `framePass()` runs Steam's callbacks on the main thread. Connection changes are queued
+  for the transport that owns them; everything else is acted on after Steam's dispatch
+  returns, and reported through `pollEvent()`. An idle `framePass()` allocates nothing.
+- Every request returns a `RequestId` carrying the service's generation. `cancel()` means
+  its result is never reported: a lobby created or joined after a cancel is left at once.
+  Results from before a restart are ignored. A dedicated server has no lobbies.
+- Authentication goes both ways: each side calls `requestAuthTicket(peer)`, waits for
+  `AuthTicketReady`, sends `authTicket()` over the transport, and the receiver calls
+  `beginAuthSession(peer, ticket)`. Only `AuthSucceeded` admits a peer. An invalid,
+  cancelled or revoked ticket is `AuthFailed` with `AuthenticationFailed`; no answer
+  within 15 seconds, or Steam unable to decide, is `AuthFailed` with `AuthUnavailable`.
+  Tickets are 1 to 4096 bytes, are never logged, and are zeroed when cancelled.
+  `endAuthSession(peer)` on disconnect also cancels the tickets given to that peer.
+
+How `SteamNetworkAdapter` behaves:
+
+- `listen()` opens a P2P listen socket on the virtual port (`virtual_port`) and a poll
+  group; if the socket fails the poll group is destroyed again. `connect()` is
+  `ConnectP2P` to a SteamID64. The peer's identity is the one Steam authenticated.
+- The connection state table: a peer connecting to our listener becomes `Incoming` (or is
+  refused with `ServerFull` when the listener is full, or with no identity); one nobody
+  accepts by the next poll is refused with `Timeout`; our own connect's Connecting is
+  ignored; Connected joins the poll group (closing the connection if Steam refuses) and
+  is reported once; ClosedByPeer and ProblemDetectedLocally are reported once, with the
+  peer's `ReasonCode`, and the handle is closed. Callbacks for handles nobody owns are
+  ignored. If more state changes arrive than the queue holds, the next poll re-reads
+  every connection's state from Steam.
+- `poll()` receives up to 32 messages at a time, copies them into a ring buffer sized
+  when the adapter is made, and releases every Steam message straight away, whatever
+  happens next (a bad size, a closed connection, a sink that throws). What the budget
+  doesn't cover waits in the ring for the next poll. It's one bounded copy per message,
+  not zero copy.
+- `send()` uses `k_nSteamNetworkingSend_ReliableNoNagle` or `UnreliableNoNagle`.
+  Unreliable messages are at most `max_snapshot_bytes` (1152), and are dropped while more
+  than 32 KiB waits on that connection, so old state never piles up. Steam's queue
+  limit gives `Backpressure` (reliable) or `Dropped` (unreliable).
+- `stats()` has Steam's RTT and queued bytes; `broadcast()` sends to every connected peer.
+- Once the adapter exists, polling and sending allocate nothing.
+
+`MockSteamApi` plays Steam in-process: listen sockets, connections, a message pool,
+tickets, lobbies and a virtual clock, with faults to switch on (failed init, listen
+socket, poll group, send results, tickets, validation, held lobby results, injected
+callbacks) and counts of everything opened and released. It doesn't model loss,
+latency, relays or NAT: that's the two-account manual test in
+[NetworkingVerification.md](NetworkingVerification.md).
+
 ## Packet captures
 
 A `.swnetcap` file records the application messages a peer sent and received (see the
@@ -255,7 +349,7 @@ come in a later batch.
 ## Tests
 
 ```sh
-ctest --test-dir build -R network_ --output-on-failure
+ctest --test-dir build -R "network_|test_steam|test_sdr" --output-on-failure
 ```
 
 | Test | Covers |
@@ -264,4 +358,6 @@ ctest --test-dir build -R network_ --output-on-failure
 | `network_transport` | Connect, accept, reject, capacity; reliable order under every fault preset; unreliable loss, duplication, reordering and determinism; buffer lifetime; queue and pool limits; stale generations after close; budgets; outages; bandwidth; eleven clients; no allocation once connected |
 | `network_capture` | Format; dump and encode round trip; redaction; malformed and truncated files; the size cap; no traffic from dumping |
 | `network_settings` | Settings round trip, every range (tick 60..120, players 2..64), non-finite values, paths, unknown and duplicate keys with lines, transactional reads, atomic writes; cross-key rules; SHA-256 FIPS vectors; content digest against a Python-computed value, CRLF, links; manifest parsing and validation; registry ranges, duplicates, freeze, lookups, digest; the generic codec byte-equal to `encodePose`; scene rules; keys; `readyForSession` before any transport; no allocation in 1,000 capture/encode/decode/apply ticks |
-| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; mode combinations exit 2 |
+| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; mode combinations exit 2 |
+| `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
+| `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |

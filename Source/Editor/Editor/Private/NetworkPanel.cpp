@@ -1,7 +1,8 @@
 // Multiplayer in the editor (docs/Networking.md): the Multiplayer section of Project
 // settings, which edits Config/Network.swnetwork row by row from the same descriptor table
 // the player's --check and docs/NetworkSchema.md use, and "Check network setup", which runs
-// the network part of `player --check` here. Nothing in it starts Steam or opens a socket.
+// the network part of `player --check` here. Only "Start Steam" starts Steam (for the saved
+// steam_app_id, like `player --steam-status`); nothing else here opens a socket.
 #include "Editor.h"
 
 #include <GameFramework/GameNetwork.h>
@@ -71,6 +72,25 @@ void Editor::checkNetworkSetup() {
         m_networkEdit.checkResults.push_back({true, "the game module isn't loaded, so only engine types were checked"});
     log(net::hasErrors(m_networkEdit.checkProblems) ? "Network setup has problems; see Project settings"
                                                     : "Network setup checked: no problems");
+}
+
+void Editor::startSteam() {
+    m_steamMessage.clear();
+    const NetworkSettingsEdit& n = m_networkEdit;
+    net::SteamServicesSettings settings;
+    settings.appId = n.saved.steamAppId;
+    settings.virtualPort = uint16_t(n.saved.virtualPort);
+    settings.maxUnreliableBytes = n.saved.maxSnapshotBytes;
+    auto steam = net::SteamServices::create();
+    const net::NetResult<void> started = steam->initializeClient(settings);
+    if (!started) {
+        m_steamMessage = started.error().message;
+        if (*steam->lastError()) m_steamMessage += std::string(" (Steam said: ") + steam->lastError() + ")";
+        error("Steam didn't start: " + m_steamMessage);
+        return;
+    }
+    m_steam = std::move(steam);
+    log("Steam started for AppID " + std::to_string(settings.appId));
 }
 
 void Editor::drawNetworkProjectSettings() {
@@ -172,6 +192,32 @@ void Editor::drawNetworkProjectSettings() {
             ImGui::TextColored(problem.warning ? warningColor : errorColor, "%s", problem.text.c_str());
         if (!net::hasErrors(n.checkProblems)) ImGui::TextDisabled("No network problems.");
     }
+
+    // Steam itself: started only from here, for the saved settings.
+    ImGui::SeparatorText("Steam");
+    if (!m_steam) {
+        const bool canStart = build.steamworks && n.savedPresent && n.saved.steamAppId != 0;
+        ImGui::BeginDisabled(!canStart);
+        if (gui::button("Start Steam")) startSteam();
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Signs in to Steam for the saved steam_app_id and checks relay network access");
+        if (!build.steamworks)
+            ImGui::TextDisabled("This build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON).");
+        else if (!n.savedPresent || n.saved.steamAppId == 0)
+            ImGui::TextDisabled("Save a steam_app_id first.");
+        else
+            ImGui::TextDisabled("Steam isn't running.");
+    } else {
+        ImGui::Text(
+            "Steam %s, SteamID %llu, signed in %s, relay %s", net::steamServiceStateName(m_steam->state()),
+            static_cast<unsigned long long>(m_steam->localPeer().value), m_steam->available() ? "yes" : "no",
+            net::steamRelayStatusName(m_steam->relayStatus()));
+        if (gui::button("Stop Steam")) {
+            m_steam.reset();
+            log("Steam shut down");
+        }
+    }
+    if (!m_steamMessage.empty()) ImGui::TextColored(errorColor, "%s", m_steamMessage.c_str());
 }
 
 }   // namespace editor

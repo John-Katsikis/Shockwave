@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,6 +66,9 @@ enum class OnlineEventKind : uint8_t {
     LobbyLeft,
     JoinRequested,   // an invite was accepted, or the game was launched to join a lobby
     RequestFailed,
+    AuthTicketReady,   // requestAuthTicket's ticket can be sent: read it with authTicket()
+    AuthSucceeded,   // beginAuthSession's peer is who the transport says, and may play
+    AuthFailed,   // invalid, revoked or timed out: disconnect the peer (reason says which)
 };
 
 struct OnlineEvent {
@@ -72,6 +76,8 @@ struct OnlineEvent {
     RequestId request;
     LobbyId lobby;
     NetError error;   // RequestFailed only
+    PeerId peer;   // Auth* only
+    ReasonCode reason = ReasonCode::Normal;   // AuthFailed: AuthenticationFailed or AuthUnavailable
     std::vector<LobbySummary> lobbies;   // LobbyList only
 };
 
@@ -103,6 +109,18 @@ public:
     virtual NetResult<void> setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value) = 0;
     virtual NetResult<std::vector<PeerId>> lobbyMembers(LobbyId lobby) const = 0;
     virtual NetResult<std::unique_ptr<ITransport>> createTransport() = 0;
+
+    // Authentication, both ways: each side asks for a session ticket for the other's
+    // identity, sends it over the connected transport, and the receiver passes it to
+    // beginAuthSession. A peer is admitted only after AuthSucceeded; a validation that
+    // doesn't finish in time fails closed with AuthUnavailable. Tickets are secrets: never
+    // log or capture them. cancel() on a ticket request cancels the ticket.
+    virtual NetResult<RequestId> requestAuthTicket(PeerId remote) = 0;
+    // The ticket's bytes, once AuthTicketReady; valid until it's cancelled.
+    virtual NetResult<std::span<const uint8_t>> authTicket(RequestId ticket) const = 0;
+    virtual NetResult<void> beginAuthSession(PeerId remote, std::span<const uint8_t> ticket) = 0;
+    // On disconnect. Later results for that session are ignored.
+    virtual void endAuthSession(PeerId remote) = 0;
 };
 
 // Every operation fails with Unavailable and `reason`.

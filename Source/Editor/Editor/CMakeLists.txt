@@ -9,4 +9,4 @@ target_compile_definitions(editor PRIVATE SHOCKWAVE_SOURCE_DIR="${PROJECT_SOURCE
     SHOCKWAVE_BUILD_DIR="${CMAKE_BINARY_DIR}")
 shockwave_warnings(editor)
 shockwave_link_plugins(editor)
-target_link_libraries(editor PRIVATE Shockwave::Packaging)
+target_link_libraries(editor PRIVATE Shockwave::Packaging Shockwave::SteamServices)

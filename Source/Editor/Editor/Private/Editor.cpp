@@ -230,6 +230,7 @@ void Editor::onUpdate(double dt) {
 void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
+    if (m_steam) m_steam->framePass();
     updateGameUI(dt);
     updateNavigation(dt);
     updateEffects(dt);
