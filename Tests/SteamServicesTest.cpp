@@ -84,7 +84,9 @@ struct Node {
 
 static void testNoSdkFactory() {
     const SteamBuild build = steamBuild();
-#ifndef SHOCKWAVE_TEST_STEAM_SDK
+#ifdef SHOCKWAVE_TEST_STEAM_SDK
+    CHECK(build.sdk);
+#else
     CHECK(!build.sdk);
 #endif
     if (build.sdk) return;   // a Steam build: the manual gate covers the real SDK

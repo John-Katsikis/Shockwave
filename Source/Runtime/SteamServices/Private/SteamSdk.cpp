@@ -35,6 +35,10 @@ namespace shockwave::net {
 
 namespace {
 
+// uint64_t is unsigned long on Linux but the SDK's uint64 is unsigned long long, so
+// CSteamID(uint64_t) is ambiguous there.
+CSteamID steamIdFrom(uint64_t id) { return CSteamID(uint64(id)); }
+
 SteamConnectionState stateFrom(ESteamNetworkingConnectionState state) {
     switch (state) {
     case k_ESteamNetworkingConnectionState_Connecting: return SteamConnectionState::Connecting;
@@ -281,8 +285,8 @@ public:
     }
     SteamBeginAuth beginAuthSession(std::span<const uint8_t> ticket, uint64_t steamId) override {
         const EBeginAuthSessionResult result =
-            m_server ? SteamGameServer()->BeginAuthSession(ticket.data(), int(ticket.size()), CSteamID(steamId))
-                     : SteamUser()->BeginAuthSession(ticket.data(), int(ticket.size()), CSteamID(steamId));
+            m_server ? SteamGameServer()->BeginAuthSession(ticket.data(), int(ticket.size()), steamIdFrom(steamId))
+                     : SteamUser()->BeginAuthSession(ticket.data(), int(ticket.size()), steamIdFrom(steamId));
         switch (result) {
         case k_EBeginAuthSessionResultOK: return SteamBeginAuth::Ok;
         case k_EBeginAuthSessionResultInvalidTicket: return SteamBeginAuth::InvalidTicket;
@@ -295,9 +299,9 @@ public:
     }
     void endAuthSession(uint64_t steamId) override {
         if (m_server)
-            SteamGameServer()->EndAuthSession(CSteamID(steamId));
+            SteamGameServer()->EndAuthSession(steamIdFrom(steamId));
         else
-            SteamUser()->EndAuthSession(CSteamID(steamId));
+            SteamUser()->EndAuthSession(steamIdFrom(steamId));
     }
 
     uint64_t createLobby(SteamLobbyType type, uint32_t maxMembers) override {
@@ -319,35 +323,36 @@ public:
         return SteamMatchmaking()->GetLobbyByIndex(int(index)).ConvertToUint64();
     }
     uint64_t joinLobby(uint64_t lobby) override {
-        return track(m_entered, SteamMatchmaking()->JoinLobby(CSteamID(lobby)));
+        return track(m_entered, SteamMatchmaking()->JoinLobby(steamIdFrom(lobby)));
     }
-    void leaveLobby(uint64_t lobby) override { SteamMatchmaking()->LeaveLobby(CSteamID(lobby)); }
+    void leaveLobby(uint64_t lobby) override { SteamMatchmaking()->LeaveLobby(steamIdFrom(lobby)); }
     bool setLobbyData(uint64_t lobby, std::string_view key, std::string_view value) override {
-        return SteamMatchmaking()->SetLobbyData(CSteamID(lobby), std::string(key).c_str(), std::string(value).c_str());
+        return SteamMatchmaking()->SetLobbyData(
+            steamIdFrom(lobby), std::string(key).c_str(), std::string(value).c_str());
     }
     bool setLobbyJoinable(uint64_t lobby, bool joinable) override {
-        return SteamMatchmaking()->SetLobbyJoinable(CSteamID(lobby), joinable);
+        return SteamMatchmaking()->SetLobbyJoinable(steamIdFrom(lobby), joinable);
     }
     uint64_t lobbyOwner(uint64_t lobby) const override {
-        return SteamMatchmaking()->GetLobbyOwner(CSteamID(lobby)).ConvertToUint64();
+        return SteamMatchmaking()->GetLobbyOwner(steamIdFrom(lobby)).ConvertToUint64();
     }
     uint32_t lobbyMemberCount(uint64_t lobby) const override {
-        return uint32_t(std::max(0, SteamMatchmaking()->GetNumLobbyMembers(CSteamID(lobby))));
+        return uint32_t(std::max(0, SteamMatchmaking()->GetNumLobbyMembers(steamIdFrom(lobby))));
     }
     uint64_t lobbyMember(uint64_t lobby, uint32_t index) const override {
-        return SteamMatchmaking()->GetLobbyMemberByIndex(CSteamID(lobby), int(index)).ConvertToUint64();
+        return SteamMatchmaking()->GetLobbyMemberByIndex(steamIdFrom(lobby), int(index)).ConvertToUint64();
     }
     uint32_t lobbyMemberLimit(uint64_t lobby) const override {
-        return uint32_t(std::max(0, SteamMatchmaking()->GetLobbyMemberLimit(CSteamID(lobby))));
+        return uint32_t(std::max(0, SteamMatchmaking()->GetLobbyMemberLimit(steamIdFrom(lobby))));
     }
     uint32_t lobbyDataCount(uint64_t lobby) const override {
-        return uint32_t(std::max(0, SteamMatchmaking()->GetLobbyDataCount(CSteamID(lobby))));
+        return uint32_t(std::max(0, SteamMatchmaking()->GetLobbyDataCount(steamIdFrom(lobby))));
     }
     bool lobbyDataByIndex(uint64_t lobby, uint32_t index, std::span<char> key, std::span<char> value) const override {
         return SteamMatchmaking()->GetLobbyDataByIndex(
-            CSteamID(lobby), int(index), key.data(), int(key.size()), value.data(), int(value.size()));
+            steamIdFrom(lobby), int(index), key.data(), int(key.size()), value.data(), int(value.size()));
     }
-    void inviteToLobby(uint64_t lobby) override { SteamFriends()->ActivateGameOverlayInviteDialog(CSteamID(lobby)); }
+    void inviteToLobby(uint64_t lobby) override { SteamFriends()->ActivateGameOverlayInviteDialog(steamIdFrom(lobby)); }
 
     // CallHolder results.
     void finish(uint64_t call, LobbyCreated_t* data, bool ioFailure) {

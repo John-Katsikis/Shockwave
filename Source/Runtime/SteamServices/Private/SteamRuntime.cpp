@@ -260,7 +260,8 @@ SteamRelayStatus SteamServices::relayStatus() const {
 const char* SteamServices::lastError() const { return m_impl->lastError.data(); }
 
 OnlineCapabilities SteamServices::capabilities() const {
-    return {steamBuild().sdk, m_impl->state != SteamServiceState::Off && m_impl->loggedOn};
+    // A mock in a Steam build still isn't the SDK.
+    return {m_impl->api && m_impl->api->isSdk(), m_impl->state != SteamServiceState::Off && m_impl->loggedOn};
 }
 
 PeerId SteamServices::localPeer() const {

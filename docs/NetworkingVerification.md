@@ -190,12 +190,32 @@ Gate evidence:
   no` and `steam unavailable: this build has no Steamworks SDK`. `--steam-status` with
   another mode exits 2. Arena's settings are unchanged (`enabled 0`, AppID 0).
 
+Steam build with SDK v1.65 (Yianni's unzipped SDK, copied into the cloud container for
+the build only; nothing from it is in the repository):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular, `-DSHOCKWAVE_STEAMWORKS=ON -DSHOCKWAVE_STEAMWORKS_SDK=<sdk>`, GCC 13 | configure reports `Steamworks SDK v1.65`; builds everything, no warnings, `libsteam_api.so` copied to `build/bin` and linked by player and editor; CTest 37/39 (the same two no-display failures) |
+| GCC and Clang 18 `-fsyntax-only -Wall -Wextra -Wpedantic -Wshadow` on `SteamSdk.cpp` with the 1.65 headers | no warnings |
+
+- The first compile against the real headers failed: `CSteamID(uint64_t)` is ambiguous
+  on Linux, where `uint64_t` is `unsigned long` and the SDK's `uint64` is
+  `unsigned long long`. Fixed with one conversion helper. `capabilities().steamworksBuilt`
+  now reports whether the service runs on the SDK, so a mock in a Steam build says no.
+- `ctest -R "network_|test_steam|test_sdr"`: 7/7 pass; in this build `test_steam_services`
+  checks `steamBuild().sdk` is true.
+- `player --steam-status` and `--steam-status server` with `steam_app_id 480` and
+  `steam_appid.txt`, with no Steam client in the container: the SDK prints that Steam
+  isn't running, the player exits 1 with `build steamworks yes, SDK v1.65`, `steam
+  unavailable: Steam didn't start: is the Steam client running and signed in?` (client)
+  and `the Steam game server didn't start` (server). Signing in for real needs a desktop
+  with Steam running.
+
 Outstanding for this batch:
 
-- No Steamworks SDK was supplied, so `SteamSdk.cpp` has never been compiled, the SDK
-  version it works with is unknown, and the SDK-ON build, runtime copy and
-  architecture check haven't run with a real SDK. It is written against the documented
-  API and needs an SDK with `GetAuthSessionTicket` taking a remote identity.
+- Tested only against Steamworks SDK v1.65 (Readme "v1.65 23th July 2026") on Linux
+  x86_64; see "Steam build with SDK v1.65" below. Not built with the SDK on Windows,
+  macOS or Linux ARM64 (the `linuxarm64` runtime is picked by configure but untested).
 - The two-account manual gate (section 14.3: friends host, join, invite, auth denial,
   relay route status, Windows to Linux) is blocked: it needs the SDK, a test AppID and
   two Steam accounts. `-DSHOCKWAVE_STEAM_TESTS=ON` adds a `steam_status` CTest for it.

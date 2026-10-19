@@ -35,12 +35,16 @@ if(NOT EXISTS "${sdk}/public/steam/steam_api.h")
 endif()
 
 # The runtime for the target being built, not the machine building it. Valve ships
-# 64-bit x86 libraries for Linux and Windows and a universal one for macOS.
+# 64-bit libraries for Linux (x86 and, from SDK 1.65, ARM) and Windows, and a universal
+# one for macOS.
 set(runtime "")
 set(import "")
 if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
     set(runtime "${sdk}/redistributable_bin/linux64/libsteam_api.so")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+       AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    set(runtime "${sdk}/redistributable_bin/linuxarm64/libsteam_api.so")
 elseif(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64)$")
     set(runtime "${sdk}/redistributable_bin/win64/steam_api64.dll")
     set(import "${sdk}/redistributable_bin/win64/steam_api64.lib")
