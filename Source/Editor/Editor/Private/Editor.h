@@ -17,6 +17,7 @@
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
+#include <SteamServices/SteamServices.h>
 
 #include <imgui.h>
 #include <ImGuizmo.h>
@@ -155,6 +156,7 @@ private:
     void drawNetworkProjectSettings();
     void loadNetworkSettingsEdit();
     void checkNetworkSetup();
+    void startSteam();
     void applyAudioSettings(const shockwave::Project& project);
     void drawProjectSettingsWindow();
     void drawControlsWindow();
@@ -520,6 +522,10 @@ private:
         bool checked = false;   // "Check network setup" ran
         std::vector<shockwave::net::NetProblem> checkProblems, checkResults;
     } m_networkEdit;
+    // Steam, once someone presses "Start Steam" (Project settings > Multiplayer); its
+    // callbacks run every frame until "Stop Steam" or the project closes.
+    std::unique_ptr<shockwave::net::SteamServices> m_steam;
+    std::string m_steamMessage;
 
     // File dialogs answer from another thread.
     enum class DialogKind { OpenScene, SaveScene, OpenProject, NewProjectFolder, Import };

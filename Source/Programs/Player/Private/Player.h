@@ -96,6 +96,10 @@ void checkPackageSettings(const shockwave::Project& project, std::vector<std::st
 // Neither starts Steam or opens a socket.
 int writeNetworkSchema(const shockwave::GameModule& module, const fs::path& out);
 int networkInfo(const shockwave::Project& project, const shockwave::GameModule& module, const fs::path& json);
+// --steam-status [client|server]: start Steam for the project's steam_app_id as a client
+// (or a dedicated server), wait for sign-in and relay network access, print one line, and
+// shut Steam down. Exit 1 when Steam isn't available, as in builds without the SDK.
+int steamStatus(const shockwave::Project& project, bool server);
 
 class Player final : public shockwave::Application {
 public:

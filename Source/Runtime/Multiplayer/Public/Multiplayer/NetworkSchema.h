@@ -19,6 +19,7 @@ namespace shockwave::net {
 struct NetworkBuild {
     bool steamworks = false;   // a Steamworks SDK adapter is compiled in
     bool loopback = true;   // the in-process test transport
+    const char* steamworksSdk = "";   // the SDK version the build found, or "unknown"
 };
 NetworkBuild networkBuild();
 

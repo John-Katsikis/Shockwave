@@ -110,7 +110,13 @@ std::string hex(const Digest& digest) { return toHex(digest); }
 
 }   // namespace
 
-NetworkBuild networkBuild() { return {}; }
+NetworkBuild networkBuild() {
+#ifdef SHOCKWAVE_ENABLE_STEAM
+    return {true, true, SHOCKWAVE_STEAMWORKS_VERSION};
+#else
+    return {};
+#endif
+}
 
 std::string jsonQuote(std::string_view text) {
     std::string out = "\"";
@@ -263,7 +269,8 @@ std::string networkInfoJson(const NetworkInfo& info) {
     out += "  \"errors\": " + list(false) + ",\n  \"warnings\": " + list(true) + ",\n";
     const NetworkBuild build = networkBuild();
     out += "  \"build\": {\"steamworks\": " + std::string(build.steamworks ? "true" : "false") +
-           ", \"steamworks_sdk\": null, \"loopback\": " + (build.loopback ? "true" : "false") +
+           ", \"steamworks_sdk\": " + (build.steamworks ? jsonQuote(build.steamworksSdk) : std::string("null")) +
+           ", \"loopback\": " + (build.loopback ? "true" : "false") +
            ", \"wire_protocol\": " + std::to_string(kProtocolVersion) +
            ", \"max_players\": " + std::to_string(kMaxPlayers) + "},\n";
     out += "  \"project\": " + jsonQuote(info.project) + ",\n";
@@ -341,7 +348,9 @@ std::string networkInfoJson(const NetworkInfo& info) {
         ",\n";
     out += "  \"unsupported\": [";
     std::vector<std::string> unsupported;
-    if (!build.steamworks) unsupported.push_back("steam transport: this build has no Steamworks SDK (Batch 3)");
+    if (!build.steamworks)
+        unsupported.push_back(
+            "steam transport: this build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON)");
     unsupported.push_back("hosting and joining sessions (Batch 4)");
     unsupported.push_back("replication, prediction and lag compensation (Batches 5 to 8)");
     unsupported.push_back("interest management: every object is always relevant in v1");

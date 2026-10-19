@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
         bool listGpus = false;   // --gpus
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
+        int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--graphics" && i + 1 < argc)
@@ -252,6 +253,11 @@ int main(int argc, char** argv) {
                 networkInfo = true;
             } else if (arg == "--network-schema" && i + 1 < argc) {
                 networkSchema = argv[++i];
+            } else if (arg == "--steam-status") {
+                steamStatus = 1;
+                if (i + 1 < argc &&
+                    (std::string_view(argv[i + 1]) == "client" || std::string_view(argv[i + 1]) == "server"))
+                    steamStatus = std::string_view(argv[++i]) == "server" ? 2 : 1;
             } else if (arg == "--saves") {
                 tool.listSaves = true;
             } else if (arg == "--load" && i + 1 < argc) {
@@ -309,6 +315,9 @@ int main(int argc, char** argv) {
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
+                    "player --steam-status [client|server]\n"
+                    "                                    start Steam for the project's steam_app_id, print\n"
+                    "                                    sign-in and relay status, shut it down\n"
                     "player --devices [seconds]          list controllers; then print each input pressed\n"
                     "                                    as binding text, for that many seconds");
                 return 0;
@@ -423,13 +432,17 @@ int main(int argc, char** argv) {
             std::fputs(shockwave::graphicsSettingsText(tool.graphics).c_str(), stdout);
             return 0;
         }
-        const bool networkTool = networkInfo || !networkSchema.empty();
-        if (networkTool && (networkInfo == !networkSchema.empty() || tool.mode != Tool::Mode::Play ||
-                            package.requested || tool.listSaves || !tool.screenshot.empty() ||
-                            tool.benchmarkSeconds > 0 || tool.optimise || !tool.save.empty())) {
-            std::fprintf(stderr, "Player: --network-info and --network-schema run on their own (with --json)\n");
+        const bool networkTool = networkInfo || !networkSchema.empty() || steamStatus;
+        if (networkTool &&
+            (int(networkInfo) + int(!networkSchema.empty()) + int(steamStatus != 0) != 1 ||
+             tool.mode != Tool::Mode::Play || package.requested || tool.listSaves || !tool.screenshot.empty() ||
+             tool.benchmarkSeconds > 0 || tool.optimise || !tool.save.empty())) {
+            std::fprintf(
+                stderr, "Player: --network-info, --network-schema and --steam-status run on their own "
+                        "(--network-info with --json)\n");
             return 2;
         }
+        if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.

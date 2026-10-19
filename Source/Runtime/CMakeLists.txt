@@ -1,6 +1,7 @@
 # In dependency order: each module only uses the ones above it.
 add_subdirectory(Core)
 add_subdirectory(Network)
+add_subdirectory(SteamServices)
 add_subdirectory(Platform)
 add_subdirectory(Input)
 add_subdirectory(RHI)

@@ -54,6 +54,36 @@ Recorded here as the document asks, newest last. Status of each batch is in
 10. Batch 2: the editor's "Assign missing network keys" bulk tool and its CLI counterpart
     are deferred to Batch 9 (editor tooling). New components, duplicates and placed
     prefab copies get keys as they're made, and `--check` reports missing ones.
+11. Batch 3, 2026-10-19: Steam sits behind `SteamServices/SteamApi.h`, a public facade
+    with no SDK types, rather than a private `SteamFacade.h`, and the fake is a public
+    `MockSteamApi` (`SteamServices/MockSteamApi.h`): tests may not include a module's
+    `Private/` headers, and the mock is also what headless CI runs on. The logic files are
+    `SteamRuntime.cpp`, `SteamLobbies.cpp`, `SteamAuth.cpp` and `SteamTransport.cpp` as
+    planned; every SDK call is in `SteamSdk.cpp` (only with `SHOCKWAVE_ENABLE_STEAM`), and
+    `SteamUnavailable.cpp` is the SDK-off factory. The plan's `steam_adapter` test is two
+    tests under the owner's names, `test_steam_services` and `test_sdr_transport_mock`.
+12. Batch 3, at the project owner's request: a dedicated-server mode,
+    `SteamServices::initializeDedicatedServer()` (SteamGameServer_Init, anonymous logon,
+    the game server's networking sockets and auth), alongside the listen-host design.
+    A dedicated server has no lobbies.
+13. Batch 3: `IOnlineServices` gains authentication (`requestAuthTicket`, `authTicket`,
+    `beginAuthSession`, `endAuthSession`; events `AuthTicketReady`, `AuthSucceeded`,
+    `AuthFailed` with `AuthenticationFailed` or `AuthUnavailable`), so sessions in Batch 4
+    stay platform-neutral; `cancel()` on a ticket request cancels the ticket. Multiplayer's
+    `LobbyVisibility` is now Network's, so the two headers can be included together.
+14. Batch 3: the owner's brief named `ReceiveMessagesOnConnection` and an "Astra frame
+    arena". The adapter receives from its poll group (`ReceiveMessagesOnPollGroup`, as
+    section 4.4 says: one call for every connection) into a ring buffer each adapter
+    allocates once (32 messages of up to 16 KiB); the engine has no Astra arena. An
+    unreliable send over the 32 KiB pending limit returns `Dropped`, like the loopback
+    transport's unreliable queue; Steam's own queue limit returns `Backpressure` for
+    reliable sends.
+15. Batch 3: the command-line and editor paths for Steam are `player --steam-status
+    [client|server]` and Project settings > Multiplayer > Start Steam; both start Steam
+    only when asked. Development reads the AppID from a developer-written
+    `steam_appid.txt` and fails if Steam started for a different AppID than
+    `steam_app_id`. `SteamAPI_RestartAppIfNecessary` for packaged launches waits for
+    Batch 9 (packaging).
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 

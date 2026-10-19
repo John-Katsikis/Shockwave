@@ -99,6 +99,8 @@ void Editor::closeProject() {
     rememberCamera();
     saveEditorState();
     log("Closed project " + m_project.name);
+    m_steam.reset();   // shuts Steam down: its AppID was this project's
+    m_steamMessage.clear();
     m_hasProject = false;
     engine().input().clearBindingsFile();
     m_world.clear();

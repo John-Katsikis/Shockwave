@@ -18,6 +18,7 @@
 // validator, the editor's Project settings and the generated docs/NetworkSchema.md.
 
 #include <Network/NetworkTypes.h>
+#include <Network/OnlineServices.h>
 
 #include <array>
 #include <cstdint>
@@ -35,7 +36,7 @@ struct Project;
 namespace shockwave::net {
 
 enum class NetTransportKind : int { Steam, Loopback };
-enum class LobbyVisibility : int { Private, Friends, Public };
+// LobbyVisibility (private, friends, public) is the online services' own (Network/OnlineServices.h).
 
 struct NetworkSettings {
     bool enabled = false;

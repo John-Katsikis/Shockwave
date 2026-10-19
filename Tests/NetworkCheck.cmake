@@ -1,8 +1,9 @@
 # The multiplayer command-line paths on a copy of Arena (docs/Networking.md): --check's
 # network rules with file:line, --network-info (text and JSON), --network-schema matching
 # the checked-in docs/NetworkSchema.md, and modes that can't be combined. None of them
-# open a socket.
-#   -DPLAYER=player -DPROJECT_DIR=Games/Arena -DSCHEMA=docs/NetworkSchema.md -DTEMP=dir
+# open a socket. --steam-status is the one that would start Steam: it's only run where it
+# fails without doing so (no AppID, or a build without the Steamworks SDK).
+#   -DPLAYER=player -DPROJECT_DIR=Games/Arena -DSCHEMA=docs/NetworkSchema.md -DTEMP=dir [-DSTEAMWORKS=ON]
 file(REMOVE_RECURSE "${TEMP}")
 file(MAKE_DIRECTORY "${TEMP}")
 file(COPY "${PROJECT_DIR}/" DESTINATION "${TEMP}/Arena" PATTERN "Saved" EXCLUDE)
@@ -102,8 +103,20 @@ run(1 "arena.swscene: entity 'Net door': NetworkObject profile \"arena.missing.v
 run(1 "entity 'Net door copy': NetworkObject key \"door\" is also used by 'Net door'" --check)
 file(WRITE "${scene}" "${goodScene}")
 
+# --steam-status needs an AppID, and a build with the SDK; it fails visibly otherwise.
+run(1 "steam_app_id is 0 in Config/Network.swnetwork" --steam-status)
+if(NOT STEAMWORKS)
+    string(REPLACE "steam_app_id 0" "steam_app_id 480" text "${goodSettings}")
+    file(WRITE "${settings}" "${text}")
+    run(1 "build steamworks no.*steam unavailable: this build has no Steamworks SDK" --steam-status)
+    run(1 "steam unavailable" --steam-status server)
+    file(WRITE "${settings}" "${goodSettings}")
+endif()
+
 # The tools run on their own.
 run(2 "run on their own" --network-info --check)
 run(2 "run on their own" --network-info --network-schema -)
+run(2 "run on their own" --steam-status --check)
+run(2 "run on their own" --steam-status --network-info)
 run(0 "0 problems" --check)
 file(REMOVE_RECURSE "${TEMP}")

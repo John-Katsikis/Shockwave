@@ -226,3 +226,32 @@ target_link_libraries(network_settings_test PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(network_settings_test)
 add_test(NAME network_settings COMMAND network_settings_test)
 set_tests_properties(network_settings PROPERTIES TIMEOUT 60)
+
+# Batch 3: Steam services and the Steam Datagram Relay transport, against MockSteamApi, so
+# they run without the Steamworks SDK, a Steam client or an AppID.
+add_executable(test_steam_services SteamServicesTest.cpp)
+target_link_libraries(test_steam_services PRIVATE Shockwave::SteamServices)
+shockwave_warnings(test_steam_services)
+if(SHOCKWAVE_STEAMWORKS)
+    target_compile_definitions(test_steam_services PRIVATE SHOCKWAVE_TEST_STEAM_SDK=1)
+endif()
+add_test(NAME test_steam_services COMMAND test_steam_services)
+set_tests_properties(test_steam_services PROPERTIES TIMEOUT 60)
+
+add_executable(test_sdr_transport_mock SdrTransportMockTest.cpp)
+target_link_libraries(test_sdr_transport_mock PRIVATE Shockwave::SteamServices)
+shockwave_warnings(test_sdr_transport_mock)
+add_test(NAME test_sdr_transport_mock COMMAND test_sdr_transport_mock)
+set_tests_properties(test_sdr_transport_mock PROPERTIES TIMEOUT 120)
+
+# The real Steam, by hand (-DSHOCKWAVE_STEAM_TESTS=ON with the SDK): Steam running and
+# signed in, a project whose Config/Network.swnetwork has the test AppID, and its
+# steam_appid.txt in the working folder. Signs in, waits for relay access, shuts down.
+if(SHOCKWAVE_STEAM_TESTS)
+    set(SHOCKWAVE_STEAM_TEST_PROJECT "" CACHE FILEPATH "The .swproject steam_status signs in for")
+    if(NOT SHOCKWAVE_STEAM_TEST_PROJECT)
+        message(FATAL_ERROR "SHOCKWAVE_STEAM_TESTS needs SHOCKWAVE_STEAM_TEST_PROJECT=<file.swproject>")
+    endif()
+    add_test(NAME steam_status COMMAND player --project ${SHOCKWAVE_STEAM_TEST_PROJECT} --steam-status)
+    set_tests_properties(steam_status PROPERTIES TIMEOUT 60)
+endif()
