@@ -212,10 +212,22 @@ void Editor::drawNetworkProjectSettings() {
             "Steam %s, SteamID %llu, signed in %s, relay %s", net::steamServiceStateName(m_steam->state()),
             static_cast<unsigned long long>(m_steam->localPeer().value), m_steam->available() ? "yes" : "no",
             net::steamRelayStatusName(m_steam->relayStatus()));
+        // The session's transport and auth sessions are Steam's: it stops first.
+        ImGui::BeginDisabled(networkPlay());
         if (gui::button("Stop Steam")) {
             m_steam.reset();
             log("Steam shut down");
         }
+        ImGui::EndDisabled();
+        if (networkPlay()) ImGui::SetItemTooltip("Stop network play first");
+    }
+    if (const net::NetworkWorld* network = m_session ? m_session->network() : nullptr; network && network->online()) {
+        ImGui::Text(
+            "Network play: %s, %s", net::networkRoleName(network->role()), net::networkStateName(network->state()));
+        if (network->state() == net::NetworkState::Failed)
+            ImGui::TextColored(
+                errorColor, "%s (%s)", network->failureText().c_str(),
+                net::reasonName(network->failure()) ? net::reasonName(network->failure()) : "?");
     }
     if (!m_steamMessage.empty()) ImGui::TextColored(errorColor, "%s", m_steamMessage.c_str());
 }

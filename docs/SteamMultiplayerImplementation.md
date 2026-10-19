@@ -118,6 +118,35 @@ Recorded here as the document asks, newest last. Status of each batch is in
     clientTimestampMs, ...)` for `QueryAtTimestamp(uint64_t client_timestamp_ms)`. The
     brief's "Astra pre-allocated arena storage" is constructor-time allocation: the
     engine has no Astra arena.
+22. Plan Batch 4 (session integration), 2026-10-19: the Challenge message accepts
+    `interpolation_ms` from 25, matching adjustment 19 (its validator still said 50).
+23. Clients stop at Synchronizing: Ready, Active and the baseline arrive with Batch 5.
+    The 30-second synchronization timeout already applies on both sides, so until then a
+    client is dropped 30 seconds after Welcome. The host is Active once it listens.
+24. Until sessions can resynchronize, an online stall over 250 ms ends network play with
+    SimulationOverrun, like debt over 250 ms; either way the clock drops the debt.
+25. Nothing starts network play from the player or the editor yet: `--host`, the join
+    commands and the editor's Network window are later batches. The CLI path for this
+    batch is `player --net-test` with three pure-protocol scenarios (handshake,
+    rejections, stop-start) over NetworkWorlds and the loopback hub, plus `--preset` and
+    `--clients`. The player's own services are the unavailable ones, so it never starts
+    Steam (only `--steam-status` does).
+26. NetworkWorld neither creates nor joins lobbies: the application does, and passes the
+    LobbyId in NetworkStart. A host with a lobby admits only its members whose Hello
+    carries that lobby; a host without one admits only `lobby_id` 0 (direct joins). At
+    shutdown it closes the lobby to joins first and leaves it last.
+27. Authentication can be turned off only for loopback addresses, and authenticating
+    needs available services; a developer direct join over Steam still authenticates.
+    The test service is `LoopbackOnlineServices` in Network, whose tickets are made-up
+    bytes naming issuer and audience.
+28. The host's random session nonce goes in every header after Hello; the client takes
+    it from the Challenge and any other value is MalformedPacket. A client waiting on the
+    host gives up 5 seconds after the host's own handshake timeout, so the host's Reject
+    reason arrives first.
+29. Online "pause" is `NetworkWorld::setLocalInputSuppressed`, which GameMode reads in
+    `collectInput`; `PlaySession::pause()` now returns false online. Deferred reloads
+    show as a Console line, not a list of pending changes. Renderer swaps wait in the
+    engine while the simulation time is Monotonic, so no renderer module changed.
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 

@@ -227,7 +227,14 @@ shockwave_warnings(network_settings_test)
 add_test(NAME network_settings COMMAND network_settings_test)
 set_tests_properties(network_settings PROPERTIES TIMEOUT 60)
 
-# Batch 4: delta snapshots, interpolation, rewind history.
+# Session integration: real PlaySessions going online over the loopback hub.
+add_executable(network_session_test NetworkSessionTest.cpp)
+target_link_libraries(network_session_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(network_session_test)
+add_test(NAME network_session COMMAND network_session_test)
+set_tests_properties(network_session PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
+
+# Delta snapshots, interpolation, rewind history.
 add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)
 target_link_libraries(test_snapshot_delta PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_snapshot_delta)

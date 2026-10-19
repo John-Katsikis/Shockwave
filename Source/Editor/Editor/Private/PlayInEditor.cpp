@@ -79,8 +79,11 @@ void Editor::play() {
 void Editor::pause() {
     if (!m_session) return;
     if (playState() == PlayState::Playing) {
-        m_session->pause();
-        log("Paused");
+        if (networkPlay()) {
+            warn("Pause is off during network play: the host never pauses for one player");
+            return;
+        }
+        if (m_session->pause()) log("Paused");
     } else if (playState() == PlayState::Paused) {
         play();
     }
@@ -89,6 +92,7 @@ void Editor::pause() {
 void Editor::stop() {
     stopAudioPreview();
     if (!m_session || !playing()) return;
+    const bool wasOnline = networkPlay();
     try {
         m_session->stop();
     } catch (const std::exception& e) {
@@ -99,6 +103,8 @@ void Editor::stop() {
     m_gizmoWasUsing = false;
     m_viewThroughCamera = m_viewBeforePlay;
     log("Stopped after " + std::to_string(m_session->ticks()) + " simulation ticks");
+    // What network play held back: game code, then content (the asset folder catches up on its next poll).
+    if (wasOnline && std::exchange(m_reloadAfterNetworkPlay, false)) m_reloadGameCodeRequested = true;
 }
 
 }   // namespace editor

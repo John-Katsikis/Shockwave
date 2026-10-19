@@ -21,6 +21,7 @@ renderer or Steam.
 | `Network/Loopback.h` | `LoopbackHub`: in-process transports on a virtual clock with seeded latency, jitter, loss, duplication, outages and bandwidth limits |
 | `Network/NetworkCapture.h` | `.swnetcap` packet captures, and conversion to and from JSON |
 | `Network/OnlineServices.h` | `IOnlineServices`, the lobby and identity interface Steam will implement; `makeUnavailableOnlineServices()` for builds without it |
+| `Network/LoopbackServices.h` | `LoopbackOnlineServices`: an `IOnlineServices` on a `LoopbackHub`, with made-up session tickets and switchable failures, for tests and `--net-test` |
 
 The `Multiplayer` module (`Source/Runtime/Multiplayer`, `Shockwave::Multiplayer`) sits
 on Engine and Network and holds what a game configures (Batch 2):
@@ -33,9 +34,11 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/Replication.h` | `ReplicationRegistry`: replication profiles, commands and events with stable IDs, frozen before a session; the profile codec |
 | `Multiplayer/NetworkValidation.h` | The checks `player --check` and the editor share, and `readyForSession()` |
 | `Multiplayer/NetworkSchema.h` | The generated [NetworkSchema.md](NetworkSchema.md) and `--network-info`'s report |
-| `Multiplayer/SnapshotDelta.h` | Quantized entity states, the host's snapshot history, delta encoding against acknowledged baselines, and the client's decoder (Batch 4) |
-| `Multiplayer/Interpolation.h` | `InterpolationEngine`: remote objects shown a jitter buffer behind the server clock (Batch 4) |
-| `Multiplayer/RewindHistory.h` | `RewindHistoryBuffer`: player capsules over the last `max_rewind_ms`, for lag-compensated hit checks (Batch 4) |
+| `Multiplayer/SnapshotDelta.h` | Quantized entity states, the host's snapshot history, delta encoding against acknowledged baselines, and the client's decoder |
+| `Multiplayer/Interpolation.h` | `InterpolationEngine`: remote objects shown a jitter buffer behind the server clock |
+| `Multiplayer/RewindHistory.h` | `RewindHistoryBuffer`: player capsules over the last `max_rewind_ms`, for lag-compensated hit checks |
+| `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake and shutdown order |
+| `Multiplayer/NetTest.h` | The `player --net-test` scenarios |
 
 The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
 sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing else does.
@@ -47,10 +50,13 @@ sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing e
 | `SteamServices/SteamApi.h` | `SteamApi`, every Steamworks call the module makes, with no SDK types |
 | `SteamServices/MockSteamApi.h` | `MockSteamApi` and `MockSteamNetwork`: Steam played in-process for tests and SDK-less builds |
 
-Not built yet: hosting and joining sessions, replicated entities, prediction and the
-`player --net-*` session commands. Nothing advertises those as working; `--network-info`
-lists them under `unsupported`. The Batch 4 pieces (delta snapshots, interpolation and
-rewind history) are libraries tested on their own; no session uses them yet.
+A Play session can go online as a host or a client and run the connection handshake
+(see [Play sessions online](#play-sessions-online)), but nothing yet starts one from the
+player or the editor, and clients stop at `synchronizing`: replicated entities,
+prediction and the `--host` and `--join` commands come in later batches. Nothing
+advertises those as working; `--network-info` lists them under `unsupported`. Delta
+snapshots, interpolation and rewind history are libraries tested on their own; no
+session uses them yet.
 
 ## Network settings
 
@@ -190,6 +196,93 @@ current`, and shuts Steam down. It exits 1 without an AppID, in a build without 
 (`steam unavailable: this build has no Steamworks SDK ...`), or when Steam isn't running.
 In the editor, Project settings > Multiplayer > Start Steam does the same and keeps
 Steam running until Stop Steam or the project closes.
+
+```sh
+build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start]
+    [--seed N] [--preset clean|cafe|poor|hostile] [--clients N] [--json out.json]
+```
+
+`--net-test` runs the real session handshake between `NetworkWorld`s over an in-process
+loopback hub, on a virtual clock, with the project's network settings (tick rate, player
+count, timeouts) and `LoopbackOnlineServices` for mutual authentication. No Steam,
+sockets, window or game code; the same seed gives the same run. `handshake` joins a host
+and `--clients` clients (default 3) through the preset's faults (default `cafe`);
+`rejections` makes one client fail in each way a join can (protocol, content, schema
+and scene mismatches, a full server, a refused ticket, a ticket never answered, the host
+stopping mid-handshake, no host) and checks the reason; `stop-start` joins and stops 100
+times. Each prints one line per peer and what was left open after stopping (packets in
+flight, auth sessions, tickets: all must be 0), and exits 1 when anything is wrong, 2
+for an unknown scenario or preset.
+
+## Play sessions online
+
+`PlaySession` (the engine side of Play, in the editor and the player) always has a
+`NetworkWorld` while playing, reached from game code as `game.network()`. Offline it
+says so (`role()` is `Offline`, `authority()` is true, `localSlot()` is 1) and does
+nothing at all. To play online, the application calls
+`session.setNetworkStart(start, services)` before `start()`:
+
+- `NetworkStart` holds the role (`Authority` or `Client`), the network settings, what
+  peers compare (game protocol, schema and content digests, the manifest's scene ID), the
+  address to listen on or connect to, the lobby, and whether to authenticate.
+- `services` is the application's `IOnlineServices` (Steam, or loopback in tests). The
+  session borrows it; it must outlive the session.
+
+`start()` adds the `NetworkWorld` after physics (so it is destroyed first) and before
+`GameMode::beginPlay` (so the game sees its role), and the host listens or the client
+connects there. If that fails, `start()` throws and the authored world is restored, as
+for any other start failure.
+
+The handshake, all reliable messages:
+
+| Step | Client | Host |
+|---|---|---|
+| 1 | connects; state `connecting` | accepts, up to 4 connections beyond capacity |
+| 2 | sends Hello (game protocol, digests, scene, lobby, a random nonce); state `authenticating` | checks them, the lobby and that there's room, or sends Reject with the reason |
+| 3 | checks the Challenge (its nonce, the host's identity, digests, scene, tick and snapshot rates) | sends Challenge with its settings and a random session nonce used in every later header |
+| 4 | asks for a ticket for the host, sends it, validates the host's | the same the other way |
+| 5 | once welcomed and the host validated: state `synchronizing` | once the client's ticket validated and its own was sent: Welcome with a player slot (2 up) |
+
+Each phase has a timeout: `connect_timeout_seconds`, `handshake_timeout_seconds` (a
+ticket never answered fails with `AuthUnavailable`) and 30 seconds to synchronize.
+Before a client is admitted it gets a 16 KiB/s receive budget. A client fails with the
+host's reason (`ProtocolMismatch`, `ContentMismatch`, `MapNotLoaded`, `ServerFull`,
+`NotLobbyMember`, `AuthenticationFailed`, `AuthUnavailable`, `HostLeft`, ...), visible as
+`state()` `Failed` and `failure()`; it stays in network play until Stop. The host is
+`active` as soon as it listens and reports `PlayerJoined` and `PlayerLeft` events
+(`game.network().pollEvent()`). The baseline that takes clients from `synchronizing` to
+`active` comes with replication.
+
+The application pumps every frame from `Application::onPump`, which the engine calls
+right after reading input and before the fixed ticks, in menus and while editing too.
+`pumpNetworkFrame()` (`GameFramework/NetworkPump.h`) does it in order: the services'
+`pump()`, their events to the session (`handleOnlineEvent`), `pumpNetwork(now)` for
+messages and timeouts, then `GameMode::collectInput(game, frameDt)` so the game latches
+its input once per frame. Each fixed tick also drains what arrived since, so a slow
+frame doesn't hold back a batch of ticks.
+
+While a session is online:
+
+- Time: the engine's `SimulationClock` uses raw monotonic time instead of the smoothed
+  frame time, runs at most 8 ticks a frame and carries the rest as debt. A stall over
+  250 ms, or debt over 250 ms, ends network play with `SimulationOverrun` instead of
+  catching up. Offline time is exactly as before.
+- Pause: `pause()` refuses (the host never pauses for one player). A menu calls
+  `game.network().setLocalInputSuppressed(true)`; the session keeps running, and
+  `collectInput` should then send neutral input. The editor's Pause button is disabled,
+  with a tooltip.
+- Circuit breakpoints are off.
+- Saving, loading and deleting saves fail with `UnavailableDuringNetworkPlay` before
+  touching a file or the world.
+- Reloads wait until Stop: the editor holds back game code reloads (it logs that one is
+  pending), asset and prefab changes, and the engine holds back renderer swaps.
+
+Stop closes the network first, in a fixed order: the state becomes `closing` and late
+events are ignored from then on; the host's lobby is closed to joins; Goodbye goes to
+every peer; connections and the listener close; whatever arrived is drained and dropped;
+auth sessions end and ticket requests are cancelled; the lobby is left; the transport is
+destroyed. Then `endPlay` runs and the authored world comes back. Nothing is reported
+after that.
 
 ## The wire protocol
 
@@ -434,7 +527,8 @@ ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewin
 | `network_transport` | Connect, accept, reject, capacity; reliable order under every fault preset; unreliable loss, duplication, reordering and determinism; buffer lifetime; queue and pool limits; stale generations after close; budgets; outages; bandwidth; eleven clients; no allocation once connected |
 | `network_capture` | Format; dump and encode round trip; redaction; malformed and truncated files; the size cap; no traffic from dumping |
 | `network_settings` | Settings round trip, every range (tick 60..120, players 2..64), non-finite values, paths, unknown and duplicate keys with lines, transactional reads, atomic writes; cross-key rules; SHA-256 FIPS vectors; content digest against a Python-computed value, CRLF, links; manifest parsing and validation; registry ranges, duplicates, freeze, lookups, digest; the generic codec byte-equal to `encodePose`; scene rules; keys; `readyForSession` before any transport; no allocation in 1,000 capture/encode/decode/apply ticks |
-| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; mode combinations exit 2 |
+| `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; every `--net-test` scenario, its JSON and bad arguments; mode combinations exit 2 |
+| `network_session` | Real PlaySessions with physics over the loopback hub: Start/Stop 100 times offline and 100 times online (alternating who stops first) with the world restored and nothing left open; start failing for no services, no transport, unavailable services, no authentication on Steam, a taken address and a throwing `beginPlay`; 13 handshake failures, each with its reason; the online pause, save and breakpoint rules; a client in a menu still pumping and collecting input while the host simulates; no events after Stop or `close()`; the shutdown order with a lobby; `SimulationOverrun`; the simulation clock offline (identical to the old loop) and online; the `--net-test` scenarios |
 | `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
 | `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |
 | `test_snapshot_delta` | Quantization limits and round trips; 64 moving players at 120 Hz in one part under 1152 bytes; keyframes split to fit 1152 and 512; 1024 worst-case slots; loss, reordering, duplicates and lost acks with every completed snapshot identical to the host's; acks and baselines leaving the history; respawns and despawns; every kind of malformed part; one encoder shared by clients; interpolation (Hermite, slerp, extrapolation limit, out-of-order and duplicate samples, teleports, the server clock, the 3-tick jitter buffer); host and client time per tick (under 150 us asserted in optimised builds) |

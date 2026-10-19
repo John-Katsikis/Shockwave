@@ -11,6 +11,7 @@
 #include <Engine/GraphicsSettings.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
+#include <Engine/SimulationClock.h>
 #include <Engine/Systems.h>
 #include <Engine/World.h>
 #include <Input/Input.h>
@@ -38,6 +39,11 @@ class Application {
 public:
     virtual ~Application() = default;
     virtual void onStart() {}
+    // Once per frame, right after input is read and before any fixed tick, with the real
+    // (unsmoothed) time since the last frame. For work that must run every frame, in menus
+    // and while editing too: pumping online services and network sessions
+    // (GameFramework/NetworkPump.h).
+    virtual void onPump(double rawFrameDt) { (void)rawFrameDt; }
     // Simulation: runs at a fixed rate (EngineConfig::tickRate) no matter the frame rate,
     // so gameplay and physics behave the same at 30 fps and 500 fps.
     virtual void onUpdate(double dt) { (void)dt; }
@@ -88,6 +94,9 @@ struct EngineConfig {
     // Let the renderer be swapped or reloaded while running (Engine::switchRenderer). Keeps
     // a CPU copy of every mesh and texture. The editor turns it on.
     bool swappableRenderer = false;
+    // Where simulation time comes from (Engine/SimulationClock.h). Smoothed is the offline
+    // behaviour; network play switches to Monotonic with Engine::setSimulationTime.
+    SimulationTime simulationTime = SimulationTime::Smoothed;
 };
 
 class Engine {
@@ -134,6 +143,16 @@ public:
     double interpolationAlpha() const { return m_interpolationAlpha; }
     // Changes the simulation rate from the next frame on. Main thread.
     void setTickRate(double ticksPerSecond);
+    // Simulation time source, from the next frame on (Engine/SimulationClock.h). While it
+    // is Monotonic (network play), renderer swaps and reloads wait until it's Smoothed
+    // again, so they don't stall the ticks. Main thread.
+    void setSimulationTime(SimulationTime time) { m_clock.setSource(time); }
+    SimulationTime simulationTime() const { return m_clock.source(); }
+    // This frame's clock decision, from onPump on: ticks to run, stall and overrun.
+    const SimulationStep& simulationStep() const { return m_simulationStep; }
+    const SimulationClock::Counters& simulationCounters() const { return m_clock.counters(); }
+    // Monotonic seconds at the start of this frame.
+    double frameStartSeconds() const { return m_frameStartSeconds; }
     bool guiEnabled() const { return m_config.gui; }
 
     // ---- Renderer plugins (docs/Plugins.md) ----
@@ -171,6 +190,9 @@ private:
     double m_interpolationAlpha = 1.0;
     FrameLimiter m_limiter;
     FrameTimeSmoother m_smoother;
+    SimulationClock m_clock;
+    SimulationStep m_simulationStep;
+    double m_frameStartSeconds = 0;
     FrameStats m_frameStats;
     bool m_lowLatency = false;
     void updatePacingPeriod();

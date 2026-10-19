@@ -67,6 +67,10 @@ bool readSaveInfo(const std::filesystem::path& file, SaveInfo& info, std::string
 // Every .swsave in folder, newest first. Files that aren't save games are left out.
 std::vector<SaveInfo> listSaveGames(const std::filesystem::path& folder);
 
+// What save(), load(), loadFile() and remove() fail with during network play.
+inline constexpr const char* kUnavailableDuringNetworkPlay =
+    "UnavailableDuringNetworkPlay: saving and loading are off during network play";
+
 // The save game service of one Play session, as game.saves(). PlaySession creates it.
 class SaveGames final : public Subsystem {
 public:
@@ -117,6 +121,10 @@ public:
 
     // ---- For PlaySession ----
     void addPlayTime(double dt) { m_playTime += dt; }
+    // Network play: save and load fail with kUnavailableDuringNetworkPlay before they
+    // touch a file or the world.
+    void setNetworkPlay(bool online) { m_networkPlay = online; }
+    bool networkPlay() const { return m_networkPlay; }
     // Called on the main thread just before a save snapshots the world.
     std::function<void()> beforeSave;
     // Swaps a finished load into the world. True when it did; the session then rebuilds
@@ -133,6 +141,7 @@ private:
     std::filesystem::path m_folder;
     std::string m_scene;
     std::map<std::string, std::string> m_values;
+    bool m_networkPlay = false;
     double m_playTime = 0;
 
     // Workers hand results back through these.

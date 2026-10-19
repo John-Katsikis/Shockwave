@@ -113,7 +113,24 @@ if(NOT STEAMWORKS)
     file(WRITE "${settings}" "${goodSettings}")
 endif()
 
+# --net-test: the session handshake over the in-process loopback hub, with the
+# project's settings. No Steam, socket or window.
+run(0 "net-test handshake seed 7 preset cafe: ok.*peer client 3: client, synchronizing" --net-test --seed 7)
+run(0 "net-test handshake seed 3 preset hostile: ok" --net-test --seed 3 --preset hostile --clients 11)
+run(0 "peer ticket never answered: client, failed AuthUnavailable.*0 packets in flight, 0 auth sessions, 0 tickets"
+    --net-test --scenario rejections)
+run(0 "rounds 100" --net-test --scenario stop-start --json "${TEMP}/net-test.json")
+file(READ "${TEMP}/net-test.json" json)
+if(NOT json MATCHES "\"mode\": \"net-test\"" OR NOT json MATCHES "\"ok\": true" OR NOT json MATCHES "\"rounds\": 100")
+    message(FATAL_ERROR "--net-test --json is missing fields:\n${json}")
+endif()
+run(2 "unknown scenario bogus" --net-test --scenario bogus)
+run(2 "unknown fault preset bogus" --net-test --preset bogus)
+run(2 "--clients must be 1 to max_players - 1" --net-test --clients 12)
+
 # The tools run on their own.
+run(2 "run on their own" --net-test --network-info)
+run(2 "run on their own" --net-test --check)
 run(2 "run on their own" --network-info --check)
 run(2 "run on their own" --network-info --network-schema -)
 run(2 "run on their own" --steam-status --check)
