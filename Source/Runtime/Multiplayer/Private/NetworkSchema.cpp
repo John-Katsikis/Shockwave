@@ -352,10 +352,10 @@ std::string networkInfoJson(const NetworkInfo& info) {
     if (!build.steamworks)
         unsupported.push_back(
             "steam transport: this build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON)");
-    unsupported.push_back("hosting and joining sessions (Batch 4)");
+    unsupported.push_back("hosting and joining from the player or editor (--host, --join: later batches)");
     unsupported.push_back(
-        "replication, prediction and lag compensation in sessions (Batches 5 to 8; the delta, interpolation and "
-        "rewind libraries exist but no session uses them)");
+        "input commands, prediction and lag compensation in sessions (Batches 6 to 8; sessions replicate full-state "
+        "snapshots, and the delta, interpolation and rewind libraries exist but no session uses them)");
     unsupported.push_back("interest management: every object is always relevant in v1");
     for (size_t i = 0; i < unsupported.size(); ++i) out += std::string(i ? ", " : "") + jsonQuote(unsupported[i]);
     out += "]\n}\n";

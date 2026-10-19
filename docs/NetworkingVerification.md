@@ -340,4 +340,73 @@ Outstanding for this batch:
 - The editor changes (Pause disabled online, the network play line) haven't been
   looked at: the container has no display, and nothing can start online Play from the
   editor yet anyway.
-- Clients stop at Synchronizing until Batch 5's baseline (adjustment 23).
+- Clients stopped at Synchronizing until Batch 5's baseline (adjustment 23); they now
+  reach Active.
+
+## Plan Batch 5 (2026-10-19): replication without prediction
+
+Base: `20bbb10` (master after PR #23), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan sections 3.2, 6.3 to 6.5 and 7 (the authority half) and the Batch 5 gate; design
+adjustments 30 to 45.
+
+Implemented, in `NetworkWorld` (`Private/NetworkReplication.cpp`, state in
+`Private/NetworkWorldImpl.h`):
+
+- Network IDs, owner slots and incarnations (`NetworkIdentity` on every machine);
+  authored objects numbered in key order and bound by key on clients; spawns only from
+  the manifest's prefabs.
+- The baseline: frozen at Welcome, staged and checked (counts, IDs, keys, prefabs,
+  profiles, owners, state ranges, SHA-256 digest) before anything touches the client's
+  world; Ready, then the queued lifecycle changes, then Active and a full snapshot.
+- Lifecycle messages in control-serial order (Spawn, Despawn, Ownership, Spawn as a
+  respawn); a leaving player's objects lose their owner; objects destroyed without
+  `despawn()` are despawned at the end of the tick.
+- Full-state snapshots at `snapshot_rate`, split into parts; per-object newest ticks;
+  barriers per part with a 32-part, 250 ms hold and rate-limited resync requests.
+- Per-peer budget: an ordered control queue within `outbound_bytes_per_second` and
+  `max_pending_reliable_bytes`, snapshots in the rest with a control reserve, players
+  every snapshot and other objects in turn.
+- The game's API on `game.network()`: `spawn`, `despawn`, `respawn`, `setOwner`,
+  `markChanged`, `networkId`, `entity`, `identity`, `hasAuthority`,
+  `isLocallyControlled`, `localPlayer`, `controlledEntity`. `PlaySession` gives the
+  network world its World and calls `endTick` after gameplay.
+- `player --net-test --scenario replication`; the editor's network play line shows the
+  player slot, object count and players in the game.
+- Test `network_replication`; `network_session` now replicates its physics box.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 41/44 when run in parallel (`renderer_swap` and `save_games_cli`, the known no-display failures, and `package_cli`, which timed out under the parallel load and passes alone); the network set (`-R "network_\|test_steam\|test_sdr\|test_snapshot\|test_rewind\|test_replication"`) 12/12 |
+| Debug with `-fsanitize=address,undefined`: `network_replication`, `network_session`, `player --net-test --scenario replication --preset hostile --clients 11` | pass, no sanitizer reports (after fixing a null `memcpy` source in `Sha256::update` for an empty span) |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_replication`, `network_session` | build and pass |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Parts arriving reversed | `network_replication` (scripted host): part 1 then part 0 of one snapshot both apply; a duplicate part and an older snapshot change nothing and count as stale |
+| Despawn before an old snapshot | a Despawn followed by an older snapshot naming the object: it stays gone, the session carries on |
+| Different entity creation orders | host and clients build their scenes in different orders with unrelated entities first; every authored object has the same network ID everywhere, IDs follow key order, local entity handles differ; the same in every `--net-test --scenario replication` run |
+| Partial baseline teardown | a 300-object baseline at 4 KiB/s, the host stopping halfway: the client fails with HostLeft, its staged objects are gone, its world has exactly its entities from before, nothing spawned or bound |
+| Malformed authority data | 11 cases, each ending network play with its reason and the connection closed: a prefab outside the manifest, an authored key the scene lacks (ContentMismatch), a wrong baseline digest, one object twice, a non-unit quaternion, an owner over `max_players`, more objects than `max_entities`, a control serial gap, a snapshot of an object never spawned, a despawned ID spawned again, Active naming another player's object; the world untouched for the 7 before the commit |
+| Control barriers | a snapshot ahead of its Spawn is held, then applied when the Spawn arrives; one that never gets its serial expires after 250 ms and sends one resync request; records of an old incarnation are ignored after a respawn |
+| Owners and late join | crates owned by the client report `isLocallyControlled`; a late client gets the crates spawned before it and destroys the authored object the host despawned before; a leaving player's objects get owner 0; clients can't spawn, despawn, respawn or change owners |
+| Budget scheduler | at 24 KiB/s, 41 moving objects: snapshot bytes stay within the 12 KiB/s left after the control reserve, the budget holds records back, the owned crate goes every snapshot, and everything converges once movement stops; 0 heap allocations over nine seconds of replication |
+| Moving host-owned box, two worlds | `network_session`: a real PlaySession host's physics box falls; the client's copy (made kinematic) ends within 1 cm of it; `--net-test --scenario replication` with a moving box |
+
+`--net-test --scenario replication --clients 11 --seed 9` (6 network objects at the end,
+16 spawns, 12 despawns, a late joiner): every preset ends with every client exactly on
+the host's state (max position error 0.000000 m). Under `clean` nothing is held; under
+`poor` 34 parts waited for their Spawn and none expired; under `hostile` (200 ms each
+way, 10% loss) 108 waited, 28 expired and 10 resyncs were sent. The late client is
+Active 83 ms (clean) to 2.1 s (hostile) after it starts. A hostile run takes 0.14 s.
+
+Outstanding for this batch:
+
+- No real Steam session, and still nothing in the player or editor starts network play
+  (adjustment 25): `--host` and the join commands fill `NetworkStart::registry` and
+  `prefabs` from the project in a later batch.
+- The editor's network play line hasn't been looked at (no display here).
+- No performance measurement on the desktop; the plan's per-tick targets are Batch 10's.

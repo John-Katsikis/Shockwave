@@ -222,8 +222,13 @@ void Editor::drawNetworkProjectSettings() {
         if (networkPlay()) ImGui::SetItemTooltip("Stop network play first");
     }
     if (const net::NetworkWorld* network = m_session ? m_session->network() : nullptr; network && network->online()) {
+        const net::NetworkWorldStats& stats = network->stats();
         ImGui::Text(
-            "Network play: %s, %s", net::networkRoleName(network->role()), net::networkStateName(network->state()));
+            "Network play: %s, %s, player %u, %u network objects", net::networkRoleName(network->role()),
+            net::networkStateName(network->state()), unsigned(network->localPlayer()), unsigned(stats.objects));
+        if (network->authority())
+            ImGui::Text(
+                "Players in the game: %u of %u welcomed", unsigned(stats.activePeers), unsigned(stats.admitted));
         if (network->state() == net::NetworkState::Failed)
             ImGui::TextColored(
                 errorColor, "%s (%s)", network->failureText().c_str(),

@@ -2,9 +2,13 @@
 #include <Multiplayer/NetTest.h>
 
 #include <Multiplayer/NetworkSchema.h>
+#include <Multiplayer/Replication.h>
+
+#include <Engine/Components.h>
 #include <Network/LoopbackServices.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <deque>
 #include <functional>
@@ -14,12 +18,13 @@ namespace shockwave::net {
 
 namespace {
 
-constexpr const char* kScenarios[] = {"handshake", "rejections", "stop-start"};
+constexpr const char* kScenarios[] = {"handshake", "rejections", "stop-start", "replication"};
 constexpr uint64_t kHostIdentity = 1000;
 
 struct Node {
     std::string name;
     std::unique_ptr<LoopbackOnlineServices> services;
+    std::unique_ptr<World> scene;   // replication: this machine's world
     std::unique_ptr<NetworkWorld> world;
     ReasonCode expected = ReasonCode::Normal;
     double joinMs = -1;
@@ -47,14 +52,35 @@ public:
         s.settings = m_options.settings;
         s.compatibility = m_compatibility;
         s.address = {TransportAddress::Loopback, 1, 0};
+        s.registry = m_registry;
+        s.prefabs = m_prefabs;
+        s.spawnPrefab = m_spawn;
         return s;
     }
+
+    // Replication: every node gets a world made by makeScene, and sessions use this
+    // registry (whose digest they compare) and prefab list.
+    void replicate(
+        const ReplicationRegistry& registry, std::vector<NetworkPrefab> prefabs, NetworkSpawnFn spawn,
+        std::function<void(World&, uint32_t node)> makeScene) {
+        m_registry = &registry;
+        m_compatibility.schemaDigest = registry.schemaDigest();
+        m_prefabs = std::move(prefabs);
+        m_spawn = std::move(spawn);
+        m_makeScene = std::move(makeScene);
+    }
+    // Called on the host between drain and endTick, once per tick.
+    std::function<void(uint32_t tick)> onHostTick;
 
     Node& add(std::string name, const NetworkStart& start, uint64_t identity) {
         Node& node = m_nodes.emplace_back();
         node.name = std::move(name);
         node.services = std::make_unique<LoopbackOnlineServices>(*m_hub, PeerId{identity});
-        node.world = std::make_unique<NetworkWorld>(start, node.services.get());
+        if (m_makeScene) {
+            node.scene = std::make_unique<World>();
+            m_makeScene(*node.scene, uint32_t(m_nodes.size() - 1));
+        }
+        node.world = std::make_unique<NetworkWorld>(start, node.services.get(), node.scene.get());
         node.result.name = node.name;
         node.result.role = start.role;
         node.result.peer = identity;
@@ -81,8 +107,10 @@ public:
             while (node.services->pollEvent(event)) node.world->handleOnlineEvent(event);
             node.world->pump(now);
             node.world->drain(m_ticks);
+            if (node.world->role() == NetworkRole::Authority && onHostTick) onHostTick(m_ticks);
+            node.world->endTick(m_ticks);
             if (node.world->role() == NetworkRole::Client && node.joinMs < 0 &&
-                node.world->state() == NetworkState::Synchronizing)
+                node.world->state() == NetworkState::Active)
                 node.joinMs = now * 1000;
         }
         m_hub->advance(1000000 / std::max<uint32_t>(m_options.settings.tickRate, 1));
@@ -110,6 +138,17 @@ public:
         m_received += s.messagesReceived;
         m_rejected += s.rejected;
         m_malformed += s.malformed;
+        m_replication.objects = std::max<uint64_t>(m_replication.objects, s.objects);
+        m_replication.spawns += w.role() == NetworkRole::Authority ? s.spawns : 0;
+        m_replication.despawns += w.role() == NetworkRole::Authority ? s.despawns : 0;
+        m_replication.snapshotsSent += s.snapshotsSent;
+        m_replication.snapshotPartsSent += s.snapshotPartsSent;
+        m_replication.recordsApplied += s.recordsApplied;
+        m_replication.staleRecords += s.staleRecords;
+        m_replication.heldSnapshots += s.heldSnapshots;
+        m_replication.expiredSnapshots += s.expiredSnapshots;
+        m_replication.resyncRequests += w.role() == NetworkRole::Client ? s.resyncRequests : 0;
+        m_replication.controlQueueHigh = std::max(m_replication.controlQueueHigh, s.controlQueueHigh);
     }
     void stop(Node& node) {
         if (!node.world) return;
@@ -135,6 +174,7 @@ public:
         report.rejected += m_rejected;
         report.malformed += m_malformed;
         report.durationTicks += m_ticks;
+        report.replication = m_replication;
     }
 
     std::deque<Node>& nodes() { return m_nodes; }
@@ -148,8 +188,13 @@ private:
     std::unique_ptr<LoopbackHub> m_hub;
     std::deque<Node> m_nodes;   // the host first; a deque, so references stay valid
     NetworkCompatibility m_compatibility;
+    const ReplicationRegistry* m_registry = nullptr;
+    std::vector<NetworkPrefab> m_prefabs;
+    NetworkSpawnFn m_spawn;
+    std::function<void(World&, uint32_t)> m_makeScene;
     uint32_t m_ticks = 0;
     uint64_t m_sent = 0, m_received = 0, m_rejected = 0, m_malformed = 0;
+    NetTestReplication m_replication;
 };
 
 void checkClean(NetTestReport& report) {
@@ -172,11 +217,11 @@ void handshake(const NetTestOptions& options, const FaultProfile& faults, NetTes
     }
     auto joined = [&] {
         for (Node& n : h.nodes())
-            if (n.world->role() == NetworkRole::Client && n.world->state() != NetworkState::Synchronizing) return false;
+            if (n.world->role() == NetworkRole::Client && n.world->state() != NetworkState::Active) return false;
         return true;
     };
     if (!h.runUntil(joined, h.ticksFor(options.settings.handshakeTimeoutSeconds + 1)))
-        report.errors.push_back("not every client reached synchronizing");
+        report.errors.push_back("not every client reached active");
     const NetworkWorldStats& hs = h.nodes()[0].world->stats();
     if (hs.admitted != options.clients)
         report.errors.push_back(
@@ -241,7 +286,7 @@ void rejections(const NetTestOptions& options, NetTestReport& report) {
         if (name == "server full") {   // one client fills the only slot first
             Node& first = h.add("first client", h.start(NetworkRole::Client), kHostIdentity + 1);
             h.begin(first, report.errors);
-            h.runUntil([&] { return first.world->state() == NetworkState::Synchronizing; }, h.ticksFor(3));
+            h.runUntil([&] { return first.world->state() == NetworkState::Active; }, h.ticksFor(3));
         }
         Node& client = h.add(name, start, kHostIdentity + 2);
         client.expected = c.expected;
@@ -274,7 +319,7 @@ void stopStart(const NetTestOptions& options, NetTestReport& report) {
         client.world = std::make_unique<NetworkWorld>(h.start(NetworkRole::Client), client.services.get());
         if (!h.begin(host, report.errors) || !h.begin(client, report.errors)) break;
         client.joinMs = -1;
-        if (!h.runUntil([&] { return client.world->state() == NetworkState::Synchronizing; }, h.ticksFor(5))) {
+        if (!h.runUntil([&] { return client.world->state() == NetworkState::Active; }, h.ticksFor(5))) {
             report.errors.push_back("round " + std::to_string(round + 1) + ": the client didn't join");
             break;
         }
@@ -298,6 +343,143 @@ void stopStart(const NetTestOptions& options, NetTestReport& report) {
         ++report.rounds;
     }
     h.finish(report);
+    checkClean(report);
+}
+
+// A box moving on the host, and crates spawned for its players, moved, respawned and
+// despawned, while clients join (one late). Then everything stops moving, and every
+// client must have exactly the host's objects.
+void replication(const NetTestOptions& options, const FaultProfile& faults, NetTestReport& report) {
+    ReplicationRegistry registry;
+    registerEngineReplication(registry);
+    std::vector<std::string> problems;
+    if (!registry.freeze(problems)) {
+        report.errors.push_back("the engine registry didn't freeze");
+        return;
+    }
+    Harness h(options, faults);
+    auto spawnCrate = [](World& world, const NetworkPrefab& prefab, const Transform& at) {
+        const Entity e = world.create();
+        world.add<Transform>(e, at);
+        world.add<Name>(e, {"crate"});
+        NetworkObject n;
+        n.profile = prefab.profile;
+        world.add<NetworkObject>(e, n);
+        return e;
+    };
+    // Each machine builds the scene in its own order, with its own unrelated entities, so
+    // local entity handles differ: only keys bind authored objects.
+    auto makeScene = [](World& world, uint32_t node) {
+        for (uint32_t i = 0; i < node % 3; ++i) world.add<Name>(world.create(), {"filler"});
+        const char* keys[] = {"box", "lamp"};
+        for (uint32_t k = 0; k < 2; ++k) {
+            const char* key = keys[(k + node) % 2];
+            const Entity e = world.create();
+            world.add<Transform>(e, {});
+            NetworkObject n;
+            n.key = key;
+            n.profile = "engine.pose.v1";
+            n.mode = std::string_view(key) == "lamp" ? NetworkObject::Mode::Static : NetworkObject::Mode::Interpolated;
+            world.add<NetworkObject>(e, n);
+        }
+    };
+    h.replicate(registry, {{1, "Prefabs/Net Crate.swprefab", "engine.pose.v1"}}, spawnCrate, makeScene);
+    Node& host = h.add("host", h.start(NetworkRole::Authority), kHostIdentity);
+    if (!h.begin(host, report.errors)) return h.finish(report);
+    World& hostWorld = *host.scene;
+    Entity box = kNullEntity;
+    hostWorld.each<const NetworkObject>([&](Entity e, const NetworkObject& n) {
+        if (n.key == "box") box = e;
+    });
+    const uint32_t early = options.clients > 1 ? options.clients - 1 : options.clients;
+    for (uint32_t i = 0; i < early; ++i) {
+        Node& client = h.add("client " + std::to_string(i + 1), h.start(NetworkRole::Client), kHostIdentity + 1 + i);
+        h.begin(client, report.errors);
+    }
+    const uint32_t rate = std::max<uint32_t>(options.settings.tickRate, 1);
+    const uint32_t lateTick = h.ticks() + 4 * rate, quietTick = h.ticks() + 8 * rate, endTick = quietTick + 3 * rate;
+    std::deque<Entity> crates;
+    bool moving = true;
+    h.onHostTick = [&](uint32_t tick) {
+        if (!moving) return;
+        const float t = float(tick) / float(rate);
+        if (Transform* b = hostWorld.get<Transform>(box)) {
+            b->position = {5.0f * std::sin(t), 1.0f, 0.0f};
+            b->rotation = glm::angleAxis(t, glm::vec3(0, 1, 0));
+        }
+        for (Entity c : crates)
+            if (Transform* ct = hostWorld.get<Transform>(c)) ct->position.y += 0.01f;
+        NetworkWorld& net = *host.world;
+        if (tick % (rate / 2) == 0) {   // a crate for each player in turn
+            const uint16_t owner = uint16_t(2 + (tick / (rate / 2)) % std::max<uint32_t>(net.stats().admitted, 1));
+            Transform at;
+            at.position = {float(tick % 7), 0.0f, float(tick % 5)};
+            if (auto crate = net.spawn(1, at, net.stats().admitted ? owner : 0))
+                crates.push_back(crate.value());
+            else
+                report.errors.push_back(std::string("spawn failed: ") + crate.error().message);
+        }
+        if (crates.size() > 4) {   // the oldest goes, alternately despawned and just destroyed
+            if (tick % 2)
+                (void)net.despawn(crates.front());
+            else
+                hostWorld.destroy(crates.front());
+            crates.pop_front();
+        }
+        if (tick % rate == 0 && !crates.empty()) {   // a teleport: a new incarnation
+            Transform at;
+            at.position = {0.0f, 10.0f, 0.0f};
+            (void)net.respawn(crates.back(), &at);
+        }
+    };
+    h.runUntil([&] { return h.ticks() >= lateTick; }, lateTick + 1);
+    if (options.clients > 1) {
+        Node& late = h.add(
+            "client " + std::to_string(options.clients) + " (late)", h.start(NetworkRole::Client),
+            kHostIdentity + options.clients);
+        h.begin(late, report.errors);
+    }
+    h.runUntil([&] { return h.ticks() >= quietTick; }, quietTick + 1);
+    moving = false;
+    h.runUntil([&] { return h.ticks() >= endTick; }, endTick + 1);
+
+    // Every client has exactly the host's objects, owners, incarnations and poses.
+    NetworkWorld& net = *host.world;
+    for (Node& n : h.nodes()) {
+        if (!n.world || n.world->role() != NetworkRole::Client) continue;
+        if (n.world->state() != NetworkState::Active) {
+            report.errors.push_back(n.name + " isn't active (" + networkStateName(n.world->state()) + ")");
+            continue;
+        }
+        World& world = *n.scene;
+        if (n.world->objectCount() != net.objectCount())
+            report.errors.push_back(
+                n.name + " has " + std::to_string(n.world->objectCount()) + " network objects, the host " +
+                std::to_string(net.objectCount()));
+        size_t replicas = 0;
+        world.each<const NetworkIdentity>([&](Entity, const NetworkIdentity&) { ++replicas; });
+        if (replicas != net.objectCount())
+            report.errors.push_back(n.name + " has " + std::to_string(replicas) + " replicated entities");
+        hostWorld.each<const NetworkIdentity, const Transform>(
+            [&](Entity, const NetworkIdentity& id, const Transform& t) {
+                const Entity e = n.world->entity(id.id);
+                const NetworkIdentity* theirs = n.world->identity(e);
+                const Transform* tt = world.get<Transform>(e);
+                if (!theirs || !tt) {
+                    report.errors.push_back(n.name + " lacks network object " + std::to_string(id.id));
+                    return;
+                }
+                if (theirs->ownerSlot != id.ownerSlot || theirs->incarnation != id.incarnation)
+                    report.errors.push_back(n.name + " disagrees on the owner of " + std::to_string(id.id));
+                const double error = glm::length(tt->position - t.position);
+                report.replication.maxPositionError = std::max(report.replication.maxPositionError, error);
+            });
+    }
+    if (report.replication.maxPositionError > 1e-4)
+        report.errors.push_back("a client's pose differs from the host's after traffic settled");
+    const double positionError = report.replication.maxPositionError;
+    h.stopAll(report);
+    report.replication.maxPositionError = positionError;
     checkClean(report);
 }
 
@@ -327,8 +509,11 @@ bool runNetTest(const NetTestOptions& options, NetTestReport& report) {
         rejections(options, report);
     else if (options.scenario == "stop-start")
         stopStart(options, report);
+    else if (options.scenario == "replication")
+        replication(options, preset->profile, report);
     else {
-        report.errors.push_back("unknown scenario " + options.scenario + " (handshake, rejections or stop-start)");
+        report.errors.push_back(
+            "unknown scenario " + options.scenario + " (handshake, rejections, stop-start or replication)");
         return false;
     }
     report.ok = report.errors.empty();
@@ -363,6 +548,20 @@ std::string netTestText(const NetTestReport& r) {
         (unsigned long long)r.rejected, (unsigned long long)r.malformed, (unsigned long long)r.packetsInFlightAfterStop,
         (unsigned long long)r.openAuthSessionsAfterStop, (unsigned long long)r.liveTicketsAfterStop);
     out += line;
+    const NetTestReplication& rep = r.replication;
+    if (rep.objects) {
+        std::snprintf(
+            line, sizeof(line),
+            "replication: %llu objects, %llu spawns, %llu despawns, %llu snapshots (%llu parts), %llu records "
+            "applied, %llu stale, %llu held, %llu expired, %llu resyncs, control queue high %u bytes, max position "
+            "error %.6f m\n",
+            (unsigned long long)rep.objects, (unsigned long long)rep.spawns, (unsigned long long)rep.despawns,
+            (unsigned long long)rep.snapshotsSent, (unsigned long long)rep.snapshotPartsSent,
+            (unsigned long long)rep.recordsApplied, (unsigned long long)rep.staleRecords,
+            (unsigned long long)rep.heldSnapshots, (unsigned long long)rep.expiredSnapshots,
+            (unsigned long long)rep.resyncRequests, unsigned(rep.controlQueueHigh), rep.maxPositionError);
+        out += line;
+    }
     for (const std::string& e : r.errors) out += "error " + e + "\n";
     for (const std::string& w : r.warnings) out += "warning " + w + "\n";
     return out;
@@ -399,7 +598,21 @@ std::string netTestJson(const NetTestReport& r) {
            ", \"rejected\": " + std::to_string(r.rejected) + ", \"malformed\": " + std::to_string(r.malformed) +
            ", \"packets_in_flight_after_stop\": " + std::to_string(r.packetsInFlightAfterStop) +
            ", \"open_auth_sessions_after_stop\": " + std::to_string(r.openAuthSessionsAfterStop) +
-           ", \"live_tickets_after_stop\": " + std::to_string(r.liveTicketsAfterStop) + "}\n}\n";
+           ", \"live_tickets_after_stop\": " + std::to_string(r.liveTicketsAfterStop) + "},\n";
+    const NetTestReplication& rep = r.replication;
+    char error[64];
+    std::snprintf(error, sizeof(error), "%.6f", rep.maxPositionError);
+    out += "  \"replication\": {\"objects\": " + std::to_string(rep.objects) +
+           ", \"spawns\": " + std::to_string(rep.spawns) + ", \"despawns\": " + std::to_string(rep.despawns) +
+           ", \"snapshots_sent\": " + std::to_string(rep.snapshotsSent) +
+           ", \"snapshot_parts_sent\": " + std::to_string(rep.snapshotPartsSent) +
+           ", \"records_applied\": " + std::to_string(rep.recordsApplied) +
+           ", \"stale_records\": " + std::to_string(rep.staleRecords) +
+           ", \"held_snapshots\": " + std::to_string(rep.heldSnapshots) +
+           ", \"expired_snapshots\": " + std::to_string(rep.expiredSnapshots) +
+           ", \"resync_requests\": " + std::to_string(rep.resyncRequests) +
+           ", \"control_queue_high\": " + std::to_string(rep.controlQueueHigh) +
+           ", \"max_position_error_m\": " + error + "}\n}\n";
     return out;
 }
 

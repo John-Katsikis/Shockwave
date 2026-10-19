@@ -100,10 +100,9 @@ void PlaySession::start() {
             world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr, m_saveFolder, m_saveScene);
         // After physics, so it is destroyed before physics; before the GameMode, so
         // beginPlay sees its role. A host listens and a client connects here.
-        if (m_networkStart.role == net::NetworkRole::Offline) {
-            m_subsystems.add<net::NetworkWorld>();
-        } else {
-            auto& network = m_subsystems.add<net::NetworkWorld>(m_networkStart, m_services);
+        // Offline it only spawns manifest prefabs as plain copies.
+        auto& network = m_subsystems.add<net::NetworkWorld>(m_networkStart, m_services, &world);
+        if (network.online()) {
             if (auto begun = network.begin(); !begun)
                 throw std::runtime_error(std::string("network play didn't start: ") + begun.error().message);
             saves.setNetworkPlay(true);
@@ -203,6 +202,7 @@ void PlaySession::update(double dt) {
     audio()->update(dt);
     audio()->synchronize();
     saves()->addPlayTime(dt);
+    network()->endTick(uint32_t(m_ticks));   // the host sends this tick's state
     ++m_ticks;
 }
 

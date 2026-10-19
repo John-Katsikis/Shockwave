@@ -13,7 +13,9 @@
 #include <GameFramework/PlaySession.h>
 #include <GameFramework/SaveGame.h>
 #include <Multiplayer/NetTest.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkWorld.h>
+#include <Multiplayer/Replication.h>
 #include <Network/LoopbackServices.h>
 #include <Physics/Physics.h>
 
@@ -97,6 +99,22 @@ void makeScene(World& world) {
     world.add<Transform>(box, {{0, 5, 0}});
     world.add<Collider>(box);
     world.add<RigidBody>(box);
+    // The host simulates it; clients follow its snapshots.
+    net::NetworkObject network;
+    network.key = "box";
+    network.profile = "engine.rigidbody.v1";
+    world.add<net::NetworkObject>(box, network);
+}
+
+const net::ReplicationRegistry& registry() {
+    static const net::ReplicationRegistry frozen = [] {
+        net::ReplicationRegistry r;
+        net::registerEngineReplication(r);
+        std::vector<std::string> problems;
+        r.freeze(problems);
+        return r;
+    }();
+    return frozen;
 }
 
 glm::vec3 boxPosition(World& world) {
@@ -110,8 +128,9 @@ net::NetworkStart startFor(NetworkRole role) {
     start.settings.tickRate = 60;
     start.settings.maxPlayers = 4;
     start.compatibility.gameProtocol = "session-test";
-    start.compatibility.schemaDigest[0] = 1;
+    start.compatibility.schemaDigest = registry().schemaDigest();
     start.compatibility.contentDigest[0] = 2;
+    start.registry = &registry();
     start.address = {net::TransportAddress::Loopback, 7, 0};
     return start;
 }
@@ -276,8 +295,8 @@ void online() {
     check(client.network().state() == NetworkState::Connecting, "a client starts connecting");
     check(!client.instance.seen.authorityAtBeginPlay, "beginPlay sees a client without authority");
     check(
-        loop.until([&] { return client.network().state() == NetworkState::Synchronizing; }, 120),
-        "the client is welcomed and authenticated");
+        loop.until([&] { return client.network().state() == NetworkState::Active; }, 120),
+        "the client is welcomed, authenticated and synchronized");
     check(client.network().localSlot() == 2, "the first client gets slot 2");
     check(host.network().stats().admitted == 1, "the host admitted it");
     net::NetworkEvent event;
@@ -312,7 +331,23 @@ void online() {
         client.instance.seen.collects == clientCollects + 30 && client.instance.seen.suppressedCollects == 30,
         "a client in a menu still collects (neutral) input every frame");
     check(client.services->pumps() == clientPumps + 30, "and still pumps its services");
-    check(client.network().state() == NetworkState::Synchronizing, "and stays connected");
+    check(client.network().state() == NetworkState::Active, "and stays connected");
+
+    // The box falls on the host; the client's copy follows the snapshots, bound by key.
+    const Entity hostBox = findEntity(host.world, "Box").entity();
+    const Entity clientBox = findEntity(client.world, "Box").entity();
+    check(
+        host.network().networkId(hostBox) != 0 &&
+            host.network().networkId(hostBox) == client.network().networkId(clientBox),
+        "the authored box has one network ID on both machines");
+    check(
+        client.world.get<RigidBody>(clientBox)->motion == RigidBody::Motion::Kinematic,
+        "the client doesn't simulate the host's body");
+    for (int i = 0; i < 120; ++i) loop.frame();
+    check(boxPosition(host.world).y < authored.y - 1, "the host's box fell");
+    check(
+        glm::length(boxPosition(client.world) - boxPosition(host.world)) < 0.01f,
+        "the client's box is where the host's is, once it settles");
 
     // Stop: the host first; the client hears and fails HostLeft.
     host.session->stop();
@@ -348,7 +383,7 @@ void startStop100() {
     for (int round = 0; round < 100; ++round) {
         host.go(NetworkRole::Authority);
         client.go(NetworkRole::Client);
-        if (!loop.until([&] { return client.network().state() == NetworkState::Synchronizing; }, 120)) break;
+        if (!loop.until([&] { return client.network().state() == NetworkState::Active; }, 120)) break;
         // Alternate who stops first.
         if (round % 2) {
             client.session->stop();
@@ -483,8 +518,13 @@ void handshakeFailures() {
              client.services->setValidation(net::LoopbackOnlineServices::Validation::NoAnswer);
          },
          60 * 17},
-        {"no baseline in time", ReasonCode::Timeout,
-         [](Machine&, Machine&, net::NetworkStart& c) { c.synchronizeTimeoutSeconds = 2; }, 60 * 4},
+        // The host welcomes the client and sends the baseline, but the client never
+        // validates the host, so it never sends Ready: the host gives up and says why.
+        {"no Ready in time", ReasonCode::Timeout,
+         [](Machine&, Machine& client, net::NetworkStart&) {
+             client.services->setValidation(net::LoopbackOnlineServices::Validation::NoAnswer);
+         },
+         60 * 4},
         {"server full", ReasonCode::ServerFull, nullptr},
     };
     for (const Case& c : cases) {
@@ -495,6 +535,7 @@ void handshakeFailures() {
         net::NetworkStart hostStart = startFor(NetworkRole::Authority);
         net::NetworkStart clientStart = startFor(NetworkRole::Client);
         if (c.setup) c.setup(host, client, clientStart);
+        if (std::string(c.name) == "no Ready in time") hostStart.synchronizeTimeoutSeconds = 2;
         if (std::string(c.name) == "server full") {
             hostStart.settings.maxPlayers = 2;
             clientStart.settings.maxPlayers = 2;
@@ -505,7 +546,7 @@ void handshakeFailures() {
             loop.machines.push_back(&other);
             other.session->setNetworkStart(clientStart, other.services.get());
             other.session->start();
-            loop.until([&] { return other.network().state() == NetworkState::Synchronizing; }, 120);
+            loop.until([&] { return other.network().state() == NetworkState::Active; }, 120);
         }
         client.session->setNetworkStart(clientStart, client.services.get());
         client.session->start();
@@ -602,7 +643,7 @@ void overrun() {
     Loop loop{hub, {&host, &client}};
     host.go(NetworkRole::Authority);
     client.go(NetworkRole::Client);
-    loop.until([&] { return client.network().state() == NetworkState::Synchronizing; }, 120);
+    loop.until([&] { return client.network().state() == NetworkState::Active; }, 120);
     // The client's simulation falls too far behind.
     pumpNetworkFrame(client.services.get(), client.session.get(), {double(hub.nowUs()) / 1e6, 0.4, true});
     check(
