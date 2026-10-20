@@ -1,10 +1,13 @@
 // Arena's network types (plan sections 6.3, 7 and 10): the player and rules profiles, the
-// lobby commands and the match events. Sessions don't use them until Batch 4; until then
-// they're what `player --check`, --network-info and docs/NetworkSchema.md describe.
+// lobby commands and the match events. The host captures a pawn's and the match's state
+// into them; a client applies what arrives to its copies, and nothing else changes them.
+#include "ArenaNetwork.h"
+
 #include "ArenaGame.h"
 
 #include <Engine/Components.h>
 #include <Engine/PhysicsComponents.h>
+#include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/Replication.h>
 #include <Shockwave/Game.h>
 
@@ -34,26 +37,21 @@ enum PlayerField : size_t {
 };
 
 enum RulesField : size_t { kBlueScore, kOrangeScore, kRemainingTicks, kRoundSerial, kPhase };
-enum Phase : uint64_t { kWaiting, kPlaying, kFinished };
 
-uint64_t ticks(float seconds, uint32_t tickRate) {
-    return seconds > 0 ? uint64_t(std::ceil(double(seconds) * tickRate)) : 0;
-}
+uint64_t ticks(int count) { return uint64_t(std::clamp(count, 0, 65535)); }
 
-const char* capturePlayer(const World& world, Entity e, const ReplicationContext& context, ProfileValue& out) {
+const char* capturePlayer(const World& world, Entity e, const ReplicationContext&, ProfileValue& out) {
     if (const char* why = capturePoseFields(world, e, out)) return why;
     const ArenaFighter* fighter = world.get<ArenaFighter>(e);
     if (!fighter) return "the entity has no ArenaFighter";
-    // Aim still lives in the GameMode, not in components; Batch 6 moves it into state
-    // the host owns. Until then it's sent as straight ahead.
-    out.fields[kYaw].f[0] = 0;
-    out.fields[kPitch].f[0] = 0;
+    out.fields[kYaw].f[0] = fighter->yaw;
+    out.fields[kPitch].f[0] = fighter->pitch;
     // Health below zero only means dead; the profile carries 0 and the life state.
     out.fields[kHealth].u = uint64_t(std::lround(std::max(0.0f, fighter->health)));
     const ArenaWeapon* weapon = world.get<ArenaWeapon>(e);
     out.fields[kAmmo].u = weapon ? uint64_t(std::max(0, weapon->ammo)) : 0;
-    out.fields[kReloadTicks].u = weapon ? ticks(weapon->reload, context.tickRate) : 0;
-    out.fields[kProtectionTicks].u = ticks(fighter->protection, context.tickRate);
+    out.fields[kReloadTicks].u = weapon ? ticks(weapon->reloadTicks) : 0;
+    out.fields[kProtectionTicks].u = ticks(fighter->protectionTicks);
     out.fields[kTeam].u = uint64_t(fighter->team);
     out.fields[kLifeState].u = fighter->health > 0 ? 0 : 1;
     const CharacterController* character = world.get<CharacterController>(e);
@@ -64,45 +62,52 @@ const char* capturePlayer(const World& world, Entity e, const ReplicationContext
     return nullptr;
 }
 
-void applyPlayer(World& world, Entity e, const ReplicationContext& context, const ProfileValue& value) {
+void applyPlayer(World& world, Entity e, const ReplicationContext&, const ProfileValue& value) {
     applyPoseFields(world, e, value);
-    const float tick = 1.0f / float(context.tickRate);
     if (ArenaFighter* fighter = world.get<ArenaFighter>(e)) {
+        fighter->yaw = value.fields[kYaw].f[0];
+        fighter->pitch = value.fields[kPitch].f[0];
         fighter->health = value.fields[kLifeState].u == 0 ? float(value.fields[kHealth].u) : 0.0f;
-        fighter->protection = float(value.fields[kProtectionTicks].u) * tick;
+        fighter->protectionTicks = int(value.fields[kProtectionTicks].u);
         fighter->team = int(value.fields[kTeam].u);
         fighter->kills = int(value.fields[kKills].u);
         fighter->deaths = int(value.fields[kDeaths].u);
+        // Whose pawn it is comes from the host's identity, not from the state.
+        if (const auto* identity = world.get<NetworkIdentity>(e)) fighter->slot = identity->ownerSlot;
     }
     if (ArenaWeapon* weapon = world.get<ArenaWeapon>(e)) {
         weapon->ammo = int(value.fields[kAmmo].u);
-        weapon->reload = float(value.fields[kReloadTicks].u) * tick;
+        weapon->reloadTicks = int(value.fields[kReloadTicks].u);
     }
 }
 
-const char* captureRules(const World& world, Entity e, const ReplicationContext& context, ProfileValue& out) {
+const char* captureRules(const World& world, Entity e, const ReplicationContext&, ProfileValue& out) {
     const ArenaRules* rules = world.get<ArenaRules>(e);
     if (!rules) return "the entity has no ArenaRules";
     out.fields[kBlueScore].u = uint64_t(std::max(0, rules->blue));
     out.fields[kOrangeScore].u = uint64_t(std::max(0, rules->orange));
-    out.fields[kRemainingTicks].u = ticks(rules->remaining, context.tickRate);
-    out.fields[kRoundSerial].u = 0;   // Arena plays one round per Play until Batch 8 adds restarts
-    out.fields[kPhase].u = rules->finished ? kFinished : kPlaying;
+    out.fields[kRemainingTicks].u = uint64_t(std::max(0, rules->remainingTicks));
+    out.fields[kRoundSerial].u = rules->roundSerial;
+    out.fields[kPhase].u = uint64_t(std::clamp(rules->phase, 0, 2));
     return nullptr;
 }
 
-void applyRules(World& world, Entity e, const ReplicationContext& context, const ProfileValue& value) {
+void applyRules(World& world, Entity e, const ReplicationContext&, const ProfileValue& value) {
     ArenaRules* rules = world.get<ArenaRules>(e);
     if (!rules) return;
     rules->blue = int(value.fields[kBlueScore].u);
     rules->orange = int(value.fields[kOrangeScore].u);
-    rules->remaining = float(value.fields[kRemainingTicks].u) / float(context.tickRate);
-    rules->finished = value.fields[kPhase].u == kFinished;
+    rules->remainingTicks = int(std::min<uint64_t>(value.fields[kRemainingTicks].u, INT32_MAX));
+    rules->roundSerial = uint32_t(value.fields[kRoundSerial].u);
+    rules->phase = int(value.fields[kPhase].u);
+    rules->finished = rules->phase == ArenaRules::Finished;
 }
 
 void report(bool ok, const std::string& why) {
     if (!ok) SW_LOG(LogNetwork, Error, "Arena network types: {}", why);
 }
+
+}   // namespace
 
 void registerNetworkTypes(ReplicationRegistry& registry) {
     std::string why;
@@ -147,21 +152,21 @@ void registerNetworkTypes(ReplicationRegistry& registry) {
     report(registry.addProfile(std::move(rules), why), why);
 
     CommandDesc team;
-    team.id = 32;
+    team.id = kRequestTeam;
     team.name = "arena.request_team";
     team.payload = {netInt("team", NetFieldType::U8, 0, 1, NetFieldRole::Team)};
     team.when = "while the round is waiting, if that team has room";
     report(registry.addCommand(std::move(team), why), why);
 
     CommandDesc ready;
-    ready.id = 33;
+    ready.id = kReadyToPlay;
     ready.name = "arena.ready_to_play";
     ready.payload = {netInt("ready", NetFieldType::U8, 0, 1, NetFieldRole::State)};
     ready.when = "while the round is waiting";
     report(registry.addCommand(std::move(ready), why), why);
 
     CommandDesc restart;
-    restart.id = 34;
+    restart.id = kRequestRoundRestart;
     restart.name = "arena.request_round_restart";
     restart.permission = CommandPermission::Host;
     restart.ratePerSecond = 1;
@@ -205,8 +210,6 @@ void registerNetworkTypes(ReplicationRegistry& registry) {
     };
     report(registry.addEvent(std::move(round), why), why);
 }
-
-}   // namespace
 
 }   // namespace arena
 

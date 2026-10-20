@@ -435,6 +435,7 @@ None.
 
 - `Prefabs/Arena bot 0.swprefab`
 - `Prefabs/Arena bot 1.swprefab`
+- `Prefabs/Net Player.swprefab`
 
 ## Project manifest
 

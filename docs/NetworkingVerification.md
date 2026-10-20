@@ -410,3 +410,59 @@ Outstanding for this batch:
   `prefabs` from the project in a later batch.
 - The editor's network play line hasn't been looked at (no display here).
 - No performance measurement on the desktop; the plan's per-tick targets are Batch 10's.
+
+## Plan Batch 6 (2026-10-20): shared input-driven Arena simulation
+
+Base: `fadf720` (master after PR #24), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 6 and the input half of sections 6 and 7; design adjustments 46 to 53.
+
+Implemented:
+
+- In `NetworkWorld` (`Private/NetworkInput.cpp`): `sendInput` with a Ping/Pong tick
+  estimate and up to 4 commands a message; the host's 64-tick input ring per player
+  and `takeInput` with the 2-tick fallback; `submitCommand` / `pollCommand` checked
+  against the frozen registry (ID, sequence, payload ranges, permission, target
+  profiles, rate); `disconnect`; Ping answers with rate limits; new `stats()` counters.
+  Client replicas of characters are not simulated.
+- Arena split into `ArenaInput` (devices read once a frame into one command per tick),
+  `ArenaSim` (movement, combat, reloads, respawns and rounds from commands, timers in
+  ticks), `ArenaPresentation` (camera, rifle, tracers, sounds, bodies, HUD) and the game
+  mode (who simulates, joins and leaves, lobby commands).
+- `Scenes/arena-mp.swscene` (manifest scene 2) with six `NetworkSpawnPoint`s a team, the
+  `Net Player` prefab (manifest prefab 1), host-spawned pawns for up to 6v6, commands
+  `arena.request_team`, `arena.ready_to_play` and `arena.request_round_restart`.
+- The pause menu's match panel: network line, READY, team buttons, LEAVE MATCH, rosters,
+  and greyed Host / Find / Invite.
+- `--check` rejects a multiplayer scene without spawn points for both teams
+  (`arena_cli`); `--network-info` no longer lists input commands as unsupported.
+- Test `network_arena`.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 43/45 when run in parallel (`renderer_swap` and `save_games_cli`, the known no-display failures; `package_cli` failed once under the parallel load and passes alone); the network set 13/13; `arena`, `arena_graphics`, `arena_cli` pass |
+| Debug with `-fsanitize=address,undefined`: `network_arena`, `network_session`, `network_replication`, `arena`, `player --net-test --scenario replication --preset hostile --clients 11` | pass, no sanitizer reports |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_arena`, `network_session` | build and pass |
+| `player --check` on Arena | 0 problems in 3 scenes, `Net Player` prefab ok |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Offline Arena tests unchanged | `arena` (`Tests/ArenaTest.cpp`) passes without changes to the test; `arena_cli` and `arena_graphics` pass |
+| Host and 11 clients can't spoof damage | `network_arena`: a client sending a shot GameEvent (host to client only) is sent away (MalformedPacket) and the victim's health doesn't drop; clients run no combat, and after ten seconds of autoplay every client shows exactly the host's teams, ammo, health, kills, deaths and positions |
+| ... team | a request for the full team is refused and the team stays; a host-only round restart is refused by the client's own world and, sent on the wire anyway, by the host (`commandsRefused`), the round unchanged |
+| ... ownership | a client sending Ownership is sent away and the pawn keeps its owner; an unknown command ID, far-ahead inputs (RateLimited) and an over-long move get the sender sent away |
+| ... speed | four commands a tick, all sprinting, move a pawn no further than one a tick would |
+| Ammo and cadence independent of the render frame rate | the offline input path at 24, 30, 60, 144, 240 and 1000 fps over the same 360 ticks: the same shots (within one at the end of a held fire) and reloads, each jump and reload press in exactly one command; catch-up ticks don't replay a press, a frame without a tick keeps it, menus give neutral commands |
+| One local camera per process | each of the 12 machines has exactly one primary camera, no pawn carries one, and it sits at the local pawn's eye |
+| Missing input | a client that stops sending: two ticks of its last input with fire off, then standing with fire never held |
+
+Outstanding for this batch:
+
+- Nothing in the player or editor starts network play yet (Batch 9), so the 6v6 match
+  runs only in tests, over the loopback hub.
+- The match panel in the pause menu hasn't been looked at (no display here).
+- Clients see others' shots only as state changes (adjustment 50) and their own pawn a
+  round trip late: prediction is Batch 7.

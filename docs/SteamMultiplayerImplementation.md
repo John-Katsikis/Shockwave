@@ -188,8 +188,8 @@ Recorded here as the document asks, newest last. Status of each batch is in
     refuse it.
 42. The game's API is `game.network()` `spawn`, `despawn`, `respawn`, `setOwner`,
     `markChanged`, `networkId`, `entity`, `identity`, `hasAuthority`,
-    `isLocallyControlled`, `localPlayer` and `controlledEntity`. `submitCommand` waits for
-    Batch 6 with input commands.
+    `isLocallyControlled`, `localPlayer` and `controlledEntity`. `submitCommand` came with
+    Batch 6 (adjustment 48).
 43. A client that hasn't validated the host yet still receives the baseline; it commits
     it (and sends Ready) once the host is validated.
 44. `NetworkWorld` takes the World as a constructor argument and `NetworkStart` gains
@@ -197,6 +197,37 @@ Recorded here as the document asks, newest last. Status of each batch is in
     `endTick` after gameplay; offline, `spawn()` is a plain prefab copy.
 45. A synchronizing client gives up 5 seconds after the host would, so the host's Reject
     (Timeout) arrives first, as in adjustment 28. Adjustment 23 no longer applies.
+46. Batch 6 builds a basic tick mapping from Ping/Pong now, ahead of Batch 7: a client
+    pings four times 100 ms apart once Active, then once a second; the host answers at
+    most 10 a second and sends away a client pinging more than 30 a second. The client
+    estimates the host's tick from the sample with the lowest of the last 8 round trips
+    and targets each command half a round trip plus 2 ticks ahead (2 to 16 ticks).
+    Smoothing, clock drift and prediction stay in Batch 7.
+47. The host keeps 64 ticks of input per player and takes exactly one per pawn per tick
+    (`takeInput`). A missing input repeats the last one for at most 2 ticks with fire off
+    and no presses, then the pawn stands with its last aim. Inputs for ticks already run
+    are dropped; inputs more than 32 ticks ahead are ignored, and far-ahead messages for
+    more than half a second's ticks within one second send the client away
+    (RateLimited). A command whose move is longer than the wire's circle is malformed.
+    Duplicates keep the first copy. An input's incarnation must match the pawn's.
+48. Commands (adjustment 42's `submitCommand`, now built) carry an increasing sequence
+    per sender, checked against the frozen registry: unknown IDs, replays and payloads
+    outside their ranges are malformed (the sender is sent away); a refused permission,
+    target or rate (a token bucket per command) is dropped and counted. Accepted
+    commands wait in a 64-entry queue for `pollCommand`. The host's own player and
+    offline play go through the same checks as slot 1, rate aside.
+49. Client replicas of a character have their `CharacterController` disabled (as rigid
+    bodies became kinematic in Batch 5): only the host moves characters.
+50. Clients see other players' shots only as changes in replicated state (ammo, health,
+    life); no ShotResolved events or remote tracers until Batch 8.
+51. Arena's lobby is a skeleton in the pause menu: READY, team buttons, leave, rosters,
+    and greyed Host / Find / Invite buttons that wait for Batch 9. The round starts when
+    every player has said ready; the host restarts it only after it ends.
+52. Arena's offline timers also count whole ticks now (`ceil(seconds * tick_rate)`), so
+    offline cadence matches online cadence at the same tick rate. The offline scenes'
+    behaviour is otherwise unchanged (`arena` test unchanged).
+53. The multiplayer scene (`Scenes/arena-mp.swscene`, manifest scene 2) has no bots; bots
+    stay in the offline scenes. Network play refuses any other scene.
 
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
