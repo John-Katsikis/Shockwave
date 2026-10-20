@@ -224,11 +224,11 @@ Outstanding for this batch:
   game wait for Batch 9.
 - Not built on macOS or Windows here; CI covers those on push.
 
-## Batch 4 (2026-10-19): delta snapshots, interpolation, rewind history
+## The owner's "Batch 4" (2026-10-19): delta snapshots, interpolation, rewind history
 
 Base: `2a9703f` (master after PR #21), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
 The owner's Batch 4 brief; see design adjustments 16 to 21 for how it maps onto the plan.
-Plan Batch 4 (session integration) is still to do.
+Plan Batch 4 (session integration) is the next section.
 
 Implemented:
 
@@ -284,3 +284,263 @@ Outstanding for this batch:
 - No editor change: the new `snapshot_rate` and `interpolation_ms` ranges reach Project
   settings > Multiplayer through the settings table, but the container has no display,
   so nobody has looked.
+
+## Plan Batch 4 (2026-10-19): session integration
+
+Base: `35dec6c` (master after PR #22), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan section 5 and its Batch 4 gate; design adjustments 22 to 29.
+
+Implemented:
+
+- Engine: `Application::onPump(rawFrameDt)`, called after input and before the fixed
+  ticks; `Engine/SimulationClock.h` with `EngineConfig::simulationTime` and
+  `Engine::setSimulationTime` (Smoothed by default, Monotonic online: raw time, 8 ticks
+  a frame at most, overruns); renderer swaps held while Monotonic.
+- `Multiplayer/NetworkWorld.h`: roles, states, events, the handshake with mutual
+  authentication, admission limits, timeouts and the shutdown order.
+- GameFramework: `GameContext::network()`, `GameMode::collectInput`,
+  `PlaySession::setNetworkStart`, `pumpNetwork`, `handleOnlineEvent`, `collectInput`,
+  drain before each tick, close first in `stop()`; online pause, save and breakpoint
+  rules; `GameFramework/NetworkPump.h`.
+- Circuits: `CircuitWorld::setBreakpointsAllowed`.
+- Editor: pumps from `onPump`; Pause disabled online with a tooltip; game code, asset and
+  prefab reloads held until Stop; Stop Steam disabled during network play; the session's
+  role and state under Project settings > Multiplayer > Steam.
+- Player: pumps from `onPump`; `--net-test` (`Multiplayer/NetTest.h`).
+- Network: `LoopbackOnlineServices`.
+- Test `network_session`; `network_cli` runs `--net-test`.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 41/43 (the known no-display failures `renderer_swap` and `save_games_cli`); `-R "network_\|test_steam\|test_sdr\|test_snapshot\|test_rewind\|test_replication"` 11/11 |
+| Debug with `-fsanitize=address,undefined`: `network_session`, `player --net-test --scenario rejections` | pass, no sanitizer reports |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_session`, `test_steam_services` | build and pass |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Startup-failure injection | `network_session`: start throws and restores the world for no services, no transport, unavailable services, authentication off on Steam, a taken address and a throwing `beginPlay` (whose listener is then free again); 13 handshake failures end in the expected reason (protocol, content, scene and settings mismatches; a client or host ticket that can't be made or fails later; either side refusing a ticket; either side never answering, after 15 s; no baseline in time; a full server); `--net-test --scenario rejections` covers 9 more over NetworkWorlds, including the host stopping mid-handshake and no host |
+| Stop 100 times | 100 offline Plays and 100 online host-and-client Plays in `network_session`, alternating who stops first, each restoring the world with no auth session, ticket or packet left; `--net-test --scenario stop-start` 100 rounds |
+| Offline save and hot reload | `save_games` and `hot_reload` pass unchanged; offline Pause, saving and breakpoints checked again in `network_session`; the offline clock gives exactly the old loop's ticks and remainder |
+| Pumps during menus and editing | a client with local input suppressed keeps pumping, collects (neutral) input every frame and stays connected while the host simulates every tick; services are pumped with a session that is editing and with none |
+| No events after the session | after Stop the session takes no service events and has no network world; a closed NetworkWorld reports nothing and ignores pumps, failures and events; Stop closes a lobby to joins first and leaves it last |
+
+`--net-test` (`handshake`, default `cafe` preset, 3 clients): all three synchronizing
+in 233 to 250 ms of virtual time; `--clients 11` passes under `clean`, `poor` and
+`hostile`. The 100-round `stop-start` scenario takes 0.07 s.
+
+Outstanding for this batch:
+
+- No real Steam session: the handshake runs through `IOnlineServices` and `ITransport`,
+  which `SteamServices` implements, but two Steam accounts on two machines haven't
+  joined. Nothing in the player or editor starts network play yet (adjustment 25).
+- The editor changes (Pause disabled online, the network play line) haven't been
+  looked at: the container has no display, and nothing can start online Play from the
+  editor yet anyway.
+- Clients stopped at Synchronizing until Batch 5's baseline (adjustment 23); they now
+  reach Active.
+
+## Plan Batch 5 (2026-10-19): replication without prediction
+
+Base: `20bbb10` (master after PR #23), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan sections 3.2, 6.3 to 6.5 and 7 (the authority half) and the Batch 5 gate; design
+adjustments 30 to 45.
+
+Implemented, in `NetworkWorld` (`Private/NetworkReplication.cpp`, state in
+`Private/NetworkWorldImpl.h`):
+
+- Network IDs, owner slots and incarnations (`NetworkIdentity` on every machine);
+  authored objects numbered in key order and bound by key on clients; spawns only from
+  the manifest's prefabs.
+- The baseline: frozen at Welcome, staged and checked (counts, IDs, keys, prefabs,
+  profiles, owners, state ranges, SHA-256 digest) before anything touches the client's
+  world; Ready, then the queued lifecycle changes, then Active and a full snapshot.
+- Lifecycle messages in control-serial order (Spawn, Despawn, Ownership, Spawn as a
+  respawn); a leaving player's objects lose their owner; objects destroyed without
+  `despawn()` are despawned at the end of the tick.
+- Full-state snapshots at `snapshot_rate`, split into parts; per-object newest ticks;
+  barriers per part with a 32-part, 250 ms hold and rate-limited resync requests.
+- Per-peer budget: an ordered control queue within `outbound_bytes_per_second` and
+  `max_pending_reliable_bytes`, snapshots in the rest with a control reserve, players
+  every snapshot and other objects in turn.
+- The game's API on `game.network()`: `spawn`, `despawn`, `respawn`, `setOwner`,
+  `markChanged`, `networkId`, `entity`, `identity`, `hasAuthority`,
+  `isLocallyControlled`, `localPlayer`, `controlledEntity`. `PlaySession` gives the
+  network world its World and calls `endTick` after gameplay.
+- `player --net-test --scenario replication`; the editor's network play line shows the
+  player slot, object count and players in the game.
+- Test `network_replication`; `network_session` now replicates its physics box.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 41/44 when run in parallel (`renderer_swap` and `save_games_cli`, the known no-display failures, and `package_cli`, which timed out under the parallel load and passes alone); the network set (`-R "network_\|test_steam\|test_sdr\|test_snapshot\|test_rewind\|test_replication"`) 12/12 |
+| Debug with `-fsanitize=address,undefined`: `network_replication`, `network_session`, `player --net-test --scenario replication --preset hostile --clients 11` | pass, no sanitizer reports (after fixing a null `memcpy` source in `Sha256::update` for an empty span) |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_replication`, `network_session` | build and pass |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Parts arriving reversed | `network_replication` (scripted host): part 1 then part 0 of one snapshot both apply; a duplicate part and an older snapshot change nothing and count as stale |
+| Despawn before an old snapshot | a Despawn followed by an older snapshot naming the object: it stays gone, the session carries on |
+| Different entity creation orders | host and clients build their scenes in different orders with unrelated entities first; every authored object has the same network ID everywhere, IDs follow key order, local entity handles differ; the same in every `--net-test --scenario replication` run |
+| Partial baseline teardown | a 300-object baseline at 4 KiB/s, the host stopping halfway: the client fails with HostLeft, its staged objects are gone, its world has exactly its entities from before, nothing spawned or bound |
+| Malformed authority data | 11 cases, each ending network play with its reason and the connection closed: a prefab outside the manifest, an authored key the scene lacks (ContentMismatch), a wrong baseline digest, one object twice, a non-unit quaternion, an owner over `max_players`, more objects than `max_entities`, a control serial gap, a snapshot of an object never spawned, a despawned ID spawned again, Active naming another player's object; the world untouched for the 7 before the commit |
+| Control barriers | a snapshot ahead of its Spawn is held, then applied when the Spawn arrives; one that never gets its serial expires after 250 ms and sends one resync request; records of an old incarnation are ignored after a respawn |
+| Owners and late join | crates owned by the client report `isLocallyControlled`; a late client gets the crates spawned before it and destroys the authored object the host despawned before; a leaving player's objects get owner 0; clients can't spawn, despawn, respawn or change owners |
+| Budget scheduler | at 24 KiB/s, 41 moving objects: snapshot bytes stay within the 12 KiB/s left after the control reserve, the budget holds records back, the owned crate goes every snapshot, and everything converges once movement stops; 0 heap allocations over nine seconds of replication |
+| Moving host-owned box, two worlds | `network_session`: a real PlaySession host's physics box falls; the client's copy (made kinematic) ends within 1 cm of it; `--net-test --scenario replication` with a moving box |
+
+`--net-test --scenario replication --clients 11 --seed 9` (6 network objects at the end,
+16 spawns, 12 despawns, a late joiner): every preset ends with every client exactly on
+the host's state (max position error 0.000000 m). Under `clean` nothing is held; under
+`poor` 34 parts waited for their Spawn and none expired; under `hostile` (200 ms each
+way, 10% loss) 108 waited, 28 expired and 10 resyncs were sent. The late client is
+Active 83 ms (clean) to 2.1 s (hostile) after it starts. A hostile run takes 0.14 s.
+
+Outstanding for this batch:
+
+- No real Steam session, and still nothing in the player or editor starts network play
+  (adjustment 25): `--host` and the join commands fill `NetworkStart::registry` and
+  `prefabs` from the project in a later batch.
+- The editor's network play line hasn't been looked at (no display here).
+- No performance measurement on the desktop; the plan's per-tick targets are Batch 10's.
+
+## Plan Batch 6 (2026-10-20): shared input-driven Arena simulation
+
+Base: `fadf720` (master after PR #24), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 6 and the input half of sections 6 and 7; design adjustments 46 to 53.
+
+Implemented:
+
+- In `NetworkWorld` (`Private/NetworkInput.cpp`): `sendInput` with a Ping/Pong tick
+  estimate and up to 4 commands a message; the host's 64-tick input ring per player
+  and `takeInput` with the 2-tick fallback; `submitCommand` / `pollCommand` checked
+  against the frozen registry (ID, sequence, payload ranges, permission, target
+  profiles, rate); `disconnect`; Ping answers with rate limits; new `stats()` counters.
+  Client replicas of characters are not simulated.
+- Arena split into `ArenaInput` (devices read once a frame into one command per tick),
+  `ArenaSim` (movement, combat, reloads, respawns and rounds from commands, timers in
+  ticks), `ArenaPresentation` (camera, rifle, tracers, sounds, bodies, HUD) and the game
+  mode (who simulates, joins and leaves, lobby commands).
+- `Scenes/arena-mp.swscene` (manifest scene 2) with six `NetworkSpawnPoint`s a team, the
+  `Net Player` prefab (manifest prefab 1), host-spawned pawns for up to 6v6, commands
+  `arena.request_team`, `arena.ready_to_play` and `arena.request_round_restart`.
+- The pause menu's match panel: network line, READY, team buttons, LEAVE MATCH, rosters,
+  and greyed Host / Find / Invite.
+- `--check` rejects a multiplayer scene without spawn points for both teams
+  (`arena_cli`); `--network-info` no longer lists input commands as unsupported.
+- Test `network_arena`.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 43/45 when run in parallel (`renderer_swap` and `save_games_cli`, the known no-display failures; `package_cli` failed once under the parallel load and passes alone); the network set 13/13; `arena`, `arena_graphics`, `arena_cli` pass |
+| Debug with `-fsanitize=address,undefined`: `network_arena`, `network_session`, `network_replication`, `arena`, `player --net-test --scenario replication --preset hostile --clients 11` | pass, no sanitizer reports |
+| Steamworks on (SDK 1.65): `editor`, `player`, `network_arena`, `network_session` | build and pass |
+| `player --check` on Arena | 0 problems in 3 scenes, `Net Player` prefab ok |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Offline Arena tests unchanged | `arena` (`Tests/ArenaTest.cpp`) passes without changes to the test; `arena_cli` and `arena_graphics` pass |
+| Host and 11 clients can't spoof damage | `network_arena`: a client sending a shot GameEvent (host to client only) is sent away (MalformedPacket) and the victim's health doesn't drop; clients run no combat, and after ten seconds of autoplay every client shows exactly the host's teams, ammo, health, kills, deaths and positions |
+| ... team | a request for the full team is refused and the team stays; a host-only round restart is refused by the client's own world and, sent on the wire anyway, by the host (`commandsRefused`), the round unchanged |
+| ... ownership | a client sending Ownership is sent away and the pawn keeps its owner; an unknown command ID, far-ahead inputs (RateLimited) and an over-long move get the sender sent away |
+| ... speed | four commands a tick, all sprinting, move a pawn no further than one a tick would |
+| Ammo and cadence independent of the render frame rate | the offline input path at 24, 30, 60, 144, 240 and 1000 fps over the same 360 ticks: the same shots (within one at the end of a held fire) and reloads, each jump and reload press in exactly one command; catch-up ticks don't replay a press, a frame without a tick keeps it, menus give neutral commands |
+| One local camera per process | each of the 12 machines has exactly one primary camera, no pawn carries one, and it sits at the local pawn's eye |
+| Missing input | a client that stops sending: two ticks of its last input with fire off, then standing with fire never held |
+
+Outstanding for this batch:
+
+- Nothing in the player or editor starts network play yet (Batch 9), so the 6v6 match
+  runs only in tests, over the loopback hub.
+- The match panel in the pause menu hasn't been looked at (no display here).
+- Clients see others' shots only as state changes (adjustment 50) and their own pawn a
+  round trip late: prediction is Batch 7.
+
+## Plan Batch 7 (2026-10-20): physics prediction and presentation
+
+Base: `86eb9f6` (master after PR #25), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 7, sections 8.1 to 8.3 and 9.1 to 9.3; design adjustments 54 to 65.
+
+Implemented:
+
+- Physics (`Physics/Physics.h`): `CharacterMotionState`, `PhysicsNetworkMode`
+  (Offline, Authority, Client), `setPredictedCharacters`, `characterState`,
+  `correctCharacter`, `predictCharacterStep`, `applyReplicaBodyPose`. The character
+  movement step is one private helper used by `step()` and `predictCharacterStep`;
+  predicted characters move against static bodies only; Client mode runs no Jolt update
+  and keeps proxies, with runtime overrides only.
+- `NetworkWorld` (`Private/NetworkPrediction.cpp`): `setPhysics`, `setPredictionMove`,
+  `prepareStep`, `present`, `predicting`, `correctionOffset`, `predictionWarning`; a
+  256-tick command and predicted-state history, reconciliation with replay (32 ticks at
+  60 Hz), snaps with resync and warning, the 50 ms / 150 ms visual offset; the smoothed
+  Pong clock and catch-up commands (`NetworkInput.cpp`); sessions interpolating remote
+  objects through `InterpolationEngine`.
+- Engine: runtime `PresentationTransform`, preferred by `renderWorld`;
+  `presentedTransform()`. No renderer changes.
+- `PlaySession` calls `setPhysics`, `prepareStep` before each physics step and `present`
+  before the game's frame.
+- `GameFramework/InputSampler.h`: the engine input sampler (moved from Arena).
+- The `--check` and editor rule for moving bodies next to predicted characters;
+  `--net-test --scenario prediction`; `player --net-preview`.
+- `PoseState::kGrounded`; regenerated `NetworkProtocol.md`, `NetworkSchema.md` and
+  `CircuitNodes.md` (it had fallen behind the network components).
+- Arena: Net Player is a `PredictedCharacter`; clients predict with `ArenaSim::pawnVelocity`;
+  the camera and rifle follow the drawn pose; the status line shows the prediction warning.
+- Test `network_prediction`; `network_arena`, `network_session`, `network_cli`,
+  `network_wire` and `network_settings` updated.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 44/46 (`renderer_swap` and `save_games_cli`, the known no-display failures); the network and Arena set 18/18 |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*` and Arena set (18 tests) pass, no sanitizer reports |
+| Steamworks on (SDK 1.65) | builds; the network, Steam and Arena set (14 tests) passes |
+| `player --check` on Arena | 0 problems in 3 scenes |
+
+The prediction net-test, 4 clients, seed 7 (`network_prediction`):
+
+| Preset | Hz | Predicted | Checked | Matched | Corrections | Replayed | Largest correction | Largest offset shown |
+|---|---|---|---|---|---|---|---|---|
+| clean | 60 | 3592 | 1792 | 1780 | 4 | 8 | 0.067 m | 0.067 m |
+| cafe | 60 | 3522 | 1727 | 1709 | 7 | 22 | 0.200 m | 0.201 m |
+| poor | 60 | 3379 | 1524 | 1476 | 16 | 75 | 0.267 m | 0.684 m |
+| hostile | 60 | 3035 | 1070 | 916 | 96 | 1815 | 0.817 m | 0.817 m |
+| clean | 120 | 7192 | 3592 | 3580 | 4 | 8 | 0.034 m | 0.034 m |
+| cafe | 120 | 7059 | 3425 | 3356 | 48 | 297 | 0.117 m | 0.344 m |
+| poor | 120 | 6773 | 2473 | 2335 | 83 | 1284 | 0.175 m | 0.727 m |
+| hostile | 120 | 6076 | 1513 | 1312 | 120 | 4486 | 0.642 m | 0.674 m |
+
+On every run every client ends 0.0000 m from the host and draws every character within
+1.5 mm of it (position quantization). On the clean network the only corrections are the
+first ticks, before the client has measured the host's clock (each one a tick the host
+had no input for).
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Prediction tests | `network_prediction`: the host's step and a client's `predictCharacterStep` agree within 0.1 mm over 240 ticks of walking and two jumps; a predicted character walks through a dynamic box that stops it offline; `correctCharacter` moves the character, its Transform and velocity; bad arguments are refused; a client's dynamic box doesn't fall and its component stays Dynamic; `applyReplicaBodyPose`; the `--check` rule; `network_arena`: each client predicts only its own pawn |
+| Frame-rate-independent inputs | the engine `InputSampler` at 24, 30, 60, 144, 240 and 1000 fps, at 60 and 120 Hz: each press in exactly one command, fire and movement held for the same ticks within a frame, the aim turned by the same amount (1e-4 rad) and each command carrying it as of its tick; `network_arena`'s offline path at the same rates (same shots and reloads) |
+| Replay side-effect suppression | in the prediction scenario the game's move rule runs exactly once per predicted tick, never for the replayed ones (up to 4486 replayed); clients see no contact or sensor events while the host's characters set off the trigger (`network_prediction` also checks it directly) |
+| Headless correction convergence | the table above: every preset at 60 and 120 Hz converges to 0.0000 m once inputs stop, with no correction offset left; no offset is shown more than 150 ms after its correction, and none past 1 m |
+| Visual inspection of camera and viewmodel under network jitter | not done here (no display). `player --net-preview poor` (or `hostile`) on `Scenes/arena-mp.swscene` is for the project owner to look at |
+
+Outstanding for this batch:
+
+- The visual check above, on the desktop.
+- Predicted characters pass through each other and through dynamic bodies online, and
+  moving platforms aren't supported (section 9.2); `--check` reports them.
+- At 120 Hz on the hostile preset (200 ms one way) most inputs still arrive late: the
+  lead tops out at 32 ticks there (267 ms), so the host falls back often and corrects.

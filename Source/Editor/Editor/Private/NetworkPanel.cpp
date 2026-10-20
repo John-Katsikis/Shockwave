@@ -5,6 +5,7 @@
 // steam_app_id, like `player --steam-status`); nothing else here opens a socket.
 #include "Editor.h"
 
+#include <Engine/Prefab.h>
 #include <GameFramework/GameNetwork.h>
 #include <Multiplayer/NetworkSchema.h>
 #include <Multiplayer/NetworkValidation.h>
@@ -53,6 +54,16 @@ void Editor::checkNetworkSetup() {
     net::NetworkProject network;
     net::loadNetworkProject(m_project, network, problems);
     if (frozen) net::validateNetworkProject(m_project, network, registry, problems);
+    // The open scene against the predicted-character collision rule.
+    bool predictedSpawns = false;
+    if (network.manifest)
+        for (const net::ManifestPrefab& entry : network.manifest->prefabs) {
+            std::string error;
+            if (const auto prefab = shockwave::prefabs().load(entry.path, &error))
+                predictedSpawns = predictedSpawns || net::predictedPrefab(prefab->world, prefab->root);
+        }
+    const std::string scene = m_scenePath.empty() ? std::string("the open scene") : m_project.relative(m_scenePath);
+    net::validatePredictionWorld(m_world, scene, predictedSpawns, problems);
     if (network.manifest) {
         net::ContentDigest content;
         if (net::computeContentDigest(m_project, *network.manifest, network.manifestShown, content, problems))
@@ -212,10 +223,27 @@ void Editor::drawNetworkProjectSettings() {
             "Steam %s, SteamID %llu, signed in %s, relay %s", net::steamServiceStateName(m_steam->state()),
             static_cast<unsigned long long>(m_steam->localPeer().value), m_steam->available() ? "yes" : "no",
             net::steamRelayStatusName(m_steam->relayStatus()));
+        // The session's transport and auth sessions are Steam's: it stops first.
+        ImGui::BeginDisabled(networkPlay());
         if (gui::button("Stop Steam")) {
             m_steam.reset();
             log("Steam shut down");
         }
+        ImGui::EndDisabled();
+        if (networkPlay()) ImGui::SetItemTooltip("Stop network play first");
+    }
+    if (const net::NetworkWorld* network = m_session ? m_session->network() : nullptr; network && network->online()) {
+        const net::NetworkWorldStats& stats = network->stats();
+        ImGui::Text(
+            "Network play: %s, %s, player %u, %u network objects", net::networkRoleName(network->role()),
+            net::networkStateName(network->state()), unsigned(network->localPlayer()), unsigned(stats.objects));
+        if (network->authority())
+            ImGui::Text(
+                "Players in the game: %u of %u welcomed", unsigned(stats.activePeers), unsigned(stats.admitted));
+        if (network->state() == net::NetworkState::Failed)
+            ImGui::TextColored(
+                errorColor, "%s (%s)", network->failureText().c_str(),
+                net::reasonName(network->failure()) ? net::reasonName(network->failure()) : "?");
     }
     if (!m_steamMessage.empty()) ImGui::TextColored(errorColor, "%s", m_steamMessage.c_str());
 }

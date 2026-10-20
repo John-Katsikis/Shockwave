@@ -34,6 +34,12 @@ UIWorld* PlaySession::ui() const { return m_subsystems.find<UIWorld>(); }
 NavigationWorld& GameContext::navigation() const { return subsystems.get<NavigationWorld>(); }
 NavigationWorld* PlaySession::navigation() const { return m_subsystems.find<NavigationWorld>(); }
 CircuitWorld* PlaySession::circuits() const { return m_subsystems.find<CircuitWorld>(); }
+net::NetworkWorld& GameContext::network() const { return subsystems.get<net::NetworkWorld>(); }
+net::NetworkWorld* PlaySession::network() const { return m_subsystems.find<net::NetworkWorld>(); }
+bool PlaySession::online() const {
+    const net::NetworkWorld* network = this->network();
+    return network && network->online();
+}
 
 Input& GameContext::input() const {
     if (engine) return engine->input();
@@ -92,6 +98,16 @@ void PlaySession::start() {
             world, m_context.engine ? &m_context.engine->assets() : nullptr, m_context.jobs);
         SaveGames& saves = m_subsystems.add<SaveGames>(
             world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr, m_saveFolder, m_saveScene);
+        // After physics, so it is destroyed before physics; before the GameMode, so
+        // beginPlay sees its role. A host listens and a client connects here.
+        // Offline it only spawns manifest prefabs as plain copies.
+        auto& network = m_subsystems.add<net::NetworkWorld>(m_networkStart, m_services, &world);
+        network.setPhysics(physics());   // its network mode follows the role
+        if (network.online()) {
+            if (auto begun = network.begin(); !begun)
+                throw std::runtime_error(std::string("network play didn't start: ") + begun.error().message);
+            saves.setNetworkPlay(true);
+        }
         saves.beforeSave = [this] {
             if (m_mode) m_mode->beforeSave(m_context);
             // The game circuit's variables go into the save's values, after the GameMode's.
@@ -113,7 +129,9 @@ void PlaySession::start() {
         host.ui = ui();
         host.physics = physics();
         host.assets = m_context.engine ? &m_context.engine->assets() : nullptr;
-        m_subsystems.add<CircuitWorld>(world, host, m_gameCircuit).beginPlay();
+        CircuitWorld& circuits = m_subsystems.add<CircuitWorld>(world, host, m_gameCircuit);
+        circuits.setBreakpointsAllowed(!online());
+        circuits.beginPlay();
         physics()->synchronize();
         navigation()->synchronize();
         audio()->synchronize();
@@ -131,17 +149,23 @@ void PlaySession::start() {
     }
 }
 
-void PlaySession::pause() {
-    if (m_state == State::Playing) {
-        audio()->mixer().pause(true);
-        m_state = State::Paused;
+bool PlaySession::pause() {
+    if (m_state != State::Playing) return m_state == State::Paused;
+    if (online()) {
+        SW_LOG(LogGame, Warning, "Pause is off during network play: the session keeps running");
+        return false;
     }
+    audio()->mixer().pause(true);
+    m_state = State::Paused;
+    return true;
 }
 
 void PlaySession::stop() {
     if (!active()) return;
     std::exception_ptr failure;
     try {
+        // The network goes first: peers are told, and nothing arrives during endPlay.
+        if (net::NetworkWorld* network = this->network()) network->close();
         m_mode->endPlay(m_context);
         if (CircuitWorld* circuits = this->circuits()) circuits->endPlay();
     } catch (...) {
@@ -168,16 +192,19 @@ void PlaySession::tearDown() {
 void PlaySession::update(double dt) {
     if (m_state != State::Playing || (circuits() && circuits()->debugPaused())) return;
     if (!std::isfinite(dt) || dt <= 0) throw std::invalid_argument("simulation dt must be positive and finite");
+    network()->drain(uint32_t(m_ticks));   // what arrived since the last pump or tick
     applyLoadedSave();
     storePreviousTransforms(m_context.world, m_context.jobs);
     m_schedule.run(m_context.world, m_context.jobs, dt);
     navigation()->step(dt);   // agents steer first, so physics moves their characters
+    network()->prepareStep();   // which characters move as clients predict them
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
     circuits()->fixedTick(dt);
     audio()->update(dt);
     audio()->synchronize();
     saves()->addPlayTime(dt);
+    network()->endTick(uint32_t(m_ticks));   // the host sends this tick's state
     ++m_ticks;
 }
 
@@ -185,12 +212,27 @@ void PlaySession::frame(double dt) {
     if (circuits() && circuits()->debugPaused()) return;
     if (active()) applyLoadedSave();   // a load from a pause menu goes in while paused
     if (m_state == State::Playing && !(circuits() && circuits()->debugPaused())) {
+        // A client's predicted and interpolated poses, before game code places a camera.
+        network()->present(m_context.engine ? float(m_context.engine->interpolationAlpha()) : 1.0f);
         m_mode->frame(m_context, dt);
         circuits()->frame(dt);
         animation()->update(dt);   // after game code, so a clip it picks shows this frame
         audio()->synchronize();
     }
     if (active() && m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
+}
+
+void PlaySession::pumpNetwork(double nowSeconds) {
+    if (net::NetworkWorld* network = this->network()) network->pump(nowSeconds);
+}
+
+bool PlaySession::handleOnlineEvent(const net::OnlineEvent& event) {
+    net::NetworkWorld* network = this->network();
+    return network && network->handleOnlineEvent(event);
+}
+
+void PlaySession::collectInput(double frameDt) {
+    if (m_state == State::Playing && m_mode) m_mode->collectInput(m_context, frameDt);
 }
 
 SaveGames& GameContext::saves() const { return subsystems.get<SaveGames>(); }

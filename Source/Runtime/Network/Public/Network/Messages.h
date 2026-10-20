@@ -232,7 +232,7 @@ struct Challenge {
         v.u64("host_peer", m.hostPeer, 1);
         v.u16("tick_rate", m.tickRate, kMinTickRate, kMaxTickRate);
         v.u16("snapshot_rate", m.snapshotRate, kSnapshotRates.front(), kSnapshotRates.back());
-        v.u16("interpolation_ms", m.interpolationMs, 50, 200);
+        v.u16("interpolation_ms", m.interpolationMs, 25, 200);
         v.u16("max_rewind_ms", m.maxRewindMs, 0, 250);
     }
     // snapshot_rate must be one of kSnapshotRates and divide tick_rate.
@@ -641,7 +641,8 @@ struct PoseState {
     NetVec3 linearVelocity;
     NetVec3 angularVelocity;
     uint8_t flags = 0;
-    static constexpr uint8_t kSleeping = 1, kTeleport = 2;
+    // kGrounded: a character standing on the ground (what prediction compares).
+    static constexpr uint8_t kSleeping = 1, kTeleport = 2, kGrounded = 4;
 
     template <class Self, class V>
     static void fields(Self& m, V& v) {
@@ -649,7 +650,7 @@ struct PoseState {
         v.quat("rotation", m.rotation);
         v.vec3("linear_velocity", m.linearVelocity, 512.0f);
         v.vec3("angular_velocity", m.angularVelocity, 1024.0f);
-        v.bits8("flags", m.flags, kSleeping | kTeleport);
+        v.bits8("flags", m.flags, kSleeping | kTeleport | kGrounded);
     }
     // The rotation's length must be within 0.99..1.01.
     const char* invalid() const;

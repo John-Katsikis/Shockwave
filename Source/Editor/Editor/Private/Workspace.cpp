@@ -171,7 +171,9 @@ void Editor::drawMenuBar() {
                     playState() == PlayState::Playing ? "Stop" : "Play", "Ctrl+P", false, m_gameModuleMatches)) {
                 playState() == PlayState::Playing ? stop() : play();
             }
-            if (ImGui::MenuItem("Pause", "Ctrl+Shift+P", playState() == PlayState::Paused, playing())) pause();
+            if (ImGui::MenuItem("Pause", "Ctrl+Shift+P", playState() == PlayState::Paused, playing() && !networkPlay()))
+                pause();
+            if (networkPlay()) ImGui::SetItemTooltip("Pause is off during network play: the host never pauses");
             if (ImGui::MenuItem("Stop", nullptr, false, playing())) stop();
             ImGui::Separator();
             if (ImGui::MenuItem("Play from scene camera", nullptr, &m_prefs.playFromSceneCamera)) m_prefsDirty = true;
@@ -269,9 +271,15 @@ void Editor::drawCommandBar() {
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!playing());
-        if (gui::toolButton("Pause", playState() == PlayState::Paused, "Pause / resume (Ctrl+Shift+P)")) pause();
+        ImGui::BeginDisabled(!playing() || networkPlay());
+        if (gui::toolButton(
+                "Pause", playState() == PlayState::Paused,
+                networkPlay() ? "Pause is off during network play: the host never pauses"
+                              : "Pause / resume (Ctrl+Shift+P)"))
+            pause();
+        ImGui::EndDisabled();
         ImGui::SameLine();
+        ImGui::BeginDisabled(!playing());
         if (gui::toolButton("Stop", false, "Stop and restore the scene as it was before Play (Ctrl+P)")) stop();
         ImGui::EndDisabled();
 
@@ -353,9 +361,8 @@ void Editor::drawStatusBar() {
                 count ? (std::to_string(count) + " selected   ").c_str() : "", m_world.entityCount(), fps,
                 fps > 0.0 ? 1000.0 / fps : 0.0);
             const float width = ImGui::CalcTextSize(right).x;
-            ImGui::SameLine(
-                std::max(
-                    ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
+            ImGui::SameLine(std::max(
+                ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - width - style.WindowPadding.x * 2.0f));
             ImGui::TextDisabled("%s", right);
             ImGui::EndMenuBar();
         }
@@ -608,10 +615,9 @@ void Editor::drawPreferencesWindow() {
     }
     ImGui::SetItemTooltip("Themes are .swtheme files in themes/. Edit one while the editor runs to restyle it live.");
     changed |= ImGui::Checkbox("Panels can leave the main window", &m_prefs.detachablePanels);
-    ImGui::SetItemTooltip(
-        "Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
-        "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
-        "desktop the editor then runs through XWayland, since Wayland can't place windows.");
+    ImGui::SetItemTooltip("Drag a panel's tab or title bar outside the editor to give it a window of its own,\n"
+                          "on any monitor. Takes effect the next time the editor starts. On a Wayland\n"
+                          "desktop the editor then runs through XWayland, since Wayland can't place windows.");
 
     ImGui::SeparatorText("Audio");
     if (gui::beginPropertyGrid("audio_preferences")) {
@@ -650,9 +656,8 @@ void Editor::drawPreferencesWindow() {
         engine().graphics().apply(settings, error);
         changed = true;
     }
-    ImGui::SetItemTooltip(
-        "Wait for each frame to reach the screen before starting the next, so input feels\n"
-        "more immediate. Costs some frame rate when the GPU is the bottleneck");
+    ImGui::SetItemTooltip("Wait for each frame to reach the screen before starting the next, so input feels\n"
+                          "more immediate. Costs some frame rate when the GPU is the bottleneck");
     if (ImGui::SliderFloat("Render scale", &m_prefs.renderScale, 0.25f, 2.0f, "%.2fx")) {
         auto settings = engine().graphics().requested();
         settings.renderScale = m_prefs.renderScale;

@@ -103,6 +103,22 @@ run(1 "arena.swscene: entity 'Net door': NetworkObject profile \"arena.missing.v
 run(1 "entity 'Net door copy': NetworkObject key \"door\" is also used by 'Net door'" --check)
 file(WRITE "${scene}" "${goodScene}")
 
+# Predicted characters collide with static bodies only: once the scene is a network scene
+# (and the manifest's Net Player is a PredictedCharacter), its patrolling kinematic bots
+# are errors that say so.
+file(WRITE "${scene}" "${goodScene}
+entity \"Net lamp\"
+  Transform
+  NetworkObject
+    key \"lamp\"
+    profile \"engine.pose.v1\"
+    mode Static
+end
+")
+run(1 "arena.swscene: entity 'Blue 1': a moving kinematic body can't share a scene with predicted characters in v1: they collide with static bodies only"
+    --check)
+file(WRITE "${scene}" "${goodScene}")
+
 # --steam-status needs an AppID, and a build with the SDK; it fails visibly otherwise.
 run(1 "steam_app_id is 0 in Config/Network.swnetwork" --steam-status)
 if(NOT STEAMWORKS)
@@ -113,7 +129,31 @@ if(NOT STEAMWORKS)
     file(WRITE "${settings}" "${goodSettings}")
 endif()
 
+# --net-test: the session handshake over the in-process loopback hub, with the
+# project's settings. No Steam, socket or window.
+run(0 "net-test handshake seed 7 preset cafe: ok.*peer client 3: client, active" --net-test --seed 7)
+run(0 "net-test handshake seed 3 preset hostile: ok" --net-test --seed 3 --preset hostile --clients 11)
+run(0 "peer ticket never answered: client, failed AuthUnavailable.*0 packets in flight, 0 auth sessions, 0 tickets"
+    --net-test --scenario rejections)
+run(0 "rounds 100" --net-test --scenario stop-start --json "${TEMP}/net-test.json")
+# Replication: a moving box and spawned crates; every client (one late) ends with the host's state.
+run(0 "net-test replication seed 5 preset poor: ok.*late\\): client, active.*max position error 0.000000 m"
+    --net-test --scenario replication --seed 5 --preset poor --clients 5)
+file(READ "${TEMP}/net-test.json" json)
+if(NOT json MATCHES "\"mode\": \"net-test\"" OR NOT json MATCHES "\"ok\": true" OR NOT json MATCHES "\"rounds\": 100")
+    message(FATAL_ERROR "--net-test --json is missing fields:\n${json}")
+endif()
+run(0 "net-test prediction seed 2 preset hostile: ok.*prediction: [0-9]+ ticks predicted.*final error 0.0000 m"
+    --net-test --scenario prediction --seed 2 --preset hostile --clients 4)
+run(2 "unknown scenario bogus" --net-test --scenario bogus)
+run(2 "unknown fault preset bogus" --net-test --preset bogus)
+run(2 "--clients must be 1 to max_players - 1" --net-test --clients 12)
+
 # The tools run on their own.
+run(2 "run on their own" --net-test --network-info)
+run(2 "run on their own" --net-test --check)
+run(2 "--net-preview plays the scene" --net-preview --check)
+run(2 "--net-preview plays the scene" --net-preview cafe --net-test)
 run(2 "run on their own" --network-info --check)
 run(2 "run on their own" --network-info --network-schema -)
 run(2 "run on their own" --steam-status --check)

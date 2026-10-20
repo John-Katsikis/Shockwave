@@ -118,6 +118,173 @@ Recorded here as the document asks, newest last. Status of each batch is in
     clientTimestampMs, ...)` for `QueryAtTimestamp(uint64_t client_timestamp_ms)`. The
     brief's "Astra pre-allocated arena storage" is constructor-time allocation: the
     engine has no Astra arena.
+22. Plan Batch 4 (session integration), 2026-10-19: the Challenge message accepts
+    `interpolation_ms` from 25, matching adjustment 19 (its validator still said 50).
+23. Clients stop at Synchronizing: Ready, Active and the baseline arrive with Batch 5.
+    The 30-second synchronization timeout already applies on both sides, so until then a
+    client is dropped 30 seconds after Welcome. The host is Active once it listens.
+24. Until sessions can resynchronize, an online stall over 250 ms ends network play with
+    SimulationOverrun, like debt over 250 ms; either way the clock drops the debt.
+25. Nothing starts network play from the player or the editor yet: `--host`, the join
+    commands and the editor's Network window are later batches. The CLI path for this
+    batch is `player --net-test` with three pure-protocol scenarios (handshake,
+    rejections, stop-start) over NetworkWorlds and the loopback hub, plus `--preset` and
+    `--clients`. The player's own services are the unavailable ones, so it never starts
+    Steam (only `--steam-status` does).
+26. NetworkWorld neither creates nor joins lobbies: the application does, and passes the
+    LobbyId in NetworkStart. A host with a lobby admits only its members whose Hello
+    carries that lobby; a host without one admits only `lobby_id` 0 (direct joins). At
+    shutdown it closes the lobby to joins first and leaves it last.
+27. Authentication can be turned off only for loopback addresses, and authenticating
+    needs available services; a developer direct join over Steam still authenticates.
+    The test service is `LoopbackOnlineServices` in Network, whose tickets are made-up
+    bytes naming issuer and audience.
+28. The host's random session nonce goes in every header after Hello; the client takes
+    it from the Challenge and any other value is MalformedPacket. A client waiting on the
+    host gives up 5 seconds after the host's own handshake timeout, so the host's Reject
+    reason arrives first.
+29. Online "pause" is `NetworkWorld::setLocalInputSuppressed`, which GameMode reads in
+    `collectInput`; `PlaySession::pause()` now returns false online. Deferred reloads
+    show as a Console line, not a list of pending changes. Renderer swaps wait in the
+    engine while the simulation time is Monotonic, so no renderer module changed.
+30. Plan Batch 5 (replication without prediction), 2026-10-19: baseline Spawns carry each
+    object's full state, so the host sends no InitialState chunks. Clients still accept
+    InitialState for baseline objects, during and after the baseline.
+31. A baseline isn't restarted. A peer whose control queue overflows (its baseline plus
+    `max_pending_reliable_bytes`) is dropped with RateLimited and can join again.
+32. `required_control_serial` is per part: the newest control serial among that part's
+    records, not the host's latest. A record goes to a peer only once the lifecycle
+    message it depends on has been handed to that peer's transport, so a slow control
+    queue doesn't hold every snapshot back.
+33. The host answers a ResyncRequest with a full snapshot to that peer (as after Active),
+    not a new baseline. More than one a second or three a minute drops the peer with
+    RateLimited; clients send no more than that.
+34. Lifecycle messages wait in a per-peer queue and go out in order within
+    `outbound_bytes_per_second` (16 KiB burst) while the transport holds less than
+    `max_pending_reliable_bytes` unsent. Snapshots get the budget minus the control
+    reserve, which is 16 KiB/s or half of a smaller budget. A full snapshot (after Active
+    or a resync) may go over the budget once.
+35. On clients, replicas of Dynamic rigid bodies become Kinematic, so the host's
+    simulation isn't fought until prediction (Batch 7).
+36. Ownership changes also increment the incarnation, like respawns. A leaving player's
+    objects get owner 0 through Ownership messages; the game decides what then happens
+    to them.
+37. Authored objects are numbered at `begin()` in key order; spawned ones follow.
+    Objects game code destroys without `despawn()` are despawned at the end of the tick.
+    A despawned ID is one at or below the highest ID seen that isn't live, so tombstones
+    need no storage; a session hands out at most 65536 IDs.
+38. Authored objects the host's baseline doesn't list (despawned before the client joined)
+    are destroyed on the client when it commits the baseline.
+39. The baseline digest is SHA-256 of `shockwave_baseline 1\n`, the object count (u32),
+    then for each object in ID order: ID u64, incarnation u32, owner u16, prefab u16, key
+    (u16 length and bytes; empty for prefabs), profile u16, state (u16 length and bytes),
+    all little endian.
+40. Static objects are sent in the baseline and, after `markChanged()`, in the next
+    snapshot once (unreliably: a lost one waits for the next change or a full snapshot).
+41. Malformed authority data on a client (a wrong digest, an unknown prefab, a reused ID,
+    a control serial gap, a snapshot of an object never spawned, state out of range...)
+    ends network play with MalformedPacket, or ContentMismatch for a key or profile its
+    content lacks. Hosts never take state from clients: the catalog's direction rules
+    refuse it.
+42. The game's API is `game.network()` `spawn`, `despawn`, `respawn`, `setOwner`,
+    `markChanged`, `networkId`, `entity`, `identity`, `hasAuthority`,
+    `isLocallyControlled`, `localPlayer` and `controlledEntity`. `submitCommand` came with
+    Batch 6 (adjustment 48).
+43. A client that hasn't validated the host yet still receives the baseline; it commits
+    it (and sends Ready) once the host is validated.
+44. `NetworkWorld` takes the World as a constructor argument and `NetworkStart` gains
+    `registry`, `prefabs` and `spawnPrefab`. PlaySession passes its world and calls
+    `endTick` after gameplay; offline, `spawn()` is a plain prefab copy.
+45. A synchronizing client gives up 5 seconds after the host would, so the host's Reject
+    (Timeout) arrives first, as in adjustment 28. Adjustment 23 no longer applies.
+46. Batch 6 builds a basic tick mapping from Ping/Pong now, ahead of Batch 7: a client
+    pings four times 100 ms apart once Active, then once a second; the host answers at
+    most 10 a second and sends away a client pinging more than 30 a second. The client
+    estimates the host's tick from the sample with the lowest of the last 8 round trips
+    and targets each command half a round trip plus 2 ticks ahead (2 to 16 ticks).
+    Smoothing, clock drift and prediction stay in Batch 7.
+47. The host keeps 64 ticks of input per player and takes exactly one per pawn per tick
+    (`takeInput`). A missing input repeats the last one for at most 2 ticks with fire off
+    and no presses, then the pawn stands with its last aim. Inputs for ticks already run
+    are dropped; inputs more than 32 ticks ahead are ignored, and far-ahead messages for
+    more than half a second's ticks within one second send the client away
+    (RateLimited). A command whose move is longer than the wire's circle is malformed.
+    Duplicates keep the first copy. An input's incarnation must match the pawn's.
+48. Commands (adjustment 42's `submitCommand`, now built) carry an increasing sequence
+    per sender, checked against the frozen registry: unknown IDs, replays and payloads
+    outside their ranges are malformed (the sender is sent away); a refused permission,
+    target or rate (a token bucket per command) is dropped and counted. Accepted
+    commands wait in a 64-entry queue for `pollCommand`. The host's own player and
+    offline play go through the same checks as slot 1, rate aside.
+49. Client replicas of a character have their `CharacterController` disabled (as rigid
+    bodies became kinematic in Batch 5): only the host moves characters.
+50. Clients see other players' shots only as changes in replicated state (ammo, health,
+    life); no ShotResolved events or remote tracers until Batch 8.
+51. Arena's lobby is a skeleton in the pause menu: READY, team buttons, leave, rosters,
+    and greyed Host / Find / Invite buttons that wait for Batch 9. The round starts when
+    every player has said ready; the host restarts it only after it ends.
+52. Arena's offline timers also count whole ticks now (`ceil(seconds * tick_rate)`), so
+    offline cadence matches online cadence at the same tick rate. The offline scenes'
+    behaviour is otherwise unchanged (`arena` test unchanged).
+53. The multiplayer scene (`Scenes/arena-mp.swscene`, manifest scene 2) has no bots; bots
+    stay in the offline scenes. Network play refuses any other scene.
+54. Batch 7, 2026-10-20: prediction is opted into per object by `NetworkObject` mode
+    `PredictedCharacter` and per game by `NetworkWorld::setPredictionMove`, the game's
+    movement rule (command to desired velocity and jump, the same rule its host
+    simulation applies). Without a rule nothing is predicted. Arena's Net Player prefab
+    uses it with `ArenaSim::pawnVelocity`. This replaces adjustment 49: clients no longer
+    disable `CharacterController` or set `RigidBody.motion` in the ECS; physics' Client
+    mode makes those runtime overrides internally (section 9.2), so Stop restores the
+    authored scene untouched.
+55. `PoseState` flags gain `kGrounded` (bit 2), set from `CharacterController.grounded`
+    by the pose profiles, so the client compares grounded with the host's (8.3 step 2).
+    Wire protocol v1 is unreleased, so its version stays 1; `docs/NetworkProtocol.md`
+    and `docs/NetworkSchema.md` are regenerated.
+56. Clock smoothing (8.2): each Pong moves the estimate (from the lowest-RTT sample of
+    the last 8) a quarter of the way; a difference over 8 ticks is taken at once.
+57. When the clock is behind, the client fills the skipped ticks with at most 4 commands
+    (one Inputs message, presses on the newest only), each predicted, rather than 8
+    prediction steps; larger gaps are the 8-tick reset. The first clock measurement
+    replacing the pre-measurement guess clears prediction without a warning.
+58. Limits in ticks that are really times scale with `tick_rate` (adjustment 1's 60 to
+    120 Hz): the 2..16 lead, the 8-tick reset, the host's 32-ticks-ahead limit and the
+    32-tick replay limit are for 60 Hz and double at 120 Hz
+    (`NetworkWorld::scaledTicks`); the host's input ring grows from 64 to 128 ticks to
+    hold them. Unscaled, a 120 Hz session failed the hostile preset (200 ms one way):
+    every input arrived late and every correction was too old to replay.
+59. Physics (9.1, 9.2): `setNetworkMode(Offline | Authority | Client)` and
+    `setPredictedCharacters()` are the injected policy. Client mode runs no Jolt update:
+    dynamic bodies are kinematic inside physics only, every body and other character is a
+    proxy teleported to its Transform, and only `predictCharacterStep` moves the
+    predicted one. Predicted characters' movement filter accepts static bodies only, on
+    the host's step too, so it also ignores proxies. `predictCharacterStep` never
+    publishes contacts or sensor events, so no replay flag is needed; replays reuse the
+    stored desired velocity and jump and never call game code.
+60. The `--check` rule (9.2, 13.1): in a network scene (it has network objects or spawn
+    points) with a `PredictedCharacter`, or whose manifest prefab is one, a non-sensor
+    kinematic body is an error and a non-sensor dynamic body a warning (combat can still
+    hit it; characters pass through it). Scenes without network objects (Arena's offline
+    scenes with kinematic bots) are exempt. The editor's Check network setup applies it
+    to the open scene.
+61. The correction offset halves every 50 ms and fades linearly over its last 50 ms, so
+    it reaches 0 at 150 ms without a final jump. `PreviousTransform` moves with each
+    correction, so the tick blend doesn't show it either.
+62. Reconciliation runs on each owner record as it arrives (stale ones are already
+    dropped), not only the newest of a batch; a record older than the current run of
+    predictions is ignored, and the first one after Active, or after the client stopped
+    predicting, is taken quietly.
+63. The host's resync limit allows requests 0.5 s apart and three in 55 s; the client
+    still keeps to 1 s and 60 s. Network jitter could bring two honest requests closer
+    than 1 s at the host, which sent the client away (found at 120 Hz on hostile).
+64. Sessions now use `InterpolationEngine` (9.3) for every non-Static network object with
+    a pose prefix that the client doesn't predict: 512 slots, freed on despawn. Its slot
+    key is `incarnation % 65535 + 1`, since session incarnations start at 0 and 0 marks an
+    empty slot there.
+65. The input sampler (8.1) is the engine's: `GameFramework/InputSampler.h` (`InputFrame`,
+    `InputActionNames`, `readInputFrame`, `InputSampler`, `commandYaw`, `commandPitch`,
+    `commandMoveDirection`). Arena keeps only its action names; `ArenaInput` is gone.
+    Arena shows the prediction warning on its status line for 3 seconds (8.3 step 5).
+
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.
 
@@ -1078,7 +1245,7 @@ Keep existing offline arena.swscene and its tests. Create `arena-mp.swscene` plu
 `Prefabs/Net Player.swprefab`, multiplayer spawn points and a network rules root.
 Avoid copying all implementation into a second giant GameMode. Extract shared logic:
 
-- `ArenaInput.h/.cpp`: InputSampler -> InputCommand; no World mutation.
+- `ArenaInput.h/.cpp`: InputSampler -> InputCommand; no World mutation. (Built as the engine's `GameFramework/InputSampler.h`, adjustment 65.)
 - `ArenaSimulation.h/.cpp`: movement intent, weapon timers, damage, teams, respawn.
 - `ArenaNetwork.h/.cpp`: registered profiles/commands/events, host admission hooks.
 - `ArenaPresentation.h/.cpp`: camera/viewmodel, tracers, sound, HUD and menu state.

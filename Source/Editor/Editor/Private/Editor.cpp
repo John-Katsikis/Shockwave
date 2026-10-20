@@ -8,6 +8,7 @@
 #include <Audio/Audio.h>
 #include <Circuits/Circuit.h>
 #include <Engine/Prefab.h>
+#include <GameFramework/NetworkPump.h>
 #include <GameUI/GameUI.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Navigation/Navigation.h>
@@ -181,12 +182,12 @@ void Editor::onGui() {
     if (m_retryAssetImports) {
         m_retryAssetImports = false;
         logAssetChanges(m_assetFolder->refresh(true));
-    } else {
+    } else if (!networkPlay()) {   // network play keeps content fixed until Stop
         logAssetChanges(m_assetFolder->poll(dt));
     }
     // Prefab files saved here or in any program update their copies (not mid-Play: Stop
     // brings back the authored scene, which catches up then).
-    shockwave::prefabs().poll(dt);
+    if (!networkPlay()) shockwave::prefabs().poll(dt);
     if (!playing()) shockwave::updatePrefabInstances(m_world);
     m_sceneScanTimer += dt;
     if (m_sceneScanTimer > 2.0) scanScenes();
@@ -226,6 +227,11 @@ void Editor::onGui() {
     if (m_prefsDirty && !ImGui::IsAnyItemActive()) savePreferences();
 }
 
+// Every frame, editing too: Steam's callbacks, then Play's network and input (GameFramework/NetworkPump.h).
+void Editor::onPump(double rawFrameDt) {
+    shockwave::pumpNetworkFrame(engine(), m_steam.get(), m_session.get(), rawFrameDt);
+}
+
 // Play mode runs the project's gameplay and physics at the fixed tick rate, like the player.
 void Editor::onUpdate(double dt) {
     if (playState() != PlayState::Playing) return;
@@ -235,7 +241,6 @@ void Editor::onUpdate(double dt) {
 void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
-    if (m_steam) m_steam->framePass();
     updateGameUI(dt);
     updateNavigation(dt);
     updateEffects(dt);

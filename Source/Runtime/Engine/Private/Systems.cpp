@@ -45,6 +45,15 @@ void storePreviousTransforms(World& world, JobSystem& jobs) {
         jobs, [](const Transform& t, PreviousTransform& previous) { previous.value = t; }, 1024);
 }
 
+Transform presentedTransform(const World& world, Entity e, double alpha) {
+    const Transform* t = world.get<Transform>(e);
+    if (!t) return {};
+    if (const auto* shown = world.get<PresentationTransform>(e)) return shown->value;
+    if (const auto* previous = world.get<PreviousTransform>(e))
+        return Transform::blend(previous->value, *t, float(std::clamp(alpha, 0.0, 1.0)));
+    return *t;
+}
+
 void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets) {
     // The first Environment sets the sky, ambient light and tonemapping; defaults without one.
     Environment environment;
@@ -71,8 +80,13 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
     const Pool<PreviousTransform>* previous = a < 1.0f ? world.pool<PreviousTransform>() : nullptr;
     const Pool<Transform>* transforms = world.pool<Transform>();
     const bool hasParents = world.count<Parent>() > 0;
-    // The local matrix as of this frame: blended between the last two ticks when playing.
+    const Pool<PresentationTransform>* presented = world.pool<PresentationTransform>();
+    if (presented && presented->size() == 0) presented = nullptr;
+    // The local matrix as of this frame: a presentation pose when one is set, else blended
+    // between the last two ticks when playing.
     auto local = [&](Entity e, const Transform& t) {
+        if (const PresentationTransform* shown = presented ? presented->find(e.index) : nullptr)
+            return shown->value.matrix();
         const PreviousTransform* p = previous ? previous->find(e.index) : nullptr;
         return p ? Transform::blend(p->value, t, a).matrix() : t.matrix();
     };

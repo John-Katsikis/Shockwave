@@ -76,6 +76,7 @@ void GraphicsMenu::open(GameContext& game) {
     m_draft = game.graphics().requested();
     m_visible = true;
     game.ui().setClass("Arena Menu", "menu-panel", "hidden", true);
+    game.ui().setClass("Arena Menu", "match-panel", "hidden", true);
     game.ui().setClass("Arena Menu", "graphics-panel", "hidden", false);
     refresh(game);
     game.ui().focus("Arena Menu", "preset-low");
@@ -84,6 +85,7 @@ void GraphicsMenu::close(GameContext& game) {
     m_visible = false;
     game.ui().setClass("Arena Menu", "graphics-panel", "hidden", true);
     game.ui().setClass("Arena Menu", "menu-panel", "hidden", false);
+    game.ui().setClass("Arena Menu", "match-panel", "hidden", false);
     game.ui().focus("Arena Menu", "graphics");
 }
 void GraphicsMenu::refresh(GameContext& game) {

@@ -29,15 +29,17 @@ const char* capturePoseFields(const World& world, Entity e, ProfileValue& out) {
     setVec3(out.fields[kPosition], t->position.x, t->position.y, t->position.z);
     setQuat(out.fields[kRotation], t->rotation.x, t->rotation.y, t->rotation.z, t->rotation.w);
     glm::vec3 linear{0.0f}, angular{0.0f};
+    uint8_t flags = 0;
     if (const RigidBody* body = world.get<RigidBody>(e)) {
         linear = body->linearVelocity;
         angular = body->angularVelocity;
     } else if (const CharacterController* character = world.get<CharacterController>(e)) {
         linear = character->velocity;
+        if (character->grounded) flags |= PoseState::kGrounded;
     }
     setVec3(out.fields[kLinear], linear.x, linear.y, linear.z);
     setVec3(out.fields[kAngular], angular.x, angular.y, angular.z);
-    out.fields[kFlags].u = 0;
+    out.fields[kFlags].u = flags;
     return nullptr;
 }
 
@@ -56,6 +58,7 @@ void applyPoseFields(World& world, Entity e, const ProfileValue& value) {
         body->angularVelocity = {a[0], a[1], a[2]};
     } else if (CharacterController* character = world.get<CharacterController>(e)) {
         character->velocity = {l[0], l[1], l[2]};
+        character->grounded = (value.fields[kFlags].u & PoseState::kGrounded) != 0;
     }
 }
 

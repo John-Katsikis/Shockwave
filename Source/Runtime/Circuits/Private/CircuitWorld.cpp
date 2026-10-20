@@ -244,7 +244,7 @@ void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
             const auto& pending = code[size_t(pc)];
             if (pending.op != CircuitProgram::Op::IntToFloat) {
                 const auto& site = program->sites[pending.a];
-                if (!m_skipBreakpoint &&
+                if (m_breakpointsAllowed && !m_skipBreakpoint &&
                     (m_singleStep || (!m_breakpoints.empty() && hasBreakpoint(program->path, site.name)))) {
                     m_location = {self, program->path, site.name, site.line, {}, {}};
                     for (size_t i = 0; i < site.inputs.size(); ++i)
@@ -330,6 +330,11 @@ void CircuitWorld::run(Instance& instance, Entity self, uint32_t entry) {
             program->path + ":" + std::to_string(current ? current->line : 0) + ": node '" +
             (current ? current->name : std::string("?")) + "' failed: " + e.what());
     }
+}
+
+void CircuitWorld::setBreakpointsAllowed(bool allowed) {
+    m_breakpointsAllowed = allowed;
+    if (!allowed && m_debugPaused) debugContinue();
 }
 
 void CircuitWorld::setBreakpoint(std::string circuit, std::string node, bool enabled) {

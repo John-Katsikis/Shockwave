@@ -94,6 +94,7 @@ public:
     ~Editor() override { disconnectConsole(); }
 
     void onStart() override;
+    void onPump(double rawFrameDt) override;
     void onUpdate(double dt) override;
     void onFrame(double dt) override;
     void onGui() override;
@@ -321,6 +322,8 @@ private:
     void stop();
     PlayState playState() const { return m_session ? m_session->state() : PlayState::Editing; }
     bool playing() const { return playState() != PlayState::Editing; }
+    // Play as a host or client: no Pause, and reloads wait until Stop (docs/Networking.md).
+    bool networkPlay() const { return m_session && m_session->online(); }
     void applyProjectTheme();
 
     // ---- Scene files (Editor.cpp) ----
@@ -371,6 +374,7 @@ private:
         double started = 0.0;
     } m_build;
     bool m_reloadGameCodeRequested = false;   // done between frames, not mid-GUI
+    bool m_reloadAfterNetworkPlay = false;   // game code changed during network play
 
     shockwave::Project m_project;
     bool m_hasProject = false;

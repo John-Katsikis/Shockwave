@@ -184,7 +184,11 @@ std::string networkSchemaMarkdown(const ReplicationRegistry& registry, std::stri
            "random UUID key; a prefab root may leave it empty for its copies to set. In v1 a NetworkObject is an "
            "unparented root with scale 1 1 1, prefab parts can't be one, `always_relevant` is 1, a "
            "`PredictedCharacter` has a CharacterController and no RigidBody or Collider, and each profile's "
-           "required components are present. NetworkSpawnPoint team and order pairs are unique.\n\n";
+           "required components are present. NetworkSpawnPoint team and order pairs are unique.\n\n"
+           "A `PredictedCharacter` moves at once on its owner's machine and is corrected by the host. Online it "
+           "collides with static bodies only, on the host as in prediction: in a network scene with one (or whose "
+           "manifest prefab is one) a moving kinematic body that isn't a sensor is an error (no moving platforms "
+           "or doors in v1) and a dynamic one a warning (characters pass through it).\n\n";
 
     out << "## Config/NetworkManifest.swnetmanifest\n\n"
         << "```text\nshockwave_network_manifest 1\ngame_protocol \"arena.v1\"\nscene 1 \"Scenes/arena-mp.swscene\"\n"
@@ -352,10 +356,13 @@ std::string networkInfoJson(const NetworkInfo& info) {
     if (!build.steamworks)
         unsupported.push_back(
             "steam transport: this build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON)");
-    unsupported.push_back("hosting and joining sessions (Batch 4)");
+    unsupported.push_back("hosting and joining from the player or editor (--host, --join: later batches)");
     unsupported.push_back(
-        "replication, prediction and lag compensation in sessions (Batches 5 to 8; the delta, interpolation and "
-        "rewind libraries exist but no session uses them)");
+        "lag compensation in sessions (Batch 8; the rewind library exists but no session uses it) and delta "
+        "snapshots (sessions send full-state snapshots)");
+    unsupported.push_back(
+        "predicted characters against moving bodies: they collide with static bodies only in v1 (--check reports "
+        "moving bodies in a network scene with them)");
     unsupported.push_back("interest management: every object is always relevant in v1");
     for (size_t i = 0; i < unsupported.size(); ++i) out += std::string(i ? ", " : "") + jsonQuote(unsupported[i]);
     out += "]\n}\n";

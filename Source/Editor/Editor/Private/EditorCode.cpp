@@ -99,6 +99,11 @@ void Editor::reloadGameCode() {
         warn("Game code is built into this editor (SHOCKWAVE_MODULAR is off), so it can't reload");
         return;
     }
+    if (networkPlay()) {   // the match keeps its code; this reload runs at Stop
+        if (!std::exchange(m_reloadAfterNetworkPlay, true))
+            log("Game code changed: it reloads when network play stops");
+        return;
+    }
     const double start = seconds();
     const bool wasPlaying = playing();
     if (wasPlaying) stop();
@@ -227,9 +232,8 @@ void Editor::drawBuildMenu() {
     }
     if (ImGui::MenuItem("Reload renderer", "Ctrl+Alt+R", false, renderer.swappable() && reloadable))
         engine().reloadRenderer();
-    ImGui::SetItemTooltip(
-        "Restart the renderer from its plugin as it is on disk, with any rebuilt shaders.\n"
-        "Meshes, textures and settings carry over.");
+    ImGui::SetItemTooltip("Restart the renderer from its plugin as it is on disk, with any rebuilt shaders.\n"
+                          "Meshes, textures and settings carry over.");
     bool autoRenderer = engine().autoReloadRenderer();
     if (ImGui::MenuItem("Reload renderer when rebuilt", nullptr, &autoRenderer, reloadable)) {
         engine().setAutoReloadRenderer(autoRenderer);

@@ -5,12 +5,14 @@
 
 #include <Engine/Prefab.h>
 #include <GameFramework/GameNetwork.h>
+#include <Multiplayer/NetTest.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkSchema.h>
 #include <Multiplayer/NetworkValidation.h>
 #include <SteamServices/SteamServices.h>
 
 #include <chrono>
+#include <stdexcept>
 #include <cstdio>
 #include <fstream>
 #include <thread>
@@ -140,6 +142,33 @@ int steamStatus(const shockwave::Project& project, bool server) {
     return signedIn && relay != net::SteamRelayStatus::Failed ? 0 : 1;
 }
 
+int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json) {
+    net::NetTestOptions options;
+    options.scenario = command.scenario;
+    options.seed = command.seed;
+    options.preset = command.preset;
+    options.clients = command.clients;
+    // The project's settings when it has them: tick rate, player count and timeouts.
+    const fs::path settingsFile = net::networkSettingsPath(project);
+    if (std::error_code ec; fs::is_regular_file(settingsFile, ec)) {
+        net::NetworkSettingsFile file;
+        std::string error;
+        if (!net::readNetworkSettings(settingsFile, file, error)) {
+            std::fprintf(stderr, "Player: %s\n", error.c_str());
+            return 1;
+        }
+        options.settings = file.settings;
+    }
+    net::NetTestReport report;
+    if (!net::runNetTest(options, report)) {
+        for (const std::string& e : report.errors) std::fprintf(stderr, "Player: %s\n", e.c_str());
+        return 2;
+    }
+    std::fputs(net::netTestText(report).c_str(), stdout);
+    if (!json.empty() && !writeText(json, net::netTestJson(report))) return 1;
+    return report.ok ? 0 : 1;
+}
+
 void Player::checkNetworkProject(std::vector<std::string>& problems) {
     m_networkRegistry = std::make_unique<net::ReplicationRegistry>();
     std::vector<std::string> registryProblems;
@@ -169,6 +198,7 @@ void Player::checkNetworkProject(std::vector<std::string>& problems) {
                                 entry.profile + "\" (" + network.manifestShown + ":" + std::to_string(entry.line) +
                                 ")"});
             net::validateNetworkWorld(prefab->world, *m_networkRegistry, shown, true, found);
+            m_predictedSpawns = m_predictedSpawns || net::predictedPrefab(prefab->world, prefab->root);
         }
         net::ContentDigest content;
         net::computeContentDigest(m_project, *network.manifest, network.manifestShown, content, found);
@@ -183,7 +213,58 @@ void Player::checkNetworkScene(
     if (!m_networkRegistry) return;
     std::vector<net::NetProblem> found;
     net::validateNetworkWorld(world, *m_networkRegistry, scene, false, found);
+    net::validatePredictionWorld(world, scene, m_predictedSpawns, found);
     for (const net::NetProblem& problem : found) print(problem, problems);
+}
+
+void Player::startNetPreview() {
+    const net::FaultPreset* preset = net::findFaultPreset(m_tool.netPreview);
+    if (!preset) throw std::runtime_error("--net-preview takes clean, cafe, poor or hostile");
+    m_previewRegistry = std::make_unique<net::ReplicationRegistry>();
+    std::vector<std::string> registryProblems;
+    if (!shockwave::buildReplicationRegistry(&m_module, *m_previewRegistry, registryProblems))
+        throw std::runtime_error("--net-preview: the game's network types: " + registryProblems.front());
+    net::NetworkProject network;
+    std::vector<net::NetProblem> problems;
+    net::loadNetworkProject(m_project, network, problems);
+    const std::string scene = m_project.relative(m_project.startupScene);
+    uint16_t sceneId = 0;
+    if (network.manifest)
+        for (const net::ManifestScene& s : network.manifest->scenes)
+            if (s.path == scene) sceneId = s.id;
+    if (!network.manifest || sceneId == 0)
+        throw std::runtime_error("--net-preview: " + scene + " isn't a scene in the network manifest");
+    network.settings.settings.enabled = true;   // a preview on this machine needs no published multiplayer
+    network.settings.settings.transport = net::NetTransportKind::Loopback;
+    if (!net::readyForSession(m_project, network, *m_previewRegistry, sceneId, problems))
+        throw std::runtime_error("--net-preview: " + problems.front().text);
+    net::NetworkStart start;
+    start.settings = network.settings.settings;
+    start.compatibility.gameProtocol = network.manifest->gameProtocol;
+    start.compatibility.schemaDigest = m_previewRegistry->schemaDigest();
+    start.compatibility.sceneId = sceneId;   // one process: the content digest matches by construction
+    start.address = {net::TransportAddress::Loopback, 27015, 0};
+    start.registry = m_previewRegistry.get();
+    for (const net::ManifestPrefab& p : network.manifest->prefabs) start.prefabs.push_back({p.id, p.path, p.profile});
+    net::LoopbackHubConfig hub;
+    hub.faults = preset->profile;
+    m_previewHub = std::make_unique<net::LoopbackHub>(hub);
+    m_previewHostServices = std::make_unique<net::LoopbackOnlineServices>(*m_previewHub, net::PeerId{1});
+    m_previewClientServices = std::make_unique<net::LoopbackOnlineServices>(*m_previewHub, net::PeerId{2});
+    // The host plays its own copy of the scene with no window, sound or devices.
+    m_previewWorld = std::make_unique<shockwave::World>(m_world);
+    m_previewHost = std::make_unique<shockwave::PlaySession>(*m_previewWorld, engine().jobs(), *m_instance);
+    m_previewHost->setAudioDevice(false);
+    start.role = net::NetworkRole::Authority;
+    m_previewHost->setNetworkStart(start, m_previewHostServices.get());
+    m_previewHost->start();
+    start.role = net::NetworkRole::Client;
+    m_session->setNetworkStart(start, m_previewClientServices.get());
+    const net::FaultProfile& f = preset->profile;
+    std::printf(
+        "net preview: playing %s as a client of a host in this process, %s network (%.0f ms one way, %.0f ms "
+        "jitter, %.0f%% loss)\n",
+        scene.c_str(), preset->name, f.latencyUs / 1000.0, f.jitterUs / 1000.0, f.unreliableLoss * 100.0);
 }
 
 }   // namespace player

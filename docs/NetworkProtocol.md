@@ -71,7 +71,7 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 |  | `host_peer` | u64 | >= 1 |
 |  | `tick_rate` | u16 | 60..120 |
 |  | `snapshot_rate` | u16 | 10..120 |
-|  | `interpolation_ms` | u16 | 50..200 |
+|  | `interpolation_ms` | u16 | 25..200 |
 |  | `max_rewind_ms` | u16 | 0..250 |
 
 ### 3 AuthTicket
@@ -303,7 +303,7 @@ Profiles 1..31 belong to the engine and 32..1023 to games.
 | 12 | `rotation` | quat (4 x f32, xyzw) | length 0.99..1.01 |
 | 28 | `linear_velocity` | vec3 (3 x f32) | finite, abs <= 512 |
 | 40 | `angular_velocity` | vec3 (3 x f32) | finite, abs <= 1024 |
-| 52 | `flags` | u8 bits | only 0x03 |
+| 52 | `flags` | u8 bits | only 0x07 |
 
 ## Reason codes
 

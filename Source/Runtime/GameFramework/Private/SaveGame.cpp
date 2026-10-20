@@ -266,6 +266,10 @@ void SaveGames::fail(std::string message) {
 fs::path SaveGames::fileFor(std::string_view slot) const { return m_folder / (std::string(slot) + ".swsave"); }
 
 bool SaveGames::save(std::string_view slot, std::string_view title) {
+    if (m_networkPlay) {
+        fail(kUnavailableDuringNetworkPlay);
+        return false;
+    }
     if (m_folder.empty()) {
         fail("saving is off here (no save folder)");
         return false;
@@ -321,6 +325,10 @@ bool SaveGames::save(std::string_view slot, std::string_view title) {
 }
 
 bool SaveGames::load(std::string_view slot) {
+    if (m_networkPlay) {
+        fail(kUnavailableDuringNetworkPlay);
+        return false;
+    }
     if (!validSaveSlot(slot)) {
         fail("'" + std::string(slot) + "' isn't a slot name");
         return false;
@@ -333,6 +341,10 @@ bool SaveGames::load(std::string_view slot) {
 }
 
 bool SaveGames::loadFile(const fs::path& file) {
+    if (m_networkPlay) {
+        fail(kUnavailableDuringNetworkPlay);
+        return false;
+    }
     std::error_code ec;
     if (!fs::is_regular_file(file, ec)) {
         fail("there's no save " + file.string());
@@ -381,6 +393,10 @@ bool SaveGames::applyLoaded() {
 }
 
 bool SaveGames::remove(std::string_view slot) {
+    if (m_networkPlay) {
+        fail(kUnavailableDuringNetworkPlay);
+        return false;
+    }
     if (m_folder.empty() || !validSaveSlot(slot)) return false;
     std::lock_guard files(m_shared->fileMutex);
     std::error_code ec;

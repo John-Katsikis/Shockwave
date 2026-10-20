@@ -66,6 +66,8 @@ Saved in scenes and prefabs and edited in the Inspector like any component.
 
 A NetworkObject's `key` is 1..96 letters, digits and `. _ : -`, unique in its scene. The editor gives new and duplicated objects a random UUID key; a prefab root may leave it empty for its copies to set. In v1 a NetworkObject is an unparented root with scale 1 1 1, prefab parts can't be one, `always_relevant` is 1, a `PredictedCharacter` has a CharacterController and no RigidBody or Collider, and each profile's required components are present. NetworkSpawnPoint team and order pairs are unique.
 
+A `PredictedCharacter` moves at once on its owner's machine and is corrected by the host. Online it collides with static bodies only, on the host as in prediction: in a network scene with one (or whose manifest prefab is one) a moving kinematic body that isn't a sensor is an error (no moving platforms or doors in v1) and a dynamic one a warning (characters pass through it).
+
 ## Config/NetworkManifest.swnetmanifest
 
 ```text
@@ -104,7 +106,7 @@ Needs Transform.
 | 12 | `rotation` | quat | length 0.99..1.01, normalised on apply | rotation |
 | 28 | `linear_velocity` | vec3 | finite, each within ±512 | linear velocity |
 | 40 | `angular_velocity` | vec3 | finite, each within ±1024 | angular velocity |
-| 52 | `flags` | u8 | only bits in mask 0x3 | flags |
+| 52 | `flags` | u8 | only bits in mask 0x7 | flags |
 
 ### 2 `engine.rigidbody.v1` (53 bytes)
 
@@ -116,7 +118,7 @@ Needs Transform, RigidBody, Collider.
 | 12 | `rotation` | quat | length 0.99..1.01, normalised on apply | rotation |
 | 28 | `linear_velocity` | vec3 | finite, each within ±512 | linear velocity |
 | 40 | `angular_velocity` | vec3 | finite, each within ±1024 | angular velocity |
-| 52 | `flags` | u8 | only bits in mask 0x3 | flags |
+| 52 | `flags` | u8 | only bits in mask 0x7 | flags |
 
 ### 32 `arena.player.v1` (77 bytes)
 
@@ -128,7 +130,7 @@ Needs Transform, CharacterController, ArenaFighter. One per player.
 | 12 | `rotation` | quat | length 0.99..1.01, normalised on apply | rotation |
 | 28 | `linear_velocity` | vec3 | finite, each within ±512 | linear velocity |
 | 40 | `angular_velocity` | vec3 | finite, each within ±1024 | angular velocity |
-| 52 | `flags` | u8 | only bits in mask 0x3 | flags |
+| 52 | `flags` | u8 | only bits in mask 0x7 | flags |
 | 53 | `yaw` | f32 | finite, within ±3.1416 | aim |
 | 57 | `pitch` | f32 | finite, within ±1.5534 | aim |
 | 61 | `health` | u16 | 0..10000 | health |
@@ -216,4 +218,4 @@ What the host tells clients happened, host to client in GameEvent messages. IDs 
 
 ## Schema digest
 
-With this registry: `d4e8cf983a7ee7ce9642836a8dbb58f92b370bbd8d1bf7dca1c0379392a03361`.
+With this registry: `e1e725039eaf3bcdb408cc503a22a9532371a1f89d452b548dcc30b68deb966c`.

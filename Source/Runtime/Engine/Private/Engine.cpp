@@ -270,10 +270,12 @@ bool Engine::applyRendererChange() {
 
 void Engine::run(Application& app) {
     // Fixed-timestep loop: simulation ticks at tickRate, rendering runs as fast as vsync allows.
-    const double maxFrameTime = 0.25;   // avoid the "spiral of death" after a long stall
+    // SimulationClock caps frame time at 0.25 s, to avoid the "spiral of death" after a long stall.
     const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
+    const Uint64 runStart = SDL_GetPerformanceCounter();
 
-    double accumulator = 0.0;
+    m_clock.setSource(m_config.simulationTime);
+    m_clock.reset();
     Uint64 previous = SDL_GetPerformanceCounter();
     int frames = 0;
 
@@ -287,7 +289,9 @@ void Engine::run(Application& app) {
     while (m_running) {
         m_graphics.commit();   // apply UI/game requests before any frame recording
         // The swap's stall isn't counted as frame time.
-        if ((!m_pendingRenderer.empty() || m_autoReloadRenderer) && applyRendererChange())
+        // Network play keeps the ticks steady: swaps wait until it's over.
+        if (m_clock.source() == SimulationTime::Smoothed && (!m_pendingRenderer.empty() || m_autoReloadRenderer) &&
+            applyRendererChange())
             previous = SDL_GetPerformanceCounter();
         // Pacing first, input right after: the less time between reading input and the
         // frame reaching the screen, the more responsive it feels.
@@ -328,18 +332,22 @@ void Engine::run(Application& app) {
         // Start of the previous frame to the start of this one.
         const double rawFrameTime = static_cast<double>(frameStart - previous) / freq;
         previous = frameStart;
-        double frameTime = std::min(m_smoother.smooth(rawFrameTime), maxFrameTime);
-        accumulator += frameTime;
-        m_input->update(frameTime);   // controllers, rumble, and the bindings file
-
+        m_frameStartSeconds = static_cast<double>(frameStart - runStart) / freq;
         // Read every frame: an editor switching projects can change the tick rate.
         const double dt = 1.0 / m_config.tickRate;
-        while (accumulator >= dt) {
+        m_simulationStep = m_clock.advance(rawFrameTime, m_smoother.smooth(rawFrameTime), dt);
+        const double frameTime = m_simulationStep.frameTime;
+        m_input->update(frameTime);   // controllers, rumble, and the bindings file
+        {
+            SW_PROFILE_SCOPE("Application pump");
+            app.onPump(rawFrameTime);
+        }
+
+        for (int tick = 0; tick < m_simulationStep.ticks; ++tick) {
             SW_PROFILE_SCOPE("Fixed tick");
             app.onUpdate(dt);
-            accumulator -= dt;
         }
-        m_interpolationAlpha = std::clamp(accumulator / dt, 0.0, 1.0);
+        m_interpolationAlpha = m_clock.alpha(dt);
         {
             SW_PROFILE_SCOPE("Application frame");
             app.onFrame(frameTime);

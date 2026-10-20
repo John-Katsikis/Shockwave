@@ -11,6 +11,9 @@
 #include <Effects/Effects.h>
 #include <GameUI/GameUI.h>
 #include <Multiplayer/Replication.h>
+#include <Network/Loopback.h>
+#include <Network/LoopbackServices.h>
+#include <Network/OnlineServices.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
@@ -68,6 +71,9 @@ struct Tool {
     fs::path audioMix;   // --audio-mix: render the scene's sound offline to this .wav
     double audioSeconds = 3;   // --seconds with --audio-mix
     int audioHrtf = -1;   // --audio-hrtf on|off; -1 uses the project's audio_hrtf
+    // --net-preview [preset]: play the scene as a client of a host in this process, over
+    // a loopback hub with the fault preset's latency, jitter and loss (default poor).
+    std::string netPreview;
 };
 
 // Tools that need no project or window. Both return the process exit code.
@@ -100,6 +106,17 @@ int networkInfo(const shockwave::Project& project, const shockwave::GameModule& 
 // (or a dedicated server), wait for sign-in and relay network access, print one line, and
 // shut Steam down. Exit 1 when Steam isn't available, as in builds without the SDK.
 int steamStatus(const shockwave::Project& project, bool server);
+// --net-test --scenario name [--seed N] [--preset name] [--clients N] [--json file]: the
+// session handshake between NetworkWorlds over an in-process loopback hub
+// (Multiplayer/NetTest.h), with the project's network settings when it has them. No
+// Steam, sockets, window or game code. Exit 1 when the scenario fails.
+struct NetTestCommand {
+    bool requested = false;
+    std::string scenario = "handshake", preset = "cafe";
+    uint64_t seed = 1;
+    uint32_t clients = 3;
+};
+int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json);
 
 class Player final : public shockwave::Application {
 public:
@@ -108,6 +125,7 @@ public:
     int exitCode() const { return m_exitCode; }
 
     void onStart() override;
+    void onPump(double rawFrameDt) override;
     void onUpdate(double dt) override;
     void onFrame(double dt) override;
     void onRender(shockwave::Renderer& renderer, double alpha) override;
@@ -170,6 +188,9 @@ private:
     // manifest, its prefabs and the registered types, then each scene's network objects.
     void checkNetworkProject(std::vector<std::string>& problems);
     void checkNetworkScene(const shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
+    // --net-preview (PlayerNetwork.cpp): makes the in-process host and starts it, and
+    // sets the session up as its client. Throws when the project can't play online.
+    void startNetPreview();
 
     shockwave::Project m_project;
     Tool m_tool;
@@ -188,11 +209,23 @@ private:
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
+    // Online services, pumped every frame; they outlive the session. The player never
+    // starts Steam itself (only --steam-status does), so these are unavailable ones until
+    // hosting and joining from the player arrive (docs/Networking.md).
+    std::unique_ptr<shockwave::net::IOnlineServices> m_services = shockwave::net::makeUnavailableOnlineServices();
+    // --net-preview: the hub and both sides' services outlive both sessions; the host's
+    // session plays its own copy of the scene, pumped and ticked with ours.
+    std::unique_ptr<shockwave::net::LoopbackHub> m_previewHub;
+    std::unique_ptr<shockwave::net::LoopbackOnlineServices> m_previewHostServices, m_previewClientServices;
+    std::unique_ptr<shockwave::net::ReplicationRegistry> m_previewRegistry;
+    std::unique_ptr<shockwave::World> m_previewWorld;
+    std::unique_ptr<shockwave::PlaySession> m_previewHost;
     std::unique_ptr<shockwave::GameUI> m_ui;   // before the session, whose UIWorld uses it
     std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
     std::unique_ptr<shockwave::PlaySession> m_session;
     shockwave::NavMeshOverlay m_navOverlay;
     std::unique_ptr<shockwave::net::ReplicationRegistry> m_networkRegistry;   // --check: frozen, or null
+    bool m_predictedSpawns = false;   // --check: the manifest spawns a PredictedCharacter
 };
 
 }   // namespace player

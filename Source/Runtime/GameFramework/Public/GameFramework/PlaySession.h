@@ -4,10 +4,18 @@
 // snapshots the authored scene, creates the session's subsystems (physics) and the
 // GameMode; update() runs a fixed tick; stop() ends play and restores the snapshot
 // exactly, so nothing done while playing sticks. The player uses the same class.
+//
+// Network play (docs/Networking.md, "Session integration"): setNetworkStart() before
+// start() makes the session a host or a client. Its NetworkWorld (game.network()) starts
+// before GameMode::beginPlay, and Stop closes it first. While online the session never
+// pauses (pause() refuses: the host doesn't stop for one player), circuit breakpoints are
+// off, and saving and loading fail with UnavailableDuringNetworkPlay. Hot reload of game
+// code and content waits for Stop: callers check online().
 
 #include <Engine/GraphicsSettings.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/SaveGame.h>
+#include <Multiplayer/NetworkWorld.h>
 
 #include <filesystem>
 #include <memory>
@@ -26,11 +34,33 @@ public:
     PlaySession(const PlaySession&) = delete;
     PlaySession& operator=(const PlaySession&) = delete;
 
-    void start();   // editing -> playing; paused -> playing; playing: nothing
-    void pause();
+    // editing -> playing; paused -> playing; playing: nothing. Throws when something can't
+    // start, network play included; the authored world is then restored.
+    void start();
+    // playing -> paused. False (and nothing changes) during network play.
+    bool pause();
     void stop();   // end play, release the session's subsystems, restore the authored world
     void update(double dt);   // one fixed tick
     void frame(double dt);   // once per rendered frame
+
+    // ---- Network play ----
+    // Before start(): play online as `start.role`. services is the application's, not the
+    // session's, and must outlive it. An Offline role (the default) plays offline.
+    void setNetworkStart(net::NetworkStart start, net::IOnlineServices* services) {
+        m_networkStart = std::move(start);
+        m_services = services;
+    }
+    const net::NetworkStart& networkStart() const { return m_networkStart; }
+    // Null while editing; offline Play has one too, with role Offline.
+    net::NetworkWorld* network() const;
+    // Playing (or paused) as a host or client. Stays true after a network failure until
+    // Stop, since the game's state is still a network game's.
+    bool online() const;
+    // The application calls these once per frame, in this order, every frame (menus and
+    // editing included; they do nothing then): see GameFramework/NetworkPump.h.
+    void pumpNetwork(double nowSeconds);
+    bool handleOnlineEvent(const net::OnlineEvent& event);
+    void collectInput(double frameDt);
 
     State state() const { return m_state; }
     bool active() const { return m_state != State::Editing; }
@@ -78,6 +108,8 @@ private:
     State m_state = State::Editing;
     uint64_t m_ticks = 0;
     bool m_audioDevice = true;
+    net::NetworkStart m_networkStart;
+    net::IOnlineServices* m_services = nullptr;
 };
 
 }   // namespace shockwave

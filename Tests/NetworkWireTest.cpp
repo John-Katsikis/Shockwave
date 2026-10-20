@@ -647,7 +647,7 @@ static void testFloatsAndPose() {
     CHECK(withFloat(6, std::bit_cast<uint32_t>(1.02f)).code == WireStatusCode::OutOfRange);
     {
         std::vector<uint8_t> b = pose;
-        b[52] = 4;   // undefined flag bit
+        b[52] = 8;   // undefined flag bit
         PoseState out;
         CHECK(decodePose(b, out).code == WireStatusCode::OutOfRange);
         b.push_back(0);

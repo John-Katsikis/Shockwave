@@ -59,7 +59,7 @@ void Sha256::block(const uint8_t* data) {
 }
 
 void Sha256::update(std::span<const uint8_t> bytes) {
-    if (m_finished) return;
+    if (m_finished || bytes.empty()) return;   // an empty span's data() may be null
     m_length += bytes.size();
     const uint8_t* data = bytes.data();
     size_t size = bytes.size();
