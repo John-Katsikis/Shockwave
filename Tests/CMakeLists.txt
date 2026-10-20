@@ -241,6 +241,14 @@ shockwave_warnings(network_replication_test)
 add_test(NAME network_replication COMMAND network_replication_test)
 set_tests_properties(network_replication PROPERTIES TIMEOUT 300)
 
+# Prediction and presentation: Physics' network API, the input sampler, the prediction
+# net-test on every fault preset.
+add_executable(network_prediction_test NetworkPredictionTest.cpp)
+target_link_libraries(network_prediction_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(network_prediction_test)
+add_test(NAME network_prediction COMMAND network_prediction_test)
+set_tests_properties(network_prediction PROPERTIES TIMEOUT 300)
+
 # Delta snapshots, interpolation, rewind history.
 add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)
 target_link_libraries(test_snapshot_delta PRIVATE Shockwave::Multiplayer)

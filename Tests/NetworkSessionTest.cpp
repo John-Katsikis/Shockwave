@@ -341,8 +341,12 @@ void online() {
             host.network().networkId(hostBox) == client.network().networkId(clientBox),
         "the authored box has one network ID on both machines");
     check(
-        client.world.get<RigidBody>(clientBox)->motion == RigidBody::Motion::Kinematic,
-        "the client doesn't simulate the host's body");
+        client.session->physics()->networkMode() == PhysicsNetworkMode::Client &&
+            host.session->physics()->networkMode() == PhysicsNetworkMode::Authority,
+        "the client doesn't simulate the host's body: its physics only follows the snapshots");
+    check(
+        client.world.get<RigidBody>(clientBox)->motion == RigidBody::Motion::Dynamic,
+        "and the body's component stays as authored");
     for (int i = 0; i < 120; ++i) loop.frame();
     check(boxPosition(host.world).y < authored.y - 1, "the host's box fell");
     check(

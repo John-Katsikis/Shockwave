@@ -218,6 +218,8 @@ struct PhysicsWorld::Impl {
     std::unordered_map<uint64_t, Entry> entries;
     std::vector<PhysicsDiagnostic> problems;
     std::vector<ContactEvent> events;
+    PhysicsNetworkMode mode = PhysicsNetworkMode::Offline;
+    std::vector<uint64_t> predictedKeys, predictedScratch;   // sorted
     using TriggerKey = std::pair<uint64_t, uint64_t>;
     std::map<TriggerKey, ContactEvent> triggers;
     struct Listener final : public JPH::ContactListener {
@@ -315,19 +317,23 @@ struct PhysicsWorld::Impl {
         const auto [lb, mb] = category(ib->second);
         return (ma & (1 << lb)) && (mb & (1 << la));
     }
+    bool isPredicted(uint64_t k) const {
+        return mode != PhysicsNetworkMode::Offline && std::binary_search(predictedKeys.begin(), predictedKeys.end(), k);
+    }
     struct QueryFilter final : public JPH::BodyFilter {
         const Impl& owner;
         uint64_t ignore;
         bool sensors;
         int mask;
         std::optional<uint64_t> source;
+        bool staticOnly = false;   // a predicted character's movement (plan 9.2)
         QueryFilter(const Impl& p, Entity e, bool s, int m, std::optional<uint64_t> from = {})
             : owner(p), ignore(key(e)), sensors(s), mask(m), source(from) {}
         bool ShouldCollideLocked(const JPH::Body& body) const override {
             const auto k = body.GetUserData();
             const auto it = owner.entries.find(k);
             if (k == ignore || it == owner.entries.end() || !owner.world.alive(it->second.entity) ||
-                (!sensors && body.IsSensor()))
+                (!sensors && body.IsSensor()) || (staticOnly && !body.IsStatic()))
                 return false;
             if (!(mask & (1 << owner.category(it->second).first))) return false;
             return !source || owner.allowed(*source, k);
@@ -432,7 +438,10 @@ struct PhysicsWorld::Impl {
             }
             return;
         }
-        const auto& r = e.rigid;
+        auto r = e.rigid;
+        // Clients don't simulate moving bodies: they follow the host's state as proxies.
+        if (mode == PhysicsNetworkMode::Client && r.motion == RigidBody::Motion::Dynamic)
+            r.motion = RigidBody::Motion::Kinematic;
         if (int(r.motion) < 0 || int(r.motion) > 2 || !std::isfinite(r.mass) || r.mass <= 0 ||
             !std::isfinite(r.friction) || r.friction < 0 || !std::isfinite(r.restitution) || r.restitution < 0 ||
             r.restitution > 1 || !std::isfinite(r.linearDamping) || r.linearDamping < 0 || r.linearDamping > 1 ||
@@ -527,8 +536,9 @@ struct PhysicsWorld::Impl {
                         e.character->SetPosition(vec(candidate.placed.position));
                 } else if (!e.body.IsInvalid()) {
                     // Kinematic targets are moved with velocity in step(); dynamic
-                    // Transform edits are explicit teleports and preserve velocity.
-                    if (e.rigid.motion != RigidBody::Motion::Kinematic &&
+                    // Transform edits are explicit teleports and preserve velocity. A
+                    // client's proxies are only ever teleported: nothing steps them.
+                    if ((e.rigid.motion != RigidBody::Motion::Kinematic || mode == PhysicsNetworkMode::Client) &&
                         (!near(e.placed.position, candidate.placed.position) ||
                          !near(e.placed.rotation, candidate.placed.rotation)))
                         bi.SetPositionAndRotation(
@@ -643,10 +653,7 @@ struct PhysicsWorld::Impl {
         }
         for (const auto& [id, t] : updates) *world.get<Transform>(id) = t;
     }
-    void step(double dt) {
-        if (!std::isfinite(dt) || dt <= 0 || dt > std::numeric_limits<float>::max() || float(dt) <= 0)
-            throw std::invalid_argument("Physics dt must be positive and finite");
-        synchronize();
+    PhysicsSettings settings() const {
         PhysicsSettings settings;
         bool configured = false;
         world.each<const PhysicsSettings>([&](const auto& value) {
@@ -657,6 +664,64 @@ struct PhysicsWorld::Impl {
         });
         if (!finite(settings.gravity) || settings.collisionSteps < 1 || settings.collisionSteps > 8)
             throw std::invalid_argument("PhysicsSettings needs finite gravity and 1..8 collision steps");
+        return settings;
+    }
+    // One character's movement for one step: the host's step() and a client's
+    // predictCharacterStep() both come here, so they can't disagree.
+    void
+    moveCharacter(Entry& e, CharacterController& c, glm::vec3 desired, bool jump, float seconds, glm::vec3 gravity) {
+        if (!finite(desired)) throw std::invalid_argument("Character desired velocity must be finite");
+        auto& character = *e.character;
+        character.UpdateGroundVelocity();
+        const auto ground = character.GetGroundVelocity();
+        auto velocity = JPH::Vec3(0, character.GetLinearVelocity().GetY(), 0);
+        if (character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround &&
+            velocity.GetY() - ground.GetY() < .1f) {
+            velocity = ground;
+            if (jump) velocity += JPH::Vec3(0, c.jumpSpeed, 0);
+        }
+        velocity += vec(gravity) * seconds + JPH::Vec3(desired.x, 0, desired.z);
+        character.SetLinearVelocity(velocity);
+        JPH::CharacterVirtual::ExtendedUpdateSettings update;
+        update.mWalkStairsStepUp = JPH::Vec3(0, c.stepHeight * std::abs(e.placed.scale.x), 0);
+        QueryFilter filter(*this, e.entity, false, c.collisionMask, key(e.entity));
+        filter.staticOnly = isPredicted(key(e.entity));
+        character.ExtendedUpdate(
+            seconds, vec(gravity), update, system.GetDefaultBroadPhaseLayerFilter(1), system.GetDefaultLayerFilter(1),
+            filter, {}, temporary);
+        c.grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+        c.velocity = vec(character.GetLinearVelocity());
+    }
+    // A working character's entry, or null.
+    Entry* characterEntry(Entity id) {
+        const auto it = entries.find(key(id));
+        if (!world.alive(id) || it == entries.end() || !it->second.character || !it->second.error.empty() ||
+            !world.has<CharacterController>(id) || !world.has<Transform>(id))
+            return nullptr;
+        return &it->second;
+    }
+    // The entity's Transform at e.placed's position and rotation (its parent's space).
+    void writePose(Entry& e) {
+        const glm::mat4 matrix = glm::translate(glm::mat4(1), e.placed.position) * glm::mat4_cast(e.placed.rotation) *
+                                 glm::scale(glm::mat4(1), e.placed.scale);
+        const Entity parent = parentOf(world, e.entity);
+        const Pose local = parent.valid() ? pose(glm::inverse(worldMatrix(world, parent)) * matrix) : pose(matrix);
+        Transform& t = *world.get<Transform>(e.entity);
+        t.position = local.position;
+        t.rotation = local.rotation;
+    }
+    void step(double dt) {
+        if (!std::isfinite(dt) || dt <= 0 || dt > std::numeric_limits<float>::max() || float(dt) <= 0)
+            throw std::invalid_argument("Physics dt must be positive and finite");
+        synchronize();
+        const PhysicsSettings settings = this->settings();
+        if (mode == PhysicsNetworkMode::Client) {
+            // Proxies followed their Transforms in synchronize(); the predicted character
+            // moves in predictCharacterStep(). There's nothing to integrate.
+            events.clear();
+            triggers.clear();
+            return;
+        }
         system.SetGravity(vec(settings.gravity));
         const float seconds = float(dt);
         for (auto& [k, e] : entries) {
@@ -664,28 +729,8 @@ struct PhysicsWorld::Impl {
             if (!e.error.empty()) continue;
             if (e.character) {
                 auto* c = world.get<CharacterController>(e.entity);
-                if (!finite(c->desiredVelocity))
-                    throw std::invalid_argument("Character desired velocity must be finite");
-                auto& character = *e.character;
-                character.UpdateGroundVelocity();
-                const auto ground = character.GetGroundVelocity();
-                auto velocity = JPH::Vec3(0, character.GetLinearVelocity().GetY(), 0);
-                if (character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround &&
-                    velocity.GetY() - ground.GetY() < .1f) {
-                    velocity = ground;
-                    if (c->jumpRequested) velocity += JPH::Vec3(0, c->jumpSpeed, 0);
-                }
-                velocity += vec(settings.gravity) * seconds + JPH::Vec3(c->desiredVelocity.x, 0, c->desiredVelocity.z);
-                character.SetLinearVelocity(velocity);
+                moveCharacter(e, *c, c->desiredVelocity, c->jumpRequested, seconds, settings.gravity);
                 c->jumpRequested = false;
-                JPH::CharacterVirtual::ExtendedUpdateSettings update;
-                update.mWalkStairsStepUp = JPH::Vec3(0, c->stepHeight * std::abs(e.placed.scale.x), 0);
-                QueryFilter filter(*this, e.entity, false, c->collisionMask, k);
-                character.ExtendedUpdate(
-                    seconds, vec(settings.gravity), update, system.GetDefaultBroadPhaseLayerFilter(1),
-                    system.GetDefaultLayerFilter(1), filter, {}, temporary);
-                c->grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
-                c->velocity = vec(character.GetLinearVelocity());
             } else if (!e.body.IsInvalid() && e.rigid.motion == RigidBody::Motion::Kinematic)
                 system.GetBodyInterface().MoveKinematic(
                     e.body, vec(e.placed.position), quat(e.placed.rotation), seconds);
@@ -755,6 +800,114 @@ std::optional<RayHit> PhysicsWorld::raycast(
         result.mFraction * distance};
 }
 const std::vector<ContactEvent>& PhysicsWorld::contacts() const { return m_impl->events; }
+
+void PhysicsWorld::setNetworkMode(PhysicsNetworkMode mode) {
+    Impl& impl = *m_impl;
+    if (impl.mode == mode) return;
+    impl.jobs.drain();
+    for (auto& [k, e] : impl.entries) {
+        (void)k;
+        impl.remove(e);
+    }
+    impl.entries.clear();   // the next synchronize builds every body for the new mode
+    impl.triggers.clear();
+    impl.events.clear();
+    impl.mode = mode;
+}
+PhysicsNetworkMode PhysicsWorld::networkMode() const { return m_impl->mode; }
+void PhysicsWorld::setPredictedCharacters(std::span<const Entity> characters) {
+    Impl& impl = *m_impl;
+    impl.predictedScratch.clear();
+    for (const Entity e : characters) impl.predictedScratch.push_back(key(e));
+    std::sort(impl.predictedScratch.begin(), impl.predictedScratch.end());
+    if (impl.predictedScratch != impl.predictedKeys) impl.predictedKeys.swap(impl.predictedScratch);
+}
+bool PhysicsWorld::predicted(Entity character) const { return m_impl->isPredicted(key(character)); }
+
+std::optional<CharacterMotionState> PhysicsWorld::characterState(Entity id) const {
+    const auto it = m_impl->entries.find(key(id));
+    if (!m_impl->world.alive(id) || it == m_impl->entries.end() || !it->second.character || !it->second.error.empty())
+        return {};
+    const JPH::CharacterVirtual& c = *it->second.character;
+    return CharacterMotionState{
+        vec(c.GetPosition()), vec(c.GetLinearVelocity()),
+        c.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround};
+}
+
+bool PhysicsWorld::correctCharacter(Entity id, const CharacterMotionState& state) {
+    Impl& impl = *m_impl;
+    Impl::Entry* e = impl.characterEntry(id);
+    if (!e || !finite(state.position) || !finite(state.velocity)) return false;
+    CharacterController& c = *impl.world.get<CharacterController>(id);
+    JPH::CharacterVirtual& character = *e->character;
+    character.SetPosition(vec(state.position));
+    character.SetLinearVelocity(vec(state.velocity));
+    Impl::QueryFilter filter(impl, id, false, c.collisionMask, key(id));
+    filter.staticOnly = impl.isPredicted(key(id));
+    character.RefreshContacts(
+        impl.system.GetDefaultBroadPhaseLayerFilter(1), impl.system.GetDefaultLayerFilter(1), filter, {},
+        impl.temporary);
+    c.jumpRequested = false;
+    c.velocity = state.velocity;
+    c.grounded = character.GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+    e->placed.position = state.position;
+    impl.writePose(*e);
+    return true;
+}
+
+bool PhysicsWorld::predictCharacterStep(Entity id, glm::vec3 desiredVelocity, bool jump, double dt) {
+    Impl& impl = *m_impl;
+    Impl::Entry* e = impl.characterEntry(id);
+    if (!e || !finite(desiredVelocity) || !std::isfinite(dt) || dt <= 0 || float(dt) <= 0) return false;
+    try {
+        // A Transform edit since the last step (a teleport) moves the character first, as
+        // synchronize() would have.
+        const Pose placed = pose(worldMatrix(impl.world, id));
+        if (!near(e->placed.position, placed.position)) e->character->SetPosition(vec(placed.position));
+        e->placed.position = placed.position;
+        e->placed.rotation = placed.rotation;
+        const PhysicsSettings settings = impl.settings();
+        CharacterController& c = *impl.world.get<CharacterController>(id);
+        impl.moveCharacter(*e, c, desiredVelocity, jump, float(dt), settings.gravity);
+        c.jumpRequested = false;
+        e->placed.position = vec(e->character->GetPosition());
+        impl.writePose(*e);
+    } catch (const std::exception& ex) {
+        SW_LOG(LogPhysics, Warning, "Character prediction step failed: {}", ex.what());
+        return false;
+    }
+    return true;
+}
+
+bool PhysicsWorld::applyReplicaBodyPose(
+    Entity id, glm::vec3 position, glm::quat rotation, glm::vec3 linear, glm::vec3 angular) {
+    Impl& impl = *m_impl;
+    const auto it = impl.entries.find(key(id));
+    if (!impl.world.alive(id) || it == impl.entries.end() || !it->second.error.empty() || it->second.body.IsInvalid() ||
+        !finite(position) || !finite(linear) || !finite(angular) || !std::isfinite(rotation.x) ||
+        !std::isfinite(rotation.y) || !std::isfinite(rotation.z) || !std::isfinite(rotation.w) ||
+        glm::length(rotation) < 0.5f || !impl.world.has<Transform>(id))
+        return false;
+    Impl::Entry& e = it->second;
+    e.placed.position = position;
+    if (e.character) {
+        e.character->SetPosition(vec(position));
+        e.character->SetLinearVelocity(vec(linear));
+        if (auto* c = impl.world.get<CharacterController>(id)) c->velocity = linear;
+    } else {
+        e.placed.rotation = glm::normalize(rotation);
+        auto& bi = impl.system.GetBodyInterface();
+        bi.SetPositionAndRotation(e.body, vec(position), quat(e.placed.rotation), JPH::EActivation::DontActivate);
+        if (bi.GetMotionType(e.body) != JPH::EMotionType::Static)
+            bi.SetLinearAndAngularVelocity(e.body, vec(linear), vec(angular));
+        if (auto* r = impl.world.get<RigidBody>(id)) {
+            r->linearVelocity = e.rigid.linearVelocity = linear;
+            r->angularVelocity = e.rigid.angularVelocity = angular;
+        }
+    }
+    impl.writePose(e);
+    return true;
+}
 const std::vector<PhysicsDiagnostic>& PhysicsWorld::diagnostics() const { return m_impl->problems; }
 uint32_t PhysicsWorld::bodyCount() const { return m_impl->system.GetNumBodies(); }
 uint32_t PhysicsWorld::activeBodyCount() const { return m_impl->system.GetNumActiveBodies(JPH::EBodyType::RigidBody); }

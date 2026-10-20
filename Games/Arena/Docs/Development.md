@@ -29,7 +29,6 @@ Links below point to the current file layout; command paths are relative to the 
 |---|---|
 | [ArenaGame.h](../Source/ArenaGame.h) | Match, fighter and weapon data |
 | [ArenaGame.cpp](../Source/ArenaGame.cpp) | Registration, validation, the game mode: who simulates, joins and leaves, lobby commands, menu and scoreboard |
-| [ArenaInput.h](../Source/ArenaInput.h) / [.cpp](../Source/ArenaInput.cpp) | Reading devices once per frame and turning them into one `InputCommand` per tick |
 | [ArenaSimulation.h](../Source/ArenaSimulation.h) / [.cpp](../Source/ArenaSimulation.cpp) | `ArenaSim`: movement, combat, reloads, respawns and rounds from input commands, in ticks |
 | [ArenaPresentation.h](../Source/ArenaPresentation.h) / [.cpp](../Source/ArenaPresentation.cpp) | Camera, rifle, tracers, sounds, body visibility and team colours, HUD values |
 | [ArenaNetwork.h](../Source/ArenaNetwork.h) / [.cpp](../Source/ArenaNetwork.cpp) | Replication profiles, lobby commands and events (`SW_NETWORK_TYPES`) |
@@ -137,6 +136,17 @@ may start another (`arena.request_round_restart`). Damage, teams, ammo, scores a
 ownership are decided by the host; clients send only input commands and these three
 commands, which the host checks. Played offline, the multiplayer scene is a match for
 one.
+
+Input comes from the engine's `InputSampler` (`GameFramework/InputSampler.h`) with
+Arena's action names: devices are read once a frame and turned into one `InputCommand`
+per tick. The Net Player prefab's NetworkObject is `mode PredictedCharacter`, and a
+client registers `ArenaSim::pawnVelocity` (the host's own movement rule) as its
+prediction move, so its pawn walks, sprints and jumps at once and the host corrects it;
+the other pawns are drawn interpolated. `updateView` puts the camera and rifle on the
+pawn's drawn pose (`presentedTransform`). After a prediction had to snap, the status
+line says CONNECTION PROBLEM / POSITION CORRECTED for three seconds. Pawns pass through
+each other online (predicted characters collide with static bodies only), and the
+multiplayer scene has no moving bodies.
 
 The pause menu has a match panel when the scene is the multiplayer one: the network
 line, READY, JOIN BLUE / JOIN ORANGE, LEAVE MATCH while online, and the two rosters.

@@ -352,7 +352,7 @@ std::vector<NetFieldDesc> poseFields() {
         netQuat("rotation"),
         netVec3("linear_velocity", 512, NetFieldRole::LinearVelocity),
         netVec3("angular_velocity", 1024, NetFieldRole::AngularVelocity),
-        netBits("flags", PoseState::kSleeping | PoseState::kTeleport),
+        netBits("flags", PoseState::kSleeping | PoseState::kTeleport | PoseState::kGrounded),
     };
 }
 

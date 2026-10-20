@@ -15,6 +15,11 @@ void addBuiltinSystems(Schedule& schedule);
 // renderWorld can blend the last two ticks and motion stays smooth at any frame rate.
 void storePreviousTransforms(World& world, JobSystem& jobs);
 
+// An entity's local Transform as renderWorld draws it this frame: its
+// PresentationTransform, else blended from PreviousTransform by alpha, else as it is.
+// For a camera that follows a body.
+Transform presentedTransform(const World& world, Entity e, double alpha);
+
 // Draws every visible MeshRenderer and, when assets is supplied, ModelRenderer,
 // where its parents put it, spread across the job system, and sets the clear color from the Environment. alpha is Application::onRender's;
 // pass 1 to draw the current state with no blending (an editor that isn't playing).

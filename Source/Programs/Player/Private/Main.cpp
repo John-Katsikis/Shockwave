@@ -266,6 +266,9 @@ int main(int argc, char** argv) {
                 if (i + 1 < argc &&
                     (std::string_view(argv[i + 1]) == "client" || std::string_view(argv[i + 1]) == "server"))
                     steamStatus = std::string_view(argv[++i]) == "server" ? 2 : 1;
+            } else if (arg == "--net-preview") {
+                tool.netPreview = "poor";
+                if (i + 1 < argc && argv[i + 1][0] != '-') tool.netPreview = argv[++i];
             } else if (arg == "--net-test") {
                 netTest.requested = true;
             } else if (arg == "--scenario" && i + 1 < argc) {
@@ -335,10 +338,14 @@ int main(int argc, char** argv) {
                     "player --steam-status [client|server]\n"
                     "                                    start Steam for the project's steam_app_id, print\n"
                     "                                    sign-in and relay status, shut it down\n"
-                    "player --net-test [--scenario handshake|rejections|stop-start] [--seed N]\n"
+                    "player --net-test [--scenario handshake|rejections|stop-start|replication|prediction] [--seed N]\n"
                     "       [--preset clean|cafe|poor|hostile] [--clients N] [--json file]\n"
                     "                                    run the session handshake over an in-process\n"
                     "                                    loopback network; no Steam, sockets or window\n"
+                    "player --net-preview [clean|cafe|poor|hostile]\n"
+                    "                                    play the scene as a client of a host in this\n"
+                    "                                    process over a simulated network (default poor),\n"
+                    "                                    to see prediction and interpolation\n"
                     "player --devices [seconds]          list controllers; then print each input pressed\n"
                     "                                    as binding text, for that many seconds");
                 return 0;
@@ -460,6 +467,11 @@ int main(int argc, char** argv) {
             std::fprintf(
                 stderr, "Player: --network-info, --network-schema, --steam-status and --net-test run on their own "
                         "(--network-info and --net-test with --json)\n");
+            return 2;
+        }
+        if (!tool.netPreview.empty() && (networkTool || tool.mode != Tool::Mode::Play || package.requested ||
+                                         tool.listSaves || !tool.save.empty() || !tool.load.empty())) {
+            std::fprintf(stderr, "Player: --net-preview plays the scene; it doesn't go with tools, --save or --load\n");
             return 2;
         }
         if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code

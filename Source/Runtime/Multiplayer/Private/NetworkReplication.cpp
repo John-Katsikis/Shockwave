@@ -1,7 +1,7 @@
-// Replication without prediction (Multiplayer/NetworkWorld.h, docs/Networking.md
-// "Replication"): network IDs, the baseline, lifecycle messages in control-serial order,
-// full-state snapshots within each peer's budget, and the client side that stages,
-// checks and applies them.
+// Replication (Multiplayer/NetworkWorld.h, docs/Networking.md "Replication"): network
+// IDs, the baseline, lifecycle messages in control-serial order, full-state snapshots
+// within each peer's budget, and the client side that stages, checks and applies them
+// (handing the controlled character's state to prediction, NetworkPrediction.cpp).
 #include <Multiplayer/NetworkWorld.h>
 
 #include "NetworkWorldImpl.h"
@@ -77,6 +77,7 @@ void NetworkWorld::Impl::erase(uint64_t id) {
     auto it = byId.find(id);
     if (it == byId.end()) return;
     const uint32_t index = it->second;
+    releaseSlot(objects[index]);
     byId.erase(it);
     objects.erase(objects.begin() + index);
     for (uint32_t i = index; i < objects.size(); ++i) byId[objects[i].id] = i;
@@ -149,6 +150,12 @@ void NetworkWorld::Impl::clearReplication() {
     baselineBegun = baselineEnded = committed = activated = false;
     controlled = 0;
     clearInput();
+    clearPrediction();
+    interpolation.reset();
+    std::vector<uint16_t>().swap(freeSlots);
+    std::vector<Entity>().swap(predictedScratch);
+    offset = glm::vec3(0.0f);
+    offsetAt = -1e9;
 }
 
 // ---- Host -----------------------------------------------------------------------------------
@@ -283,7 +290,9 @@ void NetworkWorld::Impl::resyncRequest(Peer& p) {
     if (p.phase != Peer::Phase::Active) return reject(p, ReasonCode::MalformedPacket, "ResyncRequest before Active");
     ++stats.resyncRequests;
     auto& times = p.resyncs;   // oldest first
-    if (now - times.back() < kResyncIntervalSeconds || now - times.front() < 60)
+    // The client spaces its requests by its own clock; network jitter can bring two of
+    // them closer here, so the host allows half the interval and 55 s for the minute.
+    if (now - times.back() < kResyncIntervalSeconds * 0.5 || now - times.front() < 55)
         return reject(p, ReasonCode::RateLimited, "too many resync requests");
     std::rotate(times.begin(), times.begin() + 1, times.end());
     times.back() = now;
@@ -597,6 +606,7 @@ bool NetworkWorld::Impl::replicationMessage(const DecodedMessage& decoded) {
         }
         activated = true;
         controlled = m.controlledEntity;
+        startInterpolation();
         firstInputTick = m.firstInputTick;
         nextPing = now;   // start measuring the host's clock
         SW_LOG(LogNetwork, Info, "In the game as player {}, {} network objects", w.m_localSlot, objects.size());
@@ -669,6 +679,7 @@ bool NetworkWorld::Impl::spawnMessage(const Spawn& m) {
         if (committed) {
             writeIdentity(*existing);
             applyState(*existing);
+            newLife(*existing);
         }
         ++stats.respawns;
         releaseHeld();
@@ -740,13 +751,10 @@ bool NetworkWorld::Impl::materialize(NetObject& o) {
     }
     o.entity = e;
     writeIdentity(o);
-    // The host simulates it; here it follows the snapshots.
-    if (RigidBody* body = world.get<RigidBody>(e); body && body->motion == RigidBody::Motion::Dynamic)
-        body->motion = RigidBody::Motion::Kinematic;
-    // A character moves only by its owner's inputs on the host; without prediction a
-    // client's copy is a pose to show, not a body to simulate.
-    if (CharacterController* character = world.get<CharacterController>(e)) character->enabled = false;
+    // The host simulates it; here physics (in Client mode) keeps it as a proxy that
+    // follows the snapshots, or, for the controlled character, moves it by prediction.
     applyState(o);
+    newLife(o);
     return true;
 }
 
@@ -801,9 +809,15 @@ bool NetworkWorld::Impl::applySnapshot(const Snapshot& snapshot) {
         o->haveTick = true;
         if (!haveApplied || newer(snapshot.serverTick, lastAppliedTick)) lastAppliedTick = snapshot.serverTick;
         haveApplied = true;
-        applyState(*o);
+        if (predictsControlled() && o->entity == controlledEntityNow())
+            applyPredicted(*o, snapshot.serverTick);
+        else {
+            applyState(*o);
+            pushInterpolation(*o, snapshot.serverTick);
+        }
         ++stats.recordsApplied;
     }
+    if (interpolation && snapshot.recordCount) interpolation->observeServerTick(snapshot.serverTick, now);
     return true;
 }
 

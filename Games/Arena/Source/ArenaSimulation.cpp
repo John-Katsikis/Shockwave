@@ -1,9 +1,8 @@
 #include "ArenaSimulation.h"
 
-#include "ArenaInput.h"
-
 #include <Engine/Components.h>
 #include <Engine/PhysicsComponents.h>
+#include <GameFramework/InputSampler.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
 
@@ -138,6 +137,11 @@ void ArenaSim::reload(Entity pawn) {
     if (hooks.reloaded) hooks.reloaded(pawn);
 }
 
+glm::vec3 ArenaSim::pawnVelocity(const ArenaFighter& f, const InputCommand& c) {
+    const bool sprint = (c.heldBits & InputCommand::kHeldSprint) != 0;
+    return commandMoveDirection(c) * f.speed * (sprint ? kSprint : 1.0f);
+}
+
 void ArenaSim::stepControls(float dt) {
     auto& r = match();
     world.each<const ArenaFighter, CharacterController>([](const ArenaFighter& f, CharacterController& c) {
@@ -166,10 +170,7 @@ void ArenaSim::stepControls(float dt) {
         const InputCommand& c = f.input;
         f.yaw = commandYaw(c);
         f.pitch = commandPitch(c);
-        glm::vec3 move(float(c.moveX) / 127, 0, float(c.moveZ) / 127);
-        if (glm::length(move) > 1) move = glm::normalize(move);
-        const bool sprint = (c.heldBits & InputCommand::kHeldSprint) != 0;
-        controller.desiredVelocity = glm::quat(glm::vec3(0, f.yaw, 0)) * move * f.speed * (sprint ? kSprint : 1.0f);
+        controller.desiredVelocity = pawnVelocity(f, c);
         if (c.pressedBits & InputCommand::kPressedJump) controller.jumpRequested = true;
         if (playing && (c.pressedBits & InputCommand::kPressedReload)) reloads.push_back(e);
     });

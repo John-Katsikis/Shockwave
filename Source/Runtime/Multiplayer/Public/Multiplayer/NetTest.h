@@ -14,6 +14,10 @@
 //   replication a host with a moving authored box and spawned, respawned and despawned
 //               crates owned by its players; `clients` clients (one joining late) must
 //               end with the host's objects, owners and poses exactly
+//   prediction  a host and `clients` clients, each with Jolt physics and a predicted
+//               character the host spawns for it; clients walk and jump by scripted
+//               commands through the faults, then stand still: every client must end
+//               where the host has it, with no correction offset left
 //
 // The JSON follows the network tool layout of docs/Networking.md: version, mode,
 // scenario, ok, errors, warnings, seed, duration_ticks, peers, counters.
@@ -58,6 +62,17 @@ struct NetTestReplication {
     double maxPositionError = 0;   // replication: client vs host after traffic settled
 };
 
+// Prediction counters, summed over clients.
+struct NetTestPrediction {
+    uint64_t predictedTicks = 0, checks = 0, matches = 0, corrections = 0, replayedTicks = 0, resets = 0;
+    uint64_t catchUpInputs = 0, hostFallbacks = 0;
+    uint64_t hostContacts = 0;   // the host's trigger events (clients must see none)
+    double maxCorrection = 0;   // metres
+    double maxOffset = 0;   // the largest correction offset shown
+    double finalError = 0;   // the largest client-host distance after standing still
+    double finalPresentationError = 0;   // the same for where clients draw every character
+};
+
 struct NetTestReport {
     std::string scenario;
     uint64_t seed = 0;
@@ -71,6 +86,7 @@ struct NetTestReport {
     uint64_t packetsInFlightAfterStop = 0;   // must be 0
     uint64_t openAuthSessionsAfterStop = 0, liveTicketsAfterStop = 0;   // must be 0
     NetTestReplication replication;
+    NetTestPrediction prediction;
 };
 
 // False only for an unknown scenario or preset (errors say which); a scenario that runs

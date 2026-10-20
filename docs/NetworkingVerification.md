@@ -466,3 +466,81 @@ Outstanding for this batch:
 - The match panel in the pause menu hasn't been looked at (no display here).
 - Clients see others' shots only as state changes (adjustment 50) and their own pawn a
   round trip late: prediction is Batch 7.
+
+## Plan Batch 7 (2026-10-20): physics prediction and presentation
+
+Base: `86eb9f6` (master after PR #25), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 7, sections 8.1 to 8.3 and 9.1 to 9.3; design adjustments 54 to 65.
+
+Implemented:
+
+- Physics (`Physics/Physics.h`): `CharacterMotionState`, `PhysicsNetworkMode`
+  (Offline, Authority, Client), `setPredictedCharacters`, `characterState`,
+  `correctCharacter`, `predictCharacterStep`, `applyReplicaBodyPose`. The character
+  movement step is one private helper used by `step()` and `predictCharacterStep`;
+  predicted characters move against static bodies only; Client mode runs no Jolt update
+  and keeps proxies, with runtime overrides only.
+- `NetworkWorld` (`Private/NetworkPrediction.cpp`): `setPhysics`, `setPredictionMove`,
+  `prepareStep`, `present`, `predicting`, `correctionOffset`, `predictionWarning`; a
+  256-tick command and predicted-state history, reconciliation with replay (32 ticks at
+  60 Hz), snaps with resync and warning, the 50 ms / 150 ms visual offset; the smoothed
+  Pong clock and catch-up commands (`NetworkInput.cpp`); sessions interpolating remote
+  objects through `InterpolationEngine`.
+- Engine: runtime `PresentationTransform`, preferred by `renderWorld`;
+  `presentedTransform()`. No renderer changes.
+- `PlaySession` calls `setPhysics`, `prepareStep` before each physics step and `present`
+  before the game's frame.
+- `GameFramework/InputSampler.h`: the engine input sampler (moved from Arena).
+- The `--check` and editor rule for moving bodies next to predicted characters;
+  `--net-test --scenario prediction`; `player --net-preview`.
+- `PoseState::kGrounded`; regenerated `NetworkProtocol.md`, `NetworkSchema.md` and
+  `CircuitNodes.md` (it had fallen behind the network components).
+- Arena: Net Player is a `PredictedCharacter`; clients predict with `ArenaSim::pawnVelocity`;
+  the camera and rifle follow the drawn pose; the status line shows the prediction warning.
+- Test `network_prediction`; `network_arena`, `network_session`, `network_cli`,
+  `network_wire` and `network_settings` updated.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 44/46 (`renderer_swap` and `save_games_cli`, the known no-display failures); the network and Arena set 18/18 |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*` and Arena set (18 tests) pass, no sanitizer reports |
+| Steamworks on (SDK 1.65) | builds; the network, Steam and Arena set (14 tests) passes |
+| `player --check` on Arena | 0 problems in 3 scenes |
+
+The prediction net-test, 4 clients, seed 7 (`network_prediction`):
+
+| Preset | Hz | Predicted | Checked | Matched | Corrections | Replayed | Largest correction | Largest offset shown |
+|---|---|---|---|---|---|---|---|---|
+| clean | 60 | 3592 | 1792 | 1780 | 4 | 8 | 0.067 m | 0.067 m |
+| cafe | 60 | 3522 | 1727 | 1709 | 7 | 22 | 0.200 m | 0.201 m |
+| poor | 60 | 3379 | 1524 | 1476 | 16 | 75 | 0.267 m | 0.684 m |
+| hostile | 60 | 3035 | 1070 | 916 | 96 | 1815 | 0.817 m | 0.817 m |
+| clean | 120 | 7192 | 3592 | 3580 | 4 | 8 | 0.034 m | 0.034 m |
+| cafe | 120 | 7059 | 3425 | 3356 | 48 | 297 | 0.117 m | 0.344 m |
+| poor | 120 | 6773 | 2473 | 2335 | 83 | 1284 | 0.175 m | 0.727 m |
+| hostile | 120 | 6076 | 1513 | 1312 | 120 | 4486 | 0.642 m | 0.674 m |
+
+On every run every client ends 0.0000 m from the host and draws every character within
+1.5 mm of it (position quantization). On the clean network the only corrections are the
+first ticks, before the client has measured the host's clock (each one a tick the host
+had no input for).
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Prediction tests | `network_prediction`: the host's step and a client's `predictCharacterStep` agree within 0.1 mm over 240 ticks of walking and two jumps; a predicted character walks through a dynamic box that stops it offline; `correctCharacter` moves the character, its Transform and velocity; bad arguments are refused; a client's dynamic box doesn't fall and its component stays Dynamic; `applyReplicaBodyPose`; the `--check` rule; `network_arena`: each client predicts only its own pawn |
+| Frame-rate-independent inputs | the engine `InputSampler` at 24, 30, 60, 144, 240 and 1000 fps, at 60 and 120 Hz: each press in exactly one command, fire and movement held for the same ticks within a frame, the aim turned by the same amount (1e-4 rad) and each command carrying it as of its tick; `network_arena`'s offline path at the same rates (same shots and reloads) |
+| Replay side-effect suppression | in the prediction scenario the game's move rule runs exactly once per predicted tick, never for the replayed ones (up to 4486 replayed); clients see no contact or sensor events while the host's characters set off the trigger (`network_prediction` also checks it directly) |
+| Headless correction convergence | the table above: every preset at 60 and 120 Hz converges to 0.0000 m once inputs stop, with no correction offset left; no offset is shown more than 150 ms after its correction, and none past 1 m |
+| Visual inspection of camera and viewmodel under network jitter | not done here (no display). `player --net-preview poor` (or `hostile`) on `Scenes/arena-mp.swscene` is for the project owner to look at |
+
+Outstanding for this batch:
+
+- The visual check above, on the desktop.
+- Predicted characters pass through each other and through dynamic bodies online, and
+  moving platforms aren't supported (section 9.2); `--check` reports them.
+- At 120 Hz on the hostile preset (200 ms one way) most inputs still arrive late: the
+  lead tops out at 32 ticks there (267 ms), so the host falls back often and corrects.

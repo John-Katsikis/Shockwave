@@ -12,6 +12,7 @@ entity "Net Player"
   ArenaWeapon
   NetworkObject
     profile "arena.player.v1"
+    mode PredictedCharacter
 end
 
 entity "Vest"

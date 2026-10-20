@@ -4,8 +4,11 @@
 #include <Multiplayer/NetworkSchema.h>
 #include <Multiplayer/Replication.h>
 
+#include <Core/Jobs.h>
 #include <Engine/Components.h>
+#include <Engine/PhysicsComponents.h>
 #include <Network/LoopbackServices.h>
+#include <Physics/Physics.h>
 
 #include <algorithm>
 #include <cmath>
@@ -18,13 +21,14 @@ namespace shockwave::net {
 
 namespace {
 
-constexpr const char* kScenarios[] = {"handshake", "rejections", "stop-start", "replication"};
+constexpr const char* kScenarios[] = {"handshake", "rejections", "stop-start", "replication", "prediction"};
 constexpr uint64_t kHostIdentity = 1000;
 
 struct Node {
     std::string name;
     std::unique_ptr<LoopbackOnlineServices> services;
     std::unique_ptr<World> scene;   // replication: this machine's world
+    std::unique_ptr<PhysicsWorld> physics;   // prediction: this machine's physics
     std::unique_ptr<NetworkWorld> world;
     ReasonCode expected = ReasonCode::Normal;
     double joinMs = -1;
@@ -71,6 +75,8 @@ public:
     }
     // Called on the host between drain and endTick, once per tick.
     std::function<void(uint32_t tick)> onHostTick;
+    // Called on every node after onHostTick, before endTick.
+    std::function<void(Node&, uint32_t tick)> onTick;
 
     Node& add(std::string name, const NetworkStart& start, uint64_t identity) {
         Node& node = m_nodes.emplace_back();
@@ -108,6 +114,7 @@ public:
             node.world->pump(now);
             node.world->drain(m_ticks);
             if (node.world->role() == NetworkRole::Authority && onHostTick) onHostTick(m_ticks);
+            if (onTick) onTick(node, m_ticks);
             node.world->endTick(m_ticks);
             if (node.world->role() == NetworkRole::Client && node.joinMs < 0 &&
                 node.world->state() == NetworkState::Active)
@@ -483,6 +490,248 @@ void replication(const NetTestOptions& options, const FaultProfile& faults, NetT
     checkClean(report);
 }
 
+// The scripted walk: each client turns through four directions every second and jumps
+// every 1.5 s, until `quiet`, then stands still.
+InputCommand scripted(uint32_t client, uint32_t tick, uint32_t rate, bool quiet) {
+    InputCommand c;
+    if (quiet) return c;
+    static constexpr int8_t kDirections[4][2] = {{127, 0}, {0, 127}, {-127, 0}, {0, -127}};
+    const uint32_t d = (tick / rate + client) % 4;
+    c.moveX = kDirections[d][0];
+    c.moveZ = kDirections[d][1];
+    if ((tick + client * 7) % (rate * 3 / 2) == 0) c.pressedBits = InputCommand::kPressedJump;
+    if ((tick / rate) % 3 == 2) c.heldBits = InputCommand::kHeldSprint;
+    return c;
+}
+
+// The scenario's movement rule, the same on the host and in prediction.
+PredictedMove scriptedMove(const InputCommand& c) {
+    PredictedMove m;
+    const float speed = (c.heldBits & InputCommand::kHeldSprint) ? 7.0f : 4.0f;
+    m.desiredVelocity = glm::vec3(float(c.moveX) / 127.0f, 0.0f, float(c.moveZ) / 127.0f) * speed;
+    m.jump = (c.pressedBits & InputCommand::kPressedJump) != 0;
+    return m;
+}
+
+void prediction(const NetTestOptions& options, const FaultProfile& faults, NetTestReport& report) {
+    ReplicationRegistry registry;
+    registerEngineReplication(registry);
+    std::vector<std::string> problems;
+    if (!registry.freeze(problems)) {
+        report.errors.push_back("the engine registry didn't freeze");
+        return;
+    }
+    JobSystem jobs(1);
+    Harness h(options, faults);
+    auto spawnCharacter = [](World& world, const NetworkPrefab& prefab, const Transform& at) {
+        const Entity e = world.create();
+        world.add<Transform>(e, at);
+        world.add<Name>(e, {"character"});
+        world.add<CharacterController>(e, {});
+        NetworkObject n;
+        n.profile = prefab.profile;
+        n.mode = NetworkObject::Mode::PredictedCharacter;
+        world.add<NetworkObject>(e, n);
+        return e;
+    };
+    // A floor and a wall, both static: what predicted characters collide with.
+    auto makeScene = [](World& world, uint32_t) {
+        auto block = [&](const char* name, glm::vec3 position, glm::vec3 halfExtents) {
+            const Entity e = world.create();
+            world.add<Name>(e, {name});
+            Transform t;
+            t.position = position;
+            world.add<Transform>(e, t);
+            Collider c;
+            c.halfExtents = halfExtents;
+            world.add<Collider>(e, c);
+            RigidBody body;
+            body.motion = RigidBody::Motion::Static;
+            world.add<RigidBody>(e, body);
+        };
+        block("floor", {0, -0.5f, 0}, {40, 0.5f, 40});
+        block("wall", {3, 1, 0}, {0.25f, 1, 4});
+        // A trigger the characters walk through: the host gets its events, a client's
+        // prediction and replays must not.
+        const Entity trigger = world.create();
+        world.add<Name>(trigger, {"trigger"});
+        world.add<Transform>(trigger, {});
+        Collider c;
+        c.halfExtents = {1.5f, 1, 1.5f};
+        world.add<Collider>(trigger, c);
+        RigidBody sensor;
+        sensor.motion = RigidBody::Motion::Static;
+        sensor.sensor = true;
+        world.add<RigidBody>(trigger, sensor);
+    };
+    h.replicate(registry, {{1, "Prefabs/Net Character.swprefab", "engine.pose.v1"}}, spawnCharacter, makeScene);
+    const uint32_t rate = std::max<uint32_t>(options.settings.tickRate, 1);
+    // Per client: game-code calls (the move rule), contact events seen, and when its
+    // newest correction happened.
+    struct ClientWatch {
+        uint64_t moveCalls = 0, contacts = 0, corrections = 0;
+        double correctedAt = -1;
+        float maxOffset = 0;
+    };
+    std::deque<ClientWatch> watch;
+    uint64_t hostContacts = 0;
+    auto join = [&](Node& node) {
+        node.physics = std::make_unique<PhysicsWorld>(*node.scene, jobs);
+        node.world->setPhysics(node.physics.get());
+        if (node.world->role() == NetworkRole::Client) {
+            ClientWatch& w = watch.emplace_back();
+            node.world->setPredictionMove([&w](const World&, Entity, const InputCommand& c) {
+                ++w.moveCalls;
+                return scriptedMove(c);
+            });
+        }
+        return h.begin(node, report.errors);
+    };
+    Node& host = h.add("host", h.start(NetworkRole::Authority), kHostIdentity);
+    if (!join(host)) return h.finish(report);
+    for (uint32_t i = 0; i < options.clients; ++i) {
+        Node& client = h.add("client " + std::to_string(i + 1), h.start(NetworkRole::Client), kHostIdentity + 1 + i);
+        join(client);
+    }
+    World& hostWorld = *host.scene;
+    NetworkWorld& hostNet = *host.world;
+    std::vector<std::pair<uint16_t, Entity>> pawns;   // host: by owner slot
+    const uint32_t quietTick = h.ticks() + 12 * rate, endTick = quietTick + 3 * rate;
+    h.onHostTick = [&](uint32_t) {
+        NetworkEvent event;
+        while (hostNet.pollEvent(event)) {
+            if (event.kind != NetworkEventKind::PlayerJoined) continue;
+            Transform at;
+            at.position = {float(pawns.size() % 4) * 1.5f - 2.0f, 0.05f, float(pawns.size() / 4) * 1.5f - 2.0f};
+            if (auto pawn = hostNet.spawn(1, at, event.slot))
+                pawns.emplace_back(event.slot, pawn.value());
+            else
+                report.errors.push_back(std::string("spawn failed: ") + pawn.error().message);
+        }
+        for (const auto& [slot, pawn] : pawns) {
+            if (!hostWorld.alive(pawn)) continue;
+            InputCommand c;
+            hostNet.takeInput(slot, hostNet.identity(pawn) ? hostNet.identity(pawn)->incarnation : 0, c);
+            const PredictedMove move = scriptedMove(c);
+            CharacterController& controller = *hostWorld.get<CharacterController>(pawn);
+            controller.desiredVelocity = move.desiredVelocity;
+            controller.jumpRequested = controller.jumpRequested || move.jump;
+        }
+    };
+    h.onTick = [&](Node& node, uint32_t tick) {
+        NetworkWorld& net = *node.world;
+        if (net.role() == NetworkRole::Client && net.state() == NetworkState::Active) {
+            const Entity mine = net.controlledEntity().valid() ? net.controlledEntity() : kNullEntity;
+            const NetworkIdentity* identity = net.identity(mine);
+            uint32_t client = 0;
+            for (uint32_t i = 0; i < h.nodes().size(); ++i)
+                if (&h.nodes()[i] == &node) client = i;
+            InputCommand c = scripted(client, tick, rate, tick >= quietTick);
+            c.incarnation = identity ? identity->incarnation : 0;
+            if (identity) net.sendInput(c);
+        }
+        net.prepareStep();
+        node.physics->step(1.0 / double(rate));
+        if (net.role() == NetworkRole::Authority) {
+            hostContacts += node.physics->contacts().size();
+            return;
+        }
+        // A client after its tick: contacts, the correction offset's decay, presentation.
+        uint32_t index = 0;
+        for (uint32_t i = 1; i < h.nodes().size(); ++i)
+            if (&h.nodes()[i] == &node) index = i - 1;
+        ClientWatch& w = watch[index];
+        w.contacts += node.physics->contacts().size();
+        const double now = h.nowSeconds();
+        if (net.stats().corrections != w.corrections) {
+            w.corrections = net.stats().corrections;
+            w.correctedAt = now;
+        }
+        const float offset = glm::length(net.correctionOffset());
+        w.maxOffset = std::max(w.maxOffset, offset);
+        if (w.correctedAt >= 0 && now - w.correctedAt > NetworkWorld::kOffsetMaxSeconds + 1e-6 && offset > 0)
+            report.errors.push_back(node.name + "'s correction offset outlived 150 ms");
+        net.present(1.0f);
+    };
+    h.runUntil([&] { return h.ticks() >= endTick; }, endTick + 1);
+
+    NetTestPrediction& p = report.prediction;
+    p.hostFallbacks = hostNet.stats().inputFallbacks;
+    for (Node& n : h.nodes()) {
+        if (!n.world || n.world->role() != NetworkRole::Client) continue;
+        const NetworkWorldStats& s = n.world->stats();
+        p.predictedTicks += s.predictedTicks;
+        p.checks += s.predictionChecks;
+        p.matches += s.predictionMatches;
+        p.corrections += s.corrections;
+        p.replayedTicks += s.replayedTicks;
+        p.resets += s.predictionResets;
+        p.catchUpInputs += s.catchUpInputs;
+        p.maxCorrection = std::max(p.maxCorrection, double(s.maxCorrection));
+        if (n.world->state() != NetworkState::Active) {
+            report.errors.push_back(n.name + " isn't active (" + networkStateName(n.world->state()) + ")");
+            continue;
+        }
+        if (!n.world->predicting()) {
+            report.errors.push_back(n.name + " isn't predicting its character");
+            continue;
+        }
+        const Entity mine = n.world->controlledEntity();
+        const Entity theirs = hostNet.entity(n.world->networkId(mine));
+        const Transform* a = n.scene->get<Transform>(mine);
+        const Transform* b = hostWorld.get<Transform>(theirs);
+        if (!a || !b) {
+            report.errors.push_back(n.name + "'s character is missing on one side");
+            continue;
+        }
+        p.finalError = std::max(p.finalError, double(glm::length(a->position - b->position)));
+        if (glm::length(n.world->correctionOffset()) > 1e-4f)
+            report.errors.push_back(n.name + " still has a correction offset after standing still");
+        if (s.predictedTicks == 0) report.errors.push_back(n.name + " predicted nothing");
+        // Every character is drawn where the host has it once everyone stands still: the
+        // own one through prediction, the others through interpolation.
+        for (const auto& [slot, pawn] : pawns) {
+            const Entity e = n.world->entity(hostNet.networkId(pawn));
+            const PresentationTransform* shown = n.scene->get<PresentationTransform>(e);
+            const Transform* host = hostWorld.get<Transform>(pawn);
+            if (!shown || !host) {
+                report.errors.push_back(n.name + " doesn't present player " + std::to_string(slot) + "'s character");
+                continue;
+            }
+            p.finalPresentationError =
+                std::max(p.finalPresentationError, double(glm::length(shown->value.position - host->position)));
+        }
+        if (s.interpolatedObjects + 1 != pawns.size())
+            report.errors.push_back(n.name + " interpolates " + std::to_string(s.interpolatedObjects) + " objects");
+    }
+    for (uint32_t i = 0; i < watch.size(); ++i) {
+        const ClientWatch& w = watch[i];
+        const NetworkWorld* net = h.nodes()[i + 1].world.get();
+        if (net && w.moveCalls != net->stats().predictedTicks)
+            report.errors.push_back(
+                h.nodes()[i + 1].name + ": game code ran " + std::to_string(w.moveCalls) + " times for " +
+                std::to_string(net->stats().predictedTicks) + " predicted ticks (replays must not run it)");
+        if (w.contacts) report.errors.push_back(h.nodes()[i + 1].name + " saw contact events while predicting");
+        p.maxOffset = std::max(p.maxOffset, double(w.maxOffset));
+    }
+    p.hostContacts = hostContacts;
+    if (p.maxOffset > NetworkWorld::kSnapDistance)
+        report.errors.push_back("a correction offset beyond the snap distance was shown");
+    if (p.finalPresentationError > 0.01)
+        report.errors.push_back("a client draws a character away from where the host has it after standing still");
+    if (p.finalError > NetworkWorld::kPositionTolerance + 0.002)
+        report.errors.push_back("a client's character isn't where the host has it after standing still");
+    if (p.checks && p.matches * 2 < p.checks) report.warnings.push_back("most predictions missed the host's state");
+    // Without faults the only misses are ticks whose input didn't reach the host in time
+    // (the first ones, before the client measured the host's clock).
+    if (options.preset == "clean" && (p.corrections > p.hostFallbacks || p.resets))
+        report.errors.push_back("predictions missed on a clean network for a tick the host had the input for");
+    const NetTestPrediction kept = p;
+    h.stopAll(report);
+    report.prediction = kept;
+    checkClean(report);
+}
+
 }   // namespace
 
 std::span<const char* const> netTestScenarios() { return kScenarios; }
@@ -511,9 +760,11 @@ bool runNetTest(const NetTestOptions& options, NetTestReport& report) {
         stopStart(options, report);
     else if (options.scenario == "replication")
         replication(options, preset->profile, report);
+    else if (options.scenario == "prediction")
+        prediction(options, preset->profile, report);
     else {
         report.errors.push_back(
-            "unknown scenario " + options.scenario + " (handshake, rejections, stop-start or replication)");
+            "unknown scenario " + options.scenario + " (handshake, rejections, stop-start, replication or prediction)");
         return false;
     }
     report.ok = report.errors.empty();
@@ -560,6 +811,19 @@ std::string netTestText(const NetTestReport& r) {
             (unsigned long long)rep.recordsApplied, (unsigned long long)rep.staleRecords,
             (unsigned long long)rep.heldSnapshots, (unsigned long long)rep.expiredSnapshots,
             (unsigned long long)rep.resyncRequests, unsigned(rep.controlQueueHigh), rep.maxPositionError);
+        out += line;
+    }
+    const NetTestPrediction& pr = r.prediction;
+    if (pr.predictedTicks) {
+        std::snprintf(
+            line, sizeof(line),
+            "prediction: %llu ticks predicted, %llu checked, %llu matched, %llu corrections (%llu ticks replayed, max "
+            "%.3f m), %llu resets, %llu catch-up inputs, %llu host fallbacks, final error %.4f m (drawn %.4f m), "
+            "largest offset shown %.3f m, host trigger events %llu\n",
+            (unsigned long long)pr.predictedTicks, (unsigned long long)pr.checks, (unsigned long long)pr.matches,
+            (unsigned long long)pr.corrections, (unsigned long long)pr.replayedTicks, pr.maxCorrection,
+            (unsigned long long)pr.resets, (unsigned long long)pr.catchUpInputs, (unsigned long long)pr.hostFallbacks,
+            pr.finalError, pr.finalPresentationError, pr.maxOffset, (unsigned long long)pr.hostContacts);
         out += line;
     }
     for (const std::string& e : r.errors) out += "error " + e + "\n";
@@ -612,7 +876,20 @@ std::string netTestJson(const NetTestReport& r) {
            ", \"expired_snapshots\": " + std::to_string(rep.expiredSnapshots) +
            ", \"resync_requests\": " + std::to_string(rep.resyncRequests) +
            ", \"control_queue_high\": " + std::to_string(rep.controlQueueHigh) +
-           ", \"max_position_error_m\": " + error + "}\n}\n";
+           ", \"max_position_error_m\": " + error + "},\n";
+    const NetTestPrediction& pr = r.prediction;
+    char metres[192];
+    std::snprintf(
+        metres, sizeof(metres),
+        "%.6f, \"final_error_m\": %.6f, \"final_presentation_error_m\": %.6f, \"max_offset_m\": %.6f", pr.maxCorrection,
+        pr.finalError, pr.finalPresentationError, pr.maxOffset);
+    out += "  \"prediction\": {\"predicted_ticks\": " + std::to_string(pr.predictedTicks) +
+           ", \"checks\": " + std::to_string(pr.checks) + ", \"matches\": " + std::to_string(pr.matches) +
+           ", \"corrections\": " + std::to_string(pr.corrections) +
+           ", \"replayed_ticks\": " + std::to_string(pr.replayedTicks) + ", \"resets\": " + std::to_string(pr.resets) +
+           ", \"catch_up_inputs\": " + std::to_string(pr.catchUpInputs) +
+           ", \"host_fallbacks\": " + std::to_string(pr.hostFallbacks) +
+           ", \"host_contacts\": " + std::to_string(pr.hostContacts) + ", \"max_correction_m\": " + metres + "}\n}\n";
     return out;
 }
 
