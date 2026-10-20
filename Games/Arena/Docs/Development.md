@@ -27,17 +27,24 @@ Links below point to the current file layout; command paths are relative to the 
 
 | File | Responsibility |
 |---|---|
-| [ArenaGame.h](../Source/ArenaGame.h) | Match, fighter and weapon data; presentation helper declaration |
-| [ArenaGame.cpp](../Source/ArenaGame.cpp) | Registration, validation, movement, combat, respawning, presentation and HUD updates |
+| [ArenaGame.h](../Source/ArenaGame.h) | Match, fighter and weapon data |
+| [ArenaGame.cpp](../Source/ArenaGame.cpp) | Registration, validation, the game mode: who simulates, joins and leaves, lobby commands, menu and scoreboard |
+| [ArenaInput.h](../Source/ArenaInput.h) / [.cpp](../Source/ArenaInput.cpp) | Reading devices once per frame and turning them into one `InputCommand` per tick |
+| [ArenaSimulation.h](../Source/ArenaSimulation.h) / [.cpp](../Source/ArenaSimulation.cpp) | `ArenaSim`: movement, combat, reloads, respawns and rounds from input commands, in ticks |
+| [ArenaPresentation.h](../Source/ArenaPresentation.h) / [.cpp](../Source/ArenaPresentation.cpp) | Camera, rifle, tracers, sounds, body visibility and team colours, HUD values |
+| [ArenaNetwork.h](../Source/ArenaNetwork.h) / [.cpp](../Source/ArenaNetwork.cpp) | Replication profiles, lobby commands and events (`SW_NETWORK_TYPES`) |
 | [ArenaModule.cpp](../Source/ArenaModule.cpp) | Selects the arena game mode for this project |
 | [Arena CMake](../CMakeLists.txt) | Builds the source files into `game_arena` with `shockwave_game_module(arena)` |
 | [arena.swscene](../Scenes/arena.swscene) | Playable map, player, camera, rifle, bots and UI documents |
 | [arena-benchmark.swscene](../Scenes/arena-benchmark.swscene) | Copy of the map with automatic aiming/firing and longer match settings |
+| [arena-mp.swscene](../Scenes/arena-mp.swscene) | The map for network play: no player or bots, six `NetworkSpawnPoint`s a team |
+| [Net Player prefab](<../Content/Prefabs/Net Player.swprefab>) | The pawn the host spawns for each player |
 | [Blue bot prefab](<../Content/Prefabs/Arena bot 0.swprefab>) / [orange bot prefab](<../Content/Prefabs/Arena bot 1.swprefab>) | Reusable bot bodies and team defaults |
 | [Input.swinput](../Config/Input.swinput) | Named keyboard/mouse bindings |
 | [hud.rml](../Content/UI/Arena/hud.rml), [menu.rml](../Content/UI/Arena/menu.rml), [arena.rcss](../Content/UI/Arena/arena.rcss) | Game UI markup and styling |
 | [GenerateArenaAudio.py](../Tools/GenerateArenaAudio.py) | Reproducible original sound generation |
 | [ArenaTest.cpp](../Tests/ArenaTest.cpp) / [ArenaCheck.cmake](../Tests/ArenaCheck.cmake) | Gameplay, presentation and CLI validation tests |
+| [ArenaNetworkTest.cpp](../Tests/ArenaNetworkTest.cpp) | Test `network_arena`: a host and eleven clients, cheating clients, input at 24 to 1000 fps |
 
 ## Data and game-mode selection
 
@@ -45,9 +52,12 @@ Three plain ECS components hold authored settings and runtime state:
 
 | Component | Registered, editable settings | Runtime-only state |
 |---|---|---|
-| `ArenaRules` | Score limit, round duration, autoplay | Team scores, remaining time, finished flag, shot/hit/reload counters |
-| `ArenaFighter` | Team, player flag, maximum health, speed, fire interval, damage | Current health, spawn position, cooldowns, protection, kills/deaths |
-| `ArenaWeapon` | Magazine size, damage, shot interval, reload duration, sensitivity | Ammunition and cooldown/reload timers |
+| `ArenaRules` | Score limit, round duration, autoplay | Team scores, remaining ticks, phase (waiting, playing, finished), round serial, shot/hit/reload counters |
+| `ArenaFighter` | Team, player flag, maximum health, speed, fire interval, damage | Current health, yaw and pitch, spawn position, cooldown/respawn/protection ticks, kills/deaths, player slot, ready, this tick's input command |
+| `ArenaWeapon` | Magazine size, damage, shot interval, reload duration, sensitivity | Ammunition and cooldown/reload ticks |
+
+Every timer counts whole ticks: a duration in seconds becomes `ceil(seconds * tick_rate)`
+ticks, so cadence and reload time are the same at any frame rate.
 
 `registerTypes()` calls `registerComponent` under the `Arena` inspector category.
 The arena module registers that function through its `AutoComponent` registration
@@ -61,8 +71,10 @@ Sample's module is again independent and does not register the arena components.
 
 `beginPlay()` validates numeric ranges and structural requirements, records spawn
 positions, initializes the round, allocates tracer entities and registers menu
-callbacks. It requires one rules component, one player with a character controller
-and weapon, and a root primary camera named `Arena Camera`. Fighters require root
+callbacks. It requires one rules component and a root primary camera named
+`Arena Camera`, and either one player with a character controller and weapon (the
+offline scenes) or no player and `NetworkSpawnPoint`s for both teams (the multiplayer
+scene, which network play requires). Fighters require root
 transforms; bots require colliders. `Arena Rifle` and `Arena Muzzle` are optional
 visuals found by name. Other than the camera, these names are not validated links.
 
@@ -93,23 +105,43 @@ animation systems; this prototype does not exercise them.
 
 ## Frame and simulation flow
 
-The project simulates at 60 Hz. Rendering can run much faster.
+The project simulates at 60 Hz (online, at the network settings' `tick_rate`). Rendering
+can run much faster. Gameplay never reads devices: it runs on one `InputCommand` per
+pawn per tick, the same 24-byte command the network sends.
 
-1. `configureSystems()` adds one exclusive `Arena controls` system. Before physics,
-   it updates cooldowns/protection/respawns, bot patrol positions and the player's
-   desired velocity. Exclusive access keeps these small-world edits straightforward;
-   this sample does not demonstrate parallel combat systems.
-2. The session runs navigation and Jolt physics.
-3. `fixedUpdate()` advances match/reload timers, resolves player and bot firing,
-   applies damage, updates scores and checks the round ending conditions.
-4. `frame()` consumes mouse aim and action edges, updates presentation and sends
-   values/classes to the HUD. Recoil recovery and reload lowering use frame time.
+1. Once a frame, `collectInput()` reads the devices (`readDevices`) into the
+   `InputSampler`: aim turns by the mouse, held buttons latch, presses are kept until a
+   tick takes them. In a menu, unfocused, or with the mouse free, the frame is neutral
+   and presses are dropped.
+2. `configureSystems()` adds one exclusive `Arena controls` system. Each tick it takes
+   one command from the sampler (`autoCommand` with autoplay). On a client it sends it
+   to the host and stops there. On the host or offline it handles joins, leaves and
+   lobby commands, gives every pawn its command (remote ones from `takeInput`), and
+   `ArenaSim::stepControls` turns them into aim, desired velocity, jumps and reloads,
+   with timers, respawns and bot patrols.
+3. The session runs navigation and Jolt physics.
+4. `fixedUpdate()` runs `ArenaSim::stepCombat`: firing, damage, scores and the end of
+   the round, on the host or offline only. Clients show what the host replicates.
+5. `frame()` updates presentation (camera at the local pawn, rifle, tracers, HUD).
+   Recoil recovery and reload lowering use frame time; nothing there changes the game.
 
-The engine polls input before fixed ticks but calls the game's `frame()` afterward.
-Consequently, the arena's cached aim/fire intent can be from the preceding rendered
-frame when a fixed tick fires. Movement reads actions directly in the pre-physics
-system. This ordering distinction matters for future input-latency work; the camera
-motion fix did not change input-command scheduling.
+## Network play
+
+`Scenes/arena-mp.swscene` is the map for network play. The host gets a Net Player pawn
+in slot 1 at the start and spawns one for each player that joins, on the team with
+room (six a side) at a free spawn point; a 13th player is sent away with `ServerFull`.
+A leaving player's pawn is despawned. The round waits until every player has sent
+ready (`arena.ready_to_play`); players may change team while it waits
+(`arena.request_team`, refused when that team is full). After the round only the host
+may start another (`arena.request_round_restart`). Damage, teams, ammo, scores and
+ownership are decided by the host; clients send only input commands and these three
+commands, which the host checks. Played offline, the multiplayer scene is a match for
+one.
+
+The pause menu has a match panel when the scene is the multiplayer one: the network
+line, READY, JOIN BLUE / JOIN ORANGE, LEAVE MATCH while online, and the two rosters.
+HOST, FIND / JOIN and INVITE are shown greyed until Steam play can start sessions.
+Online the menu doesn't pause anything: it only makes this player's input neutral.
 
 ## Weapon, damage and round rules
 

@@ -148,6 +148,7 @@ void NetworkWorld::Impl::clearReplication() {
     for (HeldSnapshot& h : held) h.used = false;
     baselineBegun = baselineEnded = committed = activated = false;
     controlled = 0;
+    clearInput();
 }
 
 // ---- Host -----------------------------------------------------------------------------------
@@ -272,6 +273,7 @@ void NetworkWorld::Impl::ready(Peer& p, const Ready& ready) {
     // After every lifecycle change still queued, so the client has them all when it starts.
     if (!enqueue(p, active)) return reject(p, ReasonCode::RateLimited, "fell too far behind the host");
     enter(p, Peer::Phase::Active);
+    p.firstInputTick = active.firstInputTick;   // its inputs count from here
     p.fullRefresh = true;
     SW_LOG(LogNetwork, Info, "Player in slot {} is in the game", p.slot);
     flushControl(p);
@@ -595,6 +597,8 @@ bool NetworkWorld::Impl::replicationMessage(const DecodedMessage& decoded) {
         }
         activated = true;
         controlled = m.controlledEntity;
+        firstInputTick = m.firstInputTick;
+        nextPing = now;   // start measuring the host's clock
         SW_LOG(LogNetwork, Info, "In the game as player {}, {} network objects", w.m_localSlot, objects.size());
         w.setState(NetworkState::Active);
         return true;
@@ -739,6 +743,9 @@ bool NetworkWorld::Impl::materialize(NetObject& o) {
     // The host simulates it; here it follows the snapshots.
     if (RigidBody* body = world.get<RigidBody>(e); body && body->motion == RigidBody::Motion::Dynamic)
         body->motion = RigidBody::Motion::Kinematic;
+    // A character moves only by its owner's inputs on the host; without prediction a
+    // client's copy is a pose to show, not a body to simulate.
+    if (CharacterController* character = world.get<CharacterController>(e)) character->enabled = false;
     applyState(o);
     return true;
 }

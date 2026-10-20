@@ -316,7 +316,10 @@ void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
         if (!p.admitted()) return reject(p, ReasonCode::MalformedPacket, "message before the handshake finished");
         if (kind == MessageKind::Ready) return ready(p, std::get<Ready>(decoded.body));
         if (kind == MessageKind::ResyncRequest) return resyncRequest(p);
-        ++stats.ignored;   // inputs, commands and pings: later batches
+        if (kind == MessageKind::Inputs) return inputsMessage(p, std::get<Inputs>(decoded.body));
+        if (kind == MessageKind::Command) return commandMessage(p, std::get<Command>(decoded.body));
+        if (kind == MessageKind::Ping) return pingMessage(p, std::get<Ping>(decoded.body));
+        ++stats.ignored;   // a Pong: the host doesn't ping yet
         return;
     }
 }
@@ -415,7 +418,8 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
             applySnapshot(snapshot);
             return;
         }
-        if (!replicationMessage(decoded)) ++stats.ignored;   // events and pongs: later batches
+        if (kind == MessageKind::Pong) return pongMessage(std::get<Pong>(decoded.body));
+        if (!replicationMessage(decoded)) ++stats.ignored;   // game events and pings: later batches
         return;
     }
 }
@@ -604,10 +608,12 @@ void NetworkWorld::pump(double nowSeconds) {
     impl.poll();
     if (m_transport) impl.checkTimeouts();
     if (!m_transport) return;
-    if (impl.host())
+    if (impl.host()) {
         impl.flushAll();
-    else
+    } else {
         impl.expireHeld();
+        if (m_transport) impl.sendPings();
+    }
     if (impl.failPending) impl.finishFail();
 }
 

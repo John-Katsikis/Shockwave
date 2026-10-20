@@ -5,6 +5,13 @@
 <button id="graphics" onclick="arena_graphics">GRAPHICS SETTINGS</button>
 <button id="restart" onclick="arena_restart">RESTART MATCH</button>
 <p>Blue is your team. First to 20 wins.<br/>Respawn: 3 seconds. Spawn protection: 1 second.</p></div>
+<div id="match-panel" data-if="arena_match"><h1>MATCH / 6v6</h1><p class="hint">{{arena_network}}</p>
+<button id="ready" onclick="arena_ready">READY</button>
+<div class="teams"><button id="team-blue" onclick="arena_team_blue">JOIN BLUE</button><button id="team-orange" onclick="arena_team_orange">JOIN ORANGE</button></div>
+<button id="leave" onclick="arena_leave" data-if="arena_online">LEAVE MATCH</button>
+<div class="later"><button id="host" class="unavailable">HOST FRIENDS MATCH</button><button id="find" class="unavailable">FIND / JOIN</button><button id="invite" class="unavailable">INVITE</button><p class="hint">Hosting, finding and inviting come with Steam play.</p></div>
+<div class="roster"><div class="column blue"><span class="caption">BLUE</span><br/>{{arena_blue_1}}<br/>{{arena_blue_2}}<br/>{{arena_blue_3}}<br/>{{arena_blue_4}}<br/>{{arena_blue_5}}<br/>{{arena_blue_6}}</div><div class="column orange"><span class="caption">ORANGE</span><br/>{{arena_orange_1}}<br/>{{arena_orange_2}}<br/>{{arena_orange_3}}<br/>{{arena_orange_4}}<br/>{{arena_orange_5}}<br/>{{arena_orange_6}}</div></div>
+</div>
 <div id="graphics-panel" class="hidden">
 <h1>GRAPHICS SETTINGS</h1>
 <p class="hint">Select a setting to cycle its value. Apply when ready.</p>

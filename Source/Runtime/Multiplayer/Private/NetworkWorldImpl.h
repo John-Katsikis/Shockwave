@@ -46,6 +46,26 @@ struct Peer {
     bool fullRefresh = false;   // the next snapshot carries every object
     std::array<double, NetworkWorld::kMaxResyncsPerMinute> resyncs{-1e9, -1e9, -1e9};
 
+    // Host input, once Active: a ring of commands by target tick, the last one used (for
+    // the fallback), and how often it sent inputs too far ahead.
+    std::array<InputCommand, NetworkWorld::kInputHistory> inputs{};
+    std::array<bool, NetworkWorld::kInputHistory> haveInput{};
+    uint32_t firstInputTick = 0;
+    uint32_t lastTaken = 0;   // the newest tick takeInput() used, real or fallback
+    bool tookAny = false;
+    InputCommand lastInput{};
+    bool haveLastInput = false;
+    uint32_t missing = 0;
+    uint32_t aheadViolations = 0;
+    double aheadWindow = -1;
+    // Host commands: the last command_seq, and a token bucket per registered command.
+    uint32_t commandSeq = 0;
+    bool haveCommandSeq = false;
+    std::vector<double> commandTokens, commandTokensAt;
+    // Pings answered this second.
+    uint32_t pings = 0;
+    double pingWindow = -1;
+
     bool admitted() const { return phase == Phase::Synchronizing || phase == Phase::Active; }
     size_t queued() const { return queue.size() - queueRead; }
 };
@@ -127,6 +147,29 @@ struct NetworkWorld::Impl final : TransportSink {
     std::array<uint8_t, kMaxUnreliableMessageBytes> part{};
     std::array<uint8_t, kMaxReliableMessageBytes> controlOut{};   // lifecycle messages being queued
     bool captureWarned = false;
+
+    // ---- Input and commands (NetworkInput.cpp) ----
+    // Client clock: Pong samples (the host tick when it arrived, the round trip), the best
+    // of the last eight used. Inputs: the last target tick sent and the last four sent.
+    struct ClockSample {
+        double hostTick = 0;   // estimated host tick at `at`
+        double at = 0;
+        double rtt = 0;
+    };
+    std::array<ClockSample, 8> clock{};
+    uint32_t clockSamples = 0, clockNext = 0;
+    uint32_t pingId = 0, pingsSent = 0;
+    double nextPing = 0;
+    uint32_t firstInputTick = 0;   // client: Active's first_input_tick
+    uint32_t lastInputTick = 0;
+    bool sentInput = false;
+    std::array<InputCommand, kMaxInputsPerMessage> recentInputs{};
+    uint32_t recentCount = 0;
+    uint32_t clientCommandSeq = 0;
+    std::vector<double> clientTokens, clientTokensAt;   // client: the same rate limits
+    // Accepted commands waiting for pollCommand.
+    std::array<ReceivedCommand, NetworkWorld::kMaxQueuedCommands> commands{};
+    uint32_t commandHead = 0, commandCount = 0;
     std::string beginError;   // what a NetError from beginReplication() points at
 
     const NetworkSettings& settings() const { return w.m_start.settings; }
@@ -199,6 +242,23 @@ struct NetworkWorld::Impl final : TransportSink {
     void expireHeld();
     void requestResync(uint8_t reason);
     Digest catalogDigest() const;
+
+    // ---- Input and commands (NetworkInput.cpp) ----
+    Peer* peerForSlot(uint16_t slot);
+    void inputsMessage(Peer& p, const Inputs& inputs);
+    void commandMessage(Peer& p, const Command& command);
+    void pingMessage(Peer& p, const Ping& ping);
+    void pongMessage(const Pong& pong);
+    void sendPings();
+    // Whether the command may be taken from this sender: permission, target, rate. why
+    // says why not.
+    bool commandAllowed(
+        const CommandDesc& desc, uint16_t sender, uint64_t target, Entity& targetEntity, std::vector<double>& tokens,
+        std::vector<double>& tokensAt, const char*& why);
+    bool queueCommand(
+        const CommandDesc& desc, uint16_t sender, uint64_t target, Entity targetEntity, const ProfileValue& payload);
+    bool estimatedHostTick(double& out) const;
+    void clearInput();
 };
 
 }   // namespace shockwave::net

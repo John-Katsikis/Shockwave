@@ -3,3 +3,5 @@ shockwave_network_manifest 1
 # relative to the project folder, prefab paths to Content.
 game_protocol "arena.v1"
 scene 1 "Scenes/arena.swscene"
+scene 2 "Scenes/arena-mp.swscene"
+prefab 1 "Prefabs/Net Player.swprefab" "arena.player.v1"

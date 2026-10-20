@@ -19,4 +19,18 @@ execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${TEMP}/inva
 if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "Arena player requires")
     message(FATAL_ERROR "Incomplete player should fail --check: ${result}\n${out}\n${err}")
 endif()
+# The multiplayer scene: valid as written, and both teams need spawn points.
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${MP_SCENE}"
+                RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Arena multiplayer scene failed validation: ${out}\n${err}")
+endif()
+file(READ "${MP_SCENE}" source)
+string(REPLACE "    team 1\n" "    team 0\n" invalid "${source}")
+file(WRITE "${TEMP}/invalid-mp.swscene" "${invalid}")
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --check "${TEMP}/invalid-mp.swscene"
+                RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "NetworkSpawnPoints for team 0 and team 1")
+    message(FATAL_ERROR "A multiplayer scene with one team's spawns should fail --check: ${result}\n${out}\n${err}")
+endif()
 file(REMOVE_RECURSE "${TEMP}")

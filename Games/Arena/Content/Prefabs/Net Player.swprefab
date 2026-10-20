@@ -1,0 +1,94 @@
+shockwave_prefab 1
+
+entity "Net Player"
+  Transform
+  CharacterController
+    radius 0.32
+    half_height 0.5
+    jump_speed 5
+  ArenaFighter
+    team 0
+    speed 5.5
+  ArenaWeapon
+  NetworkObject
+    profile "arena.player.v1"
+end
+
+entity "Vest"
+  Transform
+    position 0 1.05 0
+    scale 0.65 0.65 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.08 0.5 0.7 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+
+entity "Helmet"
+  Transform
+    position 0 1.62 0
+    scale 0.42 0.38 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.12 0.15 0.17 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+
+entity "Visor"
+  Transform
+    position 0 1.62 -0.21
+    scale 0.32 0.1 0.03
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.08 0.5 0.7 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+
+entity "Left leg"
+  Transform
+    position -0.18 0.35 0
+    scale 0.22 0.7 0.26
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.17 0.2 0.21 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+
+entity "Right leg"
+  Transform
+    position 0.18 0.35 0
+    scale 0.22 0.7 0.26
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.17 0.2 0.21 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+
+entity "Rifle"
+  Transform
+    position 0.3 1.12 -0.35
+    scale 0.12 0.12 0.65
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.07 0.08 0.09 1
+    roughness 0.8
+  Parent
+    entity "Net Player"
+end
+

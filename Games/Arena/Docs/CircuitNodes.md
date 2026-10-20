@@ -1610,6 +1610,7 @@ Every field of the entity's Environment; found is false when it has none.
 - Out `show_environment` Bool
 - Out `exposure` Float
 - Out `tonemapper` Int
+- Out `bloom_intensity` Float
 - Out `shadow_distance` Float
 - Out `shadow_cascades` Int
 
@@ -1619,6 +1620,13 @@ The entity's Environment ambient_intensity.
 
 - In `target` Entity, default self
 - Out `ambient_intensity` Float
+
+### Component.Environment.Get.bloom_intensity
+
+The entity's Environment bloom_intensity.
+
+- In `target` Entity, default self
+- Out `bloom_intensity` Float
 
 ### Component.Environment.Get.environment_intensity
 
@@ -1721,6 +1729,7 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `show_environment` Bool
 - In `exposure` Float
 - In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None
+- In `bloom_intensity` Float
 - In `shadow_distance` Float
 - In `shadow_cascades` Int
 
@@ -1732,6 +1741,15 @@ Sets the entity's Environment ambient_intensity.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `ambient_intensity` Float, required
+
+### Component.Environment.Set.bloom_intensity
+
+Sets the entity's Environment bloom_intensity.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `bloom_intensity` Float, required
 
 ### Component.Environment.Set.environment_intensity
 
@@ -3006,6 +3024,208 @@ Sets the entity's NavModifier mode.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `mode` Int, options 0=Walkable; 1=Not walkable; 2=Ignore, required
+
+### Component.NetworkObject.Add
+
+Gives the entity a NetworkObject with default values, if it has none.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.NetworkObject.Get
+
+Every field of the entity's NetworkObject; found is false when it has none.
+
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `key` String
+- Out `prefab` String
+- Out `profile` String
+- Out `mode` Int
+- Out `always_relevant` Bool
+
+### Component.NetworkObject.Get.always_relevant
+
+The entity's NetworkObject always_relevant.
+
+- In `target` Entity, default self
+- Out `always_relevant` Bool
+
+### Component.NetworkObject.Get.key
+
+The entity's NetworkObject key.
+
+- In `target` Entity, default self
+- Out `key` String
+
+### Component.NetworkObject.Get.mode
+
+The entity's NetworkObject mode.
+
+- In `target` Entity, default self
+- Out `mode` Int
+
+### Component.NetworkObject.Get.prefab
+
+The entity's NetworkObject prefab.
+
+- In `target` Entity, default self
+- Out `prefab` String
+
+### Component.NetworkObject.Get.profile
+
+The entity's NetworkObject profile.
+
+- In `target` Entity, default self
+- Out `profile` String
+
+### Component.NetworkObject.Has
+
+The entity has a NetworkObject.
+
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.NetworkObject.Remove
+
+Takes the NetworkObject off the entity.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.NetworkObject.Set
+
+Sets the fields given (connected or written) of the entity's NetworkObject; the rest stay as they are. Nothing happens if it has none.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `key` String
+- In `prefab` String
+- In `profile` String
+- In `mode` Int, options 0=Static; 1=Interpolated; 2=PredictedCharacter
+- In `always_relevant` Bool
+
+### Component.NetworkObject.Set.always_relevant
+
+Sets the entity's NetworkObject always_relevant.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `always_relevant` Bool, required
+
+### Component.NetworkObject.Set.key
+
+Sets the entity's NetworkObject key.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `key` String, required
+
+### Component.NetworkObject.Set.mode
+
+Sets the entity's NetworkObject mode.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `mode` Int, options 0=Static; 1=Interpolated; 2=PredictedCharacter, required
+
+### Component.NetworkObject.Set.prefab
+
+Sets the entity's NetworkObject prefab.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `prefab` String, required
+
+### Component.NetworkObject.Set.profile
+
+Sets the entity's NetworkObject profile.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `profile` String, required
+
+### Component.NetworkSpawnPoint.Add
+
+Gives the entity a NetworkSpawnPoint with default values, if it has none.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.NetworkSpawnPoint.Get
+
+Every field of the entity's NetworkSpawnPoint; found is false when it has none.
+
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `team` Int
+- Out `order` Int
+
+### Component.NetworkSpawnPoint.Get.order
+
+The entity's NetworkSpawnPoint order.
+
+- In `target` Entity, default self
+- Out `order` Int
+
+### Component.NetworkSpawnPoint.Get.team
+
+The entity's NetworkSpawnPoint team.
+
+- In `target` Entity, default self
+- Out `team` Int
+
+### Component.NetworkSpawnPoint.Has
+
+The entity has a NetworkSpawnPoint.
+
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.NetworkSpawnPoint.Remove
+
+Takes the NetworkSpawnPoint off the entity.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.NetworkSpawnPoint.Set
+
+Sets the fields given (connected or written) of the entity's NetworkSpawnPoint; the rest stay as they are. Nothing happens if it has none.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `team` Int
+- In `order` Int
+
+### Component.NetworkSpawnPoint.Set.order
+
+Sets the entity's NetworkSpawnPoint order.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `order` Int, required
+
+### Component.NetworkSpawnPoint.Set.team
+
+Sets the entity's NetworkSpawnPoint team.
+
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `team` Int, required
 
 ### Component.Parent.Add
 

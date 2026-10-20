@@ -28,6 +28,13 @@
 // creates or moves a network object on its own: it applies what the host sends, and holds
 // a snapshot that arrives before the lifecycle change it needs (at most 250 ms).
 //
+// Clients send intent, never outcomes (docs/Networking.md, "Input and commands"): an
+// InputCommand per fixed tick, stamped with the host tick it's for, and registered
+// commands such as "join this team". The host takes one input per player per tick
+// (falling back to the last one, briefly, when it's missing) and checks every command
+// against the registry before game code sees it, with the sender's slot from the
+// connection. Ping and Pong give a client the host's clock, so its inputs arrive in time.
+//
 // Role (Offline, Authority, Client) is chosen before GameMode::beginPlay and never
 // changes until Stop. State moves on as the session does; a failure leaves it Failed
 // with a ReasonCode until Stop.
@@ -43,6 +50,7 @@
 #include <Engine/World.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkSettings.h>
+#include <Multiplayer/Replication.h>
 #include <Network/Messages.h>
 #include <Network/OnlineServices.h>
 #include <Network/Transport.h>
@@ -127,6 +135,17 @@ struct NetworkEvent {
     ReasonCode reason = ReasonCode::Normal;
 };
 
+// A command the host accepted: its registry entry, sender and checked payload.
+struct ReceivedCommand {
+    const CommandDesc* command = nullptr;
+    uint16_t commandId = 0;
+    uint16_t senderSlot = 0;   // from the connection, never from the message
+    uint64_t target = 0;   // network ID, or 0 for a match command
+    Entity targetEntity = kNullEntity;   // its entity here (offline: the entity given)
+    uint32_t tick = 0;   // the host tick it was handled at
+    ProfileValue payload;
+};
+
 struct NetworkWorldStats {
     uint64_t messagesReceived = 0, bytesReceived = 0, messagesSent = 0;
     uint64_t malformed = 0;   // decoding failed: the peer was rejected
@@ -150,6 +169,17 @@ struct NetworkWorldStats {
     uint64_t staleRecords = 0;   // client: older or duplicate, old incarnation, despawned
     uint64_t heldSnapshots = 0, expiredSnapshots = 0;   // client: waited for a control serial
     uint64_t resyncRequests = 0;   // sent (client) or received (host)
+    // Input and commands.
+    uint64_t inputsSent = 0, inputMessagesSent = 0;   // client
+    uint64_t inputsReceived = 0;   // host: commands in Inputs messages
+    uint64_t inputsLate = 0;   // host: for a tick already simulated (or before Active)
+    uint64_t inputsAhead = 0;   // host: more than 32 ticks ahead; persistent ones disconnect
+    uint64_t inputsUsed = 0, inputFallbacks = 0;   // host: real ones, and ticks without one
+    uint64_t commandsSent = 0, commandsAccepted = 0;
+    uint64_t commandsRefused = 0;   // permission, target, rate or a full queue
+    uint64_t pingsSent = 0, pongsReceived = 0, pingsAnswered = 0;
+    double rttMs = 0;   // client: the best recent round trip, 0 until measured
+    uint32_t inputLead = 0;   // client: how many ticks ahead of the host its inputs are
 };
 
 class NetworkWorld final : public Subsystem {
@@ -238,6 +268,38 @@ public:
     NetResult<void> setOwner(Entity entity, uint16_t ownerSlot);
     // A Static object changed: it goes out in the next snapshot once.
     void markChanged(Entity entity);
+    // Host: sends player `slot` away with this reason (Reject, then the connection
+    // closes). False if no admitted client has that slot.
+    bool disconnect(uint16_t slot, ReasonCode reason);
+
+    // ---- Input and commands ----
+    // Client, once per fixed tick while Active: sends this command for the next host tick
+    // it can still reach (with up to three earlier ones, in case of loss) and returns that
+    // tick, or 0 when none is sent (not Active yet, or already far enough ahead). The
+    // world sets target_tick; incarnation is the controlled entity's.
+    uint32_t sendInput(InputCommand command);
+    // Host, during a fixed tick: the input player `slot` sent for this tick. False when it
+    // didn't arrive in time (or is for an old incarnation), and then out is the fallback:
+    // the last one's movement and aim with fire off for two ticks, then no movement. A
+    // player that never sent one gets a neutral command.
+    bool takeInput(uint16_t slot, uint32_t incarnation, InputCommand& out);
+    // The host tick the session is on (offline: PlaySession's tick count).
+    uint32_t tick() const;
+
+    // A registered command for the host: refused when this build doesn't know it, its
+    // payload is out of range, its target isn't allowed, it's a host-only command on a
+    // client, or it's over its rate. A client sends it reliably; the host and offline play
+    // queue it straight for pollCommand. target is a network ID (0 for none); offline,
+    // where there are no IDs, pass the entity as targetEntity instead.
+    NetResult<void>
+    submitCommand(uint16_t commandId, uint64_t target, const ProfileValue& payload, Entity targetEntity = kNullEntity);
+    // Host and offline: the next accepted command, oldest first. Game code handles them at
+    // the start of a tick, with its own rules (is the round waiting? is there room?).
+    bool pollCommand(ReceivedCommand& out);
+    static constexpr uint32_t kMaxQueuedCommands = 64;
+    static constexpr uint32_t kMaxInputLeadTicks = 32;   // host: further ahead is refused
+    static constexpr uint32_t kInputFallbackTicks = 2;
+    static constexpr uint32_t kInputHistory = 64;   // host: ticks of input kept per player
 
     // Local menus, overlays or an unfocused window: the game sends neutral input but the
     // session keeps running (online "pause").
