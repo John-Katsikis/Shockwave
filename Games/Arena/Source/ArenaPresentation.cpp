@@ -2,6 +2,7 @@
 
 #include "ArenaSimulation.h"
 
+#include <Engine/Systems.h>
 #include <Shockwave/Game.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -25,10 +26,9 @@ const glm::vec4 kTeamColour[2] = {{0.08f, 0.5f, 0.7f, 1}, {0.9f, 0.32f, 0.06f, 1
 void updateView(
     World& world, Entity player, Entity camera, Entity gun, float yaw, float pitch, float recoil, float reloadLowering,
     float alpha) {
-    const auto& body = *world.get<Transform>(player);
-    glm::vec3 feet = body.position;
-    if (const auto* previous = world.get<PreviousTransform>(player))
-        feet = glm::mix(previous->value.position, feet, std::clamp(alpha, 0.0f, 1.0f));
+    // Where the body is drawn: blended between ticks, or a network client's presentation
+    // pose (the prediction with any correction smoothed out).
+    const glm::vec3 feet = presentedTransform(world, player, alpha).position;
     auto& view = *world.get<Transform>(camera);
     view.position = feet + glm::vec3(0, kPlayerEye, 0);
     view.rotation = glm::quat(glm::vec3(pitch, yaw, 0));

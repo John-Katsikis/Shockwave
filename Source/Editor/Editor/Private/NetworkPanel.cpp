@@ -5,6 +5,7 @@
 // steam_app_id, like `player --steam-status`); nothing else here opens a socket.
 #include "Editor.h"
 
+#include <Engine/Prefab.h>
 #include <GameFramework/GameNetwork.h>
 #include <Multiplayer/NetworkSchema.h>
 #include <Multiplayer/NetworkValidation.h>
@@ -53,6 +54,16 @@ void Editor::checkNetworkSetup() {
     net::NetworkProject network;
     net::loadNetworkProject(m_project, network, problems);
     if (frozen) net::validateNetworkProject(m_project, network, registry, problems);
+    // The open scene against the predicted-character collision rule.
+    bool predictedSpawns = false;
+    if (network.manifest)
+        for (const net::ManifestPrefab& entry : network.manifest->prefabs) {
+            std::string error;
+            if (const auto prefab = shockwave::prefabs().load(entry.path, &error))
+                predictedSpawns = predictedSpawns || net::predictedPrefab(prefab->world, prefab->root);
+        }
+    const std::string scene = m_scenePath.empty() ? std::string("the open scene") : m_project.relative(m_scenePath);
+    net::validatePredictionWorld(m_world, scene, predictedSpawns, problems);
     if (network.manifest) {
         net::ContentDigest content;
         if (net::computeContentDigest(m_project, *network.manifest, network.manifestShown, content, problems))

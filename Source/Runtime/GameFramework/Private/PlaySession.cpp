@@ -102,6 +102,7 @@ void PlaySession::start() {
         // beginPlay sees its role. A host listens and a client connects here.
         // Offline it only spawns manifest prefabs as plain copies.
         auto& network = m_subsystems.add<net::NetworkWorld>(m_networkStart, m_services, &world);
+        network.setPhysics(physics());   // its network mode follows the role
         if (network.online()) {
             if (auto begun = network.begin(); !begun)
                 throw std::runtime_error(std::string("network play didn't start: ") + begun.error().message);
@@ -196,6 +197,7 @@ void PlaySession::update(double dt) {
     storePreviousTransforms(m_context.world, m_context.jobs);
     m_schedule.run(m_context.world, m_context.jobs, dt);
     navigation()->step(dt);   // agents steer first, so physics moves their characters
+    network()->prepareStep();   // which characters move as clients predict them
     physics()->step(dt);
     m_mode->fixedUpdate(m_context, dt);
     circuits()->fixedTick(dt);
@@ -210,6 +212,8 @@ void PlaySession::frame(double dt) {
     if (circuits() && circuits()->debugPaused()) return;
     if (active()) applyLoadedSave();   // a load from a pause menu goes in while paused
     if (m_state == State::Playing && !(circuits() && circuits()->debugPaused())) {
+        // A client's predicted and interpolated poses, before game code places a camera.
+        network()->present(m_context.engine ? float(m_context.engine->interpolationAlpha()) : 1.0f);
         m_mode->frame(m_context, dt);
         circuits()->frame(dt);
         animation()->update(dt);   // after game code, so a clip it picks shows this frame

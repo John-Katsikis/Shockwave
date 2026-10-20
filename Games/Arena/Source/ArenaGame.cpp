@@ -1,7 +1,8 @@
 // Arena's GameMode: lifecycle and who decides what. The authority (the host, or offline
 // play) runs ArenaSimulation with one InputCommand per pawn per tick: its own player's
 // from the local InputSampler, every other player's from the network. A client runs no
-// rules at all: it sends its sampled commands and shows what the host's snapshots say.
+// rules at all: it sends its sampled commands, predicts its own pawn's movement with them
+// and shows what the host's snapshots say for everything else.
 //
 // Two kinds of scene play with it. An offline scene (Scenes/arena.swscene) authors one
 // local player and bots. A multiplayer scene (Scenes/arena-mp.swscene) authors no player:
@@ -10,11 +11,11 @@
 #include "ArenaGame.h"
 
 #include "ArenaGraphicsMenu.h"
-#include "ArenaInput.h"
 #include "ArenaNetwork.h"
 #include "ArenaPresentation.h"
 #include "ArenaSimulation.h"
 
+#include <GameFramework/InputSampler.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkWorld.h>
 #include <Shockwave/Game.h>
@@ -52,6 +53,10 @@ void registerTypes() {
 }
 
 namespace {
+
+// Config/Input.swinput's names for the parts of an input command.
+const InputActionNames kActions{"arena_left", "arena_right",  "arena_forward", "arena_back",
+                                "arena_fire", "arena_sprint", "arena_jump",    "arena_reload"};
 
 const char* teamName(int team) { return team == 0 ? "BLUE" : "ORANGE"; }
 
@@ -152,6 +157,18 @@ public:
         if (network.online()) tickRate = network.start().settings.tickRate;
         m_sim.emplace(ArenaSim{game.world, game.physics(), m_rules, tickRate, {}});
         hookUp(game);
+        if (network.role() == net::NetworkRole::Client) {
+            // The client moves its own pawn at once by the host's movement rule
+            // (ArenaSim::stepControls), and the host corrects it when they differ.
+            network.setPredictionMove([this](const World& world, Entity pawn, const InputCommand& c) {
+                net::PredictedMove move;
+                const auto* f = world.get<ArenaFighter>(pawn);
+                if (!f || f->health <= 0 || m_sim->match().phase == ArenaRules::Finished) return move;
+                move.desiredVelocity = ArenaSim::pawnVelocity(*f, c);
+                move.jump = (c.pressedBits & InputCommand::kPressedJump) != 0;
+                return move;
+            });
+        }
         m_view.begin(game, m_camera, m_gun, m_flash);
         if (!network.authority()) {
             // A client: everything comes from the host, starting with the baseline.
@@ -196,7 +213,7 @@ public:
                             !game.network().localInputSuppressed();
         const Entity pawn = localPawn(game);
         const auto* weapon = game.world.alive(pawn) ? game.world.get<ArenaWeapon>(pawn) : nullptr;
-        m_input.collect(readDevices(game.input(), active), weapon ? weapon->sensitivity : 0.1f);
+        m_input.collect(readInputFrame(game.input(), kActions, active), weapon ? weapon->sensitivity : 0.1f);
     }
 
     void fixedUpdate(GameContext& game, double seconds) override {
@@ -547,6 +564,8 @@ private:
                       : rules.blue > rules.orange ? "BLUE WINS"
                                                   : "ORANGE WINS") +
                      std::string(network.authority() ? " / F2 TO RESTART" : " / WAITING FOR THE HOST");
+        // A prediction that had to snap says so for a few seconds.
+        if (!network.predictionWarning().empty()) status = "CONNECTION PROBLEM / POSITION CORRECTED";
         return status;
     }
 

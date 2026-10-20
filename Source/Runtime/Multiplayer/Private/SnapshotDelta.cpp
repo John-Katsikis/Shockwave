@@ -23,7 +23,7 @@ namespace {
 
 constexpr uint8_t kFieldPosition = 1, kFieldRotation = 2, kFieldVelocity = 4, kFieldAngular = 8, kFieldFlags = 16,
                   kFieldIncarnation = 32;
-constexpr uint8_t kFlagMask = PoseState::kSleeping | PoseState::kTeleport;
+constexpr uint8_t kFlagMask = PoseState::kSleeping | PoseState::kTeleport | PoseState::kGrounded;
 constexpr float kRotationScale = 511.0f * 1.41421356237f;   // +-1/sqrt(2) to +-511
 const NetEntityState kEmpty{};
 

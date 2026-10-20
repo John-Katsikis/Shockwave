@@ -175,6 +175,36 @@ void validateNetworkWorld(
     });
 }
 
+void validatePredictionWorld(
+    const World& constWorld, std::string_view shown, bool predictedSpawns, std::vector<NetProblem>& problems) {
+    World& world = const_cast<World&>(constWorld);   // each() only reads with const component types
+    // Only network scenes (with network objects or spawn points) have players in them.
+    bool predicted = false, network = world.count<NetworkSpawnPoint>() > 0;
+    world.each<const NetworkObject>([&](Entity, const NetworkObject& object) {
+        network = true;
+        predicted = predicted || object.mode == NetworkObject::Mode::PredictedCharacter;
+    });
+    if (!predicted && !(network && predictedSpawns)) return;
+    world.each<const RigidBody>([&](Entity e, const RigidBody& body) {
+        if (body.motion == RigidBody::Motion::Static || body.sensor || !body.enabled) return;
+        const Name* n = world.get<Name>(e);
+        const std::string where = std::string(shown) + ": entity '" + (n ? n->value : "?") + "': ";
+        if (body.motion == RigidBody::Motion::Kinematic)
+            problems.push_back(
+                {false, where + "a moving kinematic body can't share a scene with predicted characters in v1: they "
+                                "collide with static bodies only, so they'd fall through or be left behind by it"});
+        else
+            problems.push_back(
+                {true, where + "predicted characters collide with static bodies only, so they pass through this "
+                               "dynamic body (it can still hit them through game code)"});
+    });
+}
+
+bool predictedPrefab(const World& prefabWorld, Entity root) {
+    const NetworkObject* object = prefabWorld.alive(root) ? prefabWorld.get<NetworkObject>(root) : nullptr;
+    return object && object->mode == NetworkObject::Mode::PredictedCharacter;
+}
+
 bool readyForSession(
     const Project& project, const NetworkProject& network, const ReplicationRegistry& registry, uint16_t sceneId,
     std::vector<NetProblem>& problems) {

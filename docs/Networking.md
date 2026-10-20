@@ -37,7 +37,7 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/SnapshotDelta.h` | Quantized entity states, the host's snapshot history, delta encoding against acknowledged baselines, and the client's decoder |
 | `Multiplayer/Interpolation.h` | `InterpolationEngine`: remote objects shown a jitter buffer behind the server clock |
 | `Multiplayer/RewindHistory.h` | `RewindHistoryBuffer`: player capsules over the last `max_rewind_ms`, for lag-compensated hit checks |
-| `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake, replication (network IDs, the baseline, spawns, owners, snapshots, budgets), input commands, game commands, the Ping/Pong tick estimate and shutdown order |
+| `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake, replication (network IDs, the baseline, spawns, owners, snapshots, budgets), input commands, game commands, the Ping/Pong tick clock, prediction and reconciliation of the local character, presentation (`PresentationTransform`) and shutdown order |
 | `Multiplayer/NetTest.h` | The `player --net-test` scenarios |
 
 The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
@@ -52,14 +52,15 @@ sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing e
 
 A Play session can go online as a host or a client, run the connection handshake (see
 [Play sessions online](#play-sessions-online)) and replicate the host's network objects
-to its clients (see [Replication](#replication)): clients show the host's state a
-snapshot behind, without prediction. Clients send input commands and game commands,
-which the host checks and simulates (see [Input and commands](#input-and-commands));
-Arena plays 6v6 this way on its multiplayer scene, in tests. Nothing yet starts a
-session from the player or the editor: the `--host` and `--join` commands and prediction
-come in later batches. Nothing advertises those as working; `--network-info`
-lists them under `unsupported`. Delta snapshots, interpolation and rewind history are
-libraries tested on their own; no session uses them yet.
+to its clients (see [Replication](#replication)). Clients send input commands and game
+commands, which the host checks and simulates (see [Input and commands](#input-and-commands)).
+A client moves its own `PredictedCharacter` at once with each command and the host
+corrects it; every other object is drawn interpolated behind the host's clock (see
+[Prediction](#prediction)). Arena plays 6v6 this way on its multiplayer scene, in tests.
+Nothing yet starts a session from the player or the editor: the `--host` and `--join`
+commands come in a later batch. Nothing advertises those as working; `--network-info`
+lists them under `unsupported`. Delta snapshots and rewind history are libraries tested
+on their own; no session uses them yet.
 
 ## Network settings
 
@@ -201,7 +202,7 @@ In the editor, Project settings > Multiplayer > Start Steam does the same and ke
 Steam running until Stop Steam or the project closes.
 
 ```sh
-build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start|replication]
+build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start|replication|prediction]
     [--seed N] [--preset clean|cafe|poor|hostile] [--clients N] [--json out.json]
 ```
 
@@ -217,9 +218,26 @@ times; `replication` gives every machine its own world (built in a different ord
 a moving authored box and a static lamp, spawns, moves, respawns and despawns crates
 owned by the players while `--clients` clients join (the last one late), then stops
 moving and checks that every client has exactly the host's objects, owners,
-incarnations and poses (`max position error 0.000000 m`). Each prints one line per peer and what was left open after stopping (packets in
+incarnations and poses (`max position error 0.000000 m`); `prediction` gives every
+machine Jolt physics, a floor, a wall and a trigger, and a predicted character for each
+client, which walk, sprint and jump by script through the preset's faults and then stand
+still: every client must end, and draw every character, where the host has it, with no
+correction offset left, its replays running no game code and making no contact events
+(`prediction: ... corrections (... ticks replayed, max ... m) ... final error 0.0000 m`). Each prints one line per peer and what was left open after stopping (packets in
 flight, auth sessions, tickets: all must be 0), and exits 1 when anything is wrong, 2
 for an unknown scenario or preset.
+
+```sh
+build/bin/player --project <file.swproject> --scene <network scene> --net-preview [clean|cafe|poor|hostile]
+```
+
+`--net-preview` plays the scene as a client of a host running in the same process, over
+the loopback hub with the preset's latency, jitter and loss (default `poor`: 75 ms one
+way, 25 ms jitter, 5% loss). It's for seeing prediction and interpolation with your own
+eyes before real hosting arrives: your character is predicted and corrected, the host's
+own player is drawn interpolated. The scene must be in the network manifest; the
+settings' `enabled` and `transport` don't matter. It doesn't combine with the tools,
+`--save` or `--load` (exit 2).
 
 ## Play sessions online
 
@@ -295,8 +313,8 @@ after that.
 
 ## Replication
 
-The host decides what happens; clients show it. There is no prediction yet, so a client
-sees the host's state a network trip and a snapshot interval late. Each network object
+The host decides what happens; clients show it, a network trip and a snapshot interval
+late, except for the character a client predicts (see [Prediction](#prediction)). Each network object
 (an entity with a `NetworkObject`, see [Network objects](#network-objects)) gets a
 `NetworkIdentity` on every machine: a network ID (counting up from 1, never reused in
 a session), an owner slot (0 for nobody, 1 the host, 2 up the clients) and an
@@ -347,8 +365,9 @@ How state travels:
   long is dropped and the client asks for a resync (at most once a second and three
   times a minute), which the host answers with a full snapshot. Static objects go in
   the baseline and again only after `markChanged()`.
-- Replicas of dynamic rigid bodies become kinematic on clients, so the host's
-  simulation isn't fought.
+- A client's physics doesn't simulate replicas (`PhysicsNetworkMode::Client`): dynamic
+  bodies and other characters are proxies that follow the snapshots, so the host's
+  simulation isn't fought. Their components stay as authored.
 
 Budgets, per client, from the settings: lifecycle messages wait in a queue and go out
 in order within `outbound_bytes_per_second` (16 KiB burst) and while the transport has
@@ -372,17 +391,31 @@ with its 24-byte `InputCommand` (movement, aim, held fire and sprint, pressed ju
 reload, its pawn's incarnation); offline and on the host it returns 0 and does nothing.
 
 - The client picks the host tick the command is for. It pings the host four times
-  100 ms apart once Active, then once a second, estimates the host's tick from the
-  answer with the lowest of the last 8 round trips, and aims half a round trip plus 2
-  ticks ahead (2 to 16; `stats().inputLead`). It skips a tick when it is ahead and
-  starts over when the estimate jumps more than 8 ticks. Each Inputs message carries
-  the newest command and up to 3 before it, so one lost message loses nothing.
-- The host keeps 64 ticks per player. Its game calls `takeInput(slot, incarnation, out)`
+  100 ms apart once Active, then once a second. The host's clock is taken from the
+  answer with the lowest of the last 8 round trips (the round trip less the host's
+  dwell, the tick at its midpoint) and smoothed: each answer moves the estimate a
+  quarter of the way, and a jump of more than 8 ticks is taken at once. Commands aim
+  half a round trip plus 2 ticks ahead (2 to 16; `stats().inputLead`). When the client
+  is ahead it sends nothing that tick; when the clock has moved past the next tick it
+  fills the skipped ticks (up to 4 commands, presses on the newest only); a jump of
+  more than 8 ticks starts over. Each Inputs message carries the newest command and up
+  to 3 before it, so one lost message loses nothing.
+- The host keeps 128 ticks per player. Its game calls `takeInput(slot, incarnation, out)`
   once per pawn per tick: the command for this tick, or, when it's missing, the last one
   for up to 2 ticks with fire off and no presses, then a neutral command with the last
   aim. Inputs for ticks already run, for another life of the pawn, or more than 32 ticks
   ahead are not used; a client that keeps sending far-ahead inputs, or a move longer
   than the wire's circle, is sent away.
+- Tick counts here (16, 8, 32, and the 32-tick replay limit below) are for 60 Hz; at
+  `tick_rate` 120 they double, so a faster tick copes with the same latency.
+
+The engine's `InputSampler` (`GameFramework/InputSampler.h`) makes the commands from the
+local devices: `collect(readInputFrame(input, actionNames, active), sensitivity)` once
+per frame from `GameMode::collectInput` turns the aim by that frame's mouse movement
+once and latches held buttons, and `next(incarnation)` once per fixed tick gives each
+press to exactly one command, however many ticks a frame runs. Menus and an uncaptured
+mouse make the frame neutral and drop its presses. `commandYaw`, `commandPitch` and
+`commandMoveDirection` read a command back for the rules.
 
 Game commands are the registry's commands (`ReplicationRegistry::addCommand`): an ID, a
 typed payload, who may send it (any player, the target's owner, or the host), the
@@ -397,8 +430,52 @@ decides what they mean, for example "only while the round is waiting".
 The host can send a player away with `disconnect(slot, reason)`, as Arena does with
 `ServerFull` for a 13th player.
 
-On clients, a replica's `CharacterController` is disabled: characters move only on the
-host and arrive in snapshots.
+## Prediction
+
+A client moves its own character as soon as it presses a key, and the host corrects it
+when they disagree. A character is predicted when its `NetworkObject` mode is
+`PredictedCharacter` (it has a `CharacterController` and no RigidBody or Collider), the
+local player owns it, and the game has given its movement rule:
+
+```cpp
+// The same rule the host's simulation applies to the same command.
+game.network().setPredictionMove([](const World& world, Entity pawn, const InputCommand& c) {
+    return net::PredictedMove{commandMoveDirection(c) * 5.5f, (c.pressedBits & InputCommand::kPressedJump) != 0};
+});
+```
+
+- Each command `sendInput()` sends is predicted at once: the rule gives a desired
+  velocity and jump, `PhysicsWorld::predictCharacterStep` moves the character one tick
+  (the same movement code the host's step uses), and the command and resulting
+  position, velocity and grounded state are kept for 256 ticks.
+- The host's snapshot for tick T carries the character's state after T (with a
+  `grounded` pose flag). When it's within 0.02 m and 0.05 m/s of the prediction for T,
+  with the same grounded, nothing changes. Otherwise the character is put at the host's
+  state (`correctCharacter`) and the commands after T are replayed (`stats().corrections`,
+  `replayedTicks`). Replays move the character only: the game's rule isn't called, and
+  physics makes no contacts or sensor events. Health, ammo and everything else in the
+  record apply as they arrive.
+- More than 32 ticks to replay, or no prediction for T, snaps to the host's state, asks
+  for a resync (at most once a second) and sets `predictionWarning()` for 3 seconds
+  (`predictionResets`). A respawn (new incarnation) starts prediction again.
+- The jump a correction would make is hidden: what's drawn keeps a visual offset that
+  halves every 50 ms and is gone 150 ms after the correction (`correctionOffset()`).
+  Over 1 m, it snaps. Physics, ray casts and the camera's simulation position use the
+  corrected state at once; only drawing uses the offset.
+- Online, predicted characters collide with static bodies only, on the host (its step)
+  and in prediction alike, so the two agree: they pass through dynamic bodies and other
+  characters, and moving platforms aren't supported in v1. `--check` and the editor's
+  Check network setup say so: a non-sensor kinematic body in a network scene with
+  predicted characters is an error, a dynamic one a warning.
+
+`PlaySession` wires it up: `setPhysics(physics())` picks the physics network mode from
+the role (`Offline`, `Authority`, `Client`), `prepareStep()` before each physics step
+says which characters are predicted, and `present(alpha)` each frame, before the game's
+`frame()`, writes `PresentationTransform` for the predicted character (blended between
+ticks, plus the offset) and for every interpolated object. `renderWorld` draws
+`PresentationTransform` in place of its own blend; `presentedTransform(world, e, alpha)`
+(`Engine/Systems.h`) is the same pose for a camera that follows a body. Arena's camera
+and rifle use it.
 
 ## The wire protocol
 
@@ -487,6 +564,8 @@ prints the sizes it measures.
 
 ## Interpolation
 
+A client draws every network object it doesn't predict this way, except Static ones
+(up to 512 objects; past that they're drawn at their newest state).
 Remote objects are shown slightly in the past, so a late or lost snapshot still leaves a
 sample ahead to move towards. `InterpolationEngine` keeps 32 samples per slot, in tick
 order whatever order they arrive in. `observeServerTick()` estimates the server clock
@@ -646,7 +725,8 @@ ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewin
 | `network_cli` | On a copy of Arena: `--check` passing and failing with file:line for settings, manifest and scene mistakes; 120 Hz in both files; `--network-info` text and JSON; the checked-in NetworkSchema.md is current; `--steam-status` failing without an AppID or the SDK; every `--net-test` scenario (replication with five clients on the `poor` preset), its JSON and bad arguments; mode combinations exit 2 |
 | `network_session` | Real PlaySessions with physics over the loopback hub: Start/Stop 100 times offline and 100 times online (alternating who stops first) with the world restored and nothing left open; start failing for no services, no transport, unavailable services, no authentication on Steam, a taken address and a throwing `beginPlay`; 13 handshake failures, each with its reason; the online pause, save and breakpoint rules; a client in a menu still pumping and collecting input while the host simulates; no events after Stop or `close()`; the shutdown order with a lobby; `SimulationOverrun`; the simulation clock offline (identical to the old loop) and online; a host's falling physics box followed by the client's kinematic copy; the `--net-test` scenarios |
 | `network_replication` | Worlds built in different orders binding authored objects by key; IDs in key order; spawns, despawns (and objects destroyed without one), respawn incarnations, owners and a leaving player's objects; a late client getting earlier spawns and despawns; a small budget (players every snapshot, the rest in turn, bytes within the budget) with 0 heap allocations over nine seconds; a baseline torn down halfway leaving the client's world unchanged; a scripted host sending snapshot parts reversed and duplicated, older snapshots, a despawn before an old snapshot, snapshots ahead of their Spawn (held, then applied) and one that never gets it (expires, one resync), old and new incarnations; eleven kinds of malformed authority data, each failing with its reason and closing the connection |
-| `network_arena` | Arena on its multiplayer scene with a host and eleven clients, each a real PlaySession with Jolt: six a side, one primary camera per process following the local pawn, client characters not simulated; a full team and a host-only restart refused; the round starting when everyone is ready; four inputs a tick moving a pawn no faster; ten seconds of autoplay with every client ending on the host's teams, ammo, health, kills and positions; clients sent away for a shot event, an ownership claim, an unknown command, far-ahead inputs and an over-long move; a client that stops sending (two ticks of fallback, then standing, fire never held); the offline input path at 24, 30, 60, 144, 240 and 1000 fps (same shots and reloads, each press in exactly one command, catch-up ticks, menus) |
+| `network_prediction` | Physics' network API: host steps and client predictions of the same walk and jumps agreeing within 0.1 mm, predicted characters passing through a dynamic box that blocks them offline, `characterState`, `correctCharacter`, bad arguments, client proxies that don't fall and keep their authored components, `applyReplicaBodyPose`, mode changes rebuilding the same bodies, no contact events from prediction; the `--check` rule's errors, warnings and quiet cases; the engine `InputSampler` at 24 to 1000 fps at 60 and 120 Hz (each press in one command, held controls within a frame, the same aim); the `prediction` net-test on all four presets at 60 and 120 Hz (convergence, drawing, replays running no game code, the offset gone within 150 ms) |
+| `network_arena` | Arena on its multiplayer scene with a host and eleven clients, each a real PlaySession with Jolt: six a side, one primary camera per process following the local pawn, each client predicting only its own pawn; a full team and a host-only restart refused; the round starting when everyone is ready; four inputs a tick moving a pawn no faster; ten seconds of autoplay with every client ending on the host's teams, ammo, health, kills and positions; clients sent away for a shot event, an ownership claim, an unknown command, far-ahead inputs and an over-long move; a client that stops sending (two ticks of fallback, then standing, fire never held); the offline input path at 24, 30, 60, 144, 240 and 1000 fps (same shots and reloads, each press in exactly one command, catch-up ticks, menus) |
 | `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
 | `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |
 | `test_snapshot_delta` | Quantization limits and round trips; 64 moving players at 120 Hz in one part under 1152 bytes; keyframes split to fit 1152 and 512; 1024 worst-case slots; loss, reordering, duplicates and lost acks with every completed snapshot identical to the host's; acks and baselines leaving the history; respawns and despawns; every kind of malformed part; one encoder shared by clients; interpolation (Hermite, slerp, extrapolation limit, out-of-order and duplicate samples, teleports, the server clock, the 3-tick jitter buffer); host and client time per tick (under 150 us asserted in optimised builds) |

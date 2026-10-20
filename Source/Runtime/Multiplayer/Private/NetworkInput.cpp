@@ -20,8 +20,10 @@ namespace {
 constexpr uint32_t kMaxPingsAnswered = 10;   // a second, per peer; more are ignored
 constexpr uint32_t kMaxPingsPerSecond = 30;   // more than this is a flood: rejected
 constexpr double kMaxRttSeconds = 5;
+// In ticks at 60 Hz (NetworkWorld::scaledTicks).
 constexpr uint32_t kMinLead = 2, kMaxLead = 16;
 constexpr uint32_t kResetTicks = 8;   // a clock jump bigger than this restarts the inputs
+constexpr double kClockSlew = 0.25;   // how much of a new clock estimate each Pong takes
 
 InputCommand neutral(uint32_t tick, uint32_t incarnation, const InputCommand* aim) {
     InputCommand c;
@@ -52,8 +54,10 @@ Peer* NetworkWorld::Impl::peerForSlot(uint16_t slot) {
 void NetworkWorld::Impl::clearInput() {
     clockSamples = clockNext = pingId = pingsSent = 0;
     nextPing = 0;
+    haveClockOffset = false;
+    clockOffset = 0;
     firstInputTick = lastInputTick = recentCount = clientCommandSeq = 0;
-    sentInput = false;
+    sentInput = inputClocked = false;
     clientTokens.clear();
     clientTokensAt.clear();
     for (ReceivedCommand& c : commands) c = ReceivedCommand{};
@@ -62,13 +66,16 @@ void NetworkWorld::Impl::clearInput() {
 
 // ---- Clock ----------------------------------------------------------------------------------
 
-bool NetworkWorld::Impl::estimatedHostTick(double& out) const {
+double NetworkWorld::Impl::bestRtt() const {
     const uint32_t n = std::min<uint32_t>(clockSamples, uint32_t(clock.size()));
-    if (n == 0) return false;
-    const ClockSample* best = &clock[0];
-    for (uint32_t i = 1; i < n; ++i)
-        if (clock[i].rtt < best->rtt) best = &clock[i];
-    out = best->hostTick + (now - best->at) * double(settings().tickRate);
+    double best = n ? clock[0].rtt : 0;
+    for (uint32_t i = 1; i < n; ++i) best = std::min(best, clock[i].rtt);
+    return best;
+}
+
+bool NetworkWorld::Impl::estimatedHostTick(double& out) const {
+    if (!haveClockOffset) return false;
+    out = clockOffset + now * double(settings().tickRate);
     return true;
 }
 
@@ -112,10 +119,22 @@ void NetworkWorld::Impl::pongMessage(const Pong& pong) {
     sample.rtt = rtt;
     sample.at = now;
     sample.hostTick = double(pong.responderTick) + rtt * 0.5 * double(settings().tickRate);
-    double best = rtt;
-    for (uint32_t i = 0; i < std::min<uint32_t>(clockSamples, uint32_t(clock.size())); ++i)
-        best = std::min(best, clock[i].rtt);
-    stats.rttMs = best * 1000;
+    stats.rttMs = bestRtt() * 1000;
+    // The clock follows the sample with the lowest round trip of the last eight (the one
+    // least delayed by queues), smoothed so one sample moves predicted ticks only a
+    // little. A jump of more than kResetTicks is taken at once.
+    const uint32_t n = std::min<uint32_t>(clockSamples, uint32_t(clock.size()));
+    const ClockSample* best = &clock[0];
+    for (uint32_t i = 1; i < n; ++i)
+        if (clock[i].rtt < best->rtt) best = &clock[i];
+    const double raw = best->hostTick - best->at * double(settings().tickRate);
+    if (!haveClockOffset ||
+        std::abs(raw - clockOffset) > double(NetworkWorld::scaledTicks(kResetTicks, settings().tickRate))) {
+        clockOffset = raw;
+        haveClockOffset = true;
+    } else {
+        clockOffset += (raw - clockOffset) * kClockSlew;
+    }
 }
 
 // ---- Inputs ---------------------------------------------------------------------------------
@@ -126,47 +145,65 @@ uint32_t NetworkWorld::sendInput(InputCommand command) {
     const uint32_t rate = m_start.settings.tickRate;
     uint32_t desired;
     double hostTick = 0;
-    if (impl.estimatedHostTick(hostTick)) {
-        double best = impl.clock[0].rtt;
-        for (uint32_t i = 1; i < std::min<uint32_t>(impl.clockSamples, uint32_t(impl.clock.size())); ++i)
-            best = std::min(best, impl.clock[i].rtt);
+    const bool clocked = impl.estimatedHostTick(hostTick);
+    if (clocked) {
         // Arrives a one-way trip from now, with two ticks to spare.
-        const uint32_t lead = std::clamp(uint32_t(std::ceil(best * 0.5 * rate)) + 2, kMinLead, kMaxLead);
+        const uint32_t lead =
+            std::clamp(uint32_t(std::ceil(impl.bestRtt() * 0.5 * rate)) + 2, kMinLead, scaledTicks(kMaxLead, rate));
         impl.stats.inputLead = lead;
         desired = uint32_t(int64_t(std::floor(hostTick)) + lead);
     } else {
         desired = impl.sentInput ? impl.lastInputTick + 1 : impl.firstInputTick;
     }
     if (newer(impl.firstInputTick, desired)) desired = impl.firstInputTick;
-    uint32_t target = desired;
+    uint32_t first = desired;   // the first tick this call sends
     if (impl.sentInput) {
         const uint32_t next = impl.lastInputTick + 1;
         const uint32_t gap = newer(desired, next) ? desired - next : next - desired;
-        if (gap > kResetTicks) {
+        if (gap > scaledTicks(kResetTicks, rate)) {
             impl.recentCount = 0;   // the clock jumped: start over rather than flood
+            // The first measurement replacing the guess is expected; a later jump isn't.
+            if (impl.inputClocked)
+                impl.resetPrediction("the host's clock jumped");
+            else
+                impl.clearPrediction();
         } else if (newer(next, desired + 1)) {
             return 0;   // already ahead of where the host will be
         } else if (newer(next, desired)) {
-            target = next;
+            first = desired = next;   // one tick ahead: keep the ticks consecutive
+        } else {
+            // Behind: fill the ticks the clock skipped (at most one message's worth), so
+            // the host doesn't fall back and the prediction doesn't skip them.
+            first = desired - next + 1 > kMaxCatchUpInputs ? desired - (kMaxCatchUpInputs - 1) : next;
         }
     }
-    command.targetTick = target;
-    impl.lastInputTick = target;
-    impl.sentInput = true;
-    // The newest and up to three earlier ones, oldest first.
-    if (impl.recentCount == kMaxInputsPerMessage) {
-        std::rotate(impl.recentInputs.begin(), impl.recentInputs.begin() + 1, impl.recentInputs.end());
-        --impl.recentCount;
+    const Entity predicted = impl.predictsControlled() ? impl.controlledEntityNow() : kNullEntity;
+    for (uint32_t target = first;; ++target) {
+        InputCommand c = command;
+        if (target != desired) {
+            // A filled tick repeats the held controls; presses go to the newest only.
+            c.pressedBits = 0;
+            ++impl.stats.catchUpInputs;
+        }
+        c.targetTick = target;
+        if (impl.recentCount == kMaxInputsPerMessage) {
+            std::rotate(impl.recentInputs.begin(), impl.recentInputs.begin() + 1, impl.recentInputs.end());
+            --impl.recentCount;
+        }
+        impl.recentInputs[impl.recentCount++] = c;
+        ++impl.stats.inputsSent;
+        if (predicted.valid()) impl.predict(c, predicted);
+        if (target == desired) break;
     }
-    impl.recentInputs[impl.recentCount++] = command;
+    impl.lastInputTick = desired;
+    impl.sentInput = true;
+    impl.inputClocked = clocked;
+    // The newest and up to three earlier ones, oldest first.
     Inputs message;
     message.count = uint8_t(impl.recentCount);
     message.commands = impl.recentInputs;
-    if (impl.send(impl.peers[0].connection, message)) {
-        ++impl.stats.inputMessagesSent;
-        ++impl.stats.inputsSent;
-    }
-    return target;
+    if (impl.send(impl.peers[0].connection, message)) ++impl.stats.inputMessagesSent;
+    return desired;
 }
 
 void NetworkWorld::Impl::inputsMessage(Peer& p, const Inputs& m) {
@@ -174,7 +211,7 @@ void NetworkWorld::Impl::inputsMessage(Peer& p, const Inputs& m) {
         stats.inputsLate += m.count;   // movement starts at Active's first_input_tick
         return;
     }
-    const uint32_t limit = tick + 1 + NetworkWorld::kMaxInputLeadTicks;
+    const uint32_t limit = tick + 1 + NetworkWorld::scaledTicks(NetworkWorld::kMaxInputLeadTicks, settings().tickRate);
     bool ahead = false;
     for (uint8_t i = 0; i < m.count; ++i) {
         const InputCommand& c = m.commands[i];

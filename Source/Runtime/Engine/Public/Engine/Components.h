@@ -145,6 +145,15 @@ struct PreviousTransform {
     Transform value;
 };
 
+// Where to draw an entity this frame, when something other than the last two ticks
+// decides it: a network client's interpolated remote objects and its predicted character
+// with a correction being smoothed out (NetworkWorld::present). renderWorld uses it in
+// place of blending PreviousTransform and Transform; gameplay and physics never read it.
+// Runtime only and never saved.
+struct PresentationTransform {
+    Transform value;
+};
+
 // ---- Reflection ----------------------------------------------------------------------
 // Registering a component with its fields puts it in scene files and gives it an
 // editor inspector, with no other code:

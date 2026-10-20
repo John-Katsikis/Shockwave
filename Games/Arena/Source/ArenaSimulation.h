@@ -53,6 +53,9 @@ struct ArenaSim {
     ArenaRules& match() const { return *world.get<ArenaRules>(rules); }
     // A pawn is a fighter a player controls (the offline player, or a network player).
     static bool isPawn(const ArenaFighter& f) { return f.player || f.slot != 0; }
+    // How a command moves a pawn: its desired velocity. A client predicts its own pawn
+    // with the same function the authority moves it with.
+    static glm::vec3 pawnVelocity(const ArenaFighter& f, const shockwave::net::InputCommand& c);
 
     // Before physics: timers, respawns, the bots' patrol, and each pawn's movement and
     // reload from fighter.input.

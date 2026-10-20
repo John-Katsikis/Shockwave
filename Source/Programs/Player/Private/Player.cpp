@@ -130,6 +130,7 @@ void Player::onStart() {
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->setSaveFolder(saveFolder(), m_project.relative(m_project.startupScene));
     m_session->setGameCircuit(m_project.gameCircuitPath());
+    if (!m_tool.netPreview.empty()) startNetPreview();
     m_session->start();
     if (!loadFile.empty()) {
         // Read now; the world is swapped in before the first tick.
@@ -155,10 +156,21 @@ void Player::onStart() {
 
 // Online services and the session's network, then GameMode::collectInput, before the ticks.
 void Player::onPump(double rawFrameDt) {
+    if (m_previewHost) {
+        // The hub's clock moves with real time; the host pumps first, like a remote machine.
+        m_previewHub->advance(uint64_t(std::max(rawFrameDt, 0.0) * 1e6));
+        shockwave::NetworkFrame frame;
+        frame.nowSeconds = engine().frameStartSeconds();
+        frame.rawFrameDt = rawFrameDt;
+        shockwave::pumpNetworkFrame(m_previewHostServices.get(), m_previewHost.get(), frame);
+        shockwave::pumpNetworkFrame(engine(), m_previewClientServices.get(), m_session.get(), rawFrameDt);
+        return;
+    }
     shockwave::pumpNetworkFrame(engine(), m_services.get(), m_session.get(), rawFrameDt);
 }
 
 void Player::onUpdate(double dt) {
+    if (m_previewHost) m_previewHost->update(dt);
     if (m_session) m_session->update(dt);
 }
 
@@ -327,6 +339,8 @@ void Player::onShutdown() {
         m_session->stop();
     }
     m_session.reset();
+    if (m_previewHost) m_previewHost->stop();
+    m_previewHost.reset();
     if (m_instance) m_instance->shutdown();
     m_ui.reset();
     m_effects.reset();

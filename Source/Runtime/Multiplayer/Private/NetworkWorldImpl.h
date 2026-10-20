@@ -1,15 +1,20 @@
 #pragma once
 
 // NetworkWorld's private state, shared by NetworkWorld.cpp (roles, the handshake,
-// shutdown) and NetworkReplication.cpp (baseline, lifecycle, snapshots, budgets).
+// shutdown), NetworkReplication.cpp (baseline, lifecycle, snapshots, budgets),
+// NetworkInput.cpp (inputs, commands, the clock) and NetworkPrediction.cpp (prediction,
+// reconciliation, presentation).
 
+#include <Multiplayer/Interpolation.h>
 #include <Multiplayer/NetworkWorld.h>
 #include <Multiplayer/Replication.h>
+#include <Physics/Physics.h>
 
 #include <Network/Sha256.h>
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -85,6 +90,8 @@ struct NetObject {
     uint32_t serial = 0;   // the control serial of its last lifecycle change
     uint32_t lastTick = 0;   // client: newest snapshot tick applied
     bool haveTick = false;
+    uint16_t slot = kNoSlot;   // client: its interpolation slot
+    static constexpr uint16_t kNoSlot = 0xFFFF;
     // The last valid encoded state: the host's newest capture, or what a client was sent.
     uint16_t stateBytes = 0;
     std::array<uint8_t, kMaxStateBytes> state{};
@@ -163,6 +170,7 @@ struct NetworkWorld::Impl final : TransportSink {
     uint32_t firstInputTick = 0;   // client: Active's first_input_tick
     uint32_t lastInputTick = 0;
     bool sentInput = false;
+    bool inputClocked = false;   // the last target tick came from the measured clock
     std::array<InputCommand, kMaxInputsPerMessage> recentInputs{};
     uint32_t recentCount = 0;
     uint32_t clientCommandSeq = 0;
@@ -171,6 +179,50 @@ struct NetworkWorld::Impl final : TransportSink {
     std::array<ReceivedCommand, NetworkWorld::kMaxQueuedCommands> commands{};
     uint32_t commandHead = 0, commandCount = 0;
     std::string beginError;   // what a NetError from beginReplication() points at
+    // The smoothed host clock: host tick = clockOffset + now * tick_rate.
+    double clockOffset = 0;
+    bool haveClockOffset = false;
+
+    // ---- Prediction and presentation (NetworkPrediction.cpp) ----
+    struct Predicted {
+        uint32_t tick = 0;
+        uint32_t incarnation = 0;
+        PredictedMove move;
+        CharacterMotionState state;   // after the command
+        bool used = false;
+    };
+    std::array<Predicted, NetworkWorld::kPredictionHistory> history{};
+    uint32_t newestPredicted = 0, oldestPredicted = 0;
+    bool havePredicted = false;
+    uint32_t predictedIncarnation = 0;
+    glm::vec3 offset{0.0f};   // visual offset when the last correction happened
+    double offsetAt = -1e9;
+    std::string warning;
+    double warningAt = -1e9;
+    std::unique_ptr<InterpolationEngine> interpolation;   // client, once Active
+    std::vector<uint16_t> freeSlots;
+    std::vector<Entity> predictedScratch;
+
+    PhysicsWorld* physics() const { return w.m_physics; }
+    Entity controlledEntityNow() const;
+    bool predictsControlled() const;   // prediction is on for the controlled object
+    void clearPrediction();
+    void resetPrediction(const char* why);
+    // Client: one command predicted (its move from the game, its step from physics).
+    void predict(const InputCommand& command, Entity entity);
+    // Client: the host's state for the controlled object at tick, replacing what
+    // applyState did to its motion.
+    void reconcile(NetObject& o, uint32_t tick, const CharacterMotionState& host);
+    // A snapshot record for the controlled character: everything applies except its
+    // motion, which goes to reconcile().
+    void applyPredicted(NetObject& o, uint32_t tick);
+    // A materialized object or a new incarnation: no blending or prediction from before.
+    void newLife(NetObject& o);
+    glm::vec3 visualOffset(double time) const;
+    // Interpolation: a slot for an object shown behind the host's clock.
+    void startInterpolation();
+    void releaseSlot(NetObject& o);
+    void pushInterpolation(NetObject& o, uint32_t tick);
 
     const NetworkSettings& settings() const { return w.m_start.settings; }
     bool host() const { return w.m_role == NetworkRole::Authority; }
@@ -258,6 +310,7 @@ struct NetworkWorld::Impl final : TransportSink {
     bool queueCommand(
         const CommandDesc& desc, uint16_t sender, uint64_t target, Entity targetEntity, const ProfileValue& payload);
     bool estimatedHostTick(double& out) const;
+    double bestRtt() const;
     void clearInput();
 };
 

@@ -6,7 +6,6 @@
 // team, ownership, the round or its own speed. Then the offline input path: ammo, cadence
 // and button presses don't depend on the frame rate.
 #include "ArenaGame.h"
-#include "ArenaInput.h"
 #include "ArenaNetwork.h"
 #include "ArenaSimulation.h"
 
@@ -16,6 +15,7 @@
 #include <Engine/SceneFile.h>
 #include <Engine/SimulationClock.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/InputSampler.h>
 #include <GameFramework/NetworkPump.h>
 #include <GameFramework/PlaySession.h>
 #include <Multiplayer/NetworkComponents.h>
@@ -309,8 +309,9 @@ void twelvePlayers(const World& scene) {
         const Entity mine = m.pawn(slot);
         check(m.world.alive(mine) && m.net().isLocallyControlled(mine), "each client finds the pawn it controls");
         check(
-            m.world.get<CharacterController>(mine) && !m.world.get<CharacterController>(mine)->enabled,
-            "a client doesn't simulate its copy of a character");
+            m.session->physics()->networkMode() == PhysicsNetworkMode::Client && m.net().predicting() &&
+                m.session->physics()->predicted(mine),
+            "a client predicts only its own pawn and simulates nothing else");
     }
     for (auto& m : machines) {
         check(primaryCameras(m->world) == 1, "one primary camera per process");
@@ -621,9 +622,9 @@ Result playAt(double fps) {
     while (ticks < 360) {
         const double frame = 1.0 / fps;
         t += frame;
-        RawInput raw;
+        InputFrame raw;
         raw.fire = t < 5.0;
-        raw.mouse = {3, 0};   // turning: aim changes every frame
+        raw.look = {3, 0};   // turning: aim changes every frame
         // One press of each, early, on whatever frame gets there first.
         if (!pressedJump && t >= 0.2) raw.jumpPressed = pressedJump = true;
         if (!pressedReload && t >= 0.5) raw.reloadPressed = pressedReload = true;
@@ -658,22 +659,22 @@ void frameRateIndependence() {
     }
     // Several ticks in one frame (catch-up) still give a press to only the first.
     InputSampler sampler;
-    RawInput raw;
+    InputFrame raw;
     raw.reloadPressed = true;
     sampler.collect(raw, 0.1f);
     int presses = 0;
     for (int i = 0; i < 5; ++i) presses += (sampler.next(0).pressedBits & InputCommand::kPressedReload) != 0;
     check(presses == 1, "catch-up ticks don't replay a press");
     // A frame with no tick keeps the press for the next one.
-    sampler.collect(RawInput{.jumpPressed = true}, 0.1f);
-    sampler.collect(RawInput{}, 0.1f);
+    sampler.collect(InputFrame{.jumpPressed = true}, 0.1f);
+    sampler.collect(InputFrame{}, 0.1f);
     check((sampler.next(0).pressedBits & InputCommand::kPressedJump) != 0, "a press survives a frame without ticks");
     // Menus: neutral, and presses are dropped.
-    sampler.collect(RawInput{.moveX = 1, .fire = true, .reloadPressed = true, .active = false}, 0.1f);
+    sampler.collect(InputFrame{.moveX = 1, .fire = true, .reloadPressed = true, .active = false}, 0.1f);
     const InputCommand menu = sampler.next(0);
     check(menu.moveX == 0 && menu.heldBits == 0 && menu.pressedBits == 0, "an inactive frame is neutral");
     // Diagonals are normalized onto the wire's circle.
-    sampler.collect(RawInput{.moveX = 1, .moveZ = 1}, 0.1f);
+    sampler.collect(InputFrame{.moveX = 1, .moveZ = 1}, 0.1f);
     check(!sampler.next(0).invalid(), "a diagonal stays within the wire's limit");
 }
 

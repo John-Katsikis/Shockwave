@@ -577,7 +577,7 @@ void testCodec() {
     setQuat(bad.fields[1], 0, 0, 0, 0.5f);
     CHECK(!encodeProfile(pose, bad, generic, genericBytes));
     bad = value;
-    bad.fields[4].u = 4;   // not in the flags mask
+    bad.fields[4].u = 8;   // not in the flags mask
     CHECK(!encodeProfile(pose, bad, generic, genericBytes));
     std::array<uint8_t, 8> small{};
     CHECK(encodeProfile(pose, value, small, genericBytes).code == WireStatusCode::Overflow);

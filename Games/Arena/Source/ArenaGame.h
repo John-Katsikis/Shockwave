@@ -40,7 +40,7 @@ struct ArenaWeapon {
     int cooldownTicks = 0, reloadTicks = 0;
 };
 void registerTypes();
-// Presentation only: follow interpolated feet, use latest aim, and keep the rifle
+// Presentation only: follow the body where it's drawn (presentedTransform), use latest aim, and keep the rifle
 // in exactly the camera pose used for this frame. Does not move the physics body.
 void updateView(
     shockwave::World& world, shockwave::Entity player, shockwave::Entity camera, shockwave::Entity gun, float yaw,

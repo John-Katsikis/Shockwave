@@ -303,7 +303,7 @@ Profiles 1..31 belong to the engine and 32..1023 to games.
 | 12 | `rotation` | quat (4 x f32, xyzw) | length 0.99..1.01 |
 | 28 | `linear_velocity` | vec3 (3 x f32) | finite, abs <= 512 |
 | 40 | `angular_velocity` | vec3 (3 x f32) | finite, abs <= 1024 |
-| 52 | `flags` | u8 bits | only 0x03 |
+| 52 | `flags` | u8 bits | only 0x07 |
 
 ## Reason codes
 

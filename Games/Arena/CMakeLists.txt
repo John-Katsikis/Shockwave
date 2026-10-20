@@ -7,8 +7,8 @@ if(BUILD_TESTING)
     shockwave_warnings(arena_graphics_test)
     add_test(NAME arena_graphics COMMAND arena_graphics_test ${CMAKE_CURRENT_SOURCE_DIR})
     # Exercise the arena shooter against real Jolt collision/character simulation, no GPU.
-    set(ARENA_GAME_SOURCES Source/ArenaGame.cpp Source/ArenaGraphicsMenu.cpp Source/ArenaInput.cpp
-        Source/ArenaPresentation.cpp Source/ArenaSimulation.cpp)
+    set(ARENA_GAME_SOURCES Source/ArenaGame.cpp Source/ArenaGraphicsMenu.cpp Source/ArenaPresentation.cpp
+        Source/ArenaSimulation.cpp)
     add_executable(arena_test Tests/ArenaTest.cpp ${ARENA_GAME_SOURCES})
     target_include_directories(arena_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
     target_link_libraries(arena_test PRIVATE Shockwave::GameFramework)

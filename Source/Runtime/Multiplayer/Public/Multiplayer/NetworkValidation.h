@@ -50,6 +50,18 @@ void validateNetworkWorld(
     const World& world, const ReplicationRegistry& registry, std::string_view shown, bool prefab,
     std::vector<NetProblem>& problems);
 
+// The collision rule for predicted characters (plan 9.2): online they move against static
+// collision only, on the host and in their clients' prediction alike. So in a scene where
+// one plays (it has a PredictedCharacter, or it's a network scene, with network objects or
+// spawn points, and predictedSpawns: the manifest spawns one),
+// a non-sensor kinematic body is an error (no moving platforms or doors to stand on or be
+// pushed by in v1) and a non-sensor dynamic body a warning (characters pass through it).
+// Quiet for a scene without predicted characters.
+void validatePredictionWorld(
+    const World& world, std::string_view shown, bool predictedSpawns, std::vector<NetProblem>& problems);
+// Whether a manifest prefab's root is a PredictedCharacter.
+bool predictedPrefab(const World& prefabWorld, Entity root);
+
 // The bytes per second the host sends each peer for player state: max_players records of
 // the largest registered per-player profile, at snapshot_rate, split into snapshot
 // parts of max_snapshot_bytes. 0 when the game registers no per-player profile.

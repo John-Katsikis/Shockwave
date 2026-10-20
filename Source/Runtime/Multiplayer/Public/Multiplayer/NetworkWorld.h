@@ -35,6 +35,15 @@
 // against the registry before game code sees it, with the sender's slot from the
 // connection. Ping and Pong give a client the host's clock, so its inputs arrive in time.
 //
+// Prediction (docs/Networking.md, "Prediction"): a client moves its own PredictedCharacter
+// at once with each command it sends, through PhysicsWorld::predictCharacterStep, and
+// keeps the command and the predicted state for 256 ticks. When the host's state for a
+// tick arrives it's compared with the prediction for that tick; a miss puts the character
+// where the host says and replays the commands since (movement only: no game code, no
+// events), and the jump is hidden by a short visual offset. Every other object is shown
+// interpolated behind the host's clock. present() writes both as PresentationTransform,
+// which renderWorld draws in place of its own blend.
+//
 // Role (Offline, Authority, Client) is chosen before GameMode::beginPlay and never
 // changes until Stop. State moves on as the session does; a failure leaves it Failed
 // with a ReasonCode until Stop.
@@ -61,6 +70,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace shockwave {
+class PhysicsWorld;
+struct CharacterMotionState;
+}   // namespace shockwave
 
 namespace shockwave::net {
 
@@ -135,6 +149,14 @@ struct NetworkEvent {
     ReasonCode reason = ReasonCode::Normal;
 };
 
+// What a command does to a predicted character in one tick: the game's own movement
+// rule, which the host's simulation must apply the same way.
+struct PredictedMove {
+    glm::vec3 desiredVelocity{0.0f};
+    bool jump = false;
+};
+using PredictionMoveFn = std::function<PredictedMove(const World&, Entity, const InputCommand&)>;
+
 // A command the host accepted: its registry entry, sender and checked payload.
 struct ReceivedCommand {
     const CommandDesc* command = nullptr;
@@ -173,13 +195,21 @@ struct NetworkWorldStats {
     uint64_t inputsSent = 0, inputMessagesSent = 0;   // client
     uint64_t inputsReceived = 0;   // host: commands in Inputs messages
     uint64_t inputsLate = 0;   // host: for a tick already simulated (or before Active)
-    uint64_t inputsAhead = 0;   // host: more than 32 ticks ahead; persistent ones disconnect
+    uint64_t inputsAhead = 0;   // host: more than kMaxInputLeadTicks ahead; persistent ones disconnect
     uint64_t inputsUsed = 0, inputFallbacks = 0;   // host: real ones, and ticks without one
     uint64_t commandsSent = 0, commandsAccepted = 0;
     uint64_t commandsRefused = 0;   // permission, target, rate or a full queue
     uint64_t pingsSent = 0, pongsReceived = 0, pingsAnswered = 0;
     double rttMs = 0;   // client: the best recent round trip, 0 until measured
     uint32_t inputLead = 0;   // client: how many ticks ahead of the host its inputs are
+    // Prediction (client).
+    uint64_t predictedTicks = 0;   // commands predicted when sent
+    uint64_t catchUpInputs = 0;   // extra commands sent because the clock moved ahead
+    uint64_t predictionChecks = 0, predictionMatches = 0;   // host states compared, and within tolerance
+    uint64_t corrections = 0, replayedTicks = 0;
+    uint64_t predictionResets = 0;   // snapped: no history for the tick, or too far to replay
+    float lastCorrection = 0, maxCorrection = 0;   // metres
+    uint32_t interpolatedObjects = 0;   // shown interpolated by the last present()
 };
 
 class NetworkWorld final : public Subsystem {
@@ -297,9 +327,44 @@ public:
     // the start of a tick, with its own rules (is the round waiting? is there room?).
     bool pollCommand(ReceivedCommand& out);
     static constexpr uint32_t kMaxQueuedCommands = 64;
-    static constexpr uint32_t kMaxInputLeadTicks = 32;   // host: further ahead is refused
+    // Limits given in ticks at 60 Hz are times: at tick_rate 120 they're twice as many
+    // ticks (scaledTicks), so a faster tick doesn't shrink the latency a session copes with.
+    static constexpr uint32_t scaledTicks(uint32_t ticksAt60, uint32_t tickRate) {
+        return ticksAt60 * (tickRate > 60 ? tickRate : 60) / 60;
+    }
+    static constexpr uint32_t kMaxInputLeadTicks = 32;   // at 60 Hz; host: further ahead is refused
     static constexpr uint32_t kInputFallbackTicks = 2;
-    static constexpr uint32_t kInputHistory = 64;   // host: ticks of input kept per player
+    static constexpr uint32_t kInputHistory = 128;   // host: ticks of input kept per player (> 2 x 32 at 120 Hz)
+
+    // ---- Prediction and presentation ----
+    // The session's physics: sets its network mode from the role (Offline, Authority,
+    // Client) and lets a client predict. PlaySession calls it before beginPlay.
+    void setPhysics(PhysicsWorld* physics);
+    // The game's movement rule for predicted characters. Without one nothing is predicted:
+    // the client's character waits for the host's state like any other object.
+    void setPredictionMove(PredictionMoveFn move) { m_predictionMove = std::move(move); }
+    // A client moving its controlled character ahead of the host.
+    bool predicting() const;
+    // Before every physics step: tells physics which characters are predicted (the host:
+    // every owned PredictedCharacter; a client: its own).
+    void prepareStep();
+    // Once per frame before the game's frame(): writes PresentationTransform for the
+    // controlled character (blended between ticks, plus the correction offset) and for
+    // interpolated objects. alpha is the engine's interpolation alpha.
+    void present(float alpha);
+    // The visual offset still being hidden after a correction, now.
+    glm::vec3 correctionOffset() const;
+    // Set when prediction had to snap; cleared after kWarningSeconds.
+    const std::string& predictionWarning() const;
+    static constexpr uint32_t kPredictionHistory = 256;   // ticks of commands and predicted states
+    static constexpr uint32_t kMaxReplayTicks = 32;   // at 60 Hz; further back than this snaps instead
+    static constexpr uint32_t kMaxCatchUpInputs = 4;   // one Inputs message
+    static constexpr float kPositionTolerance = 0.02f;   // metres
+    static constexpr float kVelocityTolerance = 0.05f;   // metres per second
+    static constexpr float kSnapDistance = 1.0f;   // a bigger correction isn't smoothed
+    static constexpr double kOffsetHalfLife = 0.05, kOffsetMaxSeconds = 0.15;
+    static constexpr double kWarningSeconds = 3;
+    static constexpr uint32_t kMaxInterpolatedObjects = 512;
 
     // Local menus, overlays or an unfocused window: the game sends neutral input but the
     // session keeps running (online "pause").
@@ -342,6 +407,8 @@ private:
     uint16_t m_localSlot = 1;
     bool m_inputSuppressed = false;
     bool m_closed = false;
+    PhysicsWorld* m_physics = nullptr;
+    PredictionMoveFn m_predictionMove;
     std::array<NetworkEvent, kMaxEvents> m_events{};
     uint32_t m_eventHead = 0, m_eventCount = 0;
 };
