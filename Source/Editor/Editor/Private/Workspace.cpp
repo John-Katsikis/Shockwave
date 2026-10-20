@@ -195,6 +195,7 @@ void Editor::drawMenuBar() {
         }
     }
     if (ImGui::BeginMenu("Help")) {
+        ImGui::MenuItem("Graphics implementation guide", nullptr, &m_showGraphicsGuide);
         ImGui::MenuItem("Controls", "F1", &m_showControls);
         ImGui::MenuItem("About Shockwave", nullptr, &m_showAbout);
         ImGui::Separator();

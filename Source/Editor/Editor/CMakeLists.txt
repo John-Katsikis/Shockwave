@@ -10,3 +10,12 @@ target_compile_definitions(editor PRIVATE SHOCKWAVE_SOURCE_DIR="${PROJECT_SOURCE
 shockwave_warnings(editor)
 shockwave_link_plugins(editor)
 target_link_libraries(editor PRIVATE Shockwave::Packaging Shockwave::SteamServices)
+
+# Keep relative Markdown links usable after relocating build/bin. Run on each editor
+# build so documentation-only edits are copied without requiring a relink.
+add_custom_target(editor_docs
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/docs" "$<TARGET_FILE_DIR:editor>/docs"
+    COMMENT "Copying editor documentation"
+    VERBATIM)
+add_dependencies(editor editor_docs)

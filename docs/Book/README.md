@@ -50,6 +50,11 @@ little C++, and running commands in a terminal.
 17. [Shipping your game](17-shipping.md)
 18. [Map of the code, and a glossary](18-code-map-and-glossary.md)
 
+For renderer development, continue with the [Graphics implementation guide](../Graphics/README.md).
+It is a planned-feature specification, with equations, UI/CLI contracts and verification
+gates; it is separate from this book's explanation of existing behavior. The editor's
+Help menu opens the guide and its individual chapters.
+
 ## The game you'll make
 
 Orb Hunt is small on purpose. You walk a character around an arena. Glowing orbs float

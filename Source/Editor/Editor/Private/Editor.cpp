@@ -2,6 +2,8 @@
 // the editor core is in Editor*.cpp and PlayInEditor.cpp; panels in *Panel.cpp.
 #include "Editor.h"
 
+#include "GraphicsGuide.h"
+
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
 #include <Circuits/Circuit.h>
@@ -86,6 +88,7 @@ void Editor::onStart() {
     }
 
     m_showPreferences = m_options.showPreferences;
+    m_showGraphicsGuide = m_options.showGraphicsGuide;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -170,6 +173,7 @@ void Editor::onGui() {
         drawUnsavedChangesModal();
         if (m_showPreferences) drawPreferencesWindow();
         if (m_showAbout) drawAboutWindow();
+        if (m_showGraphicsGuide) drawGraphicsGuide(m_showGraphicsGuide);
         updateTitle();
         return;
     }
@@ -210,6 +214,7 @@ void Editor::onGui() {
     m_package.draw(m_project);
     if (m_showControls) drawControlsWindow();
     if (m_showAbout) drawAboutWindow();
+    if (m_showGraphicsGuide) drawGraphicsGuide(m_showGraphicsGuide);
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
     if (m_showMetrics) ImGui::ShowMetricsWindow(&m_showMetrics);
     gui::focusOutline();

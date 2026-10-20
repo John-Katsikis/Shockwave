@@ -56,6 +56,7 @@ struct EditorOptions {
     std::string assetFolder;   // --assets: imported instead of the project's assets
     std::string contentFolder;   // --content-folder: inside project Content
     bool showPreferences = false;   // --preferences: open settings on startup
+    bool showGraphicsGuide = false;   // --graphics-guide: open the implementation guide
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -459,6 +460,7 @@ private:
     std::string m_previewClip;
     bool m_showStats = false, m_showPreferences = false, m_showProjectSettings = false;
     bool m_showControls = false, m_showAbout = false, m_showDemo = false, m_showMetrics = false;
+    bool m_showGraphicsGuide = false;
     bool m_resetLayout = false;
     bool m_focusConsole = false;
 

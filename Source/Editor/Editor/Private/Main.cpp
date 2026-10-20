@@ -1,5 +1,7 @@
 #include "Editor.h"
 
+#include "GraphicsGuide.h"
+
 #include <charconv>
 #include <cstdio>
 #include <exception>
@@ -22,6 +24,8 @@
 //   --gpu name|number      GPU to render on for this run (Preferences sets the usual one)
 //   --content-folder path  show a folder inside Content on startup
 //   --preferences          show the Preferences window on startup
+//   --graphics-guide       show the graphics implementation guide on startup
+//   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
 //   --select N             select the Nth entity of the scene (screenshots)
@@ -66,7 +70,14 @@ int main(int argc, char** argv) {
                 options.focusContent = true;
             } else if (arg == "--preferences")
                 options.showPreferences = true;
-            else if (arg == "--prefs")
+            else if (arg == "--graphics-guide")
+                options.showGraphicsGuide = true;
+            else if (arg == "--graphics-guide-path") {
+                const auto path = editor::graphicsGuidePath();
+                if (path.empty()) throw std::runtime_error("Graphics guide not found; rebuild the editor target");
+                std::puts(path.string().c_str());
+                return 0;
+            } else if (arg == "--prefs")
                 options.prefsPath = value();
             else if (arg == "--frames")
                 config.maxFrames = integer(value(), "--frames", 1);
@@ -88,6 +99,7 @@ int main(int argc, char** argv) {
                     "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
                     "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
                     "       [--play] [--select N] [--circuit path]\n"
+                    "       [--graphics-guide] [--graphics-guide-path]\n"
                     "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')

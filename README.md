@@ -80,6 +80,10 @@ Follow [Tutorial: your first game in Shockwave](docs/Tutorial.md). It walks you 
 making a project, building a scene and writing your first game code.
 
 Then, to understand how the whole engine works, read [The Shockwave Book](docs/Book/README.md).
+
+Renderer contributors: [Graphics implementation guide](docs/Graphics/README.md) contains
+the staged visual-quality roadmap and detailed implementation contracts. It is also
+available in the editor under **Help > Graphics implementation guide**.
 It's a longer, step-by-step guide that builds a small game while explaining every part
 of the engine, from entities and systems to the renderer, the editor and packaging.
 
