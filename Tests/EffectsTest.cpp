@@ -1,5 +1,5 @@
-// Particle effects without a GPU: the sample effect loads with its textures, simulates
-// on the CPU, and builds valid triangles for a camera; ParticleEffect starts, stops,
+// Particle effects without a GPU: the sample effects load with their textures, simulate
+// on the CPU, and build valid triangles for a camera; ParticleEffect starts, stops,
 // loops and follows its entity; one-shots, problems and hot reload work; and
 // EffectsWorld (game.effects()) drives it all.
 #include <Effects/Effects.h>
@@ -62,7 +62,12 @@ int main(int argc, char** argv) {
 
         Effects effects(nullptr);
         effects.setContentFolder(content);
-        check(effects.effectFiles() == std::vector<std::string>{"Effects/laser.efkefc"}, "effectFiles");
+        const std::vector<std::string> firefight = {
+            "Effects/firefight-grenade.efkefc", "Effects/firefight-impact.efkefc", "Effects/firefight-rifle.efkefc",
+            "Effects/firefight-smoke.efkefc"};
+        std::vector<std::string> files = firefight;
+        files.push_back("Effects/laser.efkefc");
+        check(effects.effectFiles() == files, "effectFiles");
 
         // Loading: the sample is clean; mistakes are reported, not thrown.
         for (const EffectProblem& p : effects.validate("Effects/laser.efkefc"))
@@ -72,6 +77,31 @@ int main(int argc, char** argv) {
         check(!effects.validate("Effects/old.efkproj").empty(), "an .efkproj isn't reported");
         const float duration = effects.duration("Effects/laser.efkefc");
         check(duration > 0.5f && duration < 30.0f, "laser duration " + std::to_string(duration));
+
+        // The particle stress test's effects (written by Tools/MakeParticleStress.py, not the
+        // Effekseer editor) load cleanly, run until stopped and build valid triangles.
+        {
+            World fight;
+            for (const std::string& file : firefight) {
+                check(effects.validate(file).empty(), file + " has problems");
+                check(effects.duration(file) < 0.0f, file + " should run until stopped");
+                const Entity rifle = fight.create();
+                fight.add<Transform>(rifle, {glm::vec3(0, 1, 0)});
+                fight.add<ParticleEffect>(rifle, {file});
+            }
+            run(effects, fight, 300);   // past every first-shot delay
+            const ParticleDrawList list = effects.build(
+                glm::lookAt(glm::vec3(0, 3, 10), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0)),
+                perspectiveReverseZ(glm::radians(60.0f), 16.0f / 9.0f, 0.1f));
+            checkList(list, "firefight");
+            check(effects.stats().particles > 100 && !list.batches.empty(), "the firefight made too few particles");
+            std::cout << "firefight: " << effects.stats().particles << " particles, " << list.batches.size()
+                      << " batches\n";
+            fight.each<ParticleEffect>([&](Entity entity, ParticleEffect&) {
+                check(effects.particleCount(entity) > 0, "a firefight effect made no particles");
+            });
+            effects.restart();   // forget this world's effects
+        }
 
         // A ParticleEffect plays at its entity and follows it.
         World world;

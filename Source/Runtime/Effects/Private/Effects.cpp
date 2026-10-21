@@ -355,7 +355,9 @@ struct Effects::Impl {
 
     ParticleDrawList build(const glm::mat4& view, const glm::mat4& projection) {
         SW_PROFILE_SCOPE("Effects build");
+        const auto waitStart = Clock::now();
         join();
+        const float waitMs = msSince(waitStart);
         const auto start = Clock::now();
         const glm::mat4 cameraWorld = glm::inverse(view);
         const glm::vec3 eye(cameraWorld[3]);
@@ -400,6 +402,7 @@ struct Effects::Impl {
         stats.skippedBatches = capture->skippedBatches();
         stats.updateMs = updateMs;
         stats.buildMs = msSince(start);
+        stats.waitMs = waitMs;
         return list;
     }
 };

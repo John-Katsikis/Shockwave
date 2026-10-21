@@ -20,7 +20,9 @@ HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTIO
 CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
 OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-The textures in Texture/ (LaserMain01.png, Particle01.png, Particle02.png) are drawn
-by Games/Sample/Tools/GenerateEffectTextures.py and are part of this project, under its
-MIT license. They
-keep the file names the effect looks for.
+The textures in Texture/ (LaserMain01.png, Particle01.png, Particle02.png, Smoke01.png)
+are drawn by Games/Sample/Tools/GenerateEffectTextures.py and are part of this project,
+under its MIT license. They keep the file names the effects look for.
+
+The firefight-*.efkefc effects are written by Games/Sample/Tools/MakeParticleStress.py
+and are part of this project, under its MIT license.

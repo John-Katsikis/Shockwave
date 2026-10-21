@@ -6,9 +6,16 @@
 
 #include <Core/Profile.h>
 
+#include <chrono>
+
 namespace shockwave {
 
 namespace {
+
+using Clock = std::chrono::steady_clock;
+float msSince(Clock::time_point start) {
+    return std::chrono::duration<float, std::milli>(Clock::now() - start).count();
+}
 
 // Must match the push constants in shaders/particle.vert and particle.frag.
 struct ParticlePushConstants {
@@ -164,6 +171,7 @@ void VulkanRenderer::Impl::destroyParticles() {
 
 void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
     SW_PROFILE_SCOPE("Particles gather");
+    const auto start = Clock::now();
     // Appended to CPU arrays that keep their capacity, so a steady frame allocates
     // nothing; prepareParticles copies them to the GPU once, at the end of the frame.
     const uint32_t vertexBase = static_cast<uint32_t>(particleVertices.size());
@@ -191,6 +199,7 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
             {indexBase + batch.firstIndex, batch.indexCount, batch.blend, batch.cull, batch.depthTest,
              batch.depthWrite});
     }
+    particleGatherMs += msSince(start);
 }
 
 void VulkanRenderer::Impl::clearParticles() {
@@ -198,19 +207,24 @@ void VulkanRenderer::Impl::clearParticles() {
     particleIndices.clear();
     particleBatchData.clear();
     particleDraws.clear();
+    particleGatherMs = 0;
 }
 
 void VulkanRenderer::Impl::prepareParticles() {
+    lastParticleStats = {};
     if (particleDraws.empty()) return;
     SW_PROFILE_SCOPE("Particles upload");
+    const auto start = Clock::now();
     // beginFrame waited for the GPU to finish this slot's previous frame, so its buffers
     // are free to overwrite, or to replace when they're too small.
     ParticleBuffers& b = particleBuffers[frameIndex];
     const VmaAllocationCreateFlags mapped =
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    // True when the buffer was replaced. (Its handle can't tell: a new buffer may reuse the
+    // old one's handle value.)
     auto fit = [&](vk::Buffer& buffer, void*& data, size_t& capacity, size_t needed, size_t minimum,
                    VkBufferUsageFlags usage) {
-        if (needed <= capacity) return;
+        if (needed <= capacity) return false;
         size_t grown = std::max(capacity, minimum);
         while (grown < needed) grown *= 2;
         if (buffer.buffer) vmaDestroyBuffer(context->allocator(), buffer.buffer, buffer.allocation);
@@ -218,17 +232,17 @@ void VulkanRenderer::Impl::prepareParticles() {
         buffer = createBuffer(grown, usage, mapped, &info);
         data = info.pMappedData;
         capacity = grown;
+        return true;
     };
     const VkBufferUsageFlags storage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     const size_t vertexBytes = particleVertices.size() * sizeof(ParticleVertex);
     const size_t indexBytes = particleIndices.size() * sizeof(uint32_t);
     const size_t batchBytes = particleBatchData.size() * sizeof(ParticleBatchData);
-    const VkBuffer oldVertices = b.vertices.buffer, oldBatches = b.batches.buffer;
-    fit(b.vertices, b.vertexData, b.vertexCapacity, vertexBytes, size_t{1} << 20, storage);
+    if (fit(b.vertices, b.vertexData, b.vertexCapacity, vertexBytes, size_t{1} << 20, storage))
+        b.vertexAddress = bufferAddress(b.vertices.buffer);
     fit(b.indices, b.indexData, b.indexCapacity, indexBytes, size_t{1} << 19, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    fit(b.batches, b.batchData, b.batchCapacity, batchBytes, size_t{1} << 14, storage);
-    if (b.vertices.buffer != oldVertices) b.vertexAddress = bufferAddress(b.vertices.buffer);
-    if (b.batches.buffer != oldBatches) b.batchAddress = bufferAddress(b.batches.buffer);
+    if (fit(b.batches, b.batchData, b.batchCapacity, batchBytes, size_t{1} << 14, storage))
+        b.batchAddress = bufferAddress(b.batches.buffer);
     std::memcpy(b.vertexData, particleVertices.data(), vertexBytes);
     std::memcpy(b.indexData, particleIndices.data(), indexBytes);
     std::memcpy(b.batchData, particleBatchData.data(), batchBytes);
@@ -236,6 +250,10 @@ void VulkanRenderer::Impl::prepareParticles() {
     vk::check(vmaFlushAllocation(allocator, b.vertices.allocation, 0, vertexBytes), "vmaFlushAllocation");
     vk::check(vmaFlushAllocation(allocator, b.indices.allocation, 0, indexBytes), "vmaFlushAllocation");
     vk::check(vmaFlushAllocation(allocator, b.batches.allocation, 0, batchBytes), "vmaFlushAllocation");
+    lastParticleStats.uploadMs = particleGatherMs + msSince(start);
+    lastParticleStats.uploadBytes = vertexBytes + indexBytes + batchBytes;
+    lastParticleStats.vertices = static_cast<uint32_t>(particleVertices.size());
+    lastParticleStats.draws = static_cast<uint32_t>(particleDraws.size());
 }
 
 void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
