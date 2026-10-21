@@ -71,4 +71,13 @@ struct ParticleDrawList {
     glm::vec3 ambient{0.2f};
 };
 
+// What the renderer did with last frame's particles (Renderer::particleStats), for the
+// benchmark and the Stats window. The GPU draw itself is the "particles" pass timing.
+struct ParticleStats {
+    float uploadMs = 0;   // CPU, main thread: gathering the draw lists and copying them to the GPU
+    uint64_t uploadBytes = 0;   // vertices, indices and batch data copied to GPU memory
+    uint32_t vertices = 0;
+    uint32_t draws = 0;
+};
+
 }   // namespace shockwave

@@ -673,6 +673,8 @@ struct VulkanRenderer::Impl {
     std::vector<uint32_t> particleIndices;
     std::vector<ParticleBatchData> particleBatchData;
     std::vector<ParticleDraw> particleDraws;
+    float particleGatherMs = 0;   // this frame's drawParticles calls, added up
+    ParticleStats lastParticleStats;   // set by prepareParticles
 
     void createParticlePipelines();
     void destroyParticles();

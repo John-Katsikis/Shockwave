@@ -126,6 +126,13 @@ void Editor::drawEffectsStats() {
         ImGui::Text(
             "%.3f ms simulation (worker), %.3f ms build", static_cast<double>(s.updateMs),
             static_cast<double>(s.buildMs));
+        gui::propertyLabel("Waited");
+        ImGui::Text("%.3f ms for the simulation, on the main thread", static_cast<double>(s.waitMs));
+        const shockwave::ParticleStats upload = engine().renderer().particleStats();
+        gui::propertyLabel("Upload");
+        ImGui::Text(
+            "%.3f ms, %.2f MB to the GPU", static_cast<double>(upload.uploadMs),
+            static_cast<double>(upload.uploadBytes) / 1e6);
         ImGui::EndTable();
     }
     ImGui::TextDisabled("GPU: the \"particles\" pass under GPU time per pass");
