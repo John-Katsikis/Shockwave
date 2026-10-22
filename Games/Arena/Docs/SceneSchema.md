@@ -185,6 +185,7 @@ No fields; the component's presence is what matters.
 |---|---|---|
 | `circuit` | quoted text | `""` |
 | `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `execution` | one of: Authority, LocalOwner, Presentation (or its number, counting from 0) | `Authority` |
 
 #### CircuitVars
 
