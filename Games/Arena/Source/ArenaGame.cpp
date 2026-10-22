@@ -8,6 +8,12 @@
 // local player and bots. A multiplayer scene (Scenes/arena-mp.swscene) authors no player:
 // the authority spawns a Net Player for each player who joins, six a side, at the team's
 // NetworkSpawnPoints; played offline it's a match for one.
+//
+// Shots online (plan 10.1): the host resolves them with lag compensation and tells
+// everyone with arena.shot_resolved. A client shows its own shot at once and the host's
+// event then only adds the hit marker; other players' shots are shown once, from the
+// event. Kills and round changes come the same way (arena.player_died,
+// arena.round_changed); scores come from the replicated state.
 #include "ArenaGame.h"
 
 #include "ArenaGraphicsMenu.h"
@@ -18,6 +24,7 @@
 #include <GameFramework/InputSampler.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Multiplayer/NetworkWorld.h>
+#include <Multiplayer/PresentationDedup.h>
 #include <Shockwave/Game.h>
 
 #include <array>
@@ -155,8 +162,22 @@ public:
         m_flash = game.find("Arena Muzzle").entity();
         uint32_t tickRate = game.engine ? uint32_t(std::lround(game.engine->tickRate())) : 60;
         if (network.online()) tickRate = network.start().settings.tickRate;
-        m_sim.emplace(ArenaSim{game.world, game.physics(), m_rules, tickRate, {}});
+        m_sim.emplace(ArenaSim{game.world, game.physics(), m_rules, tickRate, &network, {}});
         hookUp(game);
+        m_eventCursor = network.gameEventCursor();
+        m_shots.clear();
+        if (network.role() == net::NetworkRole::Authority) {
+            // Lag compensation records every player's capsule each tick.
+            network.setCombatTargets([](const World& world, Entity pawn, net::CombatTarget& out) {
+                const auto* f = world.get<ArenaFighter>(pawn);
+                if (!f || !ArenaSim::isPawn(*f)) return false;
+                out.team = uint8_t(std::clamp(f->team, 0, 1));
+                out.alive = f->health > 0;
+                out.protectedFromHits = f->protectionTicks > 0;
+                out.eyeHeight = kPlayerEye;
+                return true;
+            });
+        }
         if (network.role() == net::NetworkRole::Client) {
             // The client moves its own pawn at once by the host's movement rule
             // (ArenaSim::stepControls), and the host corrects it when they differ.
@@ -219,12 +240,15 @@ public:
     void fixedUpdate(GameContext& game, double seconds) override {
         auto& rules = *game.world.get<ArenaRules>(m_rules);
         if (!game.network().authority()) {
+            readEvents(game);
             m_view.tick(game, float(seconds), rules.finished);
             return;
         }
-        if (m_paused || rules.finished) return;
-        m_sim->stepCombat();
-        m_view.tick(game, float(seconds), rules.finished);
+        if (!m_paused && !rules.finished) {
+            m_sim->stepCombat();
+            m_view.tick(game, float(seconds), rules.finished);
+        }
+        announceRound(game);
     }
 
     void frame(GameContext& game, double frameDt) override {
@@ -239,15 +263,10 @@ public:
         if (!m_menuOpen && !rules.autoPlay && !rules.finished && input.wasActionPressed("arena_fire") &&
             !input.isMouseCaptured() && !game.ui().capturesInput())
             input.setMouseCaptured(true);
-        if (!network.authority() && fighter && weapon) {
-            // Shown from the host's state: a shot the host made spends a round.
-            if (m_seenPawn == pawn && weapon->ammo < m_seenAmmo) {
-                m_view.kick();
-                game.audio().playClip("Audio/arena-shot.wav", {.volume = 0.35f});
-            }
+        if (!network.authority() && fighter) {
+            // Shown from the host's state: damage taken.
             if (m_seenPawn == pawn && fighter->health < m_seenHealth) m_view.hurt();
             m_seenPawn = pawn;
-            m_seenAmmo = weapon->ammo;
             m_seenHealth = fighter->health;
         }
         if (m_match) m_view.showBodies(game.world, pawn, !network.authority());
@@ -306,9 +325,29 @@ private:
 
     void hookUp(GameContext& game) {
         ArenaSimHooks& hooks = m_sim->hooks;
-        hooks.shot = [this, &game](Entity shooter, glm::vec3 origin, glm::vec3 end, Entity) {
-            m_view.shot(game, origin, end, shooter == localPawn(game));
-        };
+        hooks.shot =
+            [this,
+             &game](Entity shooter, glm::vec3 origin, glm::vec3 end, Entity victim, float damage, uint32_t inputTick) {
+                m_view.shot(game, origin, end, shooter == localPawn(game));
+                net::NetworkWorld& network = game.network();
+                if (!network.online()) return;
+                const auto* id = network.identity(shooter);
+                if (!id) return;   // only players' shots: their clients match them to their own
+                net::ProfileValue v;
+                v.fields[0].u = id->id;
+                v.fields[1].u = id->incarnation;
+                v.fields[2].u = inputTick != 0 ? inputTick : network.tick();
+                v.fields[3].u = 0;   // one shot per tick
+                for (int i = 0; i < 3; ++i) {
+                    v.fields[4].f[i] = origin[i];
+                    v.fields[5].f[i] = end[i];
+                }
+                const auto* hit = game.world.alive(victim) ? network.identity(victim) : nullptr;
+                v.fields[6].u = hit ? hit->id : 0;
+                v.fields[7].u = uint64_t(std::lround(std::clamp(damage, 0.0f, 10000.0f)));
+                if (auto sent = network.sendEvent(kShotResolved, shooter, v); !sent)
+                    SW_LOG(LogGame, Warning, "Arena: shot event: {}", sent.error().message);
+            };
         hooks.hit = [this, &game](Entity shooter, Entity victim) {
             const Entity local = localPawn(game);
             if (shooter == local) m_view.hit();
@@ -318,6 +357,17 @@ private:
             const auto& shooter = *game.world.get<ArenaFighter>(killer);
             m_view.setFeed(std::string(teamName(shooter.team)) + " eliminated " + fighterName(game.world, victim));
             if (killer == localPawn(game)) game.audio().playClip("Audio/arena-hit.wav", {.volume = 0.3f});
+            net::NetworkWorld& network = game.network();
+            const auto* dead = network.online() ? network.identity(victim) : nullptr;
+            if (!dead) return;
+            const auto* by = network.identity(killer);
+            net::ProfileValue v;
+            v.fields[0].u = dead->id;
+            v.fields[1].u = dead->incarnation;
+            v.fields[2].u = by ? by->id : 0;
+            v.fields[3].u = network.tick() + uint32_t(std::max(0, game.world.get<ArenaFighter>(victim)->respawnTicks));
+            if (auto sent = network.sendEvent(kPlayerDied, victim, v); !sent)
+                SW_LOG(LogGame, Warning, "Arena: death event: {}", sent.error().message);
         };
         hooks.reloaded = [this, &game](Entity pawn) {
             if (pawn == localPawn(game)) game.audio().playClip("Audio/arena-reload.wav", {.volume = 0.25f});
@@ -374,7 +424,93 @@ private:
     void clientTick(GameContext& game, Entity local, const InputCommand& mine) {
         net::NetworkWorld& network = game.network();
         if (network.state() != net::NetworkState::Active || !game.world.alive(local)) return;
-        network.sendInput(network.localInputSuppressed() ? InputCommand{.incarnation = mine.incarnation} : mine);
+        const InputCommand sent = network.localInputSuppressed() ? InputCommand{.incarnation = mine.incarnation} : mine;
+        const uint32_t tick = network.sendInput(sent);
+        predictShot(game, local, sent, tick);
+    }
+
+    // The client's own shot, shown at once: the weapon's cadence from the moment fire is
+    // held, as the host runs it, keyed by the tick the command was sent for so the host's
+    // arena.shot_resolved for it only adds the hit marker.
+    void predictShot(GameContext& game, Entity pawn, const InputCommand& c, uint32_t tick) {
+        m_predictCooldown = std::max(0, m_predictCooldown - 1);
+        const auto* f = game.world.get<ArenaFighter>(pawn);
+        const auto* w = game.world.get<ArenaWeapon>(pawn);
+        const auto* id = game.network().identity(pawn);
+        const auto& rules = *game.world.get<ArenaRules>(m_rules);
+        if (!f || !w || !id || tick == 0 || !(c.heldBits & InputCommand::kHeldFire)) return;
+        if (rules.phase != ArenaRules::Playing || f->health <= 0 || w->reloadTicks > 0 || w->ammo == 0) return;
+        if (m_predictCooldown > 0) return;
+        m_predictCooldown = ticksFor(w->interval, m_sim->tickRate);
+        if (!m_shots.predicted({id->id, id->incarnation, tick, 0})) return;
+        const glm::vec3 origin = m_sim->eye(pawn), direction = aimDirection(commandYaw(c), commandPitch(c));
+        glm::vec3 end = origin + direction * 60.0f;
+        if (const auto hit = game.physics().raycast(origin, direction, 60, pawn)) end = hit->point;
+        m_view.shot(game, origin, end, true);
+    }
+
+    // ---- What the host tells a client ----
+
+    void readEvents(GameContext& game) {
+        net::NetworkWorld& network = game.network();
+        const Entity local = localPawn(game);
+        const auto* me = game.world.alive(local) ? network.identity(local) : nullptr;
+        net::ReceivedGameEvent e;
+        while (network.readGameEvent(m_eventCursor, e)) {
+            const auto& p = e.payload.fields;
+            switch (e.eventId) {
+            case kShotResolved: {
+                const net::ShotKey key{p[0].u, uint32_t(p[1].u), uint32_t(p[2].u), uint16_t(p[3].u)};
+                const bool mine = me && key.shooter == me->id;
+                const auto* w = mine ? game.world.get<ArenaWeapon>(local) : nullptr;
+                // A prediction can land a tick or two off the host's: match within half the cadence.
+                const uint32_t window = w ? uint32_t(std::max(1, ticksFor(w->interval, m_sim->tickRate) / 2)) : 0;
+                const auto seen = m_shots.confirmed(key, window);
+                if (seen == net::PresentationDedup::Seen::Duplicate) break;
+                if (seen == net::PresentationDedup::Seen::New)
+                    m_view.shot(game, {p[4].f[0], p[4].f[1], p[4].f[2]}, {p[5].f[0], p[5].f[1], p[5].f[2]}, mine);
+                if (mine && p[6].u != 0 && p[7].u > 0) m_view.hit();
+                break;
+            }
+            case kPlayerDied: {
+                const Entity victim = network.entity(p[0].u), killer = network.entity(p[2].u);
+                const auto* k = game.world.alive(killer) ? game.world.get<ArenaFighter>(killer) : nullptr;
+                m_view.setFeed(
+                    std::string(k ? teamName(k->team) : "THE ARENA") + " eliminated " +
+                    (game.world.alive(victim) ? fighterName(game.world, victim) : std::string("a player")));
+                if (killer.valid() && killer == local) game.audio().playClip("Audio/arena-hit.wav", {.volume = 0.3f});
+                break;
+            }
+            case kRoundChanged:
+                if (p[1].u == ArenaRules::Playing) {
+                    m_view.reset(game);
+                    m_shots.clear();
+                    m_view.setFeed("ROUND " + std::to_string(p[0].u) + " / BLUE VS ORANGE");
+                } else if (p[1].u == ArenaRules::Finished) {
+                    m_view.setFeed(
+                        p[2].u == 0   ? "BLUE WINS THE ROUND"
+                        : p[2].u == 1 ? "ORANGE WINS THE ROUND"
+                                      : "THE ROUND IS A DRAW");
+                }
+                break;
+            default: break;
+            }
+        }
+    }
+
+    // The host says when a round starts or ends.
+    void announceRound(GameContext& game) {
+        net::NetworkWorld& network = game.network();
+        const auto& r = m_sim->match();
+        if (!network.online() || (r.phase == m_announcedPhase && r.roundSerial == m_announcedSerial)) return;
+        m_announcedPhase = r.phase;
+        m_announcedSerial = r.roundSerial;
+        net::ProfileValue v;
+        v.fields[0].u = r.roundSerial;
+        v.fields[1].u = uint64_t(std::clamp(r.phase, 0, 2));
+        v.fields[2].u = r.phase != ArenaRules::Finished || r.blue == r.orange ? 255 : r.blue > r.orange ? 0 : 1;
+        if (auto sent = network.sendEvent(kRoundChanged, kNullEntity, v); !sent)
+            SW_LOG(LogGame, Warning, "Arena: round event: {}", sent.error().message);
     }
 
     void handleEvents(GameContext& game) {
@@ -600,8 +736,12 @@ private:
     InputSampler m_input;
     Entity m_rules, m_player, m_camera, m_gun, m_flash;
     Entity m_seenPawn;
-    int m_seenAmmo = 0;
     float m_seenHealth = 0;
+    net::PresentationDedup m_shots;   // a client's shots shown, own and others'
+    uint64_t m_eventCursor = 0;
+    int m_predictCooldown = 0;
+    int m_announcedPhase = -1;
+    uint32_t m_announcedSerial = 0;
     uint16_t m_prefabId = 0;
     bool m_match = false, m_paused = false, m_menuOpen = false;
 };

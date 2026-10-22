@@ -129,6 +129,7 @@ void PlaySession::start() {
         host.ui = ui();
         host.physics = physics();
         host.assets = m_context.engine ? &m_context.engine->assets() : nullptr;
+        host.network = &network;
         CircuitWorld& circuits = m_subsystems.add<CircuitWorld>(world, host, m_gameCircuit);
         circuits.setBreakpointsAllowed(!online());
         circuits.beginPlay();

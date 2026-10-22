@@ -175,7 +175,7 @@ void registerNetworkTypes(ReplicationRegistry& registry) {
     report(registry.addCommand(std::move(restart), why), why);
 
     EventDesc shot;
-    shot.id = 32;
+    shot.id = kShotResolved;
     shot.name = "arena.shot_resolved";
     shot.payload = {
         netInt("shooter", NetFieldType::U64, 1, 18446744073709551615.0, NetFieldRole::EntityRef),
@@ -190,7 +190,7 @@ void registerNetworkTypes(ReplicationRegistry& registry) {
     report(registry.addEvent(std::move(shot), why), why);
 
     EventDesc died;
-    died.id = 33;
+    died.id = kPlayerDied;
     died.name = "arena.player_died";
     died.payload = {
         netInt("victim", NetFieldType::U64, 1, 18446744073709551615.0, NetFieldRole::EntityRef),
@@ -201,7 +201,7 @@ void registerNetworkTypes(ReplicationRegistry& registry) {
     report(registry.addEvent(std::move(died), why), why);
 
     EventDesc round;
-    round.id = 34;
+    round.id = kRoundChanged;
     round.name = "arena.round_changed";
     round.payload = {
         netInt("round_serial", NetFieldType::U32, 0, 4294967295.0, NetFieldRole::Counter),

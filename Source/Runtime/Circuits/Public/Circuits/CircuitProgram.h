@@ -76,6 +76,10 @@ struct CircuitProgram {
 // errors and warnings either way.
 std::shared_ptr<const CircuitProgram> compileCircuit(
     const CircuitDocument& document, std::string path, CircuitKind kind, std::vector<CircuitProblem>& problems);
+// The nodes a circuit may not use when it runs with this execution: Authority allows
+// everything, LocalOwner presentation nodes and network requests, Presentation only
+// presentation nodes. Each problem names the node and its line; none means it may run.
+std::vector<CircuitProblem> circuitScopeProblems(const CircuitProgram& program, CircuitExecution execution);
 // The bytecode as text, one instruction per line, for player --circuit --dump.
 std::string dumpCircuit(const CircuitProgram& program);
 

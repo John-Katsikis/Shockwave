@@ -11,6 +11,8 @@
 #include <Engine/Prefab.h>
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
+#include <Multiplayer/NetworkWorld.h>
+#include <Multiplayer/Replication.h>
 #include <Physics/Physics.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -22,6 +24,7 @@
 #include <mutex>
 #include <ostream>
 #include <random>
+#include <set>
 
 namespace shockwave {
 
@@ -53,6 +56,20 @@ const char* circuitEventName(CircuitEvent event) {
     case CircuitEvent::AfterLoad: return "AfterLoad";
     case CircuitEvent::UICommand: return "UICommand";
     case CircuitEvent::Message: return "Message";
+    case CircuitEvent::PeerJoined: return "PeerJoined";
+    case CircuitEvent::PeerLeft: return "PeerLeft";
+    case CircuitEvent::NetworkReady: return "NetworkReady";
+    case CircuitEvent::Disconnected: return "Disconnected";
+    case CircuitEvent::GameEvent: return "GameEvent";
+    }
+    return "?";
+}
+
+const char* nodeCapabilityName(NodeCapability capability) {
+    switch (capability) {
+    case NodeCapability::Presentation: return "presentation";
+    case NodeCapability::Authority: return "authority";
+    case NodeCapability::NetworkRequest: return "network request";
     }
     return "?";
 }
@@ -659,6 +676,45 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
             return 0;
         }));
 
+    // ---- Network: the session's role and events (generated Network.Command.* and
+    // Network.Event.* nodes come from the game's registry, registerNetworkNodes)
+    list.push_back(pure(
+        "Network.IsAuthority", "This machine decides what happens: the host, or offline play.", {}, {pin("result", B)},
+        [](CircuitCall& c) {
+            c.out(0) = Value::boolean(!c.host.network || c.host.network->authority());
+            return 0;
+        }));
+    list.push_back(pure(
+        "Network.IsLocalOwner", "The entity belongs to this machine's player (offline: always).", {self("entity")},
+        {pin("result", B)}, [](CircuitCall& c) {
+            const net::NetworkWorld* n = c.host.network;
+            c.out(0) = Value::boolean(!n || !n->online() || n->isLocallyControlled(c.entity(0)));
+            return 0;
+        }));
+    list.push_back(pure(
+        "Network.LocalPlayer", "This machine's player slot: 1 for the host and offline play.", {}, {pin("slot", I)},
+        [](CircuitCall& c) {
+            c.out(0) = Value::integer(c.host.network ? c.host.network->localPlayer() : 1);
+            return 0;
+        }));
+    list.push_back(pure(
+        "Network.State", "The session's state: Offline, Connecting, Active, Failed...", {}, {pin("state", S)},
+        [](CircuitCall& c) {
+            c.out(0) = Value::string(
+                net::networkStateName(c.host.network ? c.host.network->state() : net::NetworkState::Offline));
+            return 0;
+        }));
+    list.push_back(event(
+        "Network.PeerJoined", CircuitEvent::PeerJoined, "On the host: a player joined, in this slot.",
+        {pin("slot", I)}));
+    list.push_back(
+        event("Network.PeerLeft", CircuitEvent::PeerLeft, "On the host: a player left that slot.", {pin("slot", I)}));
+    list.push_back(
+        event("Network.Ready", CircuitEvent::NetworkReady, "This machine's network session is in play (Active).", {}));
+    list.push_back(event(
+        "Network.Disconnected", CircuitEvent::Disconnected,
+        "The session failed, or the host ended it. reason names why.", {pin("reason", S)}));
+
     for (int t = int(PinType::Bool); t <= int(PinType::Model); ++t) {
         const PinType type = PinType(t);
         list.push_back(pure(
@@ -668,11 +724,112 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
                 return 0;
             }));
     }
+    // Built-in nodes that change no gameplay state, by name: every other built-in changes
+    // gameplay (spawning, destroying, physics, moving transforms) and runs only where the
+    // circuit has authority. Circuit.Send is safe: the receiving circuit's own execution
+    // decides what its handler may do.
+    static const std::set<std::string> kPresentationSafe = {
+        "Audio.PlaySound",
+        "Audio.PlaySoundAt",
+        "Audio.PlaySoundOn",
+        "Circuit.Send",
+        "Convert.FloatToInt",
+        "Convert.IntToFloat",
+        "Debug.Print",
+        "Entity.FindByName",
+        "Entity.IsValid",
+        "Entity.Self",
+        "Event.ActionPressed",
+        "Event.ActionReleased",
+        "Event.AfterLoad",
+        "Event.BeforeSave",
+        "Event.BeginPlay",
+        "Event.EndPlay",
+        "Event.FixedTick",
+        "Event.Frame",
+        "Event.Message",
+        "Event.TriggerEnter",
+        "Event.TriggerExit",
+        "Event.UICommand",
+        "Flow.Branch",
+        "Flow.DoOnce",
+        "Flow.FlipFlop",
+        "Flow.ForLoop",
+        "Flow.Gate",
+        "Flow.Sequence",
+        "Input.ActionDown",
+        "Input.ActionValue",
+        "Input.Axis",
+        "Logic.And",
+        "Logic.Not",
+        "Logic.Or",
+        "Math.Abs",
+        "Math.Add",
+        "Math.AddInt",
+        "Math.Clamp",
+        "Math.Cos",
+        "Math.Divide",
+        "Math.DivideInt",
+        "Math.EqualInt",
+        "Math.Greater",
+        "Math.Lerp",
+        "Math.Less",
+        "Math.Max",
+        "Math.Min",
+        "Math.Modulo",
+        "Math.Multiply",
+        "Math.MultiplyInt",
+        "Math.NearlyEqual",
+        "Math.RandomFloat",
+        "Math.RandomInt",
+        "Math.Sin",
+        "Math.Subtract",
+        "Math.SubtractInt",
+        "Network.Disconnected",
+        "Network.IsAuthority",
+        "Network.IsLocalOwner",
+        "Network.LocalPlayer",
+        "Network.PeerJoined",
+        "Network.PeerLeft",
+        "Network.Ready",
+        "Network.State",
+        "Physics.Raycast",
+        "Rotation.AroundY",
+        "Rotation.Combine",
+        "Rotation.FromEuler",
+        "Rotation.RotateVector",
+        "Rotation.ToEuler",
+        "Text.Append",
+        "Text.Equal",
+        "Text.FromBool",
+        "Text.FromFloat",
+        "Text.FromInt",
+        "Text.FromVector",
+        "UI.Hide",
+        "UI.SetBool",
+        "UI.SetElementText",
+        "UI.SetNumber",
+        "UI.SetText",
+        "UI.Show",
+        "Vector.Add",
+        "Vector.Break",
+        "Vector.Cross",
+        "Vector.Distance",
+        "Vector.Dot",
+        "Vector.Length",
+        "Vector.Lerp",
+        "Vector.Make",
+        "Vector.Normalize",
+        "Vector.Scale",
+        "Vector.Subtract",
+    };
     for (NodeDesc& node : list) {
         if (node.id.rfind("Transform.", 0) == 0) {
             node.component = componentId<Transform>();
             node.readsComponent = node.writesComponent = true;
         }
+        if (kPresentationSafe.count(node.id) || node.id.rfind("Data.Reroute.", 0) == 0)
+            node.capability = NodeCapability::Presentation;
         const std::string id = node.id;
         nodes[id] = std::make_shared<const NodeDesc>(std::move(node));
     }
@@ -836,6 +993,7 @@ void addReflected(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes,
         node.component = id;
         node.readsComponent = reads;
         node.writesComponent = writes;
+        node.capability = writes ? NodeCapability::Authority : NodeCapability::Presentation;
         const std::string key = node.id;
         nodes[key] = std::make_shared<const NodeDesc>(std::move(node));
     };
@@ -948,6 +1106,7 @@ struct Registry {
     uint64_t version = 1;
     uint64_t signature = 0;
     std::map<std::string, std::shared_ptr<const NodeDesc>> reflected;
+    std::map<std::string, std::shared_ptr<const NodeDesc>> network;   // registerNetworkNodes
 
     Registry() { addBuiltins(builtin); }
 
@@ -1002,6 +1161,7 @@ std::shared_ptr<const NodeDesc> findNode(std::string_view id) {
     const std::string key(id);
     if (const auto found = r.registered.find(key); found != r.registered.end()) return found->second.node;
     if (const auto found = r.builtin.find(key); found != r.builtin.end()) return found->second;
+    if (const auto found = r.network.find(key); found != r.network.end()) return found->second;
     if (key.rfind("Component.", 0) == 0) {
         r.refreshReflected();
         if (const auto found = r.reflected.find(key); found != r.reflected.end()) return found->second;
@@ -1015,6 +1175,7 @@ std::vector<std::shared_ptr<const NodeDesc>> allNodes() {
     r.refreshReflected();
     std::map<std::string, std::shared_ptr<const NodeDesc>> all = r.reflected;
     for (const auto& [id, node] : r.builtin) all[id] = node;
+    for (const auto& [id, node] : r.network) all[id] = node;
     for (const auto& [id, entry] : r.registered) all[id] = entry.node;
     std::vector<std::shared_ptr<const NodeDesc>> result;
     result.reserve(all.size());
@@ -1037,7 +1198,12 @@ void writeNodeSchema(std::ostream& out) {
         << "Required pins must be connected or given a value; constant pins must be a literal.\n\n"
         << "Besides these, every circuit variable has two nodes: `Get.<variable>` (output `value`) and "
         << "`Set.<variable>` (exec, input `value`, output `value`). The `Component.*` nodes are made from "
-        << "the components registered when this was written, the game's own included.\n";
+        << "the components registered when this was written, the game's own included.\n\n"
+        << "\"Changes\" says what a node may do. Presentation nodes are safe in every circuit; authority "
+        << "nodes change gameplay and only run where the circuit has authority (the host, or offline); "
+        << "network requests ask the host, which still decides. A circuit whose `Circuit` component runs "
+        << "it as LocalOwner may use presentation nodes and network requests, one run as Presentation "
+        << "only presentation nodes.\n";
     std::string category;
     for (const auto& node : nodes) {
         if (node->category != category) {
@@ -1058,6 +1224,7 @@ void writeNodeSchema(std::ostream& out) {
                     : eventAllowed(node->event, CircuitKind::Entity) ? "entity circuits"
                                                                      : "the game circuit")
                 << ")\n";
+        out << "- Changes: " << nodeCapabilityName(node->capability) << "\n";
         list("Exec in", node->execInputs);
         list("Exec out", node->execOutputs);
         for (const PinDesc& p : node->inputs) {
@@ -1075,6 +1242,87 @@ void writeNodeSchema(std::ostream& out) {
         }
         for (const PinDesc& p : node->outputs) out << "- Out `" << p.name << "` " << pinTypeName(p.type) << "\n";
     }
+}
+
+// ---- Nodes made from the replication registry ----------------------------------------------
+
+namespace {
+
+// A payload field as a pin: integers as Int (an entity reference as Entity), floats,
+// vectors and rotations as themselves.
+PinType pinForNetField(const net::NetFieldDesc& field) {
+    switch (field.type) {
+    case net::NetFieldType::Bool: return PinType::Bool;
+    case net::NetFieldType::F32: return PinType::Float;
+    case net::NetFieldType::Vec3: return PinType::Vec3;
+    case net::NetFieldType::Quat: return PinType::Rotation;
+    default: return field.role == net::NetFieldRole::EntityRef ? PinType::Entity : PinType::Int;
+    }
+}
+
+}   // namespace
+
+void registerNetworkNodes(const net::ReplicationRegistry& catalog) {
+    std::map<std::string, std::shared_ptr<const NodeDesc>> made;
+    for (const net::CommandDesc& command : catalog.commands()) {
+        std::vector<PinDesc> inputs{pin("target", PinType::Entity)};
+        for (const net::NetFieldDesc& field : command.payload) inputs.push_back(pin(field.name, pinForNetField(field)));
+        NodeDesc node = action(
+            "Network.Command." + command.name,
+            "Asks the host to " + command.name + (command.when.empty() ? "" : " (accepted " + command.when + ")") +
+                ". accepted means sent (or queued on the host), not done: the host's rules decide.",
+            std::move(inputs), {pin("accepted", PinType::Bool)},
+            [id = command.id, fields = command.payload](CircuitCall& c) {
+                net::NetworkWorld* network = c.host.network;
+                if (!network) {
+                    c.out(0) = Value::boolean(false);
+                    return 0;
+                }
+                net::ProfileValue value;
+                for (size_t i = 0; i < fields.size() && i < value.fields.size(); ++i) {
+                    const Value& in = c.in(i + 1);
+                    net::NetFieldValue& v = value.fields[i];
+                    switch (fields[i].type) {
+                    case net::NetFieldType::Bool: v.u = in.asBool() ? 1 : 0; break;
+                    case net::NetFieldType::F32: v.f[0] = in.v.x; break;
+                    case net::NetFieldType::Vec3:
+                    case net::NetFieldType::Quat: v.f = {in.v.x, in.v.y, in.v.z, in.v.w}; break;
+                    case net::NetFieldType::I8:
+                    case net::NetFieldType::I16:
+                    case net::NetFieldType::I32: v.u = uint64_t(int64_t(in.i)); break;
+                    default:
+                        v.u = fields[i].role == net::NetFieldRole::EntityRef ? network->networkId(c.entity(i + 1))
+                                                                             : uint64_t(std::max(0, in.i));
+                    }
+                }
+                const Entity target = c.entity(0);
+                c.out(0) = Value::boolean(bool(network->submitCommand(id, network->networkId(target), value, target)));
+                return 0;
+            });
+        node.category = "Network";
+        node.capability = NodeCapability::NetworkRequest;
+        std::string id = node.id;   // before the move: the right side is evaluated first
+        made[id] = std::make_shared<const NodeDesc>(std::move(node));
+    }
+    for (const net::EventDesc& desc : catalog.events()) {
+        std::vector<PinDesc> outputs{pin("subject", PinType::Entity), pin("tick", PinType::Int)};
+        for (const net::NetFieldDesc& field : desc.payload) outputs.push_back(pin(field.name, pinForNetField(field)));
+        NodeDesc node = event(
+            "Network.Event." + desc.name, CircuitEvent::GameEvent,
+            "The host's " + desc.name + " event: once on every machine, the host's included.", std::move(outputs));
+        node.category = "Network";
+        node.capability = NodeCapability::Presentation;
+        node.eventParam = desc.name;
+        std::string id = node.id;   // before the move: the right side is evaluated first
+        made[id] = std::make_shared<const NodeDesc>(std::move(node));
+    }
+    {
+        Registry& r = registry();
+        std::lock_guard lock(r.mutex);
+        r.network.swap(made);
+        ++r.version;
+    }
+    circuitLibrary().clear();   // compiled circuits may hold the old nodes
 }
 
 }   // namespace shockwave

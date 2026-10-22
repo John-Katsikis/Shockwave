@@ -5,6 +5,9 @@
 // steam_app_id, like `player --steam-status`); nothing else here opens a socket.
 #include "Editor.h"
 
+#include <Circuits/Circuit.h>
+#include <Circuits/CircuitProgram.h>
+#include <Engine/Components.h>
 #include <Engine/Prefab.h>
 #include <GameFramework/GameNetwork.h>
 #include <Multiplayer/NetworkSchema.h>
@@ -64,6 +67,17 @@ void Editor::checkNetworkSetup() {
         }
     const std::string scene = m_scenePath.empty() ? std::string("the open scene") : m_project.relative(m_scenePath);
     net::validatePredictionWorld(m_world, scene, predictedSpawns, problems);
+    // Each circuit only with the nodes its execution allows (docs/Circuits.md "Network play").
+    m_world.each<const shockwave::Circuit>([&](shockwave::Entity e, const shockwave::Circuit& circuit) {
+        if (circuit.circuit.empty()) return;
+        const auto program = shockwave::circuitLibrary().load(circuit.circuit, shockwave::CircuitKind::Entity);
+        if (!program) return;
+        const auto* name = m_world.get<shockwave::Name>(e);
+        for (const shockwave::CircuitProblem& problem : shockwave::circuitScopeProblems(*program, circuit.execution))
+            problems.push_back(
+                {false, scene + ": entity '" + (name ? name->value : "?") + "': " + circuit.circuit + ":" +
+                            std::to_string(problem.line) + ": " + problem.message});
+    });
     if (network.manifest) {
         net::ContentDigest content;
         if (net::computeContentDigest(m_project, *network.manifest, network.manifestShown, content, problems))

@@ -180,6 +180,7 @@ if(TARGET game_sample)
 add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
     -DPLAYER=$<TARGET_FILE:player>
     -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+    -DNODES=${CMAKE_SOURCE_DIR}/docs/CircuitNodes.md
     -P ${CMAKE_CURRENT_SOURCE_DIR}/CircuitCheck.cmake)
 set_tests_properties(circuits_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60
                      LABELS gpu)
@@ -248,6 +249,13 @@ target_link_libraries(network_prediction_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(network_prediction_test)
 add_test(NAME network_prediction COMMAND network_prediction_test)
 set_tests_properties(network_prediction PROPERTIES TIMEOUT 300)
+
+# Batch 8: lag-compensated shots, game events, presentation dedup and network circuits.
+add_executable(network_combat_test NetworkCombatTest.cpp)
+target_link_libraries(network_combat_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(network_combat_test)
+add_test(NAME network_combat COMMAND network_combat_test)
+set_tests_properties(network_combat PROPERTIES TIMEOUT 300)
 
 # Delta snapshots, interpolation, rewind history.
 add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)

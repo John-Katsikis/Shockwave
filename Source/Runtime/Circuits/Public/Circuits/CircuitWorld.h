@@ -12,6 +12,12 @@
 //   TriggerEnter / TriggerExit       entity circuits: a sensor collider touched (outputs other)
 //   BeforeSave / AfterLoad           the game circuit: around save games
 //   UICommand    the game circuit: a UI element's onclick="command" (outputs value, element, document)
+//   Network.*    session events and the host's game events, at the start of a fixed tick
+//
+// In network play each entity circuit runs only where its Circuit component's execution
+// says (Authority: the host; LocalOwner: the owner's machine; Presentation: everywhere),
+// and the game circuit only on the host. A circuit that uses nodes its execution doesn't
+// allow isn't run at all, and says why (circuitScopeProblems).
 //
 // Entity circuits keep their variables in the entity's CircuitVars, so they show in the
 // Inspector and go into save games. The game circuit's go into the save game's values as
@@ -104,6 +110,7 @@ private:
         std::vector<uint32_t> resumeStack;
         bool resumed = false, suspended = false;
         uint64_t budget = kInstructionBudget;
+        CircuitExecution execution = CircuitExecution::Authority;
     };
     static uint64_t key(Entity e) { return (uint64_t(e.generation) << 32) | e.index; }
 
@@ -127,6 +134,13 @@ private:
         CircuitEvent event, std::string_view param = {},
         const std::function<void(const CircuitProgram::CallSite&, std::vector<Value>&)>& data = {});
     void run(Instance& instance, Entity self, uint32_t pc);
+    // Whether the instance runs on this machine now, by its execution and the session's role.
+    bool runsHere(const Instance& instance, Entity self) const;
+    // A program checked against the execution it would run with; false (reported) if it can't.
+    bool allowed(const CircuitProgram& program, CircuitExecution execution, Entity entity);
+    // Session and game events since the last tick, to the Network.* event nodes.
+    void dispatchNetwork();
+    uint64_t m_eventCursor = 0, m_gameEventCursor = 0;
     void report(const std::string& problem);
     void drainMessages();
     struct Message {

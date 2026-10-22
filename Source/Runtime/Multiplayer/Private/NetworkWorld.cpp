@@ -319,7 +319,8 @@ void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
         if (kind == MessageKind::Inputs) return inputsMessage(p, std::get<Inputs>(decoded.body));
         if (kind == MessageKind::Command) return commandMessage(p, std::get<Command>(decoded.body));
         if (kind == MessageKind::Ping) return pingMessage(p, std::get<Ping>(decoded.body));
-        ++stats.ignored;   // a Pong: the host doesn't ping yet
+        if (kind == MessageKind::Pong) return hostPong(p, std::get<Pong>(decoded.body));
+        ++stats.ignored;
         return;
     }
 }
@@ -419,7 +420,9 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
             return;
         }
         if (kind == MessageKind::Pong) return pongMessage(std::get<Pong>(decoded.body));
-        if (!replicationMessage(decoded)) ++stats.ignored;   // game events and pings: later batches
+        if (kind == MessageKind::Ping) return clientPing(h, std::get<Ping>(decoded.body));
+        if (kind == MessageKind::GameEvent) return gameEventMessage(std::get<GameEvent>(decoded.body));
+        if (!replicationMessage(decoded)) ++stats.ignored;
         return;
     }
 }
@@ -523,20 +526,21 @@ void NetworkWorld::setState(NetworkState state) {
 
 void NetworkWorld::push(const NetworkEvent& event) {
     if (m_closed) return;
-    if (m_eventCount == kMaxEvents) {
-        m_eventHead = (m_eventHead + 1) % kMaxEvents;
-        --m_eventCount;
+    m_events[m_eventSequence % kMaxEvents] = event;
+    ++m_eventSequence;
+    if (m_eventSequence - m_pollCursor > kMaxEvents) {
+        m_pollCursor = m_eventSequence - kMaxEvents;
         ++m_impl->stats.eventsDropped;
     }
-    m_events[(m_eventHead + m_eventCount) % kMaxEvents] = event;
-    ++m_eventCount;
 }
 
-bool NetworkWorld::pollEvent(NetworkEvent& out) {
-    if (m_eventCount == 0) return false;
-    out = m_events[m_eventHead];
-    m_eventHead = (m_eventHead + 1) % kMaxEvents;
-    --m_eventCount;
+bool NetworkWorld::pollEvent(NetworkEvent& out) { return readEvent(m_pollCursor, out); }
+
+bool NetworkWorld::readEvent(uint64_t& cursor, NetworkEvent& out) const {
+    if (cursor >= m_eventSequence) return false;
+    if (m_eventSequence - cursor > kMaxEvents) cursor = m_eventSequence - kMaxEvents;
+    out = m_events[cursor % kMaxEvents];
+    ++cursor;
     return true;
 }
 
@@ -609,6 +613,7 @@ void NetworkWorld::pump(double nowSeconds) {
     if (m_transport) impl.checkTimeouts();
     if (!m_transport) return;
     if (impl.host()) {
+        impl.sendHostPings();
         impl.flushAll();
     } else {
         impl.expireHeld();
@@ -628,6 +633,7 @@ void NetworkWorld::endTick(uint32_t tick) {
     impl.tick = tick;
     if (m_closed || !m_transport || !impl.host()) return;
     impl.sweepDestroyed();
+    impl.recordCombat();   // where everyone is after this tick, for lag compensation
     impl.sendSnapshots();
     impl.flushAll();
     if (impl.failPending) impl.finishFail();
@@ -738,7 +744,7 @@ void NetworkWorld::close(ReasonCode reason) {
         m_state = failed ? NetworkState::Failed : NetworkState::Offline;
     }
     m_closed = true;
-    m_eventHead = m_eventCount = 0;
+    m_pollCursor = m_eventSequence;
 }
 
 }   // namespace shockwave::net

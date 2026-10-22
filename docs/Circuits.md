@@ -152,7 +152,8 @@ variables, written as `name=value; name=value`. While the game plays, circuits w
 variables they change back into it. That's how they show in the Inspector and get into
 save games.
 
-Turn `enabled` off on the `Circuit` to stop it.
+Turn `enabled` off on the `Circuit` to stop it. Its `execution` says where it runs in
+network play (Authority, LocalOwner or Presentation); see [Network play](#network-play).
 
 ## The game circuit
 
@@ -256,6 +257,11 @@ exec input can be reached from many outputs.
 | `Event.AfterLoad` | A save game was loaded. | | game |
 | `Event.UICommand` | A UI element's `onclick="command"` ran. Its `command` input names it. | `value`, `element`, `document` | game |
 
+Network play adds `Network.PeerJoined` and `Network.PeerLeft` (the host: outputs `slot`),
+`Network.Ready` (this machine is in play), `Network.Disconnected` (output `reason`), and a
+`Network.Event.<name>` for each game event the game registers, with its payload as outputs
+(see [Network play](#network-play)). They run at the start of a fixed tick.
+
 An `action` or `command` input must be a literal: `in action = "jump"`.
 
 ## Nodes
@@ -306,6 +312,11 @@ This makes `Combat.ApplyDamage`, with exec pins and inputs `target` and `amount`
 
 Nodes register when the game module loads and go away with it. Reloading game code
 compiles running circuits again.
+
+These nodes change the game, so in network play only Authority circuits may use them.
+A node that only shows things (effects, sound, UI) or reads them is
+`SW_PRESENTATION_NODE` or `SW_PRESENTATION_PURE_NODE` instead, with the same arguments;
+then any circuit may use it.
 
 ## Check circuits
 
@@ -420,3 +431,47 @@ parameter lists, return values, latent completion, or graph-local function calls
 
 The Spinner sample uses FixedTick → RotateByRate directly. Speed and dt are inputs;
 the quaternion composition stays inside the action rather than filling the graph.
+
+## Network play
+
+Offline, every circuit runs. In network play each entity circuit runs only where its
+`Circuit` component's `execution` says, and the game circuit only on the host:
+
+| `execution` | Runs on | May use |
+|---|---|---|
+| `Authority` (the default) | the host | every node |
+| `LocalOwner` | the machine whose player owns the entity | presentation nodes and network requests |
+| `Presentation` | every machine | presentation nodes |
+
+```text
+  Circuit
+    circuit "Circuits/Muzzle.swcircuit"
+    execution Presentation
+```
+
+Every node has one of three capabilities, listed for each node in
+[CircuitNodes.md](CircuitNodes.md) under "Changes":
+
+- **Presentation**: shows or reads things: sound, UI, debug, math, flow, variables, a
+  component's `Get`, ray casts, the events. The built-in ones are an explicit list, not
+  guessed from names.
+- **Authority**: changes the game: a component's `Set`, `Add` and `Remove`, `Transform.*`,
+  physics forces, spawning, and C++ nodes made with `SW_NODE`.
+- **Network request**: `Network.Command.<name>`, one for each command the game registers,
+  with the command's payload as inputs and a `target` entity. It asks the host, whose
+  rules still decide; `accepted` means sent, not done.
+
+A circuit that uses a node its execution doesn't allow doesn't run at all, and says so:
+`player --check` and the editor's Check network setup (Project settings > Multiplayer)
+report it as `file:line`, and Play logs it. A client therefore can't change health or
+move things through a circuit; only the host's own circuits can, and a client's requests
+go through the host's command checks.
+
+`Network.IsAuthority`, `Network.IsLocalOwner` (of `self`), `Network.LocalPlayer` and
+`Network.State` say where a circuit is running. A `Network.Event.<name>` handler runs
+once on every machine for each event the host sends, the host's included; a copy that
+arrives twice runs it once, and a player who joins later doesn't hear old events. Game
+code reads the same events with `NetworkWorld::readGameEvent` ([Networking.md](Networking.md)).
+
+`CircuitWorld::send` and `Circuit.Send` stay on one machine: they're never sent over the
+network. Breakpoints and single steps are off in network play.
