@@ -583,6 +583,8 @@ Results in the headless Linux container (GCC 13):
 | Configuration | Result |
 |---|---|
 | Debug, modular | builds everything, no warnings; CTest 45/47 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*`, Arena and circuits set (20 tests) pass, no sanitizer reports |
+| Steamworks on (SDK 1.65) | builds; the same 20 tests pass |
 | `player --check` | Arena 0 problems in 3 scenes, Sample 0 problems in 18 scenes |
 
 `network_combat` measured the host's round trip to client A as 33 ms (3 ticks) on a hub
