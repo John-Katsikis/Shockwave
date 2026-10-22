@@ -327,6 +327,7 @@ struct PhysicsWorld::Impl {
         int mask;
         std::optional<uint64_t> source;
         bool staticOnly = false;   // a predicted character's movement (plan 9.2)
+        std::span<const Entity> ignoreList;
         QueryFilter(const Impl& p, Entity e, bool s, int m, std::optional<uint64_t> from = {})
             : owner(p), ignore(key(e)), sensors(s), mask(m), source(from) {}
         bool ShouldCollideLocked(const JPH::Body& body) const override {
@@ -335,6 +336,8 @@ struct PhysicsWorld::Impl {
             if (k == ignore || it == owner.entries.end() || !owner.world.alive(it->second.entity) ||
                 (!sensors && body.IsSensor()) || (staticOnly && !body.IsStatic()))
                 return false;
+            for (const Entity e : ignoreList)
+                if (key(e) == k) return false;
             if (!(mask & (1 << owner.category(it->second).first))) return false;
             return !source || owner.allowed(*source, k);
         }
@@ -784,10 +787,17 @@ bool PhysicsWorld::setVelocity(Entity id, const glm::vec3& linear, const glm::ve
 }
 std::optional<RayHit> PhysicsWorld::raycast(
     const glm::vec3& origin, const glm::vec3& direction, float distance, Entity ignore, bool sensors, int mask) const {
+    return raycast(
+        origin, direction, distance, std::span<const Entity>(&ignore, ignore.valid() ? 1 : 0), sensors, mask);
+}
+std::optional<RayHit> PhysicsWorld::raycast(
+    const glm::vec3& origin, const glm::vec3& direction, float distance, std::span<const Entity> ignore, bool sensors,
+    int mask) const {
     if (!finite(origin) || !finite(direction) || glm::length(direction) < 1e-8f || !std::isfinite(distance) ||
         distance <= 0 || mask < 0 || mask > 65535)
         return {};
-    Impl::QueryFilter filter(*m_impl, ignore, sensors, mask);
+    Impl::QueryFilter filter(*m_impl, kNullEntity, sensors, mask);
+    filter.ignoreList = ignore;
     JPH::RayCastResult result;
     JPH::RRayCast ray(vec(origin), vec(glm::normalize(direction) * distance));
     if (!m_impl->system.GetNarrowPhaseQuery().CastRay(ray, result, {}, {}, filter)) return {};

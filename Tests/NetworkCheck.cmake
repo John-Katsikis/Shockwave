@@ -50,6 +50,16 @@ if(NOT result EQUAL 0 OR NOT generated STREQUAL checkedIn)
                         "--network-schema docs/NetworkSchema.md\n${err}")
 endif()
 
+# And Arena's node reference, with its Network.Command.* and Network.Event.* nodes.
+execute_process(COMMAND "${PLAYER}" --project "${project}" --renderer null --node-schema -
+                RESULT_VARIABLE result OUTPUT_VARIABLE generated ERROR_VARIABLE err)
+file(READ "${PROJECT_DIR}/Docs/CircuitNodes.md" checkedIn)
+string(REPLACE "\r\n" "\n" checkedIn "${checkedIn}")
+if(NOT result EQUAL 0 OR NOT generated STREQUAL checkedIn OR NOT generated MATCHES "Network.Event.arena.shot_resolved")
+    message(FATAL_ERROR "Games/Arena/Docs/CircuitNodes.md is out of date; run: player --project "
+                        "Games/Arena/Arena.swproject --node-schema Games/Arena/Docs/CircuitNodes.md\n${err}")
+endif()
+
 # Overrides: tick_rate 60..120 and max_players 2..64; ranges are errors, never clamped.
 bad_settings("max_players 12" "max_players 65" "Network.swnetwork:[0-9]+: max_players must be a whole number from 2 to 64")
 bad_settings("max_players 12" "max_players 1" "max_players must be a whole number from 2 to 64")
@@ -118,6 +128,42 @@ end
 run(1 "arena.swscene: entity 'Blue 1': a moving kinematic body can't share a scene with predicted characters in v1: they collide with static bodies only"
     --check)
 file(WRITE "${scene}" "${goodScene}")
+
+# Circuits in network play: each runs with only the nodes its execution allows. A
+# Presentation circuit can't move things or ask the host; a LocalOwner one may ask.
+file(WRITE "${TEMP}/Arena/Content/Circuits/net-move.swcircuit" "shockwave_circuit 1
+node start Event.BeginPlay
+node move Component.Transform.Set.position
+  exec start.then
+  in position = 0 1 0
+")
+file(WRITE "${TEMP}/Arena/Content/Circuits/net-ready.swcircuit" "shockwave_circuit 1
+node start Event.BeginPlay
+node ready Network.Command.arena.ready_to_play
+  exec start.then
+  in ready = 1
+")
+function(circuit_scene file execution)
+    file(WRITE "${scene}" "${goodScene}
+entity \"Net circuit\"
+  Transform
+  Circuit
+    circuit \"Circuits/${file}\"
+    execution ${execution}
+end
+")
+endfunction()
+circuit_scene(net-move.swcircuit Presentation)
+run(1 "entity 'Net circuit': Circuit: Circuits/net-move.swcircuit:3: node move \\(Component.Transform.Set.position\\) changes gameplay, which a Presentation circuit can't do"
+    --check)
+circuit_scene(net-ready.swcircuit Presentation)
+run(1 "net-ready.swcircuit:3: node ready \\(Network.Command.arena.ready_to_play\\) sends a request to the host" --check)
+circuit_scene(net-ready.swcircuit LocalOwner)
+run(0 "0 problems" --check)
+circuit_scene(net-move.swcircuit Authority)
+run(0 "0 problems" --check)
+file(WRITE "${scene}" "${goodScene}")
+file(REMOVE "${TEMP}/Arena/Content/Circuits/net-move.swcircuit" "${TEMP}/Arena/Content/Circuits/net-ready.swcircuit")
 
 # --steam-status needs an AppID, and a build with the SDK; it fails visibly otherwise.
 run(1 "steam_app_id is 0 in Config/Network.swnetwork" --steam-status)

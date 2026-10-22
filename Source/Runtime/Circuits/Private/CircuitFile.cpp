@@ -249,9 +249,21 @@ std::string formatValue(const Value& value) {
 
 // ---- Components ----------------------------------------------------------------------------
 
+const char* circuitExecutionName(CircuitExecution execution) {
+    switch (execution) {
+    case CircuitExecution::Authority: return "Authority";
+    case CircuitExecution::LocalOwner: return "LocalOwner";
+    case CircuitExecution::Presentation: return "Presentation";
+    }
+    return "?";
+}
+
 void registerCircuitComponents() {
     registerComponent<Circuit>(
-        "Circuit", {field("circuit", &Circuit::circuit), field("enabled", &Circuit::enabled)}, "Gameplay");
+        "Circuit",
+        {field("circuit", &Circuit::circuit), field("enabled", &Circuit::enabled),
+         enumField("execution", &Circuit::execution, {"Authority", "LocalOwner", "Presentation"})},
+        "Gameplay");
     registerComponent<CircuitVars>("CircuitVars", {field("values", &CircuitVars::values)}, "Gameplay");
 }
 

@@ -4,6 +4,7 @@
 #include <Engine/Components.h>
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
+#include <Multiplayer/NetworkWorld.h>
 #include <Physics/Physics.h>
 
 #include <algorithm>
@@ -118,21 +119,29 @@ void CircuitWorld::refresh() {
         m_game.generation = generation;
     }
 
-    std::vector<std::pair<Entity, std::string>> found;
+    struct Found {
+        Entity entity;
+        std::string path;
+        CircuitExecution execution;
+    };
+    std::vector<Found> found;
     m_world.each<const Circuit>([&](Entity e, const Circuit& circuit) {
-        if (circuit.enabled && !circuit.circuit.empty()) found.emplace_back(e, circuit.circuit);
+        if (circuit.enabled && !circuit.circuit.empty()) found.push_back({e, circuit.circuit, circuit.execution});
     });
-    std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first.index < b.first.index; });
+    std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.entity.index < b.entity.index; });
     std::unordered_map<uint64_t, Instance> next;
     m_order.clear();
-    for (auto& [entity, path] : found) {
+    for (auto& [entity, path, execution] : found) {
         const uint64_t k = key(entity);
         auto existing = m_instances.find(k);
-        if (existing != m_instances.end() && existing->second.path == path) {
+        if (existing != m_instances.end() && existing->second.path == path && existing->second.execution == execution) {
             Instance& instance = existing->second;
             if (instance.generation != generation) {
                 auto program = library.load(path, CircuitKind::Entity);
-                if (program && program != instance.program) migrate(instance, std::move(program));
+                if (program && program != instance.program) {
+                    if (!allowed(*program, execution, entity)) continue;   // an edit added a node it can't use
+                    migrate(instance, std::move(program));
+                }
                 instance.generation = generation;
             }
             next.emplace(k, std::move(instance));
@@ -143,16 +152,93 @@ void CircuitWorld::refresh() {
         std::vector<std::string> problems;
         auto program = library.load(path, CircuitKind::Entity, &problems);
         for (const std::string& problem : problems) report(problem + " (entity '" + entityName(entity) + "')");
-        if (!program) continue;
+        if (!program || !allowed(*program, execution, entity)) continue;
         Instance instance;
         instance.path = path;
         instance.generation = generation;
+        instance.execution = execution;
         start(instance, std::move(program));
         applyVars(instance, entity);
         next.emplace(k, std::move(instance));
         m_order.push_back(entity);
     }
     m_instances = std::move(next);   // entities that lost their Circuit, or were destroyed, drop out
+}
+
+bool CircuitWorld::allowed(const CircuitProgram& program, CircuitExecution execution, Entity entity) {
+    const auto problems = circuitScopeProblems(program, execution);
+    for (const CircuitProblem& problem : problems)
+        report(
+            program.path + ":" + std::to_string(problem.line) + ": " + problem.message + " (entity '" +
+            entityName(entity) + "'; it doesn't run)");
+    return problems.empty();
+}
+
+bool CircuitWorld::runsHere(const Instance& instance, Entity self) const {
+    const net::NetworkWorld* network = m_host.network;
+    if (!network || !network->online()) return true;   // offline, every circuit runs
+    switch (instance.execution) {
+    case CircuitExecution::Authority: return network->authority();
+    case CircuitExecution::LocalOwner: return network->isLocallyControlled(self);
+    case CircuitExecution::Presentation: return true;
+    }
+    return false;
+}
+
+void CircuitWorld::dispatchNetwork() {
+    net::NetworkWorld* network = m_host.network;
+    if (!network) return;
+    net::NetworkEvent event;
+    while (network->readEvent(m_eventCursor, event)) {
+        auto slot = [&event](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
+            if (!site.outputs.empty()) regs[site.outputs[0]] = Value::integer(event.slot);
+        };
+        if (event.kind == net::NetworkEventKind::PlayerJoined) dispatchAll(CircuitEvent::PeerJoined, {}, slot);
+        if (event.kind == net::NetworkEventKind::PlayerLeft) dispatchAll(CircuitEvent::PeerLeft, {}, slot);
+        if (event.kind == net::NetworkEventKind::StateChanged && event.state == net::NetworkState::Active)
+            dispatchAll(CircuitEvent::NetworkReady);
+        if (event.kind == net::NetworkEventKind::StateChanged && event.state == net::NetworkState::Failed) {
+            const std::string reason = net::reasonName(event.reason) ? net::reasonName(event.reason) : "Error";
+            dispatchAll(
+                CircuitEvent::Disconnected, {},
+                [&reason](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
+                    if (!site.outputs.empty()) regs[site.outputs[0]] = Value::string(reason);
+                });
+        }
+        if (m_debugPaused) return;
+    }
+    net::ReceivedGameEvent received;
+    while (network->readGameEvent(m_gameEventCursor, received)) {
+        if (!received.event) continue;   // offline without a registry: nothing to name it by
+        const net::EventDesc& desc = *received.event;
+        dispatchAll(
+            CircuitEvent::GameEvent, desc.name, [&](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
+                if (site.outputs.size() < 2 + desc.payload.size()) return;
+                regs[site.outputs[0]] = Value::entityValue(received.subjectEntity);
+                regs[site.outputs[1]] = Value::integer(int32_t(received.tick));
+                for (size_t i = 0; i < desc.payload.size(); ++i) {
+                    const net::NetFieldDesc& field = desc.payload[i];
+                    const net::NetFieldValue& v = received.payload.fields[i];
+                    Value& out = regs[site.outputs[2 + i]];
+                    switch (field.type) {
+                    case net::NetFieldType::Bool: out = Value::boolean(v.u != 0); break;
+                    case net::NetFieldType::F32: out = Value::number(v.f[0]); break;
+                    case net::NetFieldType::Vec3: out = Value::vec3({v.f[0], v.f[1], v.f[2]}); break;
+                    case net::NetFieldType::Quat:
+                        out = Value::rotation(glm::quat(v.f[3], v.f[0], v.f[1], v.f[2]));
+                        break;
+                    case net::NetFieldType::I8:
+                    case net::NetFieldType::I16:
+                    case net::NetFieldType::I32: out = Value::integer(int32_t(int64_t(v.u))); break;
+                    default:
+                        out = field.role == net::NetFieldRole::EntityRef
+                                  ? Value::entityValue(v.u ? network->entity(v.u) : kNullEntity)
+                                  : Value::integer(int32_t(std::min<uint64_t>(v.u, 2147483647u)));
+                    }
+                }
+            });
+        if (m_debugPaused) return;
+    }
 }
 
 void CircuitWorld::beginNew() {
@@ -190,7 +276,7 @@ void CircuitWorld::beginNew() {
 void CircuitWorld::dispatch(
     Instance& instance, Entity self, CircuitEvent event, std::string_view param,
     const std::function<void(const CircuitProgram::CallSite&, std::vector<Value>&)>& data) {
-    if (m_debugPaused) return;
+    if (m_debugPaused || !runsHere(instance, self)) return;
     const auto program = instance.program;   // kept alive while it runs
     if (!program) return;
     for (const auto& entry : program->events) {
@@ -408,6 +494,10 @@ void CircuitWorld::drainMessages() {
 
 void CircuitWorld::beginPlay() {
     m_playing = true;
+    if (m_host.network) {   // only what happens from now on
+        m_eventCursor = m_host.network->eventCursor();
+        m_gameEventCursor = m_host.network->gameEventCursor();
+    }
     circuitLibrary().poll(0.0, 0.0);   // circuits saved since the last Play
     refresh();
     beginNew();
@@ -431,6 +521,8 @@ void CircuitWorld::fixedTick(double dt) {
     refresh();
     beginNew();
     drainMessages();
+    if (m_debugPaused) return;
+    dispatchNetwork();
     if (m_debugPaused) return;
     const float seconds = static_cast<float>(dt);
     dispatchAll(CircuitEvent::FixedTick, {}, [seconds](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {

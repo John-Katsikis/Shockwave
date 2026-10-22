@@ -13,7 +13,8 @@ namespace shockwave {
 
 // Fills `registry` with the engine's profiles, then the game module's
 // (registerNetworkTypes, when it has any), and freezes it. False with every problem
-// listed when registration or freezing fails; nothing networked may start then.
+// listed when registration or freezing fails; nothing networked may start then. A frozen
+// registry also makes the circuit nodes for its commands and events (registerNetworkNodes).
 bool buildReplicationRegistry(
     const GameModule* module, net::ReplicationRegistry& registry, std::vector<std::string>& problems);
 

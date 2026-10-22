@@ -141,6 +141,7 @@ NetResult<void> NetworkWorld::Impl::beginReplication() {
 }
 
 void NetworkWorld::Impl::clearReplication() {
+    clearCombat();
     std::vector<NetObject>().swap(objects);
     std::unordered_map<uint64_t, uint32_t>().swap(byId);
     std::unordered_map<std::string, Entity>().swap(localKeys);

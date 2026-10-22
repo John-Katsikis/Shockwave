@@ -44,6 +44,14 @@
 // interpolated behind the host's clock. present() writes both as PresentationTransform,
 // which renderWorld draws in place of its own blend.
 //
+// Combat (docs/Networking.md, "Combat and events"): after every tick the host records
+// each player's capsule (RewindHistory.h), and resolveShot tests a shot against the
+// capsules as the shooter saw them, at the view time its input command carries, within
+// a window the host works out from that player's measured round trip. The live world
+// (walls, props, bots) is tested as it is now; nothing in it moves back. The host tells
+// clients what happened with registered game events, reliably and in order, once each;
+// a client that joins later gets the durable state from snapshots, never old events.
+//
 // Role (Offline, Authority, Client) is chosen before GameMode::beginPlay and never
 // changes until Stop. State moves on as the session does; a failure leaves it Failed
 // with a ReasonCode until Stop.
@@ -157,6 +165,59 @@ struct PredictedMove {
 };
 using PredictionMoveFn = std::function<PredictedMove(const World&, Entity, const InputCommand&)>;
 
+// What the game says about one player's character for lag compensation: the host asks
+// after every tick. False leaves the slot empty (no character, or not a target at all).
+struct CombatTarget {
+    uint8_t team = 0;
+    bool alive = true;
+    bool protectedFromHits = false;   // spawn protection: recorded, the game decides
+    float eyeHeight = 1.6f;   // above the feet: where this player's shots start
+};
+using CombatTargetFn = std::function<bool(const World&, Entity, CombatTarget&)>;
+
+// One shot for resolveShot. command is the input command the shot was fired with (its
+// view_tick and view_fraction say when the shooter's view showed the targets); null for
+// the host's own player and offline play, which see the present.
+struct ShotQuery {
+    Entity shooter = kNullEntity;
+    glm::vec3 origin{0.0f};   // the authority's eye or muzzle, never the client's
+    glm::vec3 direction{0.0f, 0.0f, -1.0f};   // unit length
+    float range = 100;
+    const InputCommand* command = nullptr;
+};
+
+enum class ShotRewind : uint8_t {
+    Present,   // tested against the present: offline, the host's own player, no history
+    Exact,   // at the view time the command claimed
+    Clamped,   // the view time was just outside what's plausible: moved to the edge
+    Refused,   // the view time can't be true (too old for the shooter's ping): no player hit
+};
+const char* shotRewindName(ShotRewind rewind);
+
+struct ShotResult {
+    Entity hit = kNullEntity;   // what the shot stopped at: a player, a world entity, or nothing
+    bool player = false;   // hit is a player, tested where they were at viewTick
+    glm::vec3 end{0.0f};   // where the shot stopped (origin + direction * range for a miss)
+    float distance = 0;
+    uint32_t hitIncarnation = 0;   // the player's life it hit
+    ShotRewind rewind = ShotRewind::Present;
+    uint32_t viewTick = 0;   // the time it was tested at: a tick and a fraction
+    float viewFraction = 0;
+};
+
+// A game event the host sent (or, on the host and offline, made): its registry entry,
+// the tick it happened at, its subject and checked payload. sequence numbers every event
+// of the session from 1, the same on every peer, so readers can tell what they've seen.
+struct ReceivedGameEvent {
+    const EventDesc* event = nullptr;   // null offline without a registry
+    uint16_t eventId = 0;
+    uint64_t sequence = 0;
+    uint32_t tick = 0;
+    uint64_t subject = 0;   // network ID, or 0 for a match event
+    Entity subjectEntity = kNullEntity;   // its entity here, when it still exists
+    ProfileValue payload;
+};
+
 // A command the host accepted: its registry entry, sender and checked payload.
 struct ReceivedCommand {
     const CommandDesc* command = nullptr;
@@ -200,7 +261,7 @@ struct NetworkWorldStats {
     uint64_t commandsSent = 0, commandsAccepted = 0;
     uint64_t commandsRefused = 0;   // permission, target, rate or a full queue
     uint64_t pingsSent = 0, pongsReceived = 0, pingsAnswered = 0;
-    double rttMs = 0;   // client: the best recent round trip, 0 until measured
+    double rttMs = 0;   // client: the best recent round trip, 0 until measured (host: its clients' worst)
     uint32_t inputLead = 0;   // client: how many ticks ahead of the host its inputs are
     // Prediction (client).
     uint64_t predictedTicks = 0;   // commands predicted when sent
@@ -210,6 +271,12 @@ struct NetworkWorldStats {
     uint64_t predictionResets = 0;   // snapped: no history for the tick, or too far to replay
     float lastCorrection = 0, maxCorrection = 0;   // metres
     uint32_t interpolatedObjects = 0;   // shown interpolated by the last present()
+    // Combat and events.
+    uint64_t shotsResolved = 0, playerHits = 0, worldHits = 0;   // authority
+    uint64_t shotsRewound = 0, shotsClamped = 0, shotsRefused = 0;   // host: by ShotRewind
+    uint64_t gameEventsSent = 0;   // host: events made (each goes to every Active client)
+    uint64_t gameEventsReceived = 0, duplicateEvents = 0;   // client
+    uint64_t gameEventsMissed = 0;   // readers that fell more than kGameEventHistory behind
 };
 
 class NetworkWorld final : public Subsystem {
@@ -336,6 +403,36 @@ public:
     static constexpr uint32_t kInputFallbackTicks = 2;
     static constexpr uint32_t kInputHistory = 128;   // host: ticks of input kept per player (> 2 x 32 at 120 Hz)
 
+    // ---- Combat history and game events ----
+    // How the game describes its players' characters to lag compensation. Without one
+    // nothing is recorded, and resolveShot tests the present.
+    void setCombatTargets(CombatTargetFn targets) { m_combatTargets = std::move(targets); }
+    // Authority only (false on a client): the nearest thing the shot hits. Players are
+    // tested where the shooter saw them (from the history, at the command's view time,
+    // checked against the shooter's measured round trip); everything else, and anything
+    // in front of the player, as it is now. Offline, and for the host's own player, it's
+    // the present.
+    bool resolveShot(const ShotQuery& shot, ShotResult& out);
+    // Host and offline: a registered event, now. The host sends it reliably to every
+    // Active client; it's also readable here (readGameEvent). Refused when it isn't
+    // registered, its payload is out of range, or this is a client.
+    NetResult<void> sendEvent(uint16_t eventId, Entity subject, const ProfileValue& payload);
+    // Game events, oldest first, each once per reader: cursor starts at gameEventCursor()
+    // and moves past each event read. Up to kGameEventHistory are kept; a reader further
+    // behind skips ahead (counted in gameEventsMissed).
+    bool readGameEvent(uint64_t& cursor, ReceivedGameEvent& out) const;
+    uint64_t gameEventCursor() const;   // where a new reader starts: after every event so far
+    static constexpr uint32_t kGameEventHistory = 128;
+    // The same for session events (joins, leaves, state changes), for readers besides
+    // the game's pollEvent, such as circuits.
+    bool readEvent(uint64_t& cursor, NetworkEvent& out) const;
+    uint64_t eventCursor() const { return m_eventSequence; }
+    // Host: a client's measured round trip in seconds (the worst of its recent pings),
+    // 0 until measured. Client: the best recent round trip to the host.
+    double roundTrip(uint16_t slot) const;
+    static constexpr double kHostPingSeconds = 1;   // the host pings each Active client
+    static constexpr uint32_t kViewToleranceTicks = 2;   // at 60 Hz: slack on a shot's view time
+
     // ---- Prediction and presentation ----
     // The session's physics: sets its network mode from the role (Offline, Authority,
     // Client) and lets a client predict. PlaySession calls it before beginPlay.
@@ -409,8 +506,10 @@ private:
     bool m_closed = false;
     PhysicsWorld* m_physics = nullptr;
     PredictionMoveFn m_predictionMove;
+    CombatTargetFn m_combatTargets;
+    // Events by sequence (event n is at n % kMaxEvents); pollEvent reads from m_pollCursor.
     std::array<NetworkEvent, kMaxEvents> m_events{};
-    uint32_t m_eventHead = 0, m_eventCount = 0;
+    uint64_t m_eventSequence = 0, m_pollCursor = 0;
 };
 
 }   // namespace shockwave::net

@@ -6,12 +6,15 @@ Every node below is used as `node <name> <Id>`. Pins without a value use the def
 
 Besides these, every circuit variable has two nodes: `Get.<variable>` (output `value`) and `Set.<variable>` (exec, input `value`, output `value`). The `Component.*` nodes are made from the components registered when this was written, the game's own included.
 
+"Changes" says what a node may do. Presentation nodes are safe in every circuit; authority nodes change gameplay and only run where the circuit has authority (the host, or offline); network requests ask the host, which still decides. A circuit whose `Circuit` component runs it as LocalOwner may use presentation nodes and network requests, one run as Presentation only presentation nodes.
+
 ## Audio
 
 ### Audio.PlaySound
 
 Plays a clip ("Audio/click.wav"), not placed in the world.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `clip` String, required
@@ -21,6 +24,7 @@ Plays a clip ("Audio/click.wav"), not placed in the world.
 
 Plays a clip from a place in the world.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `clip` String, required
@@ -30,6 +34,7 @@ Plays a clip from a place in the world.
 
 Plays a clip that follows an entity.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `clip` String, required
@@ -41,6 +46,7 @@ Plays a clip that follows an entity.
 
 Queue a named command for a target. accepted means queued, not completed.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -55,6 +61,7 @@ Queue a named command for a target. accepted means queued, not completed.
 
 Gives the entity a Animator with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -63,6 +70,7 @@ Gives the entity a Animator with default values, if it has none.
 
 Every field of the entity's Animator; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `clip` String
@@ -76,6 +84,7 @@ Every field of the entity's Animator; found is false when it has none.
 
 The entity's Animator blend_time.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `blend_time` Float
 
@@ -83,6 +92,7 @@ The entity's Animator blend_time.
 
 The entity's Animator clip.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `clip` String
 
@@ -90,6 +100,7 @@ The entity's Animator clip.
 
 The entity's Animator loop.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `loop` Bool
 
@@ -97,6 +108,7 @@ The entity's Animator loop.
 
 The entity's Animator playing.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `playing` Bool
 
@@ -104,6 +116,7 @@ The entity's Animator playing.
 
 The entity's Animator speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `speed` Float
 
@@ -111,6 +124,7 @@ The entity's Animator speed.
 
 The entity's Animator time.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `time` Float
 
@@ -118,6 +132,7 @@ The entity's Animator time.
 
 The entity has a Animator.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -125,6 +140,7 @@ The entity has a Animator.
 
 Takes the Animator off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -133,6 +149,7 @@ Takes the Animator off the entity.
 
 Sets the fields given (connected or written) of the entity's Animator; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -147,6 +164,7 @@ Sets the fields given (connected or written) of the entity's Animator; the rest 
 
 Sets the entity's Animator blend_time.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -156,6 +174,7 @@ Sets the entity's Animator blend_time.
 
 Sets the entity's Animator clip.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -165,6 +184,7 @@ Sets the entity's Animator clip.
 
 Sets the entity's Animator loop.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -174,6 +194,7 @@ Sets the entity's Animator loop.
 
 Sets the entity's Animator playing.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -183,6 +204,7 @@ Sets the entity's Animator playing.
 
 Sets the entity's Animator speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -192,6 +214,7 @@ Sets the entity's Animator speed.
 
 Sets the entity's Animator time.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -201,6 +224,7 @@ Sets the entity's Animator time.
 
 Gives the entity a ArenaFighter with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -209,6 +233,7 @@ Gives the entity a ArenaFighter with default values, if it has none.
 
 Every field of the entity's ArenaFighter; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `team` Int
@@ -222,6 +247,7 @@ Every field of the entity's ArenaFighter; found is false when it has none.
 
 The entity's ArenaFighter damage.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `damage` Float
 
@@ -229,6 +255,7 @@ The entity's ArenaFighter damage.
 
 The entity's ArenaFighter fire_interval.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `fire_interval` Float
 
@@ -236,6 +263,7 @@ The entity's ArenaFighter fire_interval.
 
 The entity's ArenaFighter max_health.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_health` Float
 
@@ -243,6 +271,7 @@ The entity's ArenaFighter max_health.
 
 The entity's ArenaFighter player.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `player` Bool
 
@@ -250,6 +279,7 @@ The entity's ArenaFighter player.
 
 The entity's ArenaFighter speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `speed` Float
 
@@ -257,6 +287,7 @@ The entity's ArenaFighter speed.
 
 The entity's ArenaFighter team.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `team` Int
 
@@ -264,6 +295,7 @@ The entity's ArenaFighter team.
 
 The entity has a ArenaFighter.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -271,6 +303,7 @@ The entity has a ArenaFighter.
 
 Takes the ArenaFighter off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -279,6 +312,7 @@ Takes the ArenaFighter off the entity.
 
 Sets the fields given (connected or written) of the entity's ArenaFighter; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -293,6 +327,7 @@ Sets the fields given (connected or written) of the entity's ArenaFighter; the r
 
 Sets the entity's ArenaFighter damage.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -302,6 +337,7 @@ Sets the entity's ArenaFighter damage.
 
 Sets the entity's ArenaFighter fire_interval.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -311,6 +347,7 @@ Sets the entity's ArenaFighter fire_interval.
 
 Sets the entity's ArenaFighter max_health.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -320,6 +357,7 @@ Sets the entity's ArenaFighter max_health.
 
 Sets the entity's ArenaFighter player.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -329,6 +367,7 @@ Sets the entity's ArenaFighter player.
 
 Sets the entity's ArenaFighter speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -338,6 +377,7 @@ Sets the entity's ArenaFighter speed.
 
 Sets the entity's ArenaFighter team.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -347,6 +387,7 @@ Sets the entity's ArenaFighter team.
 
 Gives the entity a ArenaRules with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -355,6 +396,7 @@ Gives the entity a ArenaRules with default values, if it has none.
 
 Every field of the entity's ArenaRules; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `score_limit` Int
@@ -365,6 +407,7 @@ Every field of the entity's ArenaRules; found is false when it has none.
 
 The entity's ArenaRules auto_play.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `auto_play` Bool
 
@@ -372,6 +415,7 @@ The entity's ArenaRules auto_play.
 
 The entity's ArenaRules round_seconds.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `round_seconds` Float
 
@@ -379,6 +423,7 @@ The entity's ArenaRules round_seconds.
 
 The entity's ArenaRules score_limit.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `score_limit` Int
 
@@ -386,6 +431,7 @@ The entity's ArenaRules score_limit.
 
 The entity has a ArenaRules.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -393,6 +439,7 @@ The entity has a ArenaRules.
 
 Takes the ArenaRules off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -401,6 +448,7 @@ Takes the ArenaRules off the entity.
 
 Sets the fields given (connected or written) of the entity's ArenaRules; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -412,6 +460,7 @@ Sets the fields given (connected or written) of the entity's ArenaRules; the res
 
 Sets the entity's ArenaRules auto_play.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -421,6 +470,7 @@ Sets the entity's ArenaRules auto_play.
 
 Sets the entity's ArenaRules round_seconds.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -430,6 +480,7 @@ Sets the entity's ArenaRules round_seconds.
 
 Sets the entity's ArenaRules score_limit.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -439,6 +490,7 @@ Sets the entity's ArenaRules score_limit.
 
 Gives the entity a ArenaWeapon with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -447,6 +499,7 @@ Gives the entity a ArenaWeapon with default values, if it has none.
 
 Every field of the entity's ArenaWeapon; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `magazine` Int
@@ -459,6 +512,7 @@ Every field of the entity's ArenaWeapon; found is false when it has none.
 
 The entity's ArenaWeapon damage.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `damage` Float
 
@@ -466,6 +520,7 @@ The entity's ArenaWeapon damage.
 
 The entity's ArenaWeapon interval.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `interval` Float
 
@@ -473,6 +528,7 @@ The entity's ArenaWeapon interval.
 
 The entity's ArenaWeapon magazine.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `magazine` Int
 
@@ -480,6 +536,7 @@ The entity's ArenaWeapon magazine.
 
 The entity's ArenaWeapon reload_seconds.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `reload_seconds` Float
 
@@ -487,6 +544,7 @@ The entity's ArenaWeapon reload_seconds.
 
 The entity's ArenaWeapon sensitivity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `sensitivity` Float
 
@@ -494,6 +552,7 @@ The entity's ArenaWeapon sensitivity.
 
 The entity has a ArenaWeapon.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -501,6 +560,7 @@ The entity has a ArenaWeapon.
 
 Takes the ArenaWeapon off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -509,6 +569,7 @@ Takes the ArenaWeapon off the entity.
 
 Sets the fields given (connected or written) of the entity's ArenaWeapon; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -522,6 +583,7 @@ Sets the fields given (connected or written) of the entity's ArenaWeapon; the re
 
 Sets the entity's ArenaWeapon damage.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -531,6 +593,7 @@ Sets the entity's ArenaWeapon damage.
 
 Sets the entity's ArenaWeapon interval.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -540,6 +603,7 @@ Sets the entity's ArenaWeapon interval.
 
 Sets the entity's ArenaWeapon magazine.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -549,6 +613,7 @@ Sets the entity's ArenaWeapon magazine.
 
 Sets the entity's ArenaWeapon reload_seconds.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -558,6 +623,7 @@ Sets the entity's ArenaWeapon reload_seconds.
 
 Sets the entity's ArenaWeapon sensitivity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -567,6 +633,7 @@ Sets the entity's ArenaWeapon sensitivity.
 
 Gives the entity a AudioListener with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -575,6 +642,7 @@ Gives the entity a AudioListener with default values, if it has none.
 
 Every field of the entity's AudioListener; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 
@@ -582,6 +650,7 @@ Every field of the entity's AudioListener; found is false when it has none.
 
 The entity has a AudioListener.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -589,6 +658,7 @@ The entity has a AudioListener.
 
 Takes the AudioListener off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -597,6 +667,7 @@ Takes the AudioListener off the entity.
 
 Sets the fields given (connected or written) of the entity's AudioListener; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -605,6 +676,7 @@ Sets the fields given (connected or written) of the entity's AudioListener; the 
 
 Gives the entity a AudioSource with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -613,6 +685,7 @@ Gives the entity a AudioSource with default values, if it has none.
 
 Every field of the entity's AudioSource; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `clip` String
@@ -635,6 +708,7 @@ Every field of the entity's AudioSource; found is false when it has none.
 
 The entity's AudioSource air_absorption.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `air_absorption` Bool
 
@@ -642,6 +716,7 @@ The entity's AudioSource air_absorption.
 
 The entity's AudioSource clip.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `clip` String
 
@@ -649,6 +724,7 @@ The entity's AudioSource clip.
 
 The entity's AudioSource directivity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `directivity` Float
 
@@ -656,6 +732,7 @@ The entity's AudioSource directivity.
 
 The entity's AudioSource directivity_power.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `directivity_power` Float
 
@@ -663,6 +740,7 @@ The entity's AudioSource directivity_power.
 
 The entity's AudioSource loop.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `loop` Bool
 
@@ -670,6 +748,7 @@ The entity's AudioSource loop.
 
 The entity's AudioSource max_distance.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_distance` Float
 
@@ -677,6 +756,7 @@ The entity's AudioSource max_distance.
 
 The entity's AudioSource min_distance.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `min_distance` Float
 
@@ -684,6 +764,7 @@ The entity's AudioSource min_distance.
 
 The entity's AudioSource occlusion.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `occlusion` Bool
 
@@ -691,6 +772,7 @@ The entity's AudioSource occlusion.
 
 The entity's AudioSource occlusion_radius.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `occlusion_radius` Float
 
@@ -698,6 +780,7 @@ The entity's AudioSource occlusion_radius.
 
 The entity's AudioSource pitch.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `pitch` Float
 
@@ -705,6 +788,7 @@ The entity's AudioSource pitch.
 
 The entity's AudioSource play_on_start.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `play_on_start` Bool
 
@@ -712,6 +796,7 @@ The entity's AudioSource play_on_start.
 
 The entity's AudioSource rolloff.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `rolloff` Int
 
@@ -719,6 +804,7 @@ The entity's AudioSource rolloff.
 
 The entity's AudioSource spatial.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `spatial` Bool
 
@@ -726,6 +812,7 @@ The entity's AudioSource spatial.
 
 The entity's AudioSource transmission.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `transmission` Float
 
@@ -733,6 +820,7 @@ The entity's AudioSource transmission.
 
 The entity's AudioSource volume.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `volume` Float
 
@@ -740,6 +828,7 @@ The entity's AudioSource volume.
 
 The entity has a AudioSource.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -747,6 +836,7 @@ The entity has a AudioSource.
 
 Takes the AudioSource off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -755,6 +845,7 @@ Takes the AudioSource off the entity.
 
 Sets the fields given (connected or written) of the entity's AudioSource; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -778,6 +869,7 @@ Sets the fields given (connected or written) of the entity's AudioSource; the re
 
 Sets the entity's AudioSource air_absorption.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -787,6 +879,7 @@ Sets the entity's AudioSource air_absorption.
 
 Sets the entity's AudioSource clip.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -796,6 +889,7 @@ Sets the entity's AudioSource clip.
 
 Sets the entity's AudioSource directivity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -805,6 +899,7 @@ Sets the entity's AudioSource directivity.
 
 Sets the entity's AudioSource directivity_power.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -814,6 +909,7 @@ Sets the entity's AudioSource directivity_power.
 
 Sets the entity's AudioSource loop.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -823,6 +919,7 @@ Sets the entity's AudioSource loop.
 
 Sets the entity's AudioSource max_distance.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -832,6 +929,7 @@ Sets the entity's AudioSource max_distance.
 
 Sets the entity's AudioSource min_distance.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -841,6 +939,7 @@ Sets the entity's AudioSource min_distance.
 
 Sets the entity's AudioSource occlusion.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -850,6 +949,7 @@ Sets the entity's AudioSource occlusion.
 
 Sets the entity's AudioSource occlusion_radius.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -859,6 +959,7 @@ Sets the entity's AudioSource occlusion_radius.
 
 Sets the entity's AudioSource pitch.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -868,6 +969,7 @@ Sets the entity's AudioSource pitch.
 
 Sets the entity's AudioSource play_on_start.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -877,6 +979,7 @@ Sets the entity's AudioSource play_on_start.
 
 Sets the entity's AudioSource rolloff.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -886,6 +989,7 @@ Sets the entity's AudioSource rolloff.
 
 Sets the entity's AudioSource spatial.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -895,6 +999,7 @@ Sets the entity's AudioSource spatial.
 
 Sets the entity's AudioSource transmission.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -904,6 +1009,7 @@ Sets the entity's AudioSource transmission.
 
 Sets the entity's AudioSource volume.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -913,6 +1019,7 @@ Sets the entity's AudioSource volume.
 
 Gives the entity a Bob with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -921,6 +1028,7 @@ Gives the entity a Bob with default values, if it has none.
 
 Every field of the entity's Bob; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `amplitude` Float
@@ -931,6 +1039,7 @@ Every field of the entity's Bob; found is false when it has none.
 
 The entity's Bob amplitude.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `amplitude` Float
 
@@ -938,6 +1047,7 @@ The entity's Bob amplitude.
 
 The entity's Bob frequency.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `frequency` Float
 
@@ -945,6 +1055,7 @@ The entity's Bob frequency.
 
 The entity's Bob phase.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `phase` Float
 
@@ -952,6 +1063,7 @@ The entity's Bob phase.
 
 The entity has a Bob.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -959,6 +1071,7 @@ The entity has a Bob.
 
 Takes the Bob off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -967,6 +1080,7 @@ Takes the Bob off the entity.
 
 Sets the fields given (connected or written) of the entity's Bob; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -978,6 +1092,7 @@ Sets the fields given (connected or written) of the entity's Bob; the rest stay 
 
 Sets the entity's Bob amplitude.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -987,6 +1102,7 @@ Sets the entity's Bob amplitude.
 
 Sets the entity's Bob frequency.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -996,6 +1112,7 @@ Sets the entity's Bob frequency.
 
 Sets the entity's Bob phase.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1005,6 +1122,7 @@ Sets the entity's Bob phase.
 
 Gives the entity a Camera with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1013,6 +1131,7 @@ Gives the entity a Camera with default values, if it has none.
 
 Every field of the entity's Camera; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `fov` Float
@@ -1023,6 +1142,7 @@ Every field of the entity's Camera; found is false when it has none.
 
 The entity's Camera fov.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `fov` Float
 
@@ -1030,6 +1150,7 @@ The entity's Camera fov.
 
 The entity's Camera near_plane.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `near_plane` Float
 
@@ -1037,6 +1158,7 @@ The entity's Camera near_plane.
 
 The entity's Camera primary.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `primary` Bool
 
@@ -1044,6 +1166,7 @@ The entity's Camera primary.
 
 The entity has a Camera.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1051,6 +1174,7 @@ The entity has a Camera.
 
 Takes the Camera off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1059,6 +1183,7 @@ Takes the Camera off the entity.
 
 Sets the fields given (connected or written) of the entity's Camera; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1070,6 +1195,7 @@ Sets the fields given (connected or written) of the entity's Camera; the rest st
 
 Sets the entity's Camera fov.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1079,6 +1205,7 @@ Sets the entity's Camera fov.
 
 Sets the entity's Camera near_plane.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1088,6 +1215,7 @@ Sets the entity's Camera near_plane.
 
 Sets the entity's Camera primary.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1097,6 +1225,7 @@ Sets the entity's Camera primary.
 
 Gives the entity a CharacterController with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1105,6 +1234,7 @@ Gives the entity a CharacterController with default values, if it has none.
 
 Every field of the entity's CharacterController; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `radius` Float
@@ -1122,6 +1252,7 @@ Every field of the entity's CharacterController; found is false when it has none
 
 The entity's CharacterController collision_layer.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `collision_layer` Int
 
@@ -1129,6 +1260,7 @@ The entity's CharacterController collision_layer.
 
 The entity's CharacterController collision_mask.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `collision_mask` Int
 
@@ -1136,6 +1268,7 @@ The entity's CharacterController collision_mask.
 
 The entity's CharacterController enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
 
@@ -1143,6 +1276,7 @@ The entity's CharacterController enabled.
 
 The entity's CharacterController half_height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `half_height` Float
 
@@ -1150,6 +1284,7 @@ The entity's CharacterController half_height.
 
 The entity's CharacterController jump_speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `jump_speed` Float
 
@@ -1157,6 +1292,7 @@ The entity's CharacterController jump_speed.
 
 The entity's CharacterController mass.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `mass` Float
 
@@ -1164,6 +1300,7 @@ The entity's CharacterController mass.
 
 The entity's CharacterController max_push_force.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_push_force` Float
 
@@ -1171,6 +1308,7 @@ The entity's CharacterController max_push_force.
 
 The entity's CharacterController max_slope.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_slope` Float
 
@@ -1178,6 +1316,7 @@ The entity's CharacterController max_slope.
 
 The entity's CharacterController radius.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `radius` Float
 
@@ -1185,6 +1324,7 @@ The entity's CharacterController radius.
 
 The entity's CharacterController step_height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `step_height` Float
 
@@ -1192,6 +1332,7 @@ The entity's CharacterController step_height.
 
 The entity has a CharacterController.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1199,6 +1340,7 @@ The entity has a CharacterController.
 
 Takes the CharacterController off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1207,6 +1349,7 @@ Takes the CharacterController off the entity.
 
 Sets the fields given (connected or written) of the entity's CharacterController; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1225,6 +1368,7 @@ Sets the fields given (connected or written) of the entity's CharacterController
 
 Sets the entity's CharacterController collision_layer.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1234,6 +1378,7 @@ Sets the entity's CharacterController collision_layer.
 
 Sets the entity's CharacterController collision_mask.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1243,6 +1388,7 @@ Sets the entity's CharacterController collision_mask.
 
 Sets the entity's CharacterController enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1252,6 +1398,7 @@ Sets the entity's CharacterController enabled.
 
 Sets the entity's CharacterController half_height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1261,6 +1408,7 @@ Sets the entity's CharacterController half_height.
 
 Sets the entity's CharacterController jump_speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1270,6 +1418,7 @@ Sets the entity's CharacterController jump_speed.
 
 Sets the entity's CharacterController mass.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1279,6 +1428,7 @@ Sets the entity's CharacterController mass.
 
 Sets the entity's CharacterController max_push_force.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1288,6 +1438,7 @@ Sets the entity's CharacterController max_push_force.
 
 Sets the entity's CharacterController max_slope.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1297,6 +1448,7 @@ Sets the entity's CharacterController max_slope.
 
 Sets the entity's CharacterController radius.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1306,6 +1458,7 @@ Sets the entity's CharacterController radius.
 
 Sets the entity's CharacterController step_height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1315,6 +1468,7 @@ Sets the entity's CharacterController step_height.
 
 Gives the entity a Circuit with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1323,15 +1477,18 @@ Gives the entity a Circuit with default values, if it has none.
 
 Every field of the entity's Circuit; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `circuit` String
 - Out `enabled` Bool
+- Out `execution` Int
 
 ### Component.Circuit.Get.circuit
 
 The entity's Circuit circuit.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `circuit` String
 
@@ -1339,13 +1496,23 @@ The entity's Circuit circuit.
 
 The entity's Circuit enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
+
+### Component.Circuit.Get.execution
+
+The entity's Circuit execution.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `execution` Int
 
 ### Component.Circuit.Has
 
 The entity has a Circuit.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1353,6 +1520,7 @@ The entity has a Circuit.
 
 Takes the Circuit off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1361,16 +1529,19 @@ Takes the Circuit off the entity.
 
 Sets the fields given (connected or written) of the entity's Circuit; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
 - In `circuit` String
 - In `enabled` Bool
+- In `execution` Int, options 0=Authority; 1=LocalOwner; 2=Presentation
 
 ### Component.Circuit.Set.circuit
 
 Sets the entity's Circuit circuit.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1380,15 +1551,27 @@ Sets the entity's Circuit circuit.
 
 Sets the entity's Circuit enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
 - In `enabled` Bool, required
 
+### Component.Circuit.Set.execution
+
+Sets the entity's Circuit execution.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `execution` Int, options 0=Authority; 1=LocalOwner; 2=Presentation, required
+
 ### Component.CircuitVars.Add
 
 Gives the entity a CircuitVars with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1397,6 +1580,7 @@ Gives the entity a CircuitVars with default values, if it has none.
 
 Every field of the entity's CircuitVars; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `values` String
@@ -1405,6 +1589,7 @@ Every field of the entity's CircuitVars; found is false when it has none.
 
 The entity's CircuitVars values.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `values` String
 
@@ -1412,6 +1597,7 @@ The entity's CircuitVars values.
 
 The entity has a CircuitVars.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1419,6 +1605,7 @@ The entity has a CircuitVars.
 
 Takes the CircuitVars off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1427,6 +1614,7 @@ Takes the CircuitVars off the entity.
 
 Sets the fields given (connected or written) of the entity's CircuitVars; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1436,6 +1624,7 @@ Sets the fields given (connected or written) of the entity's CircuitVars; the re
 
 Sets the entity's CircuitVars values.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1445,6 +1634,7 @@ Sets the entity's CircuitVars values.
 
 Gives the entity a Collider with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1453,6 +1643,7 @@ Gives the entity a Collider with default values, if it has none.
 
 Every field of the entity's Collider; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `shape` Int
@@ -1466,6 +1657,7 @@ Every field of the entity's Collider; found is false when it has none.
 
 The entity's Collider enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
 
@@ -1473,6 +1665,7 @@ The entity's Collider enabled.
 
 The entity's Collider half_extents.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `half_extents` Vec3
 
@@ -1480,6 +1673,7 @@ The entity's Collider half_extents.
 
 The entity's Collider half_height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `half_height` Float
 
@@ -1487,6 +1681,7 @@ The entity's Collider half_height.
 
 The entity's Collider offset.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `offset` Vec3
 
@@ -1494,6 +1689,7 @@ The entity's Collider offset.
 
 The entity's Collider radius.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `radius` Float
 
@@ -1501,6 +1697,7 @@ The entity's Collider radius.
 
 The entity's Collider shape.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shape` Int
 
@@ -1508,6 +1705,7 @@ The entity's Collider shape.
 
 The entity has a Collider.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1515,6 +1713,7 @@ The entity has a Collider.
 
 Takes the Collider off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1523,6 +1722,7 @@ Takes the Collider off the entity.
 
 Sets the fields given (connected or written) of the entity's Collider; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1537,6 +1737,7 @@ Sets the fields given (connected or written) of the entity's Collider; the rest 
 
 Sets the entity's Collider enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1546,6 +1747,7 @@ Sets the entity's Collider enabled.
 
 Sets the entity's Collider half_extents.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1555,6 +1757,7 @@ Sets the entity's Collider half_extents.
 
 Sets the entity's Collider half_height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1564,6 +1767,7 @@ Sets the entity's Collider half_height.
 
 Sets the entity's Collider offset.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1573,6 +1777,7 @@ Sets the entity's Collider offset.
 
 Sets the entity's Collider radius.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1582,6 +1787,7 @@ Sets the entity's Collider radius.
 
 Sets the entity's Collider shape.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1591,6 +1797,7 @@ Sets the entity's Collider shape.
 
 Gives the entity a Environment with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1599,6 +1806,7 @@ Gives the entity a Environment with default values, if it has none.
 
 Every field of the entity's Environment; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `sky_color` Color
@@ -1618,6 +1826,7 @@ Every field of the entity's Environment; found is false when it has none.
 
 The entity's Environment ambient_intensity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `ambient_intensity` Float
 
@@ -1625,6 +1834,7 @@ The entity's Environment ambient_intensity.
 
 The entity's Environment bloom_intensity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `bloom_intensity` Float
 
@@ -1632,6 +1842,7 @@ The entity's Environment bloom_intensity.
 
 The entity's Environment environment_intensity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `environment_intensity` Float
 
@@ -1639,6 +1850,7 @@ The entity's Environment environment_intensity.
 
 The entity's Environment environment_map.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `environment_map` Texture
 
@@ -1646,6 +1858,7 @@ The entity's Environment environment_map.
 
 The entity's Environment environment_rotation.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `environment_rotation` Float
 
@@ -1653,6 +1866,7 @@ The entity's Environment environment_rotation.
 
 The entity's Environment exposure.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `exposure` Float
 
@@ -1660,6 +1874,7 @@ The entity's Environment exposure.
 
 The entity's Environment ground_color.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `ground_color` Color
 
@@ -1667,6 +1882,7 @@ The entity's Environment ground_color.
 
 The entity's Environment shadow_cascades.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shadow_cascades` Int
 
@@ -1674,6 +1890,7 @@ The entity's Environment shadow_cascades.
 
 The entity's Environment shadow_distance.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shadow_distance` Float
 
@@ -1681,6 +1898,7 @@ The entity's Environment shadow_distance.
 
 The entity's Environment show_environment.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `show_environment` Bool
 
@@ -1688,6 +1906,7 @@ The entity's Environment show_environment.
 
 The entity's Environment sky_color.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `sky_color` Color
 
@@ -1695,6 +1914,7 @@ The entity's Environment sky_color.
 
 The entity's Environment tonemapper.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `tonemapper` Int
 
@@ -1702,6 +1922,7 @@ The entity's Environment tonemapper.
 
 The entity has a Environment.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1709,6 +1930,7 @@ The entity has a Environment.
 
 Takes the Environment off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1717,6 +1939,7 @@ Takes the Environment off the entity.
 
 Sets the fields given (connected or written) of the entity's Environment; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1737,6 +1960,7 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 
 Sets the entity's Environment ambient_intensity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1746,6 +1970,7 @@ Sets the entity's Environment ambient_intensity.
 
 Sets the entity's Environment bloom_intensity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1755,6 +1980,7 @@ Sets the entity's Environment bloom_intensity.
 
 Sets the entity's Environment environment_intensity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1764,6 +1990,7 @@ Sets the entity's Environment environment_intensity.
 
 Sets the entity's Environment environment_map.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1773,6 +2000,7 @@ Sets the entity's Environment environment_map.
 
 Sets the entity's Environment environment_rotation.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1782,6 +2010,7 @@ Sets the entity's Environment environment_rotation.
 
 Sets the entity's Environment exposure.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1791,6 +2020,7 @@ Sets the entity's Environment exposure.
 
 Sets the entity's Environment ground_color.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1800,6 +2030,7 @@ Sets the entity's Environment ground_color.
 
 Sets the entity's Environment shadow_cascades.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1809,6 +2040,7 @@ Sets the entity's Environment shadow_cascades.
 
 Sets the entity's Environment shadow_distance.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1818,6 +2050,7 @@ Sets the entity's Environment shadow_distance.
 
 Sets the entity's Environment show_environment.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1827,6 +2060,7 @@ Sets the entity's Environment show_environment.
 
 Sets the entity's Environment sky_color.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1836,6 +2070,7 @@ Sets the entity's Environment sky_color.
 
 Sets the entity's Environment tonemapper.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1845,6 +2080,7 @@ Sets the entity's Environment tonemapper.
 
 Gives the entity a Light with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1853,6 +2089,7 @@ Gives the entity a Light with default values, if it has none.
 
 Every field of the entity's Light; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `type` Int
@@ -1871,6 +2108,7 @@ Every field of the entity's Light; found is false when it has none.
 
 The entity's Light cast_shadows.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `cast_shadows` Bool
 
@@ -1878,6 +2116,7 @@ The entity's Light cast_shadows.
 
 The entity's Light color.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `color` Color
 
@@ -1885,6 +2124,7 @@ The entity's Light color.
 
 The entity's Light enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
 
@@ -1892,6 +2132,7 @@ The entity's Light enabled.
 
 The entity's Light intensity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `intensity` Float
 
@@ -1899,6 +2140,7 @@ The entity's Light intensity.
 
 The entity's Light range.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `range` Float
 
@@ -1906,6 +2148,7 @@ The entity's Light range.
 
 The entity's Light shadow_bias.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shadow_bias` Float
 
@@ -1913,6 +2156,7 @@ The entity's Light shadow_bias.
 
 The entity's Light shadow_softness.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shadow_softness` Float
 
@@ -1920,6 +2164,7 @@ The entity's Light shadow_softness.
 
 The entity's Light shadow_strength.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `shadow_strength` Float
 
@@ -1927,6 +2172,7 @@ The entity's Light shadow_strength.
 
 The entity's Light spot_angle.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `spot_angle` Float
 
@@ -1934,6 +2180,7 @@ The entity's Light spot_angle.
 
 The entity's Light spot_softness.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `spot_softness` Float
 
@@ -1941,6 +2188,7 @@ The entity's Light spot_softness.
 
 The entity's Light type.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `type` Int
 
@@ -1948,6 +2196,7 @@ The entity's Light type.
 
 The entity has a Light.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -1955,6 +2204,7 @@ The entity has a Light.
 
 Takes the Light off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1963,6 +2213,7 @@ Takes the Light off the entity.
 
 Sets the fields given (connected or written) of the entity's Light; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1982,6 +2233,7 @@ Sets the fields given (connected or written) of the entity's Light; the rest sta
 
 Sets the entity's Light cast_shadows.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -1991,6 +2243,7 @@ Sets the entity's Light cast_shadows.
 
 Sets the entity's Light color.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2000,6 +2253,7 @@ Sets the entity's Light color.
 
 Sets the entity's Light enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2009,6 +2263,7 @@ Sets the entity's Light enabled.
 
 Sets the entity's Light intensity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2018,6 +2273,7 @@ Sets the entity's Light intensity.
 
 Sets the entity's Light range.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2027,6 +2283,7 @@ Sets the entity's Light range.
 
 Sets the entity's Light shadow_bias.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2036,6 +2293,7 @@ Sets the entity's Light shadow_bias.
 
 Sets the entity's Light shadow_softness.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2045,6 +2303,7 @@ Sets the entity's Light shadow_softness.
 
 Sets the entity's Light shadow_strength.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2054,6 +2313,7 @@ Sets the entity's Light shadow_strength.
 
 Sets the entity's Light spot_angle.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2063,6 +2323,7 @@ Sets the entity's Light spot_angle.
 
 Sets the entity's Light spot_softness.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2072,6 +2333,7 @@ Sets the entity's Light spot_softness.
 
 Sets the entity's Light type.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2081,6 +2343,7 @@ Sets the entity's Light type.
 
 Gives the entity a MeshRenderer with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2089,6 +2352,7 @@ Gives the entity a MeshRenderer with default values, if it has none.
 
 Every field of the entity's MeshRenderer; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `mesh` Mesh
@@ -2106,6 +2370,7 @@ Every field of the entity's MeshRenderer; found is false when it has none.
 
 The entity's MeshRenderer cast_shadows.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `cast_shadows` Bool
 
@@ -2113,6 +2378,7 @@ The entity's MeshRenderer cast_shadows.
 
 The entity's MeshRenderer emissive.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `emissive` Color
 
@@ -2120,6 +2386,7 @@ The entity's MeshRenderer emissive.
 
 The entity's MeshRenderer emissive_intensity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `emissive_intensity` Float
 
@@ -2127,6 +2394,7 @@ The entity's MeshRenderer emissive_intensity.
 
 The entity's MeshRenderer mesh.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `mesh` Mesh
 
@@ -2134,6 +2402,7 @@ The entity's MeshRenderer mesh.
 
 The entity's MeshRenderer metallic.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `metallic` Float
 
@@ -2141,6 +2410,7 @@ The entity's MeshRenderer metallic.
 
 The entity's MeshRenderer roughness.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `roughness` Float
 
@@ -2148,6 +2418,7 @@ The entity's MeshRenderer roughness.
 
 The entity's MeshRenderer texture.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `texture` Texture
 
@@ -2155,6 +2426,7 @@ The entity's MeshRenderer texture.
 
 The entity's MeshRenderer tiling.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `tiling` Vec2
 
@@ -2162,6 +2434,7 @@ The entity's MeshRenderer tiling.
 
 The entity's MeshRenderer tint.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `tint` Color
 
@@ -2169,6 +2442,7 @@ The entity's MeshRenderer tint.
 
 The entity's MeshRenderer visible.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `visible` Bool
 
@@ -2176,6 +2450,7 @@ The entity's MeshRenderer visible.
 
 The entity has a MeshRenderer.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -2183,6 +2458,7 @@ The entity has a MeshRenderer.
 
 Takes the MeshRenderer off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2191,6 +2467,7 @@ Takes the MeshRenderer off the entity.
 
 Sets the fields given (connected or written) of the entity's MeshRenderer; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2209,6 +2486,7 @@ Sets the fields given (connected or written) of the entity's MeshRenderer; the r
 
 Sets the entity's MeshRenderer cast_shadows.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2218,6 +2496,7 @@ Sets the entity's MeshRenderer cast_shadows.
 
 Sets the entity's MeshRenderer emissive.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2227,6 +2506,7 @@ Sets the entity's MeshRenderer emissive.
 
 Sets the entity's MeshRenderer emissive_intensity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2236,6 +2516,7 @@ Sets the entity's MeshRenderer emissive_intensity.
 
 Sets the entity's MeshRenderer mesh.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2245,6 +2526,7 @@ Sets the entity's MeshRenderer mesh.
 
 Sets the entity's MeshRenderer metallic.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2254,6 +2536,7 @@ Sets the entity's MeshRenderer metallic.
 
 Sets the entity's MeshRenderer roughness.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2263,6 +2546,7 @@ Sets the entity's MeshRenderer roughness.
 
 Sets the entity's MeshRenderer texture.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2272,6 +2556,7 @@ Sets the entity's MeshRenderer texture.
 
 Sets the entity's MeshRenderer tiling.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2281,6 +2566,7 @@ Sets the entity's MeshRenderer tiling.
 
 Sets the entity's MeshRenderer tint.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2290,6 +2576,7 @@ Sets the entity's MeshRenderer tint.
 
 Sets the entity's MeshRenderer visible.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2299,6 +2586,7 @@ Sets the entity's MeshRenderer visible.
 
 Gives the entity a ModelRenderer with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2307,6 +2595,7 @@ Gives the entity a ModelRenderer with default values, if it has none.
 
 Every field of the entity's ModelRenderer; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `model` Model
@@ -2318,6 +2607,7 @@ Every field of the entity's ModelRenderer; found is false when it has none.
 
 The entity's ModelRenderer cast_shadows.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `cast_shadows` Bool
 
@@ -2325,6 +2615,7 @@ The entity's ModelRenderer cast_shadows.
 
 The entity's ModelRenderer model.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `model` Model
 
@@ -2332,6 +2623,7 @@ The entity's ModelRenderer model.
 
 The entity's ModelRenderer tint.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `tint` Color
 
@@ -2339,6 +2631,7 @@ The entity's ModelRenderer tint.
 
 The entity's ModelRenderer visible.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `visible` Bool
 
@@ -2346,6 +2639,7 @@ The entity's ModelRenderer visible.
 
 The entity has a ModelRenderer.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -2353,6 +2647,7 @@ The entity has a ModelRenderer.
 
 Takes the ModelRenderer off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2361,6 +2656,7 @@ Takes the ModelRenderer off the entity.
 
 Sets the fields given (connected or written) of the entity's ModelRenderer; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2373,6 +2669,7 @@ Sets the fields given (connected or written) of the entity's ModelRenderer; the 
 
 Sets the entity's ModelRenderer cast_shadows.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2382,6 +2679,7 @@ Sets the entity's ModelRenderer cast_shadows.
 
 Sets the entity's ModelRenderer model.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2391,6 +2689,7 @@ Sets the entity's ModelRenderer model.
 
 Sets the entity's ModelRenderer tint.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2400,6 +2699,7 @@ Sets the entity's ModelRenderer tint.
 
 Sets the entity's ModelRenderer visible.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2409,6 +2709,7 @@ Sets the entity's ModelRenderer visible.
 
 Gives the entity a Name with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2417,6 +2718,7 @@ Gives the entity a Name with default values, if it has none.
 
 Every field of the entity's Name; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `value` String
@@ -2425,6 +2727,7 @@ Every field of the entity's Name; found is false when it has none.
 
 The entity's Name value.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `value` String
 
@@ -2432,6 +2735,7 @@ The entity's Name value.
 
 The entity has a Name.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -2439,6 +2743,7 @@ The entity has a Name.
 
 Takes the Name off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2447,6 +2752,7 @@ Takes the Name off the entity.
 
 Sets the fields given (connected or written) of the entity's Name; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2456,6 +2762,7 @@ Sets the fields given (connected or written) of the entity's Name; the rest stay
 
 Sets the entity's Name value.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2465,6 +2772,7 @@ Sets the entity's Name value.
 
 Gives the entity a NavAgent with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2473,6 +2781,7 @@ Gives the entity a NavAgent with default values, if it has none.
 
 Every field of the entity's NavAgent; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `speed` Float
@@ -2492,6 +2801,7 @@ Every field of the entity's NavAgent; found is false when it has none.
 
 The entity's NavAgent acceleration.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `acceleration` Float
 
@@ -2499,6 +2809,7 @@ The entity's NavAgent acceleration.
 
 The entity's NavAgent avoidance.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `avoidance` Int
 
@@ -2506,6 +2817,7 @@ The entity's NavAgent avoidance.
 
 The entity's NavAgent destination.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `destination` Vec3
 
@@ -2513,6 +2825,7 @@ The entity's NavAgent destination.
 
 The entity's NavAgent enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
 
@@ -2520,6 +2833,7 @@ The entity's NavAgent enabled.
 
 The entity's NavAgent face_movement.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `face_movement` Bool
 
@@ -2527,6 +2841,7 @@ The entity's NavAgent face_movement.
 
 The entity's NavAgent has_destination.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `has_destination` Bool
 
@@ -2534,6 +2849,7 @@ The entity's NavAgent has_destination.
 
 The entity's NavAgent height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `height` Float
 
@@ -2541,6 +2857,7 @@ The entity's NavAgent height.
 
 The entity's NavAgent radius.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `radius` Float
 
@@ -2548,6 +2865,7 @@ The entity's NavAgent radius.
 
 The entity's NavAgent separation.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `separation` Float
 
@@ -2555,6 +2873,7 @@ The entity's NavAgent separation.
 
 The entity's NavAgent speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `speed` Float
 
@@ -2562,6 +2881,7 @@ The entity's NavAgent speed.
 
 The entity's NavAgent stopping_distance.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `stopping_distance` Float
 
@@ -2569,6 +2889,7 @@ The entity's NavAgent stopping_distance.
 
 The entity's NavAgent target.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `target` Entity
 
@@ -2576,6 +2897,7 @@ The entity's NavAgent target.
 
 The entity has a NavAgent.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -2583,6 +2905,7 @@ The entity has a NavAgent.
 
 Takes the NavAgent off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2591,6 +2914,7 @@ Takes the NavAgent off the entity.
 
 Sets the fields given (connected or written) of the entity's NavAgent; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2611,6 +2935,7 @@ Sets the fields given (connected or written) of the entity's NavAgent; the rest 
 
 Sets the entity's NavAgent acceleration.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2620,6 +2945,7 @@ Sets the entity's NavAgent acceleration.
 
 Sets the entity's NavAgent avoidance.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2629,6 +2955,7 @@ Sets the entity's NavAgent avoidance.
 
 Sets the entity's NavAgent destination.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2638,6 +2965,7 @@ Sets the entity's NavAgent destination.
 
 Sets the entity's NavAgent enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2647,6 +2975,7 @@ Sets the entity's NavAgent enabled.
 
 Sets the entity's NavAgent face_movement.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2656,6 +2985,7 @@ Sets the entity's NavAgent face_movement.
 
 Sets the entity's NavAgent has_destination.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2665,6 +2995,7 @@ Sets the entity's NavAgent has_destination.
 
 Sets the entity's NavAgent height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2674,6 +3005,7 @@ Sets the entity's NavAgent height.
 
 Sets the entity's NavAgent radius.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2683,6 +3015,7 @@ Sets the entity's NavAgent radius.
 
 Sets the entity's NavAgent separation.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2692,6 +3025,7 @@ Sets the entity's NavAgent separation.
 
 Sets the entity's NavAgent speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2701,6 +3035,7 @@ Sets the entity's NavAgent speed.
 
 Sets the entity's NavAgent stopping_distance.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2710,6 +3045,7 @@ Sets the entity's NavAgent stopping_distance.
 
 Sets the entity's NavAgent target.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2719,6 +3055,7 @@ Sets the entity's NavAgent target.
 
 Gives the entity a NavMeshSettings with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2727,6 +3064,7 @@ Gives the entity a NavMeshSettings with default values, if it has none.
 
 Every field of the entity's NavMeshSettings; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `geometry` Int
@@ -2746,6 +3084,7 @@ Every field of the entity's NavMeshSettings; found is false when it has none.
 
 The entity's NavMeshSettings agent_height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `agent_height` Float
 
@@ -2753,6 +3092,7 @@ The entity's NavMeshSettings agent_height.
 
 The entity's NavMeshSettings agent_radius.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `agent_radius` Float
 
@@ -2760,6 +3100,7 @@ The entity's NavMeshSettings agent_radius.
 
 The entity's NavMeshSettings auto_bounds.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `auto_bounds` Bool
 
@@ -2767,6 +3108,7 @@ The entity's NavMeshSettings auto_bounds.
 
 The entity's NavMeshSettings bounds_max.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `bounds_max` Vec3
 
@@ -2774,6 +3116,7 @@ The entity's NavMeshSettings bounds_max.
 
 The entity's NavMeshSettings bounds_min.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `bounds_min` Vec3
 
@@ -2781,6 +3124,7 @@ The entity's NavMeshSettings bounds_min.
 
 The entity's NavMeshSettings cell_height.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `cell_height` Float
 
@@ -2788,6 +3132,7 @@ The entity's NavMeshSettings cell_height.
 
 The entity's NavMeshSettings cell_size.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `cell_size` Float
 
@@ -2795,6 +3140,7 @@ The entity's NavMeshSettings cell_size.
 
 The entity's NavMeshSettings geometry.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `geometry` Int
 
@@ -2802,6 +3148,7 @@ The entity's NavMeshSettings geometry.
 
 The entity's NavMeshSettings max_agents.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_agents` Int
 
@@ -2809,6 +3156,7 @@ The entity's NavMeshSettings max_agents.
 
 The entity's NavMeshSettings max_climb.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_climb` Float
 
@@ -2816,6 +3164,7 @@ The entity's NavMeshSettings max_climb.
 
 The entity's NavMeshSettings max_slope.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `max_slope` Float
 
@@ -2823,6 +3172,7 @@ The entity's NavMeshSettings max_slope.
 
 The entity's NavMeshSettings tile_size.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `tile_size` Int
 
@@ -2830,6 +3180,7 @@ The entity's NavMeshSettings tile_size.
 
 The entity has a NavMeshSettings.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -2837,6 +3188,7 @@ The entity has a NavMeshSettings.
 
 Takes the NavMeshSettings off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2845,6 +3197,7 @@ Takes the NavMeshSettings off the entity.
 
 Sets the fields given (connected or written) of the entity's NavMeshSettings; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2865,6 +3218,7 @@ Sets the fields given (connected or written) of the entity's NavMeshSettings; th
 
 Sets the entity's NavMeshSettings agent_height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2874,6 +3228,7 @@ Sets the entity's NavMeshSettings agent_height.
 
 Sets the entity's NavMeshSettings agent_radius.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2883,6 +3238,7 @@ Sets the entity's NavMeshSettings agent_radius.
 
 Sets the entity's NavMeshSettings auto_bounds.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2892,6 +3248,7 @@ Sets the entity's NavMeshSettings auto_bounds.
 
 Sets the entity's NavMeshSettings bounds_max.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2901,6 +3258,7 @@ Sets the entity's NavMeshSettings bounds_max.
 
 Sets the entity's NavMeshSettings bounds_min.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2910,6 +3268,7 @@ Sets the entity's NavMeshSettings bounds_min.
 
 Sets the entity's NavMeshSettings cell_height.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2919,6 +3278,7 @@ Sets the entity's NavMeshSettings cell_height.
 
 Sets the entity's NavMeshSettings cell_size.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2928,6 +3288,7 @@ Sets the entity's NavMeshSettings cell_size.
 
 Sets the entity's NavMeshSettings geometry.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2937,6 +3298,7 @@ Sets the entity's NavMeshSettings geometry.
 
 Sets the entity's NavMeshSettings max_agents.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2946,6 +3308,7 @@ Sets the entity's NavMeshSettings max_agents.
 
 Sets the entity's NavMeshSettings max_climb.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2955,6 +3318,7 @@ Sets the entity's NavMeshSettings max_climb.
 
 Sets the entity's NavMeshSettings max_slope.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2964,6 +3328,7 @@ Sets the entity's NavMeshSettings max_slope.
 
 Sets the entity's NavMeshSettings tile_size.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2973,6 +3338,7 @@ Sets the entity's NavMeshSettings tile_size.
 
 Gives the entity a NavModifier with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -2981,6 +3347,7 @@ Gives the entity a NavModifier with default values, if it has none.
 
 Every field of the entity's NavModifier; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `mode` Int
@@ -2989,6 +3356,7 @@ Every field of the entity's NavModifier; found is false when it has none.
 
 The entity's NavModifier mode.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `mode` Int
 
@@ -2996,6 +3364,7 @@ The entity's NavModifier mode.
 
 The entity has a NavModifier.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3003,6 +3372,7 @@ The entity has a NavModifier.
 
 Takes the NavModifier off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3011,6 +3381,7 @@ Takes the NavModifier off the entity.
 
 Sets the fields given (connected or written) of the entity's NavModifier; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3020,6 +3391,7 @@ Sets the fields given (connected or written) of the entity's NavModifier; the re
 
 Sets the entity's NavModifier mode.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3029,6 +3401,7 @@ Sets the entity's NavModifier mode.
 
 Gives the entity a NetworkObject with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3037,6 +3410,7 @@ Gives the entity a NetworkObject with default values, if it has none.
 
 Every field of the entity's NetworkObject; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `key` String
@@ -3049,6 +3423,7 @@ Every field of the entity's NetworkObject; found is false when it has none.
 
 The entity's NetworkObject always_relevant.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `always_relevant` Bool
 
@@ -3056,6 +3431,7 @@ The entity's NetworkObject always_relevant.
 
 The entity's NetworkObject key.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `key` String
 
@@ -3063,6 +3439,7 @@ The entity's NetworkObject key.
 
 The entity's NetworkObject mode.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `mode` Int
 
@@ -3070,6 +3447,7 @@ The entity's NetworkObject mode.
 
 The entity's NetworkObject prefab.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `prefab` String
 
@@ -3077,6 +3455,7 @@ The entity's NetworkObject prefab.
 
 The entity's NetworkObject profile.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `profile` String
 
@@ -3084,6 +3463,7 @@ The entity's NetworkObject profile.
 
 The entity has a NetworkObject.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3091,6 +3471,7 @@ The entity has a NetworkObject.
 
 Takes the NetworkObject off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3099,6 +3480,7 @@ Takes the NetworkObject off the entity.
 
 Sets the fields given (connected or written) of the entity's NetworkObject; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3112,6 +3494,7 @@ Sets the fields given (connected or written) of the entity's NetworkObject; the 
 
 Sets the entity's NetworkObject always_relevant.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3121,6 +3504,7 @@ Sets the entity's NetworkObject always_relevant.
 
 Sets the entity's NetworkObject key.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3130,6 +3514,7 @@ Sets the entity's NetworkObject key.
 
 Sets the entity's NetworkObject mode.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3139,6 +3524,7 @@ Sets the entity's NetworkObject mode.
 
 Sets the entity's NetworkObject prefab.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3148,6 +3534,7 @@ Sets the entity's NetworkObject prefab.
 
 Sets the entity's NetworkObject profile.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3157,6 +3544,7 @@ Sets the entity's NetworkObject profile.
 
 Gives the entity a NetworkSpawnPoint with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3165,6 +3553,7 @@ Gives the entity a NetworkSpawnPoint with default values, if it has none.
 
 Every field of the entity's NetworkSpawnPoint; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `team` Int
@@ -3174,6 +3563,7 @@ Every field of the entity's NetworkSpawnPoint; found is false when it has none.
 
 The entity's NetworkSpawnPoint order.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `order` Int
 
@@ -3181,6 +3571,7 @@ The entity's NetworkSpawnPoint order.
 
 The entity's NetworkSpawnPoint team.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `team` Int
 
@@ -3188,6 +3579,7 @@ The entity's NetworkSpawnPoint team.
 
 The entity has a NetworkSpawnPoint.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3195,6 +3587,7 @@ The entity has a NetworkSpawnPoint.
 
 Takes the NetworkSpawnPoint off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3203,6 +3596,7 @@ Takes the NetworkSpawnPoint off the entity.
 
 Sets the fields given (connected or written) of the entity's NetworkSpawnPoint; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3213,6 +3607,7 @@ Sets the fields given (connected or written) of the entity's NetworkSpawnPoint; 
 
 Sets the entity's NetworkSpawnPoint order.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3222,6 +3617,7 @@ Sets the entity's NetworkSpawnPoint order.
 
 Sets the entity's NetworkSpawnPoint team.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3231,6 +3627,7 @@ Sets the entity's NetworkSpawnPoint team.
 
 Gives the entity a Parent with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3239,6 +3636,7 @@ Gives the entity a Parent with default values, if it has none.
 
 Every field of the entity's Parent; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `entity` Entity
@@ -3247,6 +3645,7 @@ Every field of the entity's Parent; found is false when it has none.
 
 The entity's Parent entity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `entity` Entity
 
@@ -3254,6 +3653,7 @@ The entity's Parent entity.
 
 The entity has a Parent.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3261,6 +3661,7 @@ The entity has a Parent.
 
 Takes the Parent off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3269,6 +3670,7 @@ Takes the Parent off the entity.
 
 Sets the fields given (connected or written) of the entity's Parent; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3278,6 +3680,7 @@ Sets the fields given (connected or written) of the entity's Parent; the rest st
 
 Sets the entity's Parent entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3287,6 +3690,7 @@ Sets the entity's Parent entity.
 
 Gives the entity a ParticleEffect with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3295,6 +3699,7 @@ Gives the entity a ParticleEffect with default values, if it has none.
 
 Every field of the entity's ParticleEffect; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `effect` String
@@ -3308,6 +3713,7 @@ Every field of the entity's ParticleEffect; found is false when it has none.
 
 The entity's ParticleEffect color.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `color` Color
 
@@ -3315,6 +3721,7 @@ The entity's ParticleEffect color.
 
 The entity's ParticleEffect effect.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `effect` String
 
@@ -3322,6 +3729,7 @@ The entity's ParticleEffect effect.
 
 The entity's ParticleEffect loop.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `loop` Bool
 
@@ -3329,6 +3737,7 @@ The entity's ParticleEffect loop.
 
 The entity's ParticleEffect playing.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `playing` Bool
 
@@ -3336,6 +3745,7 @@ The entity's ParticleEffect playing.
 
 The entity's ParticleEffect scale.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `scale` Float
 
@@ -3343,6 +3753,7 @@ The entity's ParticleEffect scale.
 
 The entity's ParticleEffect speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `speed` Float
 
@@ -3350,6 +3761,7 @@ The entity's ParticleEffect speed.
 
 The entity has a ParticleEffect.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3357,6 +3769,7 @@ The entity has a ParticleEffect.
 
 Takes the ParticleEffect off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3365,6 +3778,7 @@ Takes the ParticleEffect off the entity.
 
 Sets the fields given (connected or written) of the entity's ParticleEffect; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3379,6 +3793,7 @@ Sets the fields given (connected or written) of the entity's ParticleEffect; the
 
 Sets the entity's ParticleEffect color.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3388,6 +3803,7 @@ Sets the entity's ParticleEffect color.
 
 Sets the entity's ParticleEffect effect.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3397,6 +3813,7 @@ Sets the entity's ParticleEffect effect.
 
 Sets the entity's ParticleEffect loop.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3406,6 +3823,7 @@ Sets the entity's ParticleEffect loop.
 
 Sets the entity's ParticleEffect playing.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3415,6 +3833,7 @@ Sets the entity's ParticleEffect playing.
 
 Sets the entity's ParticleEffect scale.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3424,6 +3843,7 @@ Sets the entity's ParticleEffect scale.
 
 Sets the entity's ParticleEffect speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3433,6 +3853,7 @@ Sets the entity's ParticleEffect speed.
 
 Gives the entity a PhysicsSettings with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3441,6 +3862,7 @@ Gives the entity a PhysicsSettings with default values, if it has none.
 
 Every field of the entity's PhysicsSettings; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `gravity` Vec3
@@ -3450,6 +3872,7 @@ Every field of the entity's PhysicsSettings; found is false when it has none.
 
 The entity's PhysicsSettings collision_steps.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `collision_steps` Int
 
@@ -3457,6 +3880,7 @@ The entity's PhysicsSettings collision_steps.
 
 The entity's PhysicsSettings gravity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `gravity` Vec3
 
@@ -3464,6 +3888,7 @@ The entity's PhysicsSettings gravity.
 
 The entity has a PhysicsSettings.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3471,6 +3896,7 @@ The entity has a PhysicsSettings.
 
 Takes the PhysicsSettings off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3479,6 +3905,7 @@ Takes the PhysicsSettings off the entity.
 
 Sets the fields given (connected or written) of the entity's PhysicsSettings; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3489,6 +3916,7 @@ Sets the fields given (connected or written) of the entity's PhysicsSettings; th
 
 Sets the entity's PhysicsSettings collision_steps.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3498,6 +3926,7 @@ Sets the entity's PhysicsSettings collision_steps.
 
 Sets the entity's PhysicsSettings gravity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3507,6 +3936,7 @@ Sets the entity's PhysicsSettings gravity.
 
 Gives the entity a Prefab with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3515,6 +3945,7 @@ Gives the entity a Prefab with default values, if it has none.
 
 Every field of the entity's Prefab; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `path` String
@@ -3523,6 +3954,7 @@ Every field of the entity's Prefab; found is false when it has none.
 
 The entity's Prefab path.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `path` String
 
@@ -3530,6 +3962,7 @@ The entity's Prefab path.
 
 The entity has a Prefab.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3537,6 +3970,7 @@ The entity has a Prefab.
 
 Takes the Prefab off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3545,6 +3979,7 @@ Takes the Prefab off the entity.
 
 Sets the fields given (connected or written) of the entity's Prefab; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3554,6 +3989,7 @@ Sets the fields given (connected or written) of the entity's Prefab; the rest st
 
 Sets the entity's Prefab path.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3563,6 +3999,7 @@ Sets the entity's Prefab path.
 
 Gives the entity a RigidBody with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3571,6 +4008,7 @@ Gives the entity a RigidBody with default values, if it has none.
 
 Every field of the entity's RigidBody; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `motion` Int
@@ -3592,6 +4030,7 @@ Every field of the entity's RigidBody; found is false when it has none.
 
 The entity's RigidBody angular_damping.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `angular_damping` Float
 
@@ -3599,6 +4038,7 @@ The entity's RigidBody angular_damping.
 
 The entity's RigidBody angular_velocity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `angular_velocity` Vec3
 
@@ -3606,6 +4046,7 @@ The entity's RigidBody angular_velocity.
 
 The entity's RigidBody collision_layer.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `collision_layer` Int
 
@@ -3613,6 +4054,7 @@ The entity's RigidBody collision_layer.
 
 The entity's RigidBody collision_mask.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `collision_mask` Int
 
@@ -3620,6 +4062,7 @@ The entity's RigidBody collision_mask.
 
 The entity's RigidBody continuous.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `continuous` Bool
 
@@ -3627,6 +4070,7 @@ The entity's RigidBody continuous.
 
 The entity's RigidBody enabled.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
 
@@ -3634,6 +4078,7 @@ The entity's RigidBody enabled.
 
 The entity's RigidBody friction.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `friction` Float
 
@@ -3641,6 +4086,7 @@ The entity's RigidBody friction.
 
 The entity's RigidBody gravity_factor.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `gravity_factor` Float
 
@@ -3648,6 +4094,7 @@ The entity's RigidBody gravity_factor.
 
 The entity's RigidBody linear_damping.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `linear_damping` Float
 
@@ -3655,6 +4102,7 @@ The entity's RigidBody linear_damping.
 
 The entity's RigidBody linear_velocity.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `linear_velocity` Vec3
 
@@ -3662,6 +4110,7 @@ The entity's RigidBody linear_velocity.
 
 The entity's RigidBody mass.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `mass` Float
 
@@ -3669,6 +4118,7 @@ The entity's RigidBody mass.
 
 The entity's RigidBody motion.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `motion` Int
 
@@ -3676,6 +4126,7 @@ The entity's RigidBody motion.
 
 The entity's RigidBody restitution.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `restitution` Float
 
@@ -3683,6 +4134,7 @@ The entity's RigidBody restitution.
 
 The entity's RigidBody sensor.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `sensor` Bool
 
@@ -3690,6 +4142,7 @@ The entity's RigidBody sensor.
 
 The entity has a RigidBody.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3697,6 +4150,7 @@ The entity has a RigidBody.
 
 Takes the RigidBody off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3705,6 +4159,7 @@ Takes the RigidBody off the entity.
 
 Sets the fields given (connected or written) of the entity's RigidBody; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3727,6 +4182,7 @@ Sets the fields given (connected or written) of the entity's RigidBody; the rest
 
 Sets the entity's RigidBody angular_damping.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3736,6 +4192,7 @@ Sets the entity's RigidBody angular_damping.
 
 Sets the entity's RigidBody angular_velocity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3745,6 +4202,7 @@ Sets the entity's RigidBody angular_velocity.
 
 Sets the entity's RigidBody collision_layer.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3754,6 +4212,7 @@ Sets the entity's RigidBody collision_layer.
 
 Sets the entity's RigidBody collision_mask.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3763,6 +4222,7 @@ Sets the entity's RigidBody collision_mask.
 
 Sets the entity's RigidBody continuous.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3772,6 +4232,7 @@ Sets the entity's RigidBody continuous.
 
 Sets the entity's RigidBody enabled.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3781,6 +4242,7 @@ Sets the entity's RigidBody enabled.
 
 Sets the entity's RigidBody friction.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3790,6 +4252,7 @@ Sets the entity's RigidBody friction.
 
 Sets the entity's RigidBody gravity_factor.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3799,6 +4262,7 @@ Sets the entity's RigidBody gravity_factor.
 
 Sets the entity's RigidBody linear_damping.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3808,6 +4272,7 @@ Sets the entity's RigidBody linear_damping.
 
 Sets the entity's RigidBody linear_velocity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3817,6 +4282,7 @@ Sets the entity's RigidBody linear_velocity.
 
 Sets the entity's RigidBody mass.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3826,6 +4292,7 @@ Sets the entity's RigidBody mass.
 
 Sets the entity's RigidBody motion.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3835,6 +4302,7 @@ Sets the entity's RigidBody motion.
 
 Sets the entity's RigidBody restitution.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3844,6 +4312,7 @@ Sets the entity's RigidBody restitution.
 
 Sets the entity's RigidBody sensor.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3853,6 +4322,7 @@ Sets the entity's RigidBody sensor.
 
 Gives the entity a Spin with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3861,6 +4331,7 @@ Gives the entity a Spin with default values, if it has none.
 
 Every field of the entity's Spin; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `axis` Vec3
@@ -3870,6 +4341,7 @@ Every field of the entity's Spin; found is false when it has none.
 
 The entity's Spin axis.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `axis` Vec3
 
@@ -3877,6 +4349,7 @@ The entity's Spin axis.
 
 The entity's Spin speed.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `speed` Float
 
@@ -3884,6 +4357,7 @@ The entity's Spin speed.
 
 The entity has a Spin.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3891,6 +4365,7 @@ The entity has a Spin.
 
 Takes the Spin off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3899,6 +4374,7 @@ Takes the Spin off the entity.
 
 Sets the fields given (connected or written) of the entity's Spin; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3909,6 +4385,7 @@ Sets the fields given (connected or written) of the entity's Spin; the rest stay
 
 Sets the entity's Spin axis.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3918,6 +4395,7 @@ Sets the entity's Spin axis.
 
 Sets the entity's Spin speed.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3927,6 +4405,7 @@ Sets the entity's Spin speed.
 
 Gives the entity a Transform with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3935,6 +4414,7 @@ Gives the entity a Transform with default values, if it has none.
 
 Every field of the entity's Transform; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `position` Vec3
@@ -3945,6 +4425,7 @@ Every field of the entity's Transform; found is false when it has none.
 
 The entity's Transform position.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `position` Vec3
 
@@ -3952,6 +4433,7 @@ The entity's Transform position.
 
 The entity's Transform rotation.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `rotation` Rotation
 
@@ -3959,6 +4441,7 @@ The entity's Transform rotation.
 
 The entity's Transform scale.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `scale` Vec3
 
@@ -3966,6 +4449,7 @@ The entity's Transform scale.
 
 The entity has a Transform.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -3973,6 +4457,7 @@ The entity has a Transform.
 
 Takes the Transform off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3981,6 +4466,7 @@ Takes the Transform off the entity.
 
 Sets the fields given (connected or written) of the entity's Transform; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -3992,6 +4478,7 @@ Sets the fields given (connected or written) of the entity's Transform; the rest
 
 Sets the entity's Transform position.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4001,6 +4488,7 @@ Sets the entity's Transform position.
 
 Sets the entity's Transform rotation.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4010,6 +4498,7 @@ Sets the entity's Transform rotation.
 
 Sets the entity's Transform scale.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4019,6 +4508,7 @@ Sets the entity's Transform scale.
 
 Gives the entity a UIDocument with default values, if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4027,6 +4517,7 @@ Gives the entity a UIDocument with default values, if it has none.
 
 Every field of the entity's UIDocument; found is false when it has none.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `document` String
@@ -4039,6 +4530,7 @@ Every field of the entity's UIDocument; found is false when it has none.
 
 The entity's UIDocument document.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `document` String
 
@@ -4046,6 +4538,7 @@ The entity's UIDocument document.
 
 The entity's UIDocument focus_on_show.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `focus_on_show` Bool
 
@@ -4053,6 +4546,7 @@ The entity's UIDocument focus_on_show.
 
 The entity's UIDocument order.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `order` Int
 
@@ -4060,6 +4554,7 @@ The entity's UIDocument order.
 
 The entity's UIDocument preview.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `preview` String
 
@@ -4067,6 +4562,7 @@ The entity's UIDocument preview.
 
 The entity's UIDocument visible.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `visible` Bool
 
@@ -4074,6 +4570,7 @@ The entity's UIDocument visible.
 
 The entity has a UIDocument.
 
+- Changes: presentation
 - In `target` Entity, default self
 - Out `result` Bool
 
@@ -4081,6 +4578,7 @@ The entity has a UIDocument.
 
 Takes the UIDocument off the entity.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4089,6 +4587,7 @@ Takes the UIDocument off the entity.
 
 Sets the fields given (connected or written) of the entity's UIDocument; the rest stay as they are. Nothing happens if it has none.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4102,6 +4601,7 @@ Sets the fields given (connected or written) of the entity's UIDocument; the res
 
 Sets the entity's UIDocument document.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4111,6 +4611,7 @@ Sets the entity's UIDocument document.
 
 Sets the entity's UIDocument focus_on_show.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4120,6 +4621,7 @@ Sets the entity's UIDocument focus_on_show.
 
 Sets the entity's UIDocument order.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4129,6 +4631,7 @@ Sets the entity's UIDocument order.
 
 Sets the entity's UIDocument preview.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4138,6 +4641,7 @@ Sets the entity's UIDocument preview.
 
 Sets the entity's UIDocument visible.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4149,6 +4653,7 @@ Sets the entity's UIDocument visible.
 
 Rounded towards 0.
 
+- Changes: presentation
 - In `value` Float
 - Out `result` Int
 
@@ -4156,6 +4661,7 @@ Rounded towards 0.
 
 The whole number as a number.
 
+- Changes: presentation
 - In `value` Int
 - Out `result` Float
 
@@ -4165,6 +4671,7 @@ The whole number as a number.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Bool
 - Out `result` Bool
 
@@ -4172,6 +4679,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Color
 - Out `result` Color
 
@@ -4179,6 +4687,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Entity
 - Out `result` Entity
 
@@ -4186,6 +4695,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Float
 - Out `result` Float
 
@@ -4193,6 +4703,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Int
 - Out `result` Int
 
@@ -4200,6 +4711,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Mesh
 - Out `result` Mesh
 
@@ -4207,6 +4719,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Model
 - Out `result` Model
 
@@ -4214,6 +4727,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Rotation
 - Out `result` Rotation
 
@@ -4221,6 +4735,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` String
 - Out `result` String
 
@@ -4228,6 +4743,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Texture
 - Out `result` Texture
 
@@ -4235,6 +4751,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Vec2
 - Out `result` Vec2
 
@@ -4242,6 +4759,7 @@ Passes a value through, for organizing wires.
 
 Passes a value through, for organizing wires.
 
+- Changes: presentation
 - In `value` Vec3
 - Out `result` Vec3
 
@@ -4251,6 +4769,7 @@ Passes a value through, for organizing wires.
 
 Writes text to the log and the editor's Console.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `text` String
@@ -4261,6 +4780,7 @@ Writes text to the log and the editor's Console.
 
 Destroys the entity and everything parented under it.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4269,6 +4789,7 @@ Destroys the entity and everything parented under it.
 
 The first entity with this Name.
 
+- Changes: presentation
 - In `name` String, required
 - Out `entity` Entity
 - Out `found` Bool
@@ -4277,6 +4798,7 @@ The first entity with this Name.
 
 The entity exists.
 
+- Changes: presentation
 - In `entity` Entity
 - Out `result` Bool
 
@@ -4284,12 +4806,14 @@ The entity exists.
 
 The entity this circuit runs on (none in the game circuit).
 
+- Changes: presentation
 - Out `entity` Entity
 
 ### Entity.Spawn
 
 A new copy of a prefab ("Prefabs/Enemy.swprefab"), where the prefab puts it.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `prefab` String, required
@@ -4299,6 +4823,7 @@ A new copy of a prefab ("Prefabs/Enemy.swprefab"), where the prefab puts it.
 
 A new copy of a prefab at position.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `prefab` String, required
@@ -4312,6 +4837,7 @@ A new copy of a prefab at position.
 An input action was pressed this frame (Config/Input.swinput).
 
 - Event: ActionPressed (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 - In `action` String, constant, required
 
@@ -4320,6 +4846,7 @@ An input action was pressed this frame (Config/Input.swinput).
 An input action was released this frame.
 
 - Event: ActionReleased (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 - In `action` String, constant, required
 
@@ -4328,6 +4855,7 @@ An input action was released this frame.
 The game circuit: a save game was loaded and its variables restored.
 
 - Event: AfterLoad (the game circuit)
+- Changes: presentation
 - Exec out: `then`
 
 ### Event.BeforeSave
@@ -4335,6 +4863,7 @@ The game circuit: a save game was loaded and its variables restored.
 The game circuit: a save game is about to be written. Its variables are saved right after.
 
 - Event: BeforeSave (the game circuit)
+- Changes: presentation
 - Exec out: `then`
 
 ### Event.BeginPlay
@@ -4342,6 +4871,7 @@ The game circuit: a save game is about to be written. Its variables are saved ri
 Play starts, or the entity appears later on.
 
 - Event: BeginPlay (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 
 ### Event.EndPlay
@@ -4349,6 +4879,7 @@ Play starts, or the entity appears later on.
 Play stops.
 
 - Event: EndPlay (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 
 ### Event.FixedTick
@@ -4356,6 +4887,7 @@ Play stops.
 Every simulation tick, after the GameMode's fixedUpdate.
 
 - Event: FixedTick (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 - Out `dt` Float
 
@@ -4364,6 +4896,7 @@ Every simulation tick, after the GameMode's fixedUpdate.
 Every rendered frame, after the GameMode's frame.
 
 - Event: Frame (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 - Out `dt` Float
 
@@ -4372,6 +4905,7 @@ Every rendered frame, after the GameMode's frame.
 A named gameplay command addressed to this entity (or the game circuit).
 
 - Event: Message (entity and game circuits)
+- Changes: presentation
 - Exec out: `then`
 - In `message` String, constant, required
 - Out `sender` Entity
@@ -4383,6 +4917,7 @@ A named gameplay command addressed to this entity (or the game circuit).
 Entity circuits: something started touching this entity's sensor collider.
 
 - Event: TriggerEnter (entity circuits)
+- Changes: presentation
 - Exec out: `then`
 - Out `other` Entity
 
@@ -4391,6 +4926,7 @@ Entity circuits: something started touching this entity's sensor collider.
 Entity circuits: something stopped touching this entity's sensor.
 
 - Event: TriggerExit (entity circuits)
+- Changes: presentation
 - Exec out: `then`
 - Out `other` Entity
 
@@ -4399,6 +4935,7 @@ Entity circuits: something stopped touching this entity's sensor.
 The game circuit: a UI element's onclick="command" ran.
 
 - Event: UICommand (the game circuit)
+- Changes: presentation
 - Exec out: `then`
 - In `command` String, constant, required
 - Out `value` String
@@ -4411,6 +4948,7 @@ The game circuit: a UI element's onclick="command" ran.
 
 Goes one way or the other.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `true` `false`
 - In `condition` Bool
@@ -4419,6 +4957,7 @@ Goes one way or the other.
 
 Lets the first run through; reset lets one more.
 
+- Changes: presentation
 - Exec in: `exec` `reset`
 - Exec out: `completed`
 
@@ -4426,6 +4965,7 @@ Lets the first run through; reset lets one more.
 
 Goes to a, then b, then a again...
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `a` `b`
 - Out `is_a` Bool
@@ -4434,6 +4974,7 @@ Goes to a, then b, then a again...
 
 Runs body for each index from first to last, then completed.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `body` `completed`
 - In `first` Int, default 0
@@ -4444,6 +4985,7 @@ Runs body for each index from first to last, then completed.
 
 Passes enter on to exit while open; open, close and toggle change that.
 
+- Changes: presentation
 - Exec in: `enter` `open` `close` `toggle`
 - Exec out: `exit`
 - In `start_closed` Bool, default false
@@ -4452,6 +4994,7 @@ Passes enter on to exit while open; open, close and toggle change that.
 
 Runs then0, then then1, then2 and then3, each to its end.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then0` `then1` `then2` `then3`
 
@@ -4461,6 +5004,7 @@ Runs then0, then then1, then2 and then3, each to its end.
 
 The action is held.
 
+- Changes: presentation
 - In `action` String, required
 - Out `result` Bool
 
@@ -4468,6 +5012,7 @@ The action is held.
 
 How far the action is pressed, 0 to 1.
 
+- Changes: presentation
 - In `action` String, required
 - Out `result` Float
 
@@ -4475,6 +5020,7 @@ How far the action is pressed, 0 to 1.
 
 -1 to 1 from two actions, like move_left and move_right.
 
+- Changes: presentation
 - In `negative` String, required
 - In `positive` String, required
 - Out `result` Float
@@ -4485,6 +5031,7 @@ How far the action is pressed, 0 to 1.
 
 a and b
 
+- Changes: presentation
 - In `a` Bool
 - In `b` Bool
 - Out `result` Bool
@@ -4493,6 +5040,7 @@ a and b
 
 not a
 
+- Changes: presentation
 - In `a` Bool
 - Out `result` Bool
 
@@ -4500,6 +5048,7 @@ not a
 
 a or b
 
+- Changes: presentation
 - In `a` Bool
 - In `b` Bool
 - Out `result` Bool
@@ -4510,6 +5059,7 @@ a or b
 
 a without its sign.
 
+- Changes: presentation
 - In `a` Float
 - Out `result` Float
 
@@ -4517,6 +5067,7 @@ a without its sign.
 
 a + b
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Float
@@ -4525,6 +5076,7 @@ a + b
 
 a + b
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int
 - Out `result` Int
@@ -4533,6 +5085,7 @@ a + b
 
 value kept between min and max.
 
+- Changes: presentation
 - In `value` Float
 - In `min` Float, default 0
 - In `max` Float, default 1
@@ -4542,6 +5095,7 @@ value kept between min and max.
 
 Cosine of degrees.
 
+- Changes: presentation
 - In `degrees` Float
 - Out `result` Float
 
@@ -4549,6 +5103,7 @@ Cosine of degrees.
 
 a / b; 0 when b is 0.
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float, default 1
 - Out `result` Float
@@ -4557,6 +5112,7 @@ a / b; 0 when b is 0.
 
 a / b, rounded towards 0; 0 when b is 0.
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int, default 1
 - Out `result` Int
@@ -4565,6 +5121,7 @@ a / b, rounded towards 0; 0 when b is 0.
 
 a == b
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int
 - Out `result` Bool
@@ -4573,6 +5130,7 @@ a == b
 
 a > b
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Bool
@@ -4581,6 +5139,7 @@ a > b
 
 From a (alpha 0) to b (alpha 1).
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - In `alpha` Float, default 0.5
@@ -4590,6 +5149,7 @@ From a (alpha 0) to b (alpha 1).
 
 a < b
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Bool
@@ -4598,6 +5158,7 @@ a < b
 
 The larger of a and b.
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Float
@@ -4606,6 +5167,7 @@ The larger of a and b.
 
 The smaller of a and b.
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Float
@@ -4614,6 +5176,7 @@ The smaller of a and b.
 
 The remainder of a / b; 0 when b is 0.
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int, default 1
 - Out `result` Int
@@ -4622,6 +5185,7 @@ The remainder of a / b; 0 when b is 0.
 
 a * b
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float, default 1
 - Out `result` Float
@@ -4630,6 +5194,7 @@ a * b
 
 a * b
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int, default 1
 - Out `result` Int
@@ -4638,6 +5203,7 @@ a * b
 
 a and b within 0.0001.
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Bool
@@ -4646,6 +5212,7 @@ a and b within 0.0001.
 
 A random number from min to max.
 
+- Changes: presentation
 - In `min` Float, default 0
 - In `max` Float, default 1
 - Out `result` Float
@@ -4654,6 +5221,7 @@ A random number from min to max.
 
 A random whole number from min to max, both included.
 
+- Changes: presentation
 - In `min` Int, default 0
 - In `max` Int, default 1
 - Out `result` Int
@@ -4662,6 +5230,7 @@ A random whole number from min to max, both included.
 
 Sine of degrees.
 
+- Changes: presentation
 - In `degrees` Float
 - Out `result` Float
 
@@ -4669,6 +5238,7 @@ Sine of degrees.
 
 a - b
 
+- Changes: presentation
 - In `a` Float
 - In `b` Float
 - Out `result` Float
@@ -4677,9 +5247,153 @@ a - b
 
 a - b
 
+- Changes: presentation
 - In `a` Int
 - In `b` Int
 - Out `result` Int
+
+## Network
+
+### Network.Command.arena.ready_to_play
+
+Asks the host to arena.ready_to_play (accepted while the round is waiting). accepted means sent (or queued on the host), not done: the host's rules decide.
+
+- Changes: network request
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity
+- In `ready` Int
+- Out `accepted` Bool
+
+### Network.Command.arena.request_round_restart
+
+Asks the host to arena.request_round_restart (accepted after the round has finished). accepted means sent (or queued on the host), not done: the host's rules decide.
+
+- Changes: network request
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity
+- Out `accepted` Bool
+
+### Network.Command.arena.request_team
+
+Asks the host to arena.request_team (accepted while the round is waiting, if that team has room). accepted means sent (or queued on the host), not done: the host's rules decide.
+
+- Changes: network request
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity
+- In `team` Int
+- Out `accepted` Bool
+
+### Network.Disconnected
+
+The session failed, or the host ended it. reason names why.
+
+- Event: Disconnected (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `reason` String
+
+### Network.Event.arena.player_died
+
+The host's arena.player_died event: once on every machine, the host's included.
+
+- Event: GameEvent (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `subject` Entity
+- Out `tick` Int
+- Out `victim` Entity
+- Out `incarnation` Int
+- Out `killer` Entity
+- Out `respawn_tick` Int
+
+### Network.Event.arena.round_changed
+
+The host's arena.round_changed event: once on every machine, the host's included.
+
+- Event: GameEvent (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `subject` Entity
+- Out `tick` Int
+- Out `round_serial` Int
+- Out `phase` Int
+- Out `winning_team` Int
+
+### Network.Event.arena.shot_resolved
+
+The host's arena.shot_resolved event: once on every machine, the host's included.
+
+- Event: GameEvent (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `subject` Entity
+- Out `tick` Int
+- Out `shooter` Entity
+- Out `shooter_incarnation` Int
+- Out `input_tick` Int
+- Out `shot_ordinal` Int
+- Out `origin` Vec3
+- Out `end` Vec3
+- Out `victim` Entity
+- Out `damage` Int
+
+### Network.IsAuthority
+
+This machine decides what happens: the host, or offline play.
+
+- Changes: presentation
+- Out `result` Bool
+
+### Network.IsLocalOwner
+
+The entity belongs to this machine's player (offline: always).
+
+- Changes: presentation
+- In `entity` Entity, default self
+- Out `result` Bool
+
+### Network.LocalPlayer
+
+This machine's player slot: 1 for the host and offline play.
+
+- Changes: presentation
+- Out `slot` Int
+
+### Network.PeerJoined
+
+On the host: a player joined, in this slot.
+
+- Event: PeerJoined (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `slot` Int
+
+### Network.PeerLeft
+
+On the host: a player left that slot.
+
+- Event: PeerLeft (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `slot` Int
+
+### Network.Ready
+
+This machine's network session is in play (Active).
+
+- Event: NetworkReady (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+
+### Network.State
+
+The session's state: Offline, Connecting, Active, Failed...
+
+- Changes: presentation
+- Out `state` String
 
 ## Physics
 
@@ -4687,6 +5401,7 @@ a - b
 
 A push to a dynamic body, in kg m/s.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4696,6 +5411,7 @@ A push to a dynamic body, in kg m/s.
 
 The first collider along a ray.
 
+- Changes: presentation
 - In `origin` Vec3
 - In `direction` Vec3, default 0 0 -1
 - In `distance` Float, default 100
@@ -4709,6 +5425,7 @@ The first collider along a ray.
 
 Sets a body's speed and direction, in m/s.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4720,6 +5437,7 @@ Sets a body's speed and direction, in m/s.
 
 A turn of degrees around the up axis.
 
+- Changes: presentation
 - In `degrees` Float
 - Out `result` Rotation
 
@@ -4727,6 +5445,7 @@ A turn of degrees around the up axis.
 
 first, then second.
 
+- Changes: presentation
 - In `first` Rotation
 - In `second` Rotation
 - Out `result` Rotation
@@ -4735,6 +5454,7 @@ first, then second.
 
 A rotation from Euler angles in degrees (X, then Y, then Z).
 
+- Changes: presentation
 - In `degrees` Vec3
 - Out `result` Rotation
 
@@ -4742,6 +5462,7 @@ A rotation from Euler angles in degrees (X, then Y, then Z).
 
 vector turned by rotation.
 
+- Changes: presentation
 - In `rotation` Rotation
 - In `vector` Vec3
 - Out `result` Vec3
@@ -4750,6 +5471,7 @@ vector turned by rotation.
 
 A rotation's Euler angles in degrees.
 
+- Changes: presentation
 - In `rotation` Rotation
 - Out `result` Vec3
 
@@ -4759,6 +5481,7 @@ A rotation's Euler angles in degrees.
 
 a followed by b.
 
+- Changes: presentation
 - In `a` String
 - In `b` String
 - Out `result` String
@@ -4767,6 +5490,7 @@ a followed by b.
 
 a and b are the same text.
 
+- Changes: presentation
 - In `a` String
 - In `b` String
 - Out `result` Bool
@@ -4775,6 +5499,7 @@ a and b are the same text.
 
 The Bool as text.
 
+- Changes: presentation
 - In `value` Bool
 - Out `result` String
 
@@ -4782,6 +5507,7 @@ The Bool as text.
 
 The Float as text.
 
+- Changes: presentation
 - In `value` Float
 - Out `result` String
 
@@ -4789,6 +5515,7 @@ The Float as text.
 
 The Int as text.
 
+- Changes: presentation
 - In `value` Int
 - Out `result` String
 
@@ -4796,6 +5523,7 @@ The Int as text.
 
 The Vec3 as text.
 
+- Changes: presentation
 - In `value` Vec3
 - Out `result` String
 
@@ -4805,6 +5533,7 @@ The Vec3 as text.
 
 Rotate the target by Euler degrees in local space.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4815,6 +5544,7 @@ Rotate the target by Euler degrees in local space.
 
 Rotate locally at degrees per second around an axis. Supply the event's dt.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4827,6 +5557,7 @@ Rotate locally at degrees per second around an axis. Supply the event's dt.
 
 Set the target's local position; reports whether it had a Transform.
 
+- Changes: authority
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
@@ -4839,6 +5570,7 @@ Set the target's local position; reports whether it had a Transform.
 
 Hides a document.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `document` String, required
@@ -4847,6 +5579,7 @@ Hides a document.
 
 Sets a true/false value documents use.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `name` String, required
@@ -4856,6 +5589,7 @@ Sets a true/false value documents use.
 
 Sets the plain text of an element, by id.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `document` String, required
@@ -4866,6 +5600,7 @@ Sets the plain text of an element, by id.
 
 Sets a {{value}} documents show.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `name` String, required
@@ -4875,6 +5610,7 @@ Sets a {{value}} documents show.
 
 Sets a {{value}} documents show, as text.
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `name` String, required
@@ -4884,6 +5620,7 @@ Sets a {{value}} documents show, as text.
 
 Shows a document (its UIDocument entity's name, or its file).
 
+- Changes: presentation
 - Exec in: `exec`
 - Exec out: `then`
 - In `document` String, required
@@ -4894,6 +5631,7 @@ Shows a document (its UIDocument entity's name, or its file).
 
 a + b
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - Out `result` Vec3
@@ -4902,6 +5640,7 @@ a + b
 
 A vector's x, y and z.
 
+- Changes: presentation
 - In `a` Vec3
 - Out `x` Float
 - Out `y` Float
@@ -4911,6 +5650,7 @@ A vector's x, y and z.
 
 a x b
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - Out `result` Vec3
@@ -4919,6 +5659,7 @@ a x b
 
 How far a is from b.
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - Out `result` Float
@@ -4927,6 +5668,7 @@ How far a is from b.
 
 a . b
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - Out `result` Float
@@ -4935,6 +5677,7 @@ a . b
 
 How long the vector is.
 
+- Changes: presentation
 - In `vector` Vec3
 - Out `result` Float
 
@@ -4942,6 +5685,7 @@ How long the vector is.
 
 From a (alpha 0) to b (alpha 1).
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - In `alpha` Float, default 0.5
@@ -4951,6 +5695,7 @@ From a (alpha 0) to b (alpha 1).
 
 A vector from x, y and z.
 
+- Changes: presentation
 - In `x` Float
 - In `y` Float
 - In `z` Float
@@ -4960,6 +5705,7 @@ A vector from x, y and z.
 
 The same direction, length 1; 0 0 0 stays.
 
+- Changes: presentation
 - In `vector` Vec3
 - Out `result` Vec3
 
@@ -4967,6 +5713,7 @@ The same direction, length 1; 0 0 0 stays.
 
 vector * scale
 
+- Changes: presentation
 - In `vector` Vec3
 - In `scale` Float, default 1
 - Out `result` Vec3
@@ -4975,6 +5722,7 @@ vector * scale
 
 a - b
 
+- Changes: presentation
 - In `a` Vec3
 - In `b` Vec3
 - Out `result` Vec3

@@ -1,3 +1,11 @@
+# The checked-in node reference is what the build generates.
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --renderer null --node-schema -
+    RESULT_VARIABLE result OUTPUT_VARIABLE generated ERROR_VARIABLE errors)
+file(READ "${NODES}" checkedIn)
+string(REPLACE "\r\n" "\n" checkedIn "${checkedIn}")
+if(NOT result EQUAL 0 OR NOT generated STREQUAL checkedIn)
+    message(FATAL_ERROR "docs/CircuitNodes.md is out of date; run: player --node-schema docs/CircuitNodes.md\n${errors}")
+endif()
 execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --renderer null
     --circuit Circuits/Spinner.swcircuit --run-circuit --circuit-ticks 1 --break-node spin
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)

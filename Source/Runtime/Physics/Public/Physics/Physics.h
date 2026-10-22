@@ -72,6 +72,11 @@ public:
     std::optional<RayHit> raycast(
         const glm::vec3& origin, const glm::vec3& direction, float maxDistance, Entity ignore = kNullEntity,
         bool includeSensors = false, int mask = 65535) const;
+    // The same, ignoring every entity in `ignore` (lag-compensated shots leave out the
+    // live players, whose past capsules they test instead).
+    std::optional<RayHit> raycast(
+        const glm::vec3& origin, const glm::vec3& direction, float maxDistance, std::span<const Entity> ignore,
+        bool includeSensors = false, int mask = 65535) const;
     const std::vector<ContactEvent>& contacts() const;
 
     // ---- Network play ----

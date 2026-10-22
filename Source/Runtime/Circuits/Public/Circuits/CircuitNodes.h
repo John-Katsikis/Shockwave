@@ -16,6 +16,11 @@
 //     is the output "result". SW_PURE_NODE makes a node without exec pins, for values.
 //     They come and go with the game module, hot reload included.
 //
+// Every node says what it may do (NodeCapability), so circuits that run on clients can be
+// refused nodes that change gameplay. Game nodes change gameplay unless they say
+// otherwise: SW_PRESENTATION_NODE and SW_PRESENTATION_PURE_NODE for effects, UI and
+// read-only queries.
+//
 // `player --node-schema docs/CircuitNodes.md` lists every node with its pins.
 
 #include <Circuits/Circuit.h>
@@ -40,6 +45,10 @@ class Assets;
 class Input;
 class PhysicsWorld;
 class UIWorld;
+namespace net {
+class NetworkWorld;
+class ReplicationRegistry;
+}   // namespace net
 
 // What circuits can reach while they run: the session's services. Any may be null (tools
 // and tests); nodes that need a missing one do nothing.
@@ -50,6 +59,7 @@ struct CircuitHost {
     PhysicsWorld* physics = nullptr;
     const Assets* assets = nullptr;
     CircuitWorld* circuits = nullptr;   // session-owned message destination
+    net::NetworkWorld* network = nullptr;   // the session's (offline too); null in tools
 };
 
 // Events start a circuit running. Which kind of circuit may use which is checked when it
@@ -67,7 +77,12 @@ enum class CircuitEvent : uint8_t {
     BeforeSave,
     AfterLoad,
     UICommand,
-    Message
+    Message,
+    PeerJoined,   // host: a player joined (outputs slot)
+    PeerLeft,   // host: a player left
+    NetworkReady,   // this machine's network session became Active
+    Disconnected,   // the session failed or the host ended it (outputs reason)
+    GameEvent   // a registered game event (NodeDesc::eventParam names it)
 };
 enum class CircuitKind : uint8_t { Entity, Game };
 const char* circuitEventName(CircuitEvent event);
@@ -81,6 +96,14 @@ struct PinDesc {
     bool constant = false;   // must be a literal (an event's action name, say)
     std::vector<std::string> options{};   // reflected int-backed enum labels
 };
+
+// What a node may do, for circuits that run on clients (CircuitExecution):
+//   Presentation    effects, sound, UI, flow, math and read-only queries: safe anywhere
+//   Authority       changes gameplay state (components, spawning, physics): host only
+//   NetworkRequest  asks the host to do something (a registered command): the host's
+//                   validators still decide
+enum class NodeCapability : uint8_t { Presentation, Authority, NetworkRequest };
+const char* nodeCapabilityName(NodeCapability capability);
 
 struct NodeDesc;
 
@@ -133,6 +156,8 @@ struct NodeDesc {
     // Reflected component nodes: which component, and what the node reads or writes.
     uint32_t component = 0;
     bool readsComponent = false, writesComponent = false;
+    NodeCapability capability = NodeCapability::Authority;
+    std::string eventParam;   // events made per game event: which one (else from the first input)
     NodeFn run;
 
     bool pure() const { return execInputs.empty() && event == CircuitEvent::None; }
@@ -152,6 +177,10 @@ std::vector<std::shared_ptr<const NodeDesc>> allNodes();
 uint64_t nodeRegistryVersion();
 // The markdown reference player --node-schema writes.
 void writeNodeSchema(std::ostream& out);
+// Nodes made from a game's frozen replication registry: Network.Command.<name> for each
+// command (its payload as input pins) and Network.Event.<name> for each game event (its
+// payload as outputs). Replaces the ones made from the previous registry.
+void registerNetworkNodes(const net::ReplicationRegistry& registry);
 
 // ---- SW_NODE: C++ functions as nodes -------------------------------------------------------
 
@@ -281,13 +310,12 @@ makeFunctionNode(std::string category, std::string name, F fn, bool pure, std::v
         node.execOutputs = {"then"};
     }
     [&]<size_t... I>(std::index_sequence<I...>) {
-        (node.inputs.push_back(
-             PinDesc{
-                 I < names.size() ? names[I] : std::string(1, char('a' + I)),
-                 pinTypeOf<std::tuple_element_t<I + first, Args>>(),
-                 {},
-                 false,
-                 false}),
+        (node.inputs.push_back(PinDesc{
+             I < names.size() ? names[I] : std::string(1, char('a' + I)),
+             pinTypeOf<std::tuple_element_t<I + first, Args>>(),
+             {},
+             false,
+             false}),
          ...);
     }(std::make_index_sequence<count>{});
     if constexpr (!std::is_void_v<Result>)
@@ -334,6 +362,11 @@ NodeDesc componentMethod(std::string category, std::string name, R (C::*method)(
     return node;
 }
 
+inline NodeDesc presentationNode(NodeDesc node) {
+    node.capability = NodeCapability::Presentation;
+    return node;
+}
+
 // One per SW_NODE: registers when the game module loads, unregisters when it unloads.
 struct AutoNode {
     std::string id;
@@ -358,6 +391,15 @@ struct AutoNode {
 #define SW_PURE_NODE(category, name, ...)                                                                              \
     static const ::shockwave::detail::AutoNode SW_NODE_CONCAT(swNode_, __COUNTER__){                                   \
         ::shockwave::detail::functionNode(category, name, true, __VA_ARGS__)};
+
+// The same for nodes that change no gameplay state (effects, UI, read-only queries), so
+// Presentation and LocalOwner circuits may use them.
+#define SW_PRESENTATION_NODE(category, name, ...)                                                                      \
+    static const ::shockwave::detail::AutoNode SW_NODE_CONCAT(swNode_, __COUNTER__){                                   \
+        ::shockwave::detail::presentationNode(::shockwave::detail::functionNode(category, name, false, __VA_ARGS__))};
+#define SW_PRESENTATION_PURE_NODE(category, name, ...)                                                                 \
+    static const ::shockwave::detail::AutoNode SW_NODE_CONCAT(swNode_, __COUNTER__){                                   \
+        ::shockwave::detail::presentationNode(::shockwave::detail::functionNode(category, name, true, __VA_ARGS__))};
 
 // SW_METHOD("Combat", "Damage", &Health::damage, "amount"). The target pin defaults to self.
 // Member functions must be non-const and use supported pin types; overloads need an explicit cast.

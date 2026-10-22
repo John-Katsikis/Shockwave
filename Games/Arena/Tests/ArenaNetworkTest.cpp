@@ -418,6 +418,17 @@ void twelvePlayers(const World& scene) {
     check(r.shots > 50 && r.hits > 10, "players fire and hit through Jolt");
     check(r.blue + r.orange > 0, "players are eliminated and score");
     check(host.net().stats().inputsUsed > 1000, "the host simulated the clients' inputs");
+    // Lag compensation: the clients' shots are tested where they saw their targets.
+    const auto& hs = host.net().stats();
+    check(hs.shotsRewound + hs.shotsClamped > 50, "clients' shots are rewound to their view time");
+    check(hs.playerHits > 10, "and hit players there");
+    check(hs.shotsRefused == 0, "an honest client's view times are never refused");
+    // Every shot, kill and round change reaches every client once.
+    for (size_t i = 1; i < machines.size(); ++i) {
+        const auto& cs = machines[i]->net().stats();
+        check(cs.gameEventsReceived >= uint64_t(r.shots), "client " + std::to_string(i) + " heard every shot");
+        check(cs.duplicateEvents == 0, "client " + std::to_string(i) + " got no event twice");
+    }
     // Clients run no rules; after a quiet moment they show the host's state.
     for (auto& m : machines) m->rules().autoPlay = false;
     loop.run(90);

@@ -13,11 +13,13 @@
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/GameNetwork.h>
 #include <GameFramework/NetworkPump.h>
 #include <GameFramework/PlaySession.h>
 #include <GameFramework/SaveGame.h>
 #include <Input/InputBinding.h>
 #include <Multiplayer/NetworkComponents.h>
+#include <Multiplayer/Replication.h>
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
@@ -48,6 +50,13 @@ void Player::onStart() {
     if (module.createAssets) module.createAssets(engine());
     m_instance = shockwave::makeGameInstance(&module);
     m_instance->init(&engine());
+    {
+        // Circuits can use the game's network commands and events (Network.Command.* and
+        // Network.Event.*), made from its registry; --check reports its problems.
+        shockwave::net::ReplicationRegistry networkTypes;
+        std::vector<std::string> ignored;
+        (void)shockwave::buildReplicationRegistry(&module, networkTypes, ignored);
+    }
     m_assets = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
     applyOptimisationSettings();   // before importing (docs/Optimisation.md)
     std::vector<std::string> importProblems;

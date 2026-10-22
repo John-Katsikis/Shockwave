@@ -544,3 +544,68 @@ Outstanding for this batch:
   moving platforms aren't supported (section 9.2); `--check` reports them.
 - At 120 Hz on the hostile preset (200 ms one way) most inputs still arrive late: the
   lead tops out at 32 ticks there (267 ms), so the host falls back often and corrects.
+
+## Plan Batch 8 (2026-10-22): combat history, events and circuits
+
+Base: `eb38df2` (master after PR #26), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 8, sections 10.1 and 11; design adjustments 66 to 73.
+
+Implemented:
+
+- `NetworkWorld` (`Private/NetworkCombat.cpp`): `setCombatTargets`, the host's rewind
+  history recorded in `endTick`, `resolveShot` (view time window from the shooter's
+  measured round trip, analytic capsule test, current-world obstruction ignoring live
+  characters), the host's own pings to every client (`roundTrip`), `sendEvent` /
+  `readGameEvent` with reliable delivery to Active clients, sequence dedup and a 128-event
+  ring, and cursor reads of session events (`readEvent`). Clients stamp `view_tick` and
+  `view_fraction` from their interpolation clock.
+- `Multiplayer/PresentationDedup.h`.
+- Physics: `raycast` with a list of entities to ignore.
+- Circuits: `Circuit.execution`, `NodeCapability` with an explicit presentation list,
+  `circuitScopeProblems`, run-time scope gating, `Network.IsAuthority`, `IsLocalOwner`,
+  `LocalPlayer`, `State`, `PeerJoined`, `PeerLeft`, `Ready`, `Disconnected`, and generated
+  `Network.Command.<name>` / `Network.Event.<name>` nodes (`registerNetworkNodes`, called
+  when a registry freezes, and by the player and editor at start). `SW_PRESENTATION_NODE`.
+- The `--check` and editor (Check network setup) rule for circuits using nodes their
+  execution doesn't allow.
+- Arena: shots go through `resolveShot` (a hit on an ended life is refused); the host sends
+  `arena.shot_resolved`, `arena.player_died` and `arena.round_changed`; clients show their
+  own shots at once and every other shot once from the event, with hit markers only from
+  the host, and take the kill feed and round messages from events. The old "ammo went
+  down, so play a shot" client path is gone.
+- Regenerated `docs/CircuitNodes.md` and `Games/Arena/Docs/CircuitNodes.md`, now checked
+  by `circuits_cli` and `network_cli`. `NetworkSchema.md` and `NetworkProtocol.md` are
+  unchanged (the events and messages already existed).
+- Test `network_combat`; `network_arena`, `network_cli` and `circuits_cli` extended.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 45/47 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*`, Arena and circuits set (20 tests) pass, no sanitizer reports |
+| Steamworks on (SDK 1.65) | builds; the same 20 tests pass |
+| `player --check` | Arena 0 problems in 3 scenes, Sample 0 problems in 18 scenes |
+
+`network_combat` measured the host's round trip to client A as 33 ms (3 ticks) on a hub
+with 10 ms each way and 133 ms (9 ticks) with 60 ms each way: the tick quantisation of
+both ends adds about a tick.
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Rewind and security cases | `network_combat` at both latencies: a shot at where the target was 5 ticks ago hits (Exact) while the same claimed view aimed at its present position misses; a target behind a static wall can't be hit and the shot stops at the wall; a future view time is clamped; a zero view time, a forged old one (round trip + 9 ticks) and one 200 ticks back are refused with no player hit; a dead target can't be hit; a hit from before a respawn names the old life and one after it the new life; the host's own shot sees the present; a view 12 ticks back is a real hit at 133 ms but refused at 33 ms (the low and high RTT clamps). `network_arena`: eleven autoplaying clients' shots rewound to their view times through Jolt, more than ten player hits, none refused |
+| No duplicate shots or effects | `network_combat`: `PresentationDedup` (prediction then confirmation, copies, other shooters, ordinals and lives, the window and nearest match, a full ring); events under 20% reliable loss, 20% duplication and jitter arriving once each in order; a scripted host's duplicated and older events kept once. `network_arena`: every client received at least one event per shot fired and no duplicates |
+| Scope validation | `network_combat`: Set is authority, Get presentation, commands requests; a LocalOwner or Presentation circuit that sets health is refused, a LocalOwner circuit may send a command and a Presentation one may not, anyone may hear events; at run time on a client an owner's circuit that sets health and the host's circuit don't run (health stays 100) and the reason is reported, while the host's circuit applies it. `network_cli`: `--check` fails with file:line for a Presentation circuit that moves things or sends a command, passes for LocalOwner with a command and Authority with anything |
+| Unauthorised circuit can't apply damage; duplicate packets don't trigger a handler twice | the run-time cases above; three host events run a client's Presentation handler three times with each payload and never again, and an event packet sent twice by a scripted host runs it once |
+| Schema and node schema regenerated and checked | `circuits_cli` compares `player --node-schema` with `docs/CircuitNodes.md`, `network_cli` Arena's with `Games/Arena/Docs/CircuitNodes.md` (which lists the generated `Network.Command.arena.*` and `Network.Event.arena.*` nodes) and the network schema with `docs/NetworkSchema.md` |
+| Dynamic cover limitation documented | `docs/Networking.md` "Shots": moving bodies are tested where they are now, only players are rewound |
+
+Outstanding for this batch:
+
+- How shots, tracers and hit markers look and sound with real latency, on the desktop:
+  `player --net-preview poor` on Arena's multiplayer scene.
+- No `--net-test` combat scenario: combat is tested by `network_combat` and through Arena
+  in `network_arena`.
+- Moving cover isn't rewound (adjustment 73).
