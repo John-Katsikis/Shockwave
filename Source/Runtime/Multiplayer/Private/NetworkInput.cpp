@@ -182,6 +182,12 @@ uint32_t NetworkWorld::sendInput(InputCommand command) {
         const NetTime view = impl.interpolation->renderTime(impl.now);
         command.viewTick = view.tick;
         command.viewFraction = uint16_t(std::clamp(double(view.fraction) * 65536.0, 0.0, 65535.0));
+        // view_tick 0 means "no view" on the wire, which the host refuses: a client that
+        // really shows tick 0 (in a session's first moments) says tick 1, a tick later.
+        if (command.viewTick == 0) {
+            command.viewTick = 1;
+            command.viewFraction = 0;
+        }
     }
     const Entity predicted = impl.predictsControlled() ? impl.controlledEntityNow() : kNullEntity;
     for (uint32_t target = first;; ++target) {

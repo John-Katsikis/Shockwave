@@ -92,6 +92,7 @@ void NetworkWorld::setPhysics(PhysicsWorld* physics) {
 void NetworkWorld::prepareStep() {
     Impl& impl = *m_impl;
     if (!m_physics || !online() || !m_world) return;
+    const WorkTimer timer(impl.stats.workNanos);
     impl.predictedScratch.clear();
     if (authority()) {
         for (const NetObject& o : impl.objects) {
@@ -207,6 +208,7 @@ void NetworkWorld::Impl::reconcile(NetObject& o, uint32_t tick, const CharacterM
     const glm::vec3 before = world.get<Transform>(e)->position;
     physicsWorld.correctCharacter(e, hostState);
     const double dt = 1.0 / double(settings().tickRate);
+    const WorkTimer replayTimer(stats.replayNanos);
     for (uint32_t t = tick + 1; !newer(t, newestPredicted); ++t) {
         Predicted& p = history[t % NetworkWorld::kPredictionHistory];
         if (!p.used || p.tick != t) break;
@@ -311,6 +313,7 @@ void NetworkWorld::Impl::pushInterpolation(NetObject& o, uint32_t tick) {
 
 void NetworkWorld::present(float alpha) {
     Impl& impl = *m_impl;
+    const WorkTimer timer(impl.stats.workNanos);
     if (impl.now - impl.warningAt > kWarningSeconds) impl.warning.clear();
     impl.stats.interpolatedObjects = 0;
     if (m_role != NetworkRole::Client || !m_world || !impl.committed) return;

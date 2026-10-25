@@ -268,6 +268,7 @@ void NetworkWorld::Impl::onMessage(const ReceivedMessage& message) {
         ++stats.staleEvents;
         return;
     }
+    p->heard = now;
     if (host())
         hostMessage(*p, message);
     else
@@ -453,11 +454,19 @@ void NetworkWorld::Impl::challenge(Peer& h, const MessageHeader& header, const C
 void NetworkWorld::Impl::checkTimeouts() {
     const NetworkSettings& s = settings();
     auto expired = [&](const Peer& p, double limit) { return p.since >= 0 && now - p.since > limit; };
+    // Silence: nothing at all from the other side (inputs, snapshots and pings flow all the
+    // time) for the idle timeout. Transports that time out on their own may get there first.
+    auto silent = [&](const Peer& p) {
+        const double last = std::max(p.since, p.heard);
+        return last >= 0 && now - last > s.idleTimeoutSeconds;
+    };
     if (host()) {
         for (Peer& p : peers) {
             switch (p.phase) {
-            case Peer::Phase::Free:
-            case Peer::Phase::Active: break;
+            case Peer::Phase::Free: break;
+            case Peer::Phase::Active:
+                if (silent(p)) reject(p, ReasonCode::Timeout, "the player stopped answering");
+                break;
             case Peer::Phase::AwaitingHello:
                 if (expired(p, s.handshakeTimeoutSeconds)) reject(p, ReasonCode::Timeout, "no Hello");
                 break;
@@ -493,6 +502,9 @@ void NetworkWorld::Impl::checkTimeouts() {
         if (expired(h, w.m_start.synchronizeTimeoutSeconds + kHostReasonGraceSeconds))
             failClient(ReasonCode::Timeout, "synchronization didn't finish");
         break;
+    case NetworkState::Active:
+        if (silent(h)) failClient(ReasonCode::Timeout, "the host stopped answering");
+        break;
     default: break;
     }
 }
@@ -507,6 +519,25 @@ NetworkWorld::NetworkWorld(const NetworkStart& start, IOnlineServices* services,
 }
 
 NetworkWorld::~NetworkWorld() { close(); }
+
+size_t NetworkWorld::memoryBytes() const {
+    const Impl& impl = *m_impl;
+    auto vec = [](const auto& v) { return v.capacity() * sizeof(v[0]); };
+    // An unordered_map node: the pair and a next pointer; plus its bucket array.
+    auto map = [](const auto& m) {
+        using Node = std::pair<typename std::decay_t<decltype(m)>::value_type, void*>;
+        return m.size() * sizeof(Node) + m.bucket_count() * sizeof(void*);
+    };
+    size_t bytes = sizeof(Impl) + vec(impl.objects) + map(impl.byId) + map(impl.localKeys) + vec(impl.pick) +
+                   vec(impl.partEnds) + vec(impl.clientTokens) + vec(impl.clientTokensAt) + vec(impl.freeSlots) +
+                   vec(impl.predictedScratch) + vec(impl.rewindStates) + vec(impl.rewindEntities) +
+                   vec(impl.shotIgnore);
+    for (const NetObject& o : impl.objects) bytes += o.key.capacity() > 15 ? o.key.capacity() + 1 : 0;
+    for (const Peer& p : impl.peers) bytes += vec(p.queue) + vec(p.commandTokens) + vec(p.commandTokensAt);
+    if (impl.interpolation) bytes += sizeof(InterpolationEngine) + impl.interpolation->memoryBytes();
+    if (impl.rewind) bytes += sizeof(RewindHistoryBuffer) + impl.rewind->memoryBytes();
+    return bytes;
+}
 
 const NetworkWorldStats& NetworkWorld::stats() const {
     Impl& impl = *m_impl;
@@ -642,6 +673,7 @@ NetResult<void> NetworkWorld::begin() {
 void NetworkWorld::pump(double nowSeconds) {
     if (m_closed || !m_transport) return;
     Impl& impl = *m_impl;
+    const WorkTimer timer(impl.stats.workNanos);
     impl.now = nowSeconds;
     if (!impl.haveClock) {
         impl.haveClock = true;
@@ -664,6 +696,7 @@ void NetworkWorld::pump(double nowSeconds) {
 void NetworkWorld::drain(uint32_t tick) {
     m_impl->tick = tick;
     if (m_closed || !m_transport) return;
+    const WorkTimer timer(m_impl->stats.workNanos);
     m_impl->poll();
 }
 
@@ -671,6 +704,7 @@ void NetworkWorld::endTick(uint32_t tick) {
     Impl& impl = *m_impl;
     impl.tick = tick;
     if (m_closed || !m_transport || !impl.host()) return;
+    const WorkTimer timer(impl.stats.workNanos);
     impl.sweepDestroyed();
     impl.recordCombat();   // where everyone is after this tick, for lag compensation
     impl.sendSnapshots();
@@ -710,10 +744,18 @@ bool NetworkWorld::handleOnlineEvent(const OnlineEvent& event) {
         }
         case OnlineEventKind::AuthSucceeded:
         case OnlineEventKind::AuthFailed: {
-            if (!p.authBegun || p.validated || !(event.peer == p.peer)) continue;
+            if (!p.authBegun || !(event.peer == p.peer)) continue;
+            if (p.validated && event.kind == OnlineEventKind::AuthSucceeded) continue;
             if (event.kind == OnlineEventKind::AuthFailed) {
                 const ReasonCode reason =
                     event.reason == ReasonCode::Normal ? ReasonCode::AuthenticationFailed : event.reason;
+                if (p.validated) {   // revoked later: a ban or a lost licence, even mid-match
+                    if (impl.host())
+                        impl.reject(p, reason, "authentication revoked");
+                    else
+                        impl.failClient(reason, "the host's authentication was revoked");
+                    return true;
+                }
                 if (impl.host())
                     impl.reject(p, reason, "authentication failed");
                 else

@@ -374,6 +374,49 @@ Recorded here as the document asks, newest last. Status of each batch is in
     UI gate is the Arena menu test through the real RmlUi document plus the editor smoke
     on the project owner's PC (`editor --network`). No engine-rendered screenshot of the
     editor window exists yet.
+87. Batch 10, 2026-10-25: a client whose view really shows tick 0 (a session's first
+    moments) sends `view_tick` 1, since 0 on the wire means "no view" and the host refuses
+    it. The 12-player soak found the clean preset refusing eleven such shots.
+88. The host's resync limit counts only the minute: a fourth request when the oldest of
+    the last three arrived less than 60 s minus `idle_timeout_seconds` ago is refused
+    (RateLimited). The spacing check (half the client's 1 s) went: a lost request is
+    resent and can arrive right behind the next one, which the hostile soak showed
+    (two requests sent over a second apart arrived 0.4 s apart and the honest client was
+    sent away).
+89. `idle_timeout_seconds` now applies once Active, on both sides: nothing at all heard
+    from the other side for that long (inputs, snapshots and pings flow all the time)
+    ends the connection with Timeout ("the player stopped answering" on the host, "the
+    host stopped answering" on a client). Before, only the handshake phases timed out and
+    the 12 s outage left everyone connected and waiting. Steam's own connection timeout
+    may close a link first; the engine no longer relies on it.
+90. A shot's view time that is plausible (10.1 step 3, adjustment 66) but older than
+    `max_rewind_ms` is held to the history's edge and counts as clamped. Before, the
+    history rejected it, so on the poor preset (a round trip plus interpolation of about
+    300 ms against Arena's 200 ms) every client shot tested no players at all. Only an
+    implausible time, or a zero `view_tick`, is refused now.
+91. A ticket that validated can still fail later (Steam reports a ban or a lost licence
+    as a late AuthFailed). The session acts on it: the host sends the player away with
+    AuthenticationFailed ("authentication revoked") and a client leaves when the host's
+    is revoked. Before, the session ignored any auth event after validation.
+    `LoopbackOnlineServices::revoke` lets tests do it.
+92. Cost measurement: `NetworkWorldStats::workNanos` is the time spent in `pump`,
+    `drain`, `prepareStep`, `endTick` and `present`, and `replayNanos` the part of it a
+    client spent replaying prediction (physics). That is the whole network cost per tick
+    (encode, decode, dispatch, queues, interpolation), a superset of 14.4's "encode/decode/
+    dispatch". `NetworkWorld::memoryBytes()` totals the session's own buffers (its state,
+    peers' queues and histories, objects, interpolation, rewind), not the transport's,
+    the World's entities or Jolt, which 14.4 reports separately.
+93. The soak (`arena_network_test --soak`, CTest `network_arena_soak`) runs twelve real
+    Arena PlaySessions with Jolt in one process: everyone on autoplay, a 500 ms outage at
+    a quarter of the run (hub-wide, every link at once), one player leaving at half and a
+    new one joining three seconds later, rounds restarted by the host as they finish,
+    invariants checked every second and convergence checked after traffic recovers.
+    "throttled" is cafe with each direction of each link held to 64 KiB/s. The 12 s
+    outage is its own case (`--soak outage`): host and three clients. Timings are per
+    frame, which is one tick at the test's 60 fps; twelve sessions share four cores in the
+    cloud, so the maximums include scheduling.
+94. Traffic stayed at 26 to 30 KiB/s per client against 64 KiB/s on every preset, so the
+    protocol was not compressed ("fix correctness before compressing").
 
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.

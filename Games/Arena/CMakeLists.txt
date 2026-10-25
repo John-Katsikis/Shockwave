@@ -30,6 +30,11 @@ if(BUILD_TESTING)
     shockwave_warnings(arena_network_test)
     add_test(NAME network_arena COMMAND arena_network_test ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(network_arena PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 300)
+    # Batch 10: twelve players on every fault preset and a 64 KiB/s throttle (20 s of play
+    # each, with an outage, a leave and a late join), and a 12 s outage. The 30-minute soak
+    # is the same program: arena_network_test Games/Arena --soak cafe 1800.
+    add_test(NAME network_arena_soak COMMAND arena_network_test ${CMAKE_CURRENT_SOURCE_DIR} --soak all 20)
+    set_tests_properties(network_arena_soak PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 900)
     add_test(NAME arena_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_CURRENT_SOURCE_DIR}/Arena.swproject

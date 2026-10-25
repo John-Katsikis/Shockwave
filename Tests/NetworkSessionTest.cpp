@@ -169,6 +169,9 @@ struct Loop {
         }
         hub.advance(16667);
     }
+    void run(int frames) {
+        for (int i = 0; i < frames; ++i) frame();
+    }
     bool until(const std::function<bool()>& done, int frames) {
         for (int i = 0; i < frames; ++i) {
             if (done()) return true;
@@ -578,6 +581,40 @@ void handshakeFailures() {
     }
 }
 
+// A ticket that validated can still be revoked later (Steam reports a ban or a lost
+// licence as a late AuthFailed): the player leaves mid-match, whichever side it hits.
+void authRevoked() {
+    for (const bool hostRevokes : {true, false}) {
+        const std::string tag = hostRevokes ? "revoked by the host: " : "revoked by the client: ";
+        net::LoopbackHub hub;
+        JobSystem jobs(2);
+        Machine host(hub, 100, jobs), client(hub, 200, jobs);
+        Loop loop{hub, {&host, &client}};
+        host.go(NetworkRole::Authority);
+        client.go(NetworkRole::Client);
+        check(
+            loop.until([&] { return client.network().state() == NetworkState::Active; }, 120),
+            tag + "the client joins");
+        loop.run(30);
+        if (hostRevokes)
+            host.services->revoke(net::PeerId{200});
+        else
+            client.services->revoke(net::PeerId{100});
+        loop.until([&] { return client.network().state() == NetworkState::Failed; }, 60);
+        check(client.network().state() == NetworkState::Failed, tag + "the client leaves the match");
+        check(client.network().failure() == ReasonCode::AuthenticationFailed, tag + "with AuthenticationFailed");
+        loop.run(10);
+        check(
+            host.network().state() == NetworkState::Active && host.network().stats().admitted == 0,
+            tag + "the host lets the slot go and keeps hosting");
+        client.session->stop();
+        host.session->stop();
+        check(
+            host.services->openAuthSessions() == 0 && client.services->openAuthSessions() == 0,
+            tag + "no auth session left open");
+    }
+}
+
 // ---- After a session ---------------------------------------------------------------------
 
 void noEventsAfterDestruction() {
@@ -683,6 +720,7 @@ int main() {
     startStop100();
     startupFailures();
     handshakeFailures();
+    authRevoked();
     noEventsAfterDestruction();
     overrun();
     netTestScenarios();

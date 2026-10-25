@@ -323,6 +323,37 @@ void budget() {
     (void)mine;
 }
 
+// The plan's memory budget (14.4): twelve players and 512 network objects keep the
+// session's own buffers under 32 MiB, on the host and on a client.
+void memoryAtScale() {
+    Session s;
+    NetworkStart hostStart = startFor(NetworkRole::Authority);
+    hostStart.settings.maxPlayers = 12;
+    Machine& host = s.add(NetworkRole::Authority, 0, hostStart);
+    Transform at;
+    while (host.net->objectCount() < 512) (void)host.net->spawn(kCrate, at, 0);
+    for (int i = 0; i < 11; ++i) {
+        NetworkStart clientStart = startFor(NetworkRole::Client);
+        clientStart.settings.maxPlayers = 12;
+        s.add(NetworkRole::Client, 1, clientStart);
+    }
+    check(s.until([&] { return host.net->stats().activePeers == 11; }, 1200), "eleven clients join a 512-object host");
+    s.onHostTick = [&](Machine& h, uint32_t tick) {
+        h.world.each<NetworkIdentity, Transform>(
+            [&](Entity, NetworkIdentity&, Transform& t) { t.position.x = float(tick) * 0.01f; });
+    };
+    s.run(600);
+    s.onHostTick = nullptr;
+    size_t client = 0;
+    for (auto& m : s.machines)
+        if (m.get() != &host) client = std::max(client, m->net->memoryBytes());
+    std::printf(
+        "memory at 12 players, %u objects: host %.2f MiB, client %.2f MiB\n", host.net->objectCount(),
+        double(host.net->memoryBytes()) / 1048576, double(client) / 1048576);
+    check(host.net->memoryBytes() <= 32u << 20, "the host's session buffers stay under 32 MiB");
+    check(client <= 32u << 20, "a client's session buffers stay under 32 MiB");
+}
+
 // The host goes away halfway through a slow baseline: the client fails, and its world is
 // exactly as it was (nothing spawned, bound or changed).
 void baselineTeardown() {
@@ -738,6 +769,7 @@ int main() {
     keysAndOrders();
     spawnsDespawnsLateJoin();
     budget();
+    memoryAtScale();
     baselineTeardown();
     scriptedOrdering();
     malformedAuthority();

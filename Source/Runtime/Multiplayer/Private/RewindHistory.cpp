@@ -53,6 +53,10 @@ bool RewindHistoryBuffer::record(uint32_t tick, std::span<const RewindPlayerStat
     return true;
 }
 
+size_t RewindHistoryBuffer::memoryBytes() const {
+    return size_t(m_slots) * (kMaxRewindSamples * sizeof(Sample) + sizeof(RewindHitbox));
+}
+
 const RewindHistoryBuffer::Sample* RewindHistoryBuffer::at(uint16_t slot, uint32_t tick) const {
     if (tickNewer(tick, m_latest) || m_latest - tick >= m_capacity) return nullptr;
     const Sample& s = m_samples[size_t(slot) * kMaxRewindSamples + (tick & (kMaxRewindSamples - 1))];

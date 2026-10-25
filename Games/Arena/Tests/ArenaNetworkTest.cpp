@@ -29,6 +29,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -544,6 +545,256 @@ void twelvePlayers(const World& scene) {
     for (auto& m : machines) m->session->stop();
 }
 
+// ---- Soaks (plan Batch 10) -----------------------------------------------------------------
+
+struct Spread {
+    std::vector<double> values;
+    double at(double q) {
+        if (values.empty()) return 0;
+        std::sort(values.begin(), values.end());
+        return values[std::min(values.size() - 1, size_t(q * double(values.size())))];
+    }
+    double max() { return values.empty() ? 0 : *std::max_element(values.begin(), values.end()); }
+};
+
+// Every client shows the host's teams, ammo, health, kills and positions (after a quiet
+// moment): the plan's "all surviving peers converge".
+bool sameAsHost(Machine& host, Machine& m, float positionTolerance) {
+    if (m.rules().blue != host.rules().blue || m.rules().orange != host.rules().orange) return false;
+    for (uint16_t slot = 1; slot <= net::kMaxPlayers; ++slot) {
+        const Entity a = host.pawn(slot), b = m.pawn(slot);
+        if (host.world.alive(a) != m.world.alive(b)) return false;
+        if (!host.world.alive(a)) continue;
+        const auto& fa = *host.world.get<ArenaFighter>(a);
+        const auto& fb = *m.world.get<ArenaFighter>(b);
+        const auto& wa = *host.world.get<ArenaWeapon>(a);
+        const auto& wb = *m.world.get<ArenaWeapon>(b);
+        if (fa.team != fb.team || fa.kills != fb.kills || fa.deaths != fb.deaths || wa.ammo != wb.ammo ||
+            std::abs(fa.health - fb.health) >= 0.5f ||
+            glm::length(host.world.get<Transform>(a)->position - m.world.get<Transform>(b)->position) >=
+                positionTolerance)
+            return false;
+    }
+    return true;
+}
+
+struct SoakOptions {
+    std::string name;
+    net::FaultProfile faults;
+    int seconds = 20;   // of play after everyone joined
+    uint64_t seed = 10;
+};
+
+// A host and eleven clients play Arena by autoplay through the preset's faults for
+// `seconds`: a 500 ms outage for everyone at a quarter, a player leaving at half and a
+// new one joining in its place, rounds restarted by the host as they finish. Checked
+// every second: at most twelve players and six a side, every client still connected
+// (or, for the one that left, explicitly gone), nothing replayed from an old life.
+// After the faults are cleared, every client ends on the host's state. Prints what it
+// measured: network time per tick, corrections, traffic.
+void soak(const World& scene, const SoakOptions& o) {
+    const std::string tag = "soak " + o.name + ": ";
+    net::LoopbackHubConfig config;
+    config.seed = o.seed;
+    config.faults = o.faults;
+    net::LoopbackHub hub(config);
+    JobSystem jobs(2);
+    std::vector<std::unique_ptr<Machine>> machines;
+    machines.push_back(std::make_unique<Machine>(hub, 100, jobs, scene, false));
+    for (int i = 0; i < 11; ++i)
+        machines.push_back(std::make_unique<Machine>(hub, 200 + uint64_t(i), jobs, scene, false));
+    Machine& host = *machines[0];
+    Loop loop{hub, {}};
+    for (auto& m : machines) loop.machines.push_back(m.get());
+    host.go(NetworkRole::Authority);
+    for (size_t i = 1; i < machines.size(); ++i) machines[i]->go(NetworkRole::Client);
+    auto allActive = [&] {
+        for (Machine* m : loop.machines)
+            if (m->net().state() != NetworkState::Active || m->pawns() != 12) return false;
+        return true;
+    };
+    if (!loop.until(allActive, 1800)) {
+        check(false, tag + "eleven clients join");
+        return;
+    }
+    net::ProfileValue yes;
+    yes.fields[0].u = 1;
+    for (Machine* m : loop.machines) {
+        m->rules().autoPlay = true;
+        (void)m->net().submitCommand(kReadyToPlay, 0, yes);
+    }
+    check(loop.until([&] { return host.rules().phase == ArenaRules::Playing; }, 600), tag + "the round starts");
+
+    const int frames = o.seconds * 60;
+    const int outageAt = frames / 4, leaveAt = frames / 2, joinAt = frames / 2 + 180;
+    std::unique_ptr<Machine> late;
+    Machine* leaver = machines[5].get();
+    int joinFrames = -1, rounds = 0, finishedFor = 0, shots = 0, hits = 0;   // shots and hits of past rounds
+    uint64_t lastHostWork = host.net().stats().workNanos;
+    Machine* watched = machines[1].get();
+    uint64_t lastClientWork = watched->net().stats().workNanos, lastClientReplay = watched->net().stats().replayNanos;
+    Spread hostWork, clientWork, clientReplay;
+    bool capsOk = true, connectedOk = true, teamsOk = true;
+    for (int frame = 0; frame < frames; ++frame) {
+        if (frame == outageAt) hub.addOutage(hub.nowUs(), 500000);
+        if (frame == leaveAt) {
+            leaver->session->stop();
+            loop.machines.erase(std::find(loop.machines.begin(), loop.machines.end(), leaver));
+        }
+        if (frame == joinAt) {
+            late = std::make_unique<Machine>(hub, 400, jobs, scene, false);
+            loop.machines.push_back(late.get());
+            late->go(NetworkRole::Client);
+        }
+        if (late && joinFrames < 0 && late->net().state() == NetworkState::Active && late->pawns() == 12) {
+            joinFrames = frame - joinAt;
+            late->rules().autoPlay = true;
+        }
+        if (host.rules().finished && ++finishedFor == 180) {
+            ++rounds;
+            shots += host.rules().shots;   // a restart starts the counts again
+            hits += host.rules().hits;
+            (void)host.net().submitCommand(kRequestRoundRestart, 0, {});
+        }
+        if (!host.rules().finished) finishedFor = 0;
+        loop.frame();
+        const auto& hs = host.net().stats();
+        hostWork.values.push_back(double(hs.workNanos - lastHostWork) / 1000);
+        lastHostWork = hs.workNanos;
+        const auto& cs = watched->net().stats();
+        clientWork.values.push_back(double(cs.workNanos - lastClientWork - (cs.replayNanos - lastClientReplay)) / 1000);
+        clientReplay.values.push_back(double(cs.replayNanos - lastClientReplay) / 1000);
+        lastClientWork = cs.workNanos;
+        lastClientReplay = cs.replayNanos;
+        if (frame % 60 != 59) continue;
+        teamsOk = teamsOk && host.pawns() <= 12 && teamCount(host.world, 0) <= kTeamSize &&
+                  teamCount(host.world, 1) <= kTeamSize;
+        for (Machine* m : loop.machines) {
+            if (m == &host) continue;
+            capsOk = capsOk && m->pawns() <= 12;
+            // Joining takes a few seconds at most; after that a client is connected.
+            const bool joining = m == late.get() && joinFrames < 0 && frame - joinAt < 1800;
+            connectedOk = connectedOk && (joining || m->net().state() == NetworkState::Active);
+        }
+        capsOk = capsOk && hs.admitted <= 11 && hub.stats().poolExhausted == 0;
+    }
+    check(teamsOk, tag + "never more than twelve players or six a side");
+    check(connectedOk, tag + "every client stays connected through the faults and the outage");
+    check(capsOk, tag + "no client has more than twelve pawns; the hub's packet pools never run out");
+    check(joinFrames >= 0, tag + "a new player joins in the leaver's place");
+    check(
+        host.net().stats().admitted == 11 && host.pawns() == 12, tag + "the leaver's slot is taken by the new player");
+    const auto& hs = host.net().stats();
+    check(hs.shotsRefused == 0, tag + "no honest shot is refused");
+    check(hs.malformed == 0 && hs.rejected == 0, tag + "nothing malformed, nobody rejected");
+
+    // Traffic recovers: every client converges on the host's state.
+    hub.setFaults({});
+    for (Machine* m : loop.machines) m->rules().autoPlay = false;
+    loop.run(240);
+    for (Machine* m : loop.machines) {
+        if (m == &host) continue;
+        check(
+            sameAsHost(host, *m, 0.05f), tag + "client " + std::to_string(m->net().localPlayer()) +
+                                             " ends on the host's state once traffic recovers");
+        check(m->net().stats().duplicateEvents == 0, tag + "no event shown twice");
+    }
+    if (late)
+        check(late->net().stats().gameEventsReceived < hs.gameEventsSent, tag + "the late joiner gets no old events");
+
+    // Traffic: what the host sent each client over the run.
+    std::vector<net::NetworkPeerInfo> peers;
+    host.net().peerInfo(peers);
+    const double seconds = double(hub.nowUs()) / 1e6;
+    double sentHigh = 0, sentSum = 0;
+    for (const auto& p : peers) {
+        const double kib = double(p.bytesSent) / 1024 / seconds;
+        sentHigh = std::max(sentHigh, kib);
+        sentSum += kib;
+    }
+    const auto& cs = watched->net().stats();
+    const auto hubStats = hub.stats();
+    std::printf(
+        "%s%d s, %d rounds restarted, shots %d hits %d | host network p50 %.0f p95 %.0f p99 %.0f max %.0f us/frame | "
+        "client network p50 %.0f p95 %.0f p99 %.0f max %.0f us, replay p95 %.0f max %.0f us | client corrections %llu "
+        "(max %.3f m, %llu resets) | host out per client %.1f KiB/s (max), %.1f KiB/s total | late join %.2f s | "
+        "control queue high %u B | hub packets in flight high %u | memory host %.2f MiB, client %.2f MiB, %u objects\n",
+        tag.c_str(), o.seconds, rounds, shots + host.rules().shots, hits + host.rules().hits, hostWork.at(0.5),
+        hostWork.at(0.95), hostWork.at(0.99), hostWork.max(), clientWork.at(0.5), clientWork.at(0.95),
+        clientWork.at(0.99), clientWork.max(), clientReplay.at(0.95), clientReplay.max(),
+        (unsigned long long)cs.corrections, cs.maxCorrection, (unsigned long long)cs.predictionResets, sentHigh,
+        sentSum, joinFrames / 60.0, hs.controlQueueHigh, hubStats.packetsInFlightHigh,
+        double(host.net().memoryBytes()) / 1048576, double(watched->net().memoryBytes()) / 1048576,
+        host.net().objectCount());
+    check(
+        host.net().memoryBytes() <= 32u << 20 && watched->net().memoryBytes() <= 32u << 20,
+        tag + "the session's buffers stay under 32 MiB");
+    for (Machine* m : loop.machines) m->session->stop();
+}
+
+// Twelve seconds of no traffic at all: every client gives up with Timeout (no endless
+// connecting screen), the host lets every slot go and keeps listening, and new players
+// join and play again.
+void severeOutage(const World& scene) {
+    net::LoopbackHubConfig config;
+    config.seed = 12;
+    config.faults = net::findFaultPreset("cafe")->profile;
+    net::LoopbackHub hub(config);
+    JobSystem jobs(2);
+    Machine host(hub, 100, jobs, scene, false);
+    std::vector<std::unique_ptr<Machine>> clients;
+    for (int i = 0; i < 3; ++i)
+        clients.push_back(std::make_unique<Machine>(hub, 200 + uint64_t(i), jobs, scene, false));
+    Loop loop{hub, {&host}};
+    for (auto& c : clients) loop.machines.push_back(c.get());
+    host.go(NetworkRole::Authority);
+    for (auto& c : clients) c->go(NetworkRole::Client);
+    check(
+        loop.until(
+            [&] {
+                for (auto& c : clients)
+                    if (c->net().state() != NetworkState::Active || c->pawns() != 4) return false;
+                return true;
+            },
+            600),
+        "outage: three clients join");
+    hub.addOutage(hub.nowUs(), 12000000);
+    int failedAt = -1;
+    for (int frame = 0; frame < 13 * 60; ++frame) {
+        loop.frame();
+        bool allFailed = true;
+        for (auto& c : clients) allFailed = allFailed && c->net().state() == NetworkState::Failed;
+        if (allFailed && failedAt < 0) failedAt = frame;
+    }
+    check(failedAt >= 0 && failedAt <= 12 * 60, "outage: every client gives up within the outage, not later");
+    for (auto& c : clients)
+        check(c->net().failure() == ReasonCode::Timeout, "outage: a client that hears nothing fails with Timeout");
+    check(
+        host.net().state() == NetworkState::Active && host.net().stats().admitted == 0 && host.pawns() == 1,
+        "outage: the host lets every slot go, keeps its own player and keeps listening");
+    // The clients' players stop Play; new ones join the same host.
+    for (auto& c : clients) c->session->stop();
+    loop.machines = {&host};
+    std::vector<std::unique_ptr<Machine>> again;
+    for (int i = 0; i < 3; ++i) {
+        again.push_back(std::make_unique<Machine>(hub, 300 + uint64_t(i), jobs, scene, false));
+        loop.machines.push_back(again.back().get());
+        again.back()->go(NetworkRole::Client);
+    }
+    check(
+        loop.until(
+            [&] {
+                for (auto& c : again)
+                    if (c->net().state() != NetworkState::Active || c->pawns() != 4) return false;
+                return true;
+            },
+            900),
+        "outage: new players join the host afterwards");
+    loop.run(120);
+    for (auto& c : again) check(sameAsHost(host, *c, 0.05f), "outage: and show the host's state");
+    for (Machine* m : loop.machines) m->session->stop();
+}
+
 // A client that stops sending: two ticks of its last input with fire off, then standing.
 void missingInput(const World& scene) {
     net::LoopbackHub hub;
@@ -692,8 +943,19 @@ void frameRateIndependence() {
 
 }   // namespace
 
+// arena_network_test [Games/Arena] [--soak clean|cafe|poor|hostile|throttled|all [seconds]]
+// Without --soak: the twelve-player, cheating, missing-input and frame-rate tests. With it:
+// only the soaks, each preset for `seconds` (default 20) of play, and the 12 s outage.
 int main(int argc, char** argv) {
-    const fs::path game = argc > 1 ? fs::path(argv[1]) : fs::path("Games/Arena");
+    const fs::path game = argc > 1 && argv[1][0] != '-' ? fs::path(argv[1]) : fs::path("Games/Arena");
+    std::string soakName;
+    int soakSeconds = 20;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--soak" && i + 1 < argc) {
+            soakName = argv[++i];
+            if (i + 1 < argc && argv[i + 1][0] != '-') soakSeconds = std::max(1, std::atoi(argv[++i]));
+        }
+    }
     registerTypes();
     net::registerNetworkComponents();
     Assets assets;
@@ -702,11 +964,26 @@ int main(int argc, char** argv) {
     try {
         if (!loadArenaScene(game, "arena-mp.swscene", assets, scene)) {
             check(false, "the multiplayer scene loads");
+        } else if (!soakName.empty()) {
+            std::vector<SoakOptions> soaks;
+            for (const net::FaultPreset& preset : net::faultPresets())
+                if (soakName == "all" || soakName == preset.name)
+                    soaks.push_back({preset.name, preset.profile, soakSeconds});
+            if (soakName == "all" || soakName == "throttled") {
+                // cafe, with each direction of each connection held to 64 KiB/s: the plan's
+                // per-peer budget for twelve players.
+                SoakOptions throttled{"throttled", net::findFaultPreset("cafe")->profile, soakSeconds};
+                throttled.faults.bytesPerSecond = 64 * 1024;
+                soaks.push_back(throttled);
+            }
+            check(!soaks.empty() || soakName == "outage", "--soak names a preset, throttled, outage or all");
+            for (const SoakOptions& o : soaks) soak(scene, o);
+            if (soakName == "all" || soakName == "outage") severeOutage(scene);
         } else {
             twelvePlayers(scene);
             missingInput(scene);
         }
-        frameRateIndependence();
+        if (soakName.empty()) frameRateIndependence();
     } catch (const std::exception& e) {
         check(false, std::string("exception: ") + e.what());
     }

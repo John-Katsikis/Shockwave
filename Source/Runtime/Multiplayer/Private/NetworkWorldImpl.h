@@ -14,6 +14,7 @@
 #include <Network/Sha256.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -30,6 +31,7 @@ struct Peer {
     PeerId peer;
     bool connected = false;   // the transport said Connected (a client's view of the host)
     double since = -1;   // when the phase began; -1 until the first pump gives a time
+    double heard = -1;   // when its last message arrived (the idle timeout counts from here)
     uint16_t slot = 0;
     RequestId ticketRequest;   // our ticket for this peer
     bool ticketSent = false;
@@ -116,6 +118,19 @@ struct HeldSnapshot {
 
 // u32 serial and tick order that survives wraparound.
 inline bool newer(uint32_t a, uint32_t b) { return a != b && uint32_t(a - b) < 0x80000000u; }
+
+// Adds the time until it goes out of scope to a nanosecond counter (NetworkWorldStats).
+struct WorkTimer {
+    explicit WorkTimer(uint64_t& total) : total(total), start(std::chrono::steady_clock::now()) {}
+    ~WorkTimer() {
+        total += uint64_t(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    }
+    WorkTimer(const WorkTimer&) = delete;
+    WorkTimer& operator=(const WorkTimer&) = delete;
+    uint64_t& total;
+    std::chrono::steady_clock::time_point start;
+};
 
 struct NetworkWorld::Impl final : TransportSink {
     explicit Impl(NetworkWorld& world);
