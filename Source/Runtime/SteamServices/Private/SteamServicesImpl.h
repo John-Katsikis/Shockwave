@@ -59,6 +59,11 @@ public:
     NetResult<void> setLobbyJoinable(LobbyId lobby, bool joinable);
     NetResult<void> setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value);
     NetResult<std::vector<PeerId>> lobbyMembers(LobbyId lobby) const;
+    NetResult<LobbySummary> lobbyInfo(LobbyId lobby) const;
+    LobbySummary summary(LobbyId lobby) const;
+    std::string displayName(PeerId peer) const {
+        return state == SteamServiceState::Client && api ? api->personaName(peer.value) : std::string();
+    }
     void cancelCall(RequestId request);
     void lobbyCreated(uint64_t call, bool ok, uint64_t lobby);
     void lobbyList(uint64_t call, bool ok, uint32_t count);
@@ -123,6 +128,7 @@ public:
         uint64_t call = 0;
         RequestId request;
         bool cancelled = false;
+        uint64_t lobby = 0;   // JoinLobby: the lobby asked for
     };
     std::array<Call, 32> calls{};
     std::array<uint64_t, 4> joinedLobbies{};

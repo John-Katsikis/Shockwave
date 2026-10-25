@@ -8,12 +8,16 @@
 //   2. drain the services' events      to the session, or dropped when it isn't theirs
 //   3. session.pumpNetwork(now)        receive and handle messages, timeouts
 //   4. a simulation overrun ends network play (SimulationOverrun)
-//   5. session.collectInput(frameDt)   GameMode::collectInput, before the fixed ticks
+//   5. match.update(session)           the match follows its session (OnlineMatch.h)
+//   6. session.collectInput(frameDt)   GameMode::collectInput, before the fixed ticks
+//
+// The services' events go to the match first (lobbies, invites), then to the session.
 //
 // Both pointers may be null. The engine version also picks the simulation time source:
 // Monotonic while the session is online, Smoothed otherwise.
 
 #include <GameFramework/PlaySession.h>
+#include <Multiplayer/OnlineMatch.h>
 #include <Network/OnlineServices.h>
 
 #include <cstdint>
@@ -27,6 +31,7 @@ struct NetworkFrame {
     double nowSeconds = 0;   // monotonic
     double rawFrameDt = 0;
     bool simulationOverrun = false;   // SimulationStep::overrun
+    net::OnlineMatch* match = nullptr;   // the application's, when it has one
 };
 
 struct NetworkPumpCounters {
@@ -40,6 +45,6 @@ void pumpNetworkFrame(
     NetworkPumpCounters* counters = nullptr);
 void pumpNetworkFrame(
     Engine& engine, net::IOnlineServices* services, PlaySession* session, double rawFrameDt,
-    NetworkPumpCounters* counters = nullptr);
+    NetworkPumpCounters* counters = nullptr, net::OnlineMatch* match = nullptr);
 
 }   // namespace shockwave

@@ -29,14 +29,14 @@ SteamLobbyType lobbyType(LobbyVisibility visibility) {
 }   // namespace
 
 static NetResult<RequestId>
-track(SteamServicesImpl& s, SteamServicesImpl::CallKind kind, uint64_t call, const char* failure) {
+track(SteamServicesImpl& s, SteamServicesImpl::CallKind kind, uint64_t call, const char* failure, uint64_t lobby = 0) {
     if (!call) return NetError{NetErrorCode::Io, failure};
     auto slot = std::find_if(s.calls.begin(), s.calls.end(), [](const SteamServicesImpl::Call& c) {
         return c.kind == SteamServicesImpl::CallKind::None;
     });
     // Checked by the callers before starting the call; full here means a bug.
     if (slot == s.calls.end()) return NetError{NetErrorCode::CapacityExceeded, "too many Steam requests in flight"};
-    *slot = {kind, call, s.newRequest(), false};
+    *slot = {kind, call, s.newRequest(), false, lobby};
     return slot->request;
 }
 
@@ -77,7 +77,8 @@ NetResult<RequestId> SteamServicesImpl::joinLobby(LobbyId lobby) {
     if (state != SteamServiceState::Client) return noLobbies();
     if (!lobby.valid()) return NetError{NetErrorCode::InvalidArgument, "no lobby ID"};
     if (!callSlotFree(*this)) return NetError{NetErrorCode::CapacityExceeded, "too many Steam requests in flight"};
-    return track(*this, CallKind::JoinLobby, api->joinLobby(lobby.value), "Steam couldn't start joining the lobby");
+    return track(
+        *this, CallKind::JoinLobby, api->joinLobby(lobby.value), "Steam couldn't start joining the lobby", lobby.value);
 }
 
 NetResult<void> SteamServicesImpl::leaveLobby(LobbyId lobby) {
@@ -126,6 +127,32 @@ NetResult<std::vector<PeerId>> SteamServicesImpl::lobbyMembers(LobbyId lobby) co
     return members;
 }
 
+LobbySummary SteamServicesImpl::summary(LobbyId id) const {
+    LobbySummary lobby;
+    lobby.id = id;
+    lobby.owner = PeerId{api->lobbyOwner(id.value)};
+    lobby.members = api->lobbyMemberCount(id.value);
+    lobby.capacity = api->lobbyMemberLimit(id.value);
+    std::array<char, kMaxLobbyKeyBytes + 1> key{};
+    std::array<char, kMaxLobbyValueBytes + 1> value{};
+    const uint32_t entries = std::min<uint32_t>(api->lobbyDataCount(id.value), 64);
+    for (uint32_t e = 0; e < entries; ++e) {
+        key.fill('\0');
+        value.fill('\0');
+        if (api->lobbyDataByIndex(
+                id.value, e, std::span(key).first(key.size() - 1), std::span(value).first(value.size() - 1)))
+            lobby.metadata.emplace_back(key.data(), value.data());
+    }
+    return lobby;
+}
+
+NetResult<LobbySummary> SteamServicesImpl::lobbyInfo(LobbyId lobby) const {
+    if (state != SteamServiceState::Client) return noLobbies();
+    if (!lobby.valid() || std::find(joinedLobbies.begin(), joinedLobbies.end(), lobby.value) == joinedLobbies.end())
+        return NetError{NetErrorCode::InvalidArgument, "not in that lobby"};
+    return summary(lobby);
+}
+
 void SteamServicesImpl::cancelCall(RequestId request) {
     for (Call& c : calls)
         if (c.kind != CallKind::None && c.request == request) c.cancelled = true;
@@ -170,24 +197,9 @@ void SteamServicesImpl::lobbyList(uint64_t call, bool ok, uint32_t count) {
     event.request = done.request;
     count = std::min(count, kMaxLobbyResults);
     event.lobbies.reserve(count);
-    std::array<char, kMaxLobbyKeyBytes + 1> key{};
-    std::array<char, kMaxLobbyValueBytes + 1> value{};
     for (uint32_t i = 0; i < count; ++i) {
-        LobbySummary lobby;
-        lobby.id = LobbyId{api->lobbyByIndex(i)};
-        if (!lobby.id.valid()) continue;
-        lobby.owner = PeerId{api->lobbyOwner(lobby.id.value)};
-        lobby.members = api->lobbyMemberCount(lobby.id.value);
-        lobby.capacity = api->lobbyMemberLimit(lobby.id.value);
-        const uint32_t entries = std::min<uint32_t>(api->lobbyDataCount(lobby.id.value), 64);
-        for (uint32_t e = 0; e < entries; ++e) {
-            key.fill('\0');
-            value.fill('\0');
-            if (api->lobbyDataByIndex(
-                    lobby.id.value, e, std::span(key).first(key.size() - 1), std::span(value).first(value.size() - 1)))
-                lobby.metadata.emplace_back(key.data(), value.data());
-        }
-        event.lobbies.push_back(std::move(lobby));
+        const LobbyId id{api->lobbyByIndex(i)};
+        if (id.valid()) event.lobbies.push_back(summary(id));
     }
     push(std::move(event));
 }
@@ -198,7 +210,13 @@ void SteamServicesImpl::lobbyEntered(uint64_t call, bool ok, uint64_t lobby) {
     const Call done = *c;
     *c = {};
     if (done.cancelled) {
-        if (ok && lobby) api->leaveLobby(lobby);
+        // Nobody wants this lobby, unless a later join asked for it again (cancel, then
+        // join the same lobby): leaving then would take that join's membership away.
+        const bool wanted = std::find(joinedLobbies.begin(), joinedLobbies.end(), lobby) != joinedLobbies.end() ||
+                            std::any_of(calls.begin(), calls.end(), [&](const Call& other) {
+                                return other.kind == CallKind::JoinLobby && !other.cancelled && other.lobby == lobby;
+                            });
+        if (ok && lobby && !wanted) api->leaveLobby(lobby);
         return;
     }
     if (!ok || !lobby) return failed(*this, done.request, "couldn't join the lobby: it's full, gone or private");

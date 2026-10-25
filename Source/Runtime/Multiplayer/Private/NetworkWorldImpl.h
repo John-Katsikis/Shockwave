@@ -8,6 +8,7 @@
 #include <Multiplayer/Interpolation.h>
 #include <Multiplayer/NetworkWorld.h>
 #include <Multiplayer/Replication.h>
+#include <Multiplayer/RewindHistory.h>
 #include <Physics/Physics.h>
 
 #include <Network/Sha256.h>
@@ -55,11 +56,13 @@ struct Peer {
     // the fallback), and how often it sent inputs too far ahead.
     std::array<InputCommand, NetworkWorld::kInputHistory> inputs{};
     std::array<bool, NetworkWorld::kInputHistory> haveInput{};
+    std::array<uint32_t, NetworkWorld::kInputHistory> inputArrival{};   // the host tick each arrived at
     uint32_t firstInputTick = 0;
     uint32_t lastTaken = 0;   // the newest tick takeInput() used, real or fallback
     bool tookAny = false;
     InputCommand lastInput{};
     bool haveLastInput = false;
+    double lastInputAt = -1;   // when the newest input arrived (for the Network window)
     uint32_t missing = 0;
     uint32_t aheadViolations = 0;
     double aheadWindow = -1;
@@ -70,6 +73,11 @@ struct Peer {
     // Pings answered this second.
     uint32_t pings = 0;
     double pingWindow = -1;
+    // Host pings to this client (once Active), and the round trips they measured.
+    uint32_t hostPingId = 0, hostPings = 0;
+    double nextHostPing = 0;
+    std::array<double, 8> rtts{};
+    uint32_t rttCount = 0;
 
     bool admitted() const { return phase == Phase::Synchronizing || phase == Phase::Active; }
     size_t queued() const { return queue.size() - queueRead; }
@@ -147,6 +155,7 @@ struct NetworkWorld::Impl final : TransportSink {
     std::array<HeldSnapshot, kMaxHeldSnapshots> held{};
     uint32_t lastAppliedTick = 0;   // client: newest snapshot tick applied to anything
     bool haveApplied = false;
+    double lastSnapshotAt = -1;   // client: when a snapshot record was last applied
     double lastResync = -1e9;
     std::array<double, kMaxResyncsPerMinute> resyncTimes{-1e9, -1e9, -1e9};
     // Host scratch, sized once: records picked for a peer, part boundaries, a part.
@@ -202,6 +211,27 @@ struct NetworkWorld::Impl final : TransportSink {
     std::unique_ptr<InterpolationEngine> interpolation;   // client, once Active
     std::vector<uint16_t> freeSlots;
     std::vector<Entity> predictedScratch;
+
+    // ---- Combat history and game events (NetworkCombat.cpp) ----
+    std::unique_ptr<RewindHistoryBuffer> rewind;   // host, made at the first recorded tick
+    std::vector<RewindPlayerState> rewindStates;   // per slot, this tick
+    std::vector<Entity> rewindEntities;   // per slot: the character recorded this tick
+    std::vector<Entity> shotIgnore;   // scratch: the live characters a shot's world ray skips
+    // Every game event made (host, offline) or received (client) this session, the newest
+    // kGameEventHistory kept: event n (counting from 0) is at n % kGameEventHistory.
+    std::array<ReceivedGameEvent, NetworkWorld::kGameEventHistory> gameEvents{};
+    uint64_t gameEventCount = 0;
+    uint32_t gameEventSeq = 0;   // host: the last event_seq sent; client: the last received
+    bool haveGameEventSeq = false;
+    std::array<uint8_t, kMaxEventPayloadBytes> eventBytes{};
+    void recordCombat();
+    ReceivedGameEvent& storeGameEvent();
+    void gameEventMessage(const GameEvent& event);
+    void sendHostPings();
+    void hostPong(Peer& p, const Pong& pong);
+    void clientPing(Peer& h, const Ping& ping);
+    double peerRoundTrip(const Peer& p) const;   // the worst recent sample, 0 until measured
+    void clearCombat();
 
     PhysicsWorld* physics() const { return w.m_physics; }
     Entity controlledEntityNow() const;

@@ -110,6 +110,7 @@ From the command line, these options change one run without editing the file:
 | `--output folder` | Put the package in this folder |
 | `--no-build` | Don't build first |
 | `--no-archive` | Don't make the `.tar.gz` |
+| `--dev-package` | A development package: allows Steam AppID 480 (see [Steam](#steam)) |
 
 ## What packaging checks
 
@@ -125,12 +126,33 @@ package of the same version is left as it was.
    package, on a few threads of its own. Then it strips symbols and writes the launcher
    and README.
 4. **Verify.** Makes sure the package stands on its own. Every library it uses must be
-   inside it or on every Linux system. Then the packaged game runs its own
+   inside it or on every Linux system, and nothing that never ships (`steam_appid.txt`,
+   captures) is there. Then the packaged game runs its own
    `--check`, which proves it finds its project, code and plugins from inside the folder.
 5. **Archive.** Swaps the new folder in for the old one and makes the `.tar.gz`.
 
 Building and checking run without a window or sound device, so packaging also works on
 a server, in CI or for an AI agent.
+
+## Steam
+
+A game whose `Config/Network.swnetwork` turns multiplayer on over Steam
+([Networking.md](Networking.md#steam)) packages with these rules:
+
+- It needs its own `steam_app_id`. AppID 480 (Spacewar, Valve's shared test app) stops
+  packaging unless you ask for a development package: `player --package --dev-package`,
+  or tick **Development package** in the editor's window. That choice is never saved in
+  `Package.swpackage`, so a release can't ship as a test build by mistake.
+- An engine built with the Steamworks SDK (`-DSHOCKWAVE_STEAMWORKS=ON`) ships Valve's
+  runtime library (`libsteam_api.so`) in `Binaries/`; packaging fails if it's missing.
+  The SDK itself never ships. The README says online play needs Steam running.
+- An engine built without the SDK still packages the game, with a warning: it plays
+  offline only, and its online buttons say why.
+- `steam_appid.txt` and `.swnetcap` packet captures never ship, wherever they are in
+  the project; Verify fails if one ever reaches the package.
+- A packaged Steam game started outside Steam asks Steam to start it (except a
+  development package, which runs as it was started; put a `steam_appid.txt` with 480
+  next to the program to test it outside Steam).
 
 ## Which Linux systems can run it
 

@@ -3,4 +3,4 @@
 # game (game_circuit in the .swproject). See docs/Circuits.md.
 shockwave_module(Circuits
     PUBLIC_DEPS Shockwave::Engine
-    PRIVATE_DEPS Shockwave::Physics Shockwave::Audio Shockwave::GameUI)
+    PRIVATE_DEPS Shockwave::Physics Shockwave::Audio Shockwave::GameUI Shockwave::Multiplayer)

@@ -24,6 +24,7 @@
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
 #include <Multiplayer/NetworkComponents.h>
+#include <Multiplayer/OnlineMatch.h>
 #include <Multiplayer/Replication.h>
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>

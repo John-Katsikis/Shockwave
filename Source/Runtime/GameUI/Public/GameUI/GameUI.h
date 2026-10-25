@@ -233,6 +233,8 @@ public:
     // Where an element is laid out, in pixels: x, y, width, height of its border box.
     // nullopt when there's no such element or it isn't laid out. For tests and tools.
     std::optional<glm::vec4> elementRect(Entity documentEntity, std::string_view elementId);
+    // The element is shown: it, and every parent, is displayed (data-if, display, visibility).
+    bool elementVisible(Entity documentEntity, std::string_view elementId);
     // Clicks the element as if with the mouse, and hands the events to the listener.
     bool click(Entity documentEntity, std::string_view elementId);
     // The "game" data model, bound in documents with data-model="game": {{score}}.

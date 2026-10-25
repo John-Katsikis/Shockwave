@@ -26,7 +26,8 @@ class UIWorld;
 class NavigationWorld;
 namespace net {
 class NetworkWorld;
-}
+class OnlineMatch;
+}   // namespace net
 
 // What game code can reach during Play.
 struct GameContext {
@@ -66,6 +67,12 @@ struct GameContext {
     // Network play (docs/Networking.md). Always there during Play: offline it reports
     // local authority (role Offline) and does nothing.
     net::NetworkWorld& network() const;
+    // Hosting, finding, joining, inviting and leaving matches (Multiplayer/OnlineMatch.h):
+    // the application's, shared with its command line and editor. Null when the
+    // application offers none (tools, tests, a project without a network scene); a game's
+    // menus grey their online buttons then. Hosting or joining replaces the session, so
+    // call it from menu handlers, never mid-tick.
+    net::OnlineMatch* onlineMatch = nullptr;
 };
 
 class GameMode {

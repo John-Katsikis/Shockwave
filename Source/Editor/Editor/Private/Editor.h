@@ -11,6 +11,8 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
 #include <Multiplayer/NetworkSettings.h>
+#include <Multiplayer/OnlineMatch.h>
+#include <Network/NetworkCapture.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
 #include <Animation/AnimationWorld.h>
@@ -57,6 +59,7 @@ struct EditorOptions {
     std::string contentFolder;   // --content-folder: inside project Content
     bool showPreferences = false;   // --preferences: open settings on startup
     bool showGraphicsGuide = false;   // --graphics-guide: open the implementation guide
+    bool showNetwork = false;   // --network: open the Network window
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -159,6 +162,16 @@ private:
     void loadNetworkSettingsEdit();
     void checkNetworkSetup();
     void startSteam();
+    // Window > Network (docs/Networking.md): Host, Find / Join, Invite and Leave through
+    // OnlineMatch on the open scene, the peer table and metrics, Copy diagnostics, Capture
+    // packets, Run local test and Assign missing network keys. updateOnlineMatch runs
+    // every frame after the pump: it plays the match's start and stops Play when it ends.
+    void drawNetworkWindow();
+    void updateOnlineMatch();
+    bool prepareOnlineMatch();
+    std::string networkDiagnostics();
+    void drawNetworkObjectNotes(shockwave::Entity e);
+    void assignMissingNetworkKeysTool();
     void applyAudioSettings(const shockwave::Project& project);
     void drawProjectSettingsWindow();
     void drawControlsWindow();
@@ -249,6 +262,7 @@ private:
     void attachCircuit(const std::string& path);   // a Circuit component on each selected entity, with undo
     bool attachCircuit(shockwave::Entity e, const std::string& path);
     bool m_showCircuits = false;
+    bool m_showNetwork = false;
     std::shared_ptr<struct CircuitEditorState> m_circuitEditor;   // created when the window first opens
     // SaveGamesPanel.cpp: the project's save slots; save and load during Play.
     void drawSaveGamesWindow();
@@ -532,6 +546,23 @@ private:
     // callbacks run every frame until "Stop Steam" or the project closes.
     std::unique_ptr<shockwave::net::SteamServices> m_steam;
     std::string m_steamMessage;
+    // Window > Network's match (Multiplayer/OnlineMatch.h), for the open scene; Steam is
+    // started for it on the first Host, Find or Join.
+    shockwave::net::OnlineMatch m_match;
+    std::unique_ptr<shockwave::net::ReplicationRegistry> m_matchRegistry;
+    std::string m_matchScene;   // the scene m_match was set up for
+    std::unique_ptr<shockwave::net::CaptureWriter> m_capture;   // Capture packets, until Stop
+    std::filesystem::path m_capturePath;
+    bool m_captureNextMatch = false;
+    std::string m_joinLobbyText, m_directJoinText, m_localTestResult, m_lastMatchEnd;
+    std::vector<shockwave::net::NetworkPeerInfo> m_peers;
+    struct PeerRate {
+        uint16_t slot = 0;
+        uint64_t in = 0, out = 0;
+        double inKiB = 0, outKiB = 0;   // per second, over the last second
+    };
+    std::vector<PeerRate> m_peerRates;
+    double m_peerRateAge = 0;
 
     // File dialogs answer from another thread.
     enum class DialogKind { OpenScene, SaveScene, OpenProject, NewProjectFolder, Import };

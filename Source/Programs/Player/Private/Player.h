@@ -13,12 +13,16 @@
 #include <Multiplayer/Replication.h>
 #include <Network/Loopback.h>
 #include <Network/LoopbackServices.h>
+#include <Multiplayer/OnlineMatch.h>
+#include <Network/NetworkCapture.h>
 #include <Network/OnlineServices.h>
+#include <SteamServices/SteamServices.h>
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -38,7 +42,9 @@ struct Tool {
         Animations,
         NodeSchema,
         CircuitRun,
-        CircuitDump
+        CircuitDump,
+        NetworkManifest,
+        AssignNetworkKeys
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
@@ -74,6 +80,23 @@ struct Tool {
     // --net-preview [preset]: play the scene as a client of a host in this process, over
     // a loopback hub with the fault preset's latency, jitter and loss (default poor).
     std::string netPreview;
+    // Network tools: --network-manifest --output file; --assign-network-keys --scene file
+    // --output file [--seed N] (a seed makes the new keys the same on every run).
+    fs::path output;
+    bool keySeedGiven = false;
+    uint64_t keySeed = 0;
+    // Online play (PlayerNetwork.cpp, docs/Networking.md): --host, --join-lobby id,
+    // --join-steam id --dev-direct-join, --host --dev-direct-join; +connect_lobby id is a
+    // Steam invite's cold launch. --net-capture records the session's messages.
+    enum class Online { None, Host, HostDirect, JoinLobby, JoinDirect } online = Online::None;
+    uint64_t onlineId = 0;   // the lobby, or the host's Steam ID
+    uint64_t connectLobby = 0;
+    fs::path netCapture;
+};
+
+// Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
+struct UsageError : std::runtime_error {
+    using std::runtime_error::runtime_error;
 };
 
 // Tools that need no project or window. Both return the process exit code.
@@ -90,6 +113,7 @@ struct PackageCommand {
     bool requested = false;
     fs::path output;
     bool noBuild = false, noArchive = false;
+    bool development = false;   // --dev-package: a test build (allows Steam AppID 480)
 };
 int packageGame(const shockwave::Project& project, const PackageCommand& command);
 // In a packaged game, the project it ships with; empty otherwise.
@@ -117,6 +141,14 @@ struct NetTestCommand {
     uint32_t clients = 3;
 };
 int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json);
+// --net-dump capture.swnetcap [--json out.json]: the capture decoded, every record with its
+// message's fields (stdout without --json). --net-encode records.json --output out.swnetcap:
+// the reverse, refusing redacted payloads. Neither needs a project.
+int netDump(const fs::path& capture, const fs::path& json);
+int netEncode(const fs::path& json, const fs::path& output);
+// A packaged Steam game launched outside Steam: asks Steam to relaunch it (and the player
+// exits). False for everything else: tools, the editor, development builds.
+bool relaunchThroughSteam(const shockwave::Project& project);
 
 class Player final : public shockwave::Application {
 public:
@@ -191,6 +223,19 @@ private:
     // --net-preview (PlayerNetwork.cpp): makes the in-process host and starts it, and
     // sets the session up as its client. Throws when the project can't play online.
     void startNetPreview();
+    // Online play (PlayerNetwork.cpp): the match setup and its services, the command
+    // line's request, and each frame what the match asks for: play its scene as host or
+    // client, or go back to the offline scene when it ends.
+    void setUpOnline();
+    void updateOnline();
+    void playScene(const fs::path& scene, const shockwave::net::NetworkStart* start);
+    shockwave::net::IOnlineServices* startSteam(std::string& error);
+    shockwave::net::IOnlineServices* services() const {
+        return m_steam ? static_cast<shockwave::net::IOnlineServices*>(m_steam.get()) : m_services.get();
+    }
+    // --network-manifest and --assign-network-keys (PlayerNetwork.cpp).
+    int networkManifest();
+    int assignNetworkKeysTool();
 
     shockwave::Project m_project;
     Tool m_tool;
@@ -209,10 +254,18 @@ private:
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
-    // Online services, pumped every frame; they outlive the session. The player never
-    // starts Steam itself (only --steam-status does), so these are unavailable ones until
-    // hosting and joining from the player arrive (docs/Networking.md).
+    // Online services, pumped every frame; they outlive the session. Unavailable ones
+    // until someone asks to play online (--host, a join, a menu's Host or Find), which
+    // starts Steam (m_steam) for the project's steam_app_id.
     std::unique_ptr<shockwave::net::IOnlineServices> m_services = shockwave::net::makeUnavailableOnlineServices();
+    std::unique_ptr<shockwave::net::SteamServices> m_steam;
+    // Hosting and joining (Multiplayer/OnlineMatch.h), shared with the game's menus as
+    // game.onlineMatch when the project has a network scene to play.
+    shockwave::net::OnlineMatch m_match;
+    std::unique_ptr<shockwave::net::ReplicationRegistry> m_matchRegistry;
+    std::unique_ptr<shockwave::net::CaptureWriter> m_capture;   // --net-capture
+    fs::path m_offlineScene;   // where a match that ends goes back to
+    bool m_onlineFromCommandLine = false;   // its failure ends the player with exit 1
     // --net-preview: the hub and both sides' services outlive both sessions; the host's
     // session plays its own copy of the scene, pumped and ticked with ours.
     std::unique_ptr<shockwave::net::LoopbackHub> m_previewHub;

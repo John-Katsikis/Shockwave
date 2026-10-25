@@ -544,3 +544,129 @@ Outstanding for this batch:
   moving platforms aren't supported (section 9.2); `--check` reports them.
 - At 120 Hz on the hostile preset (200 ms one way) most inputs still arrive late: the
   lead tops out at 32 ticks there (267 ms), so the host falls back often and corrects.
+
+## Plan Batch 8 (2026-10-22): combat history, events and circuits
+
+Base: `eb38df2` (master after PR #26), branch `claude/steam-multiplayer-batch-0-1-e551hk`.
+Plan Batch 8, sections 10.1 and 11; design adjustments 66 to 73.
+
+Implemented:
+
+- `NetworkWorld` (`Private/NetworkCombat.cpp`): `setCombatTargets`, the host's rewind
+  history recorded in `endTick`, `resolveShot` (view time window from the shooter's
+  measured round trip, analytic capsule test, current-world obstruction ignoring live
+  characters), the host's own pings to every client (`roundTrip`), `sendEvent` /
+  `readGameEvent` with reliable delivery to Active clients, sequence dedup and a 128-event
+  ring, and cursor reads of session events (`readEvent`). Clients stamp `view_tick` and
+  `view_fraction` from their interpolation clock.
+- `Multiplayer/PresentationDedup.h`.
+- Physics: `raycast` with a list of entities to ignore.
+- Circuits: `Circuit.execution`, `NodeCapability` with an explicit presentation list,
+  `circuitScopeProblems`, run-time scope gating, `Network.IsAuthority`, `IsLocalOwner`,
+  `LocalPlayer`, `State`, `PeerJoined`, `PeerLeft`, `Ready`, `Disconnected`, and generated
+  `Network.Command.<name>` / `Network.Event.<name>` nodes (`registerNetworkNodes`, called
+  when a registry freezes, and by the player and editor at start). `SW_PRESENTATION_NODE`.
+- The `--check` and editor (Check network setup) rule for circuits using nodes their
+  execution doesn't allow.
+- Arena: shots go through `resolveShot` (a hit on an ended life is refused); the host sends
+  `arena.shot_resolved`, `arena.player_died` and `arena.round_changed`; clients show their
+  own shots at once and every other shot once from the event, with hit markers only from
+  the host, and take the kill feed and round messages from events. The old "ammo went
+  down, so play a shot" client path is gone.
+- Regenerated `docs/CircuitNodes.md` and `Games/Arena/Docs/CircuitNodes.md`, now checked
+  by `circuits_cli` and `network_cli`. `NetworkSchema.md` and `NetworkProtocol.md` are
+  unchanged (the events and messages already existed).
+- Test `network_combat`; `network_arena`, `network_cli` and `circuits_cli` extended.
+
+Results in the headless Linux container (GCC 13):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 45/47 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*`, Arena and circuits set (20 tests) pass, no sanitizer reports |
+| Steamworks on (SDK 1.65) | builds; the same 20 tests pass |
+| `player --check` | Arena 0 problems in 3 scenes, Sample 0 problems in 18 scenes |
+
+`network_combat` measured the host's round trip to client A as 33 ms (3 ticks) on a hub
+with 10 ms each way and 133 ms (9 ticks) with 60 ms each way: the tick quantisation of
+both ends adds about a tick.
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Rewind and security cases | `network_combat` at both latencies: a shot at where the target was 5 ticks ago hits (Exact) while the same claimed view aimed at its present position misses; a target behind a static wall can't be hit and the shot stops at the wall; a future view time is clamped; a zero view time, a forged old one (round trip + 9 ticks) and one 200 ticks back are refused with no player hit; a dead target can't be hit; a hit from before a respawn names the old life and one after it the new life; the host's own shot sees the present; a view 12 ticks back is a real hit at 133 ms but refused at 33 ms (the low and high RTT clamps). `network_arena`: eleven autoplaying clients' shots rewound to their view times through Jolt, more than ten player hits, none refused |
+| No duplicate shots or effects | `network_combat`: `PresentationDedup` (prediction then confirmation, copies, other shooters, ordinals and lives, the window and nearest match, a full ring); events under 20% reliable loss, 20% duplication and jitter arriving once each in order; a scripted host's duplicated and older events kept once. `network_arena`: every client received at least one event per shot fired and no duplicates |
+| Scope validation | `network_combat`: Set is authority, Get presentation, commands requests; a LocalOwner or Presentation circuit that sets health is refused, a LocalOwner circuit may send a command and a Presentation one may not, anyone may hear events; at run time on a client an owner's circuit that sets health and the host's circuit don't run (health stays 100) and the reason is reported, while the host's circuit applies it. `network_cli`: `--check` fails with file:line for a Presentation circuit that moves things or sends a command, passes for LocalOwner with a command and Authority with anything |
+| Unauthorised circuit can't apply damage; duplicate packets don't trigger a handler twice | the run-time cases above; three host events run a client's Presentation handler three times with each payload and never again, and an event packet sent twice by a scripted host runs it once |
+| Schema and node schema regenerated and checked | `circuits_cli` compares `player --node-schema` with `docs/CircuitNodes.md`, `network_cli` Arena's with `Games/Arena/Docs/CircuitNodes.md` (which lists the generated `Network.Command.arena.*` and `Network.Event.arena.*` nodes) and the network schema with `docs/NetworkSchema.md` |
+| Dynamic cover limitation documented | `docs/Networking.md` "Shots": moving bodies are tested where they are now, only players are rewound |
+
+Outstanding for this batch:
+
+- How shots, tracers and hit markers look and sound with real latency, on the desktop:
+  `player --net-preview poor` on Arena's multiplayer scene.
+- No `--net-test` combat scenario: combat is tested by `network_combat` and through Arena
+  in `network_arena`.
+- Moving cover isn't rewound (adjustment 73).
+
+## Plan Batch 9 (2026-10-25): editor, command line, invites and packaging
+
+Implemented:
+
+- `Multiplayer/OnlineMatch.h`: host (friends lobby, details, joinable once Active,
+  player count), find (bounded, checked listings), join (details checked before
+  connecting), invite, leave and cancel, pending joins from invites and `+connect_lobby`,
+  developer direct hosting and joining. `IOnlineServices::lobbyInfo` and `displayName`;
+  Steam's persona names; `SteamAPI_RestartAppIfNecessary` for packaged launches.
+- `Network/CaptureTransport.h` and `NetworkStart::capture`; `NetworkWorld::peerInfo`.
+- Player: `--host`, `--join-lobby`, `+connect_lobby`, `--join-steam --dev-direct-join`,
+  `--host --dev-direct-join`, `--net-capture`, `--net-dump`, `--net-encode`,
+  `--network-manifest`, `--assign-network-keys [--seed]`, the `match_scene` setting,
+  strict mode combinations (exit 2) and `--help` for all of them.
+- Editor: Window > Network (`--network`) with Host / Find / Join / Invite / Leave, the
+  developer joins, the peer table and session counters, Copy diagnostics, Capture packets,
+  Run local test, Assign missing network keys (with undo), the reload-pending warning and
+  the last match's end; the Inspector's NetworkObject Play status; Development package in
+  Build > Package game.
+- Arena: the online menu (`ArenaOnlineMenu.cpp`) on `game.onlineMatch`, beside the main
+  menu offline and beside the match panel in the match scene; a failed match reopens the
+  menu with the reason. No Steam calls in Arena.
+- Packaging: `PackageOptions::steam`, AppID 480 only in development packages
+  (`--dev-package`), the Steam runtime required from a Steam-enabled engine, offline-only
+  packages from one without the SDK, `steam_appid.txt` and captures never shipped.
+- Fixed: cancelling a lobby join and joining the same lobby again lost the membership
+  (adjustment 83).
+- Docs: `Networking.md` (Hosting and joining, the command line, captures, Steam
+  packages, tests), `Packaging.md` (Steam), Arena's README, adjustments 74 to 86,
+  regenerated `NetworkSchema.md` (`match_scene`, the unsupported list).
+- Tests `online_match`, `arena_online_menu`, `package_steam`; `network_cli` extended.
+
+Results in the headless Linux container (GCC 13.3):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 48/50 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*`, Arena, online and circuits set passes with no sanitizer reports, except `package_steam`, which packages 1.4 GB of sanitizer binaries and passes its first steps but times out at 300 s |
+| Steamworks on (SDK 1.65) | builds; `arena_online_menu`, `network_cli`, `package_steam`, `test_steam_services`, `online_match` pass |
+| `player --check` | Arena 0 problems in 3 scenes, Sample 0 problems in 18 scenes |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Real UI tests | `arena_online_menu` loads Arena's `menu.rml` in RmlUi and clicks every online button over the Steam mock with a real host session: Find shows "SEARCHING FOR MATCHES", then two listings (one compatible, one "CAN'T JOIN: ..." which does nothing when clicked); Join shows Cancel and hides Host and the list; Cancel returns to offline; Join again reaches "PLAYING AS PLAYER 2" with Leave; a friend's invite during the match shows Accept/Decline and Decline keeps the match; Leave ends it; a Host that fails shows the reason and Retry, which hosts; Invite opens Steam's dialog once; with no match control the section is greyed with its reason and the offline menu is untouched; at 1280x720 the panels fit and don't overlap, offline and in the match scene |
+| Screenshots | Not from the cloud: the editor needs a Vulkan window and the container has none (adjustment 86). Outstanding on the desktop |
+| CLI invalid arguments | `network_cli`: unknown options, missing values, `--host` with a join, two joins, `--dev-direct-join` alone or with `--join-lobby`, `+connect_lobby` with `--host`, `--host` with `--check`, `--net-test`, `--load` or `--net-preview`, `--output` with nothing that writes, `--network-manifest` without `--output` or onto the manifest, `--assign-network-keys` without a scene or onto it; each exits 2 with its message. `--dev-package` without `--package` exits 2. Host failures exit 1 with the reason (multiplayer off; no Steamworks SDK) |
+| Packet inspection | `network_cli`: a `--net-preview` run with `--net-capture`, dumped with `--net-dump --json` and encoded back with `--net-encode`: byte-identical. `online_match`: a client's capture has its ticket redacted and opaque peers, and round-trips through JSON |
+| Moved-package smoke | `package_steam`: Arena packaged as a development Steam package, the folder renamed to `moved here` and started from a third folder: its `--check` passes with 0 problems |
+| SDK-off package | `package_steam` on the default build: the package warns it plays offline only, has no Steam runtime, and its `--host` exits 1 with "this build has no Steamworks SDK". On the Steam build the same test finds `libsteam_api.so` in `Binaries/` |
+| No debug AppID or auth capture in packages | `package_steam`: AppID 480 refused without `--dev-package` and nothing left behind; `steam_appid.txt`, a `.swnetcap` in Content and one in `Saved/Captures` all absent from the package; Verify fails on either |
+
+Outstanding for this batch:
+
+- On the desktop: `editor --network` (Window > Network) on Arena with `enabled 1` and
+  `steam_app_id 480`, and Arena's menu (P) Host and Find; how the menu and the editor
+  window look.
+- Two Steam accounts hosting, finding, inviting and joining for real: Batch 10.
+- A packaged Steam game launched from Steam (the restart path) needs a real AppID.

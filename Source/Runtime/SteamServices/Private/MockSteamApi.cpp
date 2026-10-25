@@ -216,6 +216,13 @@ void MockSteamApi::injectValidation(uint64_t steamId, SteamAuthResponse response
     post(*m_state, c);
 }
 
+void MockSteamApi::injectJoinRequest(uint64_t lobby) {
+    Callback c;
+    c.kind = Callback::JoinRequested;
+    c.a = lobby;
+    post(*m_state, c);
+}
+
 void MockSteamApi::releaseHeldResults() {
     for (const Callback& c : m_state->held) post(*m_state, c);
     m_state->held.clear();
@@ -639,8 +646,10 @@ uint64_t MockSteamApi::joinLobby(uint64_t id) {
     if (!m_state->running) return 0;
     const uint64_t call = m_network.nextCall++;
     Lobby* lobby = m_network.lobby(id);
-    const bool ok = lobby && lobby->joinable && lobby->members.size() < lobby->limit;
-    if (ok) {
+    const bool member =
+        lobby && std::find(lobby->members.begin(), lobby->members.end(), m_state->steamId) != lobby->members.end();
+    const bool ok = lobby && (member || (lobby->joinable && lobby->members.size() < lobby->limit));
+    if (ok && !member) {   // joining a lobby you're in again just succeeds
         lobby->members.push_back(m_state->steamId);
         for (uint64_t member : lobby->members)
             if (MockSteamApi* api = m_network.apiFor(member); api && member != m_state->steamId) {

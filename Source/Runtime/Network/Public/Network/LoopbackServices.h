@@ -65,6 +65,7 @@ public:
     NetResult<void> setLobbyJoinable(LobbyId lobby, bool joinable) override;
     NetResult<void> setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value) override;
     NetResult<std::vector<PeerId>> lobbyMembers(LobbyId lobby) const override;
+    NetResult<LobbySummary> lobbyInfo(LobbyId lobby) const override;
     NetResult<std::unique_ptr<ITransport>> createTransport() override;
 
     NetResult<RequestId> requestAuthTicket(PeerId remote) override;
@@ -97,6 +98,8 @@ private:
     std::deque<OnlineEvent> m_ready;
     LobbyId m_lobby;
     bool m_lobbyJoinable = false;
+    uint32_t m_lobbyCapacity = 0;
+    std::vector<std::pair<std::string, std::string>> m_lobbyMetadata;
     std::vector<std::string> m_calls;
 };
 

@@ -70,11 +70,13 @@ void LoopbackOnlineServices::cancel(RequestId request) {
     std::erase_if(m_tickets, [&](const Ticket& t) { return t.id == request; });
 }
 
-NetResult<RequestId> LoopbackOnlineServices::createLobby(const LobbyCreateRequest&) {
+NetResult<RequestId> LoopbackOnlineServices::createLobby(const LobbyCreateRequest& request) {
     m_calls.push_back("createLobby");
     const RequestId id = nextRequest();
     m_lobby = {0x0186000000000000ull | m_identity.value};
     m_lobbyJoinable = true;
+    m_lobbyCapacity = request.maxMembers;
+    m_lobbyMetadata.clear();
     OnlineEvent event;
     event.kind = OnlineEventKind::LobbyCreated;
     event.request = id;
@@ -103,14 +105,32 @@ NetResult<void> LoopbackOnlineServices::setLobbyJoinable(LobbyId lobby, bool joi
     return {};
 }
 
-NetResult<void> LoopbackOnlineServices::setLobbyMetadata(LobbyId lobby, const std::string&, const std::string&) {
+NetResult<void>
+LoopbackOnlineServices::setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value) {
     if (!lobby.valid() || lobby != m_lobby) return NetError{NetErrorCode::InvalidArgument, "not in that lobby"};
+    for (auto& [k, v] : m_lobbyMetadata)
+        if (k == key) {
+            v = value;
+            return {};
+        }
+    m_lobbyMetadata.emplace_back(key, value);
     return {};
 }
 
 NetResult<std::vector<PeerId>> LoopbackOnlineServices::lobbyMembers(LobbyId lobby) const {
     if (!lobby.valid() || lobby != m_lobby) return NetError{NetErrorCode::InvalidArgument, "not in that lobby"};
     return std::vector<PeerId>{m_identity};
+}
+
+NetResult<LobbySummary> LoopbackOnlineServices::lobbyInfo(LobbyId lobby) const {
+    if (!lobby.valid() || lobby != m_lobby) return NetError{NetErrorCode::InvalidArgument, "not in that lobby"};
+    LobbySummary info;
+    info.id = m_lobby;
+    info.owner = m_identity;
+    info.members = 1;
+    info.capacity = m_lobbyCapacity;
+    info.metadata = m_lobbyMetadata;
+    return info;
 }
 
 NetResult<std::unique_ptr<ITransport>> LoopbackOnlineServices::createTransport() {

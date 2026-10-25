@@ -36,6 +36,13 @@ void Player::checkCircuits(
         usedCircuits.push_back(circuit.circuit);
         // Variables set in the scene must be ones the circuit declares, with values of its type.
         const auto program = shockwave::circuitLibrary().load(circuit.circuit, shockwave::CircuitKind::Entity);
+        // In network play it runs only where its execution says, and only with nodes that
+        // execution allows (docs/Circuits.md "Network play").
+        if (program)
+            for (const shockwave::CircuitProblem& problem :
+                 shockwave::circuitScopeProblems(*program, circuit.execution))
+                problems.push_back(
+                    where + ": " + circuit.circuit + ":" + std::to_string(problem.line) + ": " + problem.message);
         const auto* vars = world.get<shockwave::CircuitVars>(e);
         if (!program || !vars) return;
         for (const auto& [variable, text] : shockwave::parseCircuitVars(vars->values)) {

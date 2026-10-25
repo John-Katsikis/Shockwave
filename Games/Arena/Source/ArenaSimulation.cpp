@@ -4,6 +4,7 @@
 #include <Engine/PhysicsComponents.h>
 #include <GameFramework/InputSampler.h>
 #include <Multiplayer/NetworkComponents.h>
+#include <Multiplayer/NetworkWorld.h>
 #include <Physics/Physics.h>
 
 #include <glm/geometric.hpp>
@@ -23,9 +24,9 @@ void useCurrentPose(World& world, Entity entity) {
     if (auto* previous = world.get<PreviousTransform>(entity)) previous->value = *world.get<Transform>(entity);
 }
 
-glm::vec3 aimDirection(float yaw, float pitch) { return glm::quat(glm::vec3(pitch, yaw, 0)) * glm::vec3(0, 0, -1); }
-
 }   // namespace
+
+glm::vec3 aimDirection(float yaw, float pitch) { return glm::quat(glm::vec3(pitch, yaw, 0)) * glm::vec3(0, 0, -1); }
 
 int ticksFor(float seconds, uint32_t tickRate) {
     return seconds > 0 ? int(std::ceil(double(seconds) * double(tickRate) - 1e-9)) : 0;
@@ -199,7 +200,7 @@ void ArenaSim::stepCombat() {
         --w.ammo;
         ++r.shots;
         w.cooldownTicks = ticksFor(w.interval, tickRate);
-        shoot(e, eye(e), aimDirection(f.yaw, f.pitch), w.damage);
+        shoot(e, eye(e), aimDirection(f.yaw, f.pitch), w.damage, &f.input);
     }
     // Bots share the same line-of-sight and damage rules as the players.
     for (const Entity e : bots) {
@@ -213,7 +214,7 @@ void ArenaSim::stepCombat() {
         const auto hit = physics.raycast(origin, delta / distance, distance + 0.5f, e);
         if (!hit || hit->entity != target) continue;
         fighter.cooldownTicks = ticksFor(fighter.fireInterval, tickRate);
-        shoot(e, origin, delta / distance, fighter.damage);
+        shoot(e, origin, delta / distance, fighter.damage, nullptr);
     }
     if (r.blue >= r.scoreLimit || r.orange >= r.scoreLimit || r.remainingTicks <= 0) {
         r.phase = ArenaRules::Finished;
@@ -221,28 +222,52 @@ void ArenaSim::stepCombat() {
     }
 }
 
-void ArenaSim::shoot(Entity from, glm::vec3 origin, glm::vec3 direction, float damage) {
-    const auto hit = physics.raycast(origin, direction, 60, from);
-    const auto end = hit ? hit->point : origin + direction * 60.0f;
-    auto* victim = hit ? world.get<ArenaFighter>(hit->entity) : nullptr;
-    if (hooks.shot) hooks.shot(from, origin, end, victim ? hit->entity : kNullEntity);
+void ArenaSim::shoot(Entity from, glm::vec3 origin, glm::vec3 direction, float damage, const InputCommand* command) {
+    constexpr float kRange = 60;
+    Entity struck;
+    glm::vec3 end = origin + direction * kRange;
+    bool sameLife = true;   // a player hit in the past is still in that life now
+    net::ShotResult result;
+    bool resolved = false;
+    if (network) {
+        net::ShotQuery query;
+        query.shooter = from;
+        query.origin = origin;
+        query.direction = direction;
+        query.range = kRange;
+        query.command = command;
+        resolved = network->resolveShot(query, result);
+    }
+    if (resolved) {
+        struck = result.hit;
+        end = result.end;
+        if (result.player)
+            if (const auto* id = network->identity(struck)) sameLife = id->incarnation == result.hitIncarnation;
+    } else if (const auto hit = physics.raycast(origin, direction, kRange, from)) {
+        struck = hit->entity;
+        end = hit->point;
+    }
+    auto* victim = struck.valid() && sameLife ? world.get<ArenaFighter>(struck) : nullptr;
+    if (hooks.shot)
+        hooks.shot(
+            from, origin, end, victim ? struck : kNullEntity, victim ? damage : 0, command ? command->targetTick : 0);
     if (!victim) return;
     auto& shooter = *world.get<ArenaFighter>(from);
     if (victim->health <= 0 || victim->team == shooter.team || victim->protectionTicks > 0) return;
     if (isPawn(shooter)) ++match().hits;
-    if (hooks.hit) hooks.hit(from, hit->entity);
+    if (hooks.hit) hooks.hit(from, struck);
     victim->health = std::max(0.0f, victim->health - damage);
     if (victim->health > 0) return;
     ++shooter.kills;
     ++victim->deaths;
     victim->respawnTicks = ticksFor(kRespawnSeconds, tickRate);
-    setVisible(hit->entity, false);
+    setVisible(struck, false);
     auto& r = match();
     if (shooter.team == 0)
         ++r.blue;
     else
         ++r.orange;
-    if (hooks.killed) hooks.killed(from, hit->entity);
+    if (hooks.killed) hooks.killed(from, struck);
 }
 
 int teamCount(World& world, int team, Entity except) {

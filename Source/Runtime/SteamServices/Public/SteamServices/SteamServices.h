@@ -71,6 +71,10 @@ public:
     // result arrives.
     void framePass();
     void shutdown();
+    // A packaged Steam game's first call, before initializeClient() and before any window:
+    // true when Steam is relaunching it through the Steam client, so the process must exit
+    // now (SteamAPI_RestartAppIfNecessary). Always false without the SDK.
+    bool restartThroughSteamIfNeeded(uint32_t appId);
 
     SteamServiceState state() const;
     // Changes on every initialisation; RequestIds from an earlier one are ignored.
@@ -95,6 +99,8 @@ public:
     NetResult<void> setLobbyJoinable(LobbyId lobby, bool joinable) override;
     NetResult<void> setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value) override;
     NetResult<std::vector<PeerId>> lobbyMembers(LobbyId lobby) const override;
+    NetResult<LobbySummary> lobbyInfo(LobbyId lobby) const override;
+    std::string displayName(PeerId peer) const override;
     NetResult<std::unique_ptr<ITransport>> createTransport() override;
     NetResult<RequestId> requestAuthTicket(PeerId remote) override;
     NetResult<std::span<const uint8_t>> authTicket(RequestId ticket) const override;

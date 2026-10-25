@@ -111,10 +111,20 @@ std::string formatValue(const Value& value);
 
 // ---- Components --------------------------------------------------------------------------
 
+// Where an entity circuit runs in network play (docs/Circuits.md, "Network play"). Offline
+// every circuit runs.
+//   Authority     only on the host: gameplay. The default, and the game circuit's.
+//   LocalOwner    only on the machine whose player owns the entity: its own input, HUD
+//                 and requests to the host. No gameplay changes.
+//   Presentation  on every machine: effects, sound, UI. No gameplay changes, no requests.
+enum class CircuitExecution : int { Authority, LocalOwner, Presentation };
+const char* circuitExecutionName(CircuitExecution execution);
+
 // Runs an entity circuit on this entity during Play. Saved as the "Circuit" component.
 struct Circuit {
     std::string circuit;   // inside Content, forward slashes: "Circuits/Door.swcircuit"
     bool enabled = true;
+    CircuitExecution execution = CircuitExecution::Authority;
 };
 
 // This entity's circuit variables, where they differ from the circuit's defaults:

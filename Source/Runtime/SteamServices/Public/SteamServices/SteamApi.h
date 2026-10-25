@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace shockwave::net {
@@ -194,6 +195,18 @@ public:
     // Copies key and value (each up to 256 bytes, null-terminated) into the buffers.
     virtual bool lobbyDataByIndex(uint64_t lobby, uint32_t index, std::span<char> key, std::span<char> value) const = 0;
     virtual void inviteToLobby(uint64_t lobby) = 0;   // the Steam overlay's invite dialog
+    // A user's Steam persona name, as untrusted display text; "" when unknown.
+    virtual std::string personaName(uint64_t steamId) const {
+        (void)steamId;
+        return {};
+    }
+    // Packaged Steam launches only, before init(): true when Steam will relaunch the game
+    // through the Steam client (the process should exit at once). Never for tools, the
+    // editor or tests.
+    virtual bool restartAppIfNecessary(uint32_t appId) {
+        (void)appId;
+        return false;
+    }
 };
 
 }   // namespace shockwave::net

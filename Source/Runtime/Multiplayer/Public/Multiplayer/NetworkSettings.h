@@ -62,6 +62,7 @@ struct NetworkSettings {
     uint32_t maxReceiveBytesPerPump = 262144;   // whole endpoint
     uint32_t maxReceiveMessagesPerPump = 256;
     std::string manifest = "Config/NetworkManifest.swnetmanifest";   // project-relative
+    std::string matchScene;   // project-relative; empty: the manifest's first scene
     bool operator==(const NetworkSettings&) const = default;
 };
 

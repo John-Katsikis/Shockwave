@@ -43,6 +43,7 @@ private:
     // Settings: an edited copy, saved to the file when packaging starts or on Save.
     std::filesystem::path m_project;   // the project the settings belong to
     shockwave::PackageSettings m_edit, m_saved;
+    bool m_development = false;   // this run only, never saved: a test build with Steam AppID 480
     std::string m_excludeText, m_outputText;
     std::string m_settingsError;
     std::filesystem::file_time_type m_settingsTime{};
@@ -61,6 +62,7 @@ private:
     std::optional<shockwave::PackageResult> m_result;
     shockwave::Project m_jobProject;
     shockwave::PackageSettings m_jobSettings;
+    shockwave::PackageSteam m_jobSteam;
 };
 
 }   // namespace editor

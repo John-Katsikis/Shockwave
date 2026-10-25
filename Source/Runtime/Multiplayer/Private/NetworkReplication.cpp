@@ -141,6 +141,7 @@ NetResult<void> NetworkWorld::Impl::beginReplication() {
 }
 
 void NetworkWorld::Impl::clearReplication() {
+    clearCombat();
     std::vector<NetObject>().swap(objects);
     std::unordered_map<uint64_t, uint32_t>().swap(byId);
     std::unordered_map<std::string, Entity>().swap(localKeys);
@@ -809,6 +810,7 @@ bool NetworkWorld::Impl::applySnapshot(const Snapshot& snapshot) {
         o->haveTick = true;
         if (!haveApplied || newer(snapshot.serverTick, lastAppliedTick)) lastAppliedTick = snapshot.serverTick;
         haveApplied = true;
+        lastSnapshotAt = now;
         if (predictsControlled() && o->entity == controlledEntityNow())
             applyPredicted(*o, snapshot.serverTick);
         else {

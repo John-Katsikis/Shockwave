@@ -92,6 +92,8 @@ public:
     void injectValidation(uint64_t steamId, SteamAuthResponse response);
     // Lobby results held by faults().holdLobbyResults, delivered at the next runCallbacks().
     void releaseHeldResults();
+    // A friend's invite accepted in the Steam overlay, at the next runCallbacks().
+    void injectJoinRequest(uint64_t lobby);
     // This mock's open connection to `steamId` (the newest), or 0.
     uint32_t connectionTo(uint64_t steamId) const;
 
@@ -140,6 +142,7 @@ public:
     uint32_t lobbyDataCount(uint64_t lobby) const override;
     bool lobbyDataByIndex(uint64_t lobby, uint32_t index, std::span<char> key, std::span<char> value) const override;
     void inviteToLobby(uint64_t lobby) override;
+    std::string personaName(uint64_t steamId) const override { return "mock " + std::to_string(steamId % 1000); }
 
     struct State;
 

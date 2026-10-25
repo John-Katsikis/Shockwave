@@ -308,6 +308,12 @@ NetResult<void> SteamServices::setLobbyMetadata(LobbyId lobby, const std::string
     return m_impl->setLobbyMetadata(lobby, key, value);
 }
 NetResult<std::vector<PeerId>> SteamServices::lobbyMembers(LobbyId lobby) const { return m_impl->lobbyMembers(lobby); }
+bool SteamServices::restartThroughSteamIfNeeded(uint32_t appId) {
+    return appId != 0 && m_impl->api && m_impl->state == SteamServiceState::Off &&
+           m_impl->api->restartAppIfNecessary(appId);
+}
+NetResult<LobbySummary> SteamServices::lobbyInfo(LobbyId lobby) const { return m_impl->lobbyInfo(lobby); }
+std::string SteamServices::displayName(PeerId peer) const { return m_impl->displayName(peer); }
 NetResult<RequestId> SteamServices::requestAuthTicket(PeerId remote) { return m_impl->requestAuthTicket(remote); }
 NetResult<std::span<const uint8_t>> SteamServices::authTicket(RequestId ticket) const {
     return m_impl->authTicket(ticket);

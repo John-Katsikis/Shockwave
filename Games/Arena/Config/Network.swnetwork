@@ -1,6 +1,6 @@
 shockwave_network 1
-# Arena's multiplayer settings (docs/Networking.md). Sessions arrive in later batches;
-# until then this is what `player --check` and `--network-info` validate.
+# Arena's multiplayer settings (docs/Networking.md). Online play needs enabled 1 and a
+# steam_app_id (480, Spacewar, for development only); Host plays match_scene.
 enabled 0
 transport steam
 steam_app_id 0
@@ -9,3 +9,4 @@ tick_rate 60
 snapshot_rate 20
 input_rate 60
 manifest "Config/NetworkManifest.swnetmanifest"
+match_scene "Scenes/arena-mp.swscene"

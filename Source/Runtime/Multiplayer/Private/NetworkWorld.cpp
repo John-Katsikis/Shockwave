@@ -5,6 +5,7 @@
 #include "NetworkWorldImpl.h"
 
 #include <Core/Log.h>
+#include <Network/CaptureTransport.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -319,7 +320,8 @@ void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
         if (kind == MessageKind::Inputs) return inputsMessage(p, std::get<Inputs>(decoded.body));
         if (kind == MessageKind::Command) return commandMessage(p, std::get<Command>(decoded.body));
         if (kind == MessageKind::Ping) return pingMessage(p, std::get<Ping>(decoded.body));
-        ++stats.ignored;   // a Pong: the host doesn't ping yet
+        if (kind == MessageKind::Pong) return hostPong(p, std::get<Pong>(decoded.body));
+        ++stats.ignored;
         return;
     }
 }
@@ -419,7 +421,9 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
             return;
         }
         if (kind == MessageKind::Pong) return pongMessage(std::get<Pong>(decoded.body));
-        if (!replicationMessage(decoded)) ++stats.ignored;   // game events and pings: later batches
+        if (kind == MessageKind::Ping) return clientPing(h, std::get<Ping>(decoded.body));
+        if (kind == MessageKind::GameEvent) return gameEventMessage(std::get<GameEvent>(decoded.body));
+        if (!replicationMessage(decoded)) ++stats.ignored;
         return;
     }
 }
@@ -514,6 +518,42 @@ const NetworkWorldStats& NetworkWorld::stats() const {
     return impl.stats;
 }
 
+void NetworkWorld::peerInfo(std::vector<NetworkPeerInfo>& out) const {
+    out.clear();
+    const Impl& impl = *m_impl;
+    if (!m_transport) return;
+    for (const Peer& p : impl.peers) {
+        if (p.phase == Peer::Phase::Free) continue;
+        NetworkPeerInfo info;
+        info.slot = p.admitted() ? p.slot : 0;
+        info.peer = p.peer;
+        switch (p.phase) {
+        case Peer::Phase::AwaitingHello: info.status = "connecting"; break;
+        case Peer::Phase::Authenticating: info.status = "authenticating"; break;
+        case Peer::Phase::Synchronizing: info.status = "synchronizing"; break;
+        case Peer::Phase::Active: info.status = "active"; break;
+        case Peer::Phase::Free: break;
+        }
+        info.rttMs = 1000 * (m_role == NetworkRole::Client ? impl.bestRtt() : impl.peerRoundTrip(p));
+        if (const auto stats = m_transport->stats(p.connection)) {
+            info.pendingReliableBytes = stats->pendingReliableBytes;
+            info.pendingUnreliableBytes = stats->pendingUnreliableBytes;
+            info.bytesReceived = stats->bytesReceived;
+            info.bytesSent = stats->bytesSent;
+            if (!info.peer.valid()) info.peer = stats->peer;
+        }
+        info.queuedControlBytes = uint32_t(p.queued());
+        if (m_role == NetworkRole::Authority && p.lastInputAt >= 0) info.inputAge = impl.now - p.lastInputAt;
+        if (m_role == NetworkRole::Client && impl.lastSnapshotAt >= 0)
+            info.snapshotAge = impl.now - impl.lastSnapshotAt;
+        out.push_back(info);
+        if (m_role == NetworkRole::Client) break;   // [0] is the host
+    }
+    std::stable_sort(out.begin(), out.end(), [](const NetworkPeerInfo& a, const NetworkPeerInfo& b) {
+        return (a.slot ? a.slot : 0xFFFF) < (b.slot ? b.slot : 0xFFFF);
+    });
+}
+
 void NetworkWorld::setState(NetworkState state) {
     if (state == m_state) return;
     m_state = state;
@@ -523,20 +563,21 @@ void NetworkWorld::setState(NetworkState state) {
 
 void NetworkWorld::push(const NetworkEvent& event) {
     if (m_closed) return;
-    if (m_eventCount == kMaxEvents) {
-        m_eventHead = (m_eventHead + 1) % kMaxEvents;
-        --m_eventCount;
+    m_events[m_eventSequence % kMaxEvents] = event;
+    ++m_eventSequence;
+    if (m_eventSequence - m_pollCursor > kMaxEvents) {
+        m_pollCursor = m_eventSequence - kMaxEvents;
         ++m_impl->stats.eventsDropped;
     }
-    m_events[(m_eventHead + m_eventCount) % kMaxEvents] = event;
-    ++m_eventCount;
 }
 
-bool NetworkWorld::pollEvent(NetworkEvent& out) {
-    if (m_eventCount == 0) return false;
-    out = m_events[m_eventHead];
-    m_eventHead = (m_eventHead + 1) % kMaxEvents;
-    --m_eventCount;
+bool NetworkWorld::pollEvent(NetworkEvent& out) { return readEvent(m_pollCursor, out); }
+
+bool NetworkWorld::readEvent(uint64_t& cursor, NetworkEvent& out) const {
+    if (cursor >= m_eventSequence) return false;
+    if (m_eventSequence - cursor > kMaxEvents) cursor = m_eventSequence - kMaxEvents;
+    out = m_events[cursor % kMaxEvents];
+    ++cursor;
     return true;
 }
 
@@ -572,6 +613,8 @@ NetResult<void> NetworkWorld::begin() {
     auto transport = m_services->createTransport();
     if (!transport) return failStart(ReasonCode::ServiceUnavailable, transport.error());
     m_transport = std::move(transport.value());
+    if (m_start.capture && m_start.capture->isOpen())
+        m_transport = makeCapturingTransport(std::move(m_transport), *m_start.capture);
     if (m_role == NetworkRole::Authority) {
         TransportLimits limits;
         limits.maxConnections = std::min(kMaxTransportConnections, impl.maxClients() + kMaxPendingBeyondCapacity);
@@ -609,6 +652,7 @@ void NetworkWorld::pump(double nowSeconds) {
     if (m_transport) impl.checkTimeouts();
     if (!m_transport) return;
     if (impl.host()) {
+        impl.sendHostPings();
         impl.flushAll();
     } else {
         impl.expireHeld();
@@ -628,6 +672,7 @@ void NetworkWorld::endTick(uint32_t tick) {
     impl.tick = tick;
     if (m_closed || !m_transport || !impl.host()) return;
     impl.sweepDestroyed();
+    impl.recordCombat();   // where everyone is after this tick, for lag compensation
     impl.sendSnapshots();
     impl.flushAll();
     if (impl.failPending) impl.finishFail();
@@ -738,7 +783,7 @@ void NetworkWorld::close(ReasonCode reason) {
         m_state = failed ? NetworkState::Failed : NetworkState::Offline;
     }
     m_closed = true;
-    m_eventHead = m_eventCount = 0;
+    m_pollCursor = m_eventSequence;
 }
 
 }   // namespace shockwave::net

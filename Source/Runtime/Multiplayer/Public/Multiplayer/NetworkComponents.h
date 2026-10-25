@@ -26,6 +26,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace shockwave::net {
 
@@ -65,5 +66,16 @@ std::string newNetworkKey();
 int renewNetworkKeys(World& world, std::span<const Entity> roots);
 // Gives the entity's NetworkObject a key if it has none. True if it changed.
 bool assignMissingNetworkKey(World& world, Entity entity);
+
+// "Assign missing network keys" (the editor's tool and player --assign-network-keys):
+// every NetworkObject whose key is empty, invalid or a repeat of an earlier one (in entity
+// order) gets a new one; valid unique keys stay. With a seed the new keys are the same
+// on every run (UUID-shaped, from SHA-256 of the seed and a counter), otherwise from the
+// operating system's secure random source. Returns what changed, in entity order.
+struct NetworkKeyChange {
+    Entity entity;
+    std::string before, after;   // before is "" when there was none
+};
+std::vector<NetworkKeyChange> assignNetworkKeys(World& world, const uint64_t* seed = nullptr);
 
 }   // namespace shockwave::net

@@ -20,7 +20,10 @@
 
 namespace shockwave {
 class PhysicsWorld;
+namespace net {
+class NetworkWorld;
 }
+}   // namespace shockwave
 
 namespace arena {
 
@@ -30,11 +33,17 @@ inline constexpr float kPlayerEye = 1.55f, kBotEye = 1.25f;
 inline constexpr float kSprint = 1.55f;
 
 int ticksFor(float seconds, uint32_t tickRate);
+// Where a fighter with this yaw and pitch (radians) looks: unit length.
+glm::vec3 aimDirection(float yaw, float pitch);
 
 // What the rules tell the rest of the game.
 struct ArenaSimHooks {
-    // A shot was fired: tracer, sound. victim is null for a miss.
-    std::function<void(shockwave::Entity shooter, glm::vec3 origin, glm::vec3 end, shockwave::Entity victim)> shot;
+    // A shot was fired: tracer, sound. victim is null for a miss. inputTick is the tick of
+    // the command it was fired with (0 for bots), for the clients' ShotResolved.
+    std::function<void(
+        shockwave::Entity shooter, glm::vec3 origin, glm::vec3 end, shockwave::Entity victim, float damage,
+        uint32_t inputTick)>
+        shot;
     std::function<void(shockwave::Entity shooter, shockwave::Entity victim)> hit;
     std::function<void(shockwave::Entity killer, shockwave::Entity victim)> killed;
     std::function<void(shockwave::Entity pawn)> reloaded;   // a reload began
@@ -47,6 +56,9 @@ struct ArenaSim {
     shockwave::PhysicsWorld& physics;
     shockwave::Entity rules;
     uint32_t tickRate = 60;
+    // Shots go through the session's lag compensation (NetworkWorld::resolveShot): a pawn's
+    // hits are checked where its player saw the targets. Null: the present, from physics.
+    shockwave::net::NetworkWorld* network = nullptr;
     ArenaSimHooks hooks;
     float time = 0;   // seconds of play, for the bots' patrol
 
@@ -77,7 +89,10 @@ struct ArenaSim {
     shockwave::net::InputCommand autoCommand(shockwave::Entity pawn, uint32_t incarnation) const;
 
 private:
-    void shoot(shockwave::Entity from, glm::vec3 origin, glm::vec3 direction, float damage);
+    // command: the input command a pawn fired with (null for bots).
+    void shoot(
+        shockwave::Entity from, glm::vec3 origin, glm::vec3 direction, float damage,
+        const shockwave::net::InputCommand* command);
 };
 
 // The team with room and the fewest players (blue on a tie), or -1 when both are full.

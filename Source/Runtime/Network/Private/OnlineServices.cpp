@@ -22,6 +22,7 @@ public:
     NetResult<void> setLobbyJoinable(LobbyId, bool) override { return m_error; }
     NetResult<void> setLobbyMetadata(LobbyId, const std::string&, const std::string&) override { return m_error; }
     NetResult<std::vector<PeerId>> lobbyMembers(LobbyId) const override { return m_error; }
+    NetResult<LobbySummary> lobbyInfo(LobbyId) const override { return m_error; }
     NetResult<std::unique_ptr<ITransport>> createTransport() override { return m_error; }
     NetResult<RequestId> requestAuthTicket(PeerId) override { return m_error; }
     NetResult<std::span<const uint8_t>> authTicket(RequestId) const override { return m_error; }

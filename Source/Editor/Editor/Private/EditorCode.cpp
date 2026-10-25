@@ -3,6 +3,8 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <GameFramework/GameNetwork.h>
+#include <Multiplayer/Replication.h>
 #include <UI/Gui.h>
 
 #include <SDL3/SDL.h>
@@ -30,6 +32,11 @@ double seconds() { return static_cast<double>(SDL_GetTicksNS()) * 1e-9; }
 void Editor::createGameInstance() {
     m_gameInstance = shockwave::makeGameInstance(m_gameModule ? &m_gameModule->module() : nullptr);
     m_gameInstance->init(&engine());
+    // Circuits can use the game's network commands and events (Network.Command.* and
+    // Network.Event.*), made from its registry; the Network panel reports its problems.
+    shockwave::net::ReplicationRegistry networkTypes;
+    std::vector<std::string> ignored;
+    (void)shockwave::buildReplicationRegistry(m_gameModule ? &m_gameModule->module() : nullptr, networkTypes, ignored);
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_gameInstance, &engine());
 }
 

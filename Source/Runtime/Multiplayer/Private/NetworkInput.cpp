@@ -177,6 +177,12 @@ uint32_t NetworkWorld::sendInput(InputCommand command) {
             first = desired - next + 1 > kMaxCatchUpInputs ? desired - (kMaxCatchUpInputs - 1) : next;
         }
     }
+    // When remote players were shown as this command was sampled, for lag compensation.
+    if (impl.interpolation && impl.interpolation->hasClock()) {
+        const NetTime view = impl.interpolation->renderTime(impl.now);
+        command.viewTick = view.tick;
+        command.viewFraction = uint16_t(std::clamp(double(view.fraction) * 65536.0, 0.0, 65535.0));
+    }
     const Entity predicted = impl.predictsControlled() ? impl.controlledEntityNow() : kNullEntity;
     for (uint32_t target = first;; ++target) {
         InputCommand c = command;
@@ -230,6 +236,8 @@ void NetworkWorld::Impl::inputsMessage(Peer& p, const Inputs& m) {
         if (p.haveInput[slot] && p.inputs[slot].targetTick == c.targetTick) continue;   // a resend: first wins
         p.inputs[slot] = c;
         p.haveInput[slot] = true;
+        p.inputArrival[slot] = tick;
+        p.lastInputAt = this->now;
     }
     if (!ahead) return;
     // A client whose clock runs ahead now and then gets its inputs ignored; one whose

@@ -284,6 +284,96 @@ Recorded here as the document asks, newest last. Status of each batch is in
     `InputActionNames`, `readInputFrame`, `InputSampler`, `commandYaw`, `commandPitch`,
     `commandMoveDirection`). Arena keeps only its action names; `ArenaInput` is gone.
     Arena shows the prediction warning on its status line for 3 seconds (8.3 step 5).
+66. Batch 8, 2026-10-22: the plausible view window (10.1 step 3) is measured from the
+    tick the command reached the host, A: newest A - interpolation delay + tolerance,
+    oldest A - round trip - interpolation delay - tolerance, where the tolerance is 2
+    ticks (scaled to the tick rate) plus one snapshot interval, because the client's
+    interpolation runs a snapshot behind and arrival is quantised to ticks. The full
+    round trip bounds the oldest time (a client sees remote players one way late and its
+    command takes one way back). Too new is clamped, too old or a zero `view_tick` tests
+    no players at all (refused), before `max_rewind_ms` is applied by the history. Until
+    the host has measured a client's round trip there's no lower bound but the history.
+67. The host measures each client's round trip itself: it pings each Active client four
+    times 0.1 s apart and then every second, and keeps the worst of the last 8 Pongs
+    (`roundTrip(slot)`). The client's own Ping/Pong clock is unchanged.
+68. `NetworkWorld::resolveShot` is the engine's step 2 to 5: the game passes the host's
+    eye and aim and the command; the history is recorded in `endTick` from
+    `setCombatTargets` (team, alive, protection, eye height) and the owner's
+    `CharacterController` capsule. The world ray is the current Jolt world, ignoring the
+    shooter and every live character. The result names the life it hit and the game
+    applies its own rules (Arena refuses a hit on a life that has ended, protected
+    players and team-mates). Bots and the host's own player see the present (latest tick).
+69. Game events go only to Active clients (control serial 0, never part of a baseline),
+    so a late joiner gets no old ones. Clients drop a copy or older `event_seq`. Every
+    machine keeps the last 128 events in a ring read by cursors (`readGameEvent`), so the
+    game and circuits each see each event once; session events got the same cursor reads
+    (`readEvent`) for circuits, and `pollEvent` is a cursor too.
+70. `PresentationDedup` matches a client's own predicted shot to the host's event by the
+    plan's key, allowing the nearest unconfirmed prediction within a window (Arena: half
+    the weapon's cadence in ticks), because the client's weapon timer can be a tick off
+    the host's. Arena keys its prediction on the target tick `sendInput` returned, the
+    host's event on the command's `target_tick`, with ordinal 0 (one shot a tick).
+71. Arena's scores were already durable (full `arena.player.v1` and `arena.rules.v1`
+    state in every snapshot), so no scoreboard change was needed; the kill feed and round
+    messages on clients now come from `arena.player_died` and `arena.round_changed`.
+72. Circuits (11): `Circuit.execution` (Authority default, LocalOwner, Presentation) and
+    `NodeCapability` (Presentation, Authority default, NetworkRequest). Built-in
+    presentation nodes are an explicit list; reflected `Get`/`Has` are presentation and
+    `Set`/`Add`/`Remove` authority; `SW_NODE` nodes are authority unless made with
+    `SW_PRESENTATION_NODE`. A circuit whose nodes break its scope doesn't run at all
+    (reported by Play, `--check` and the editor's Check network setup) rather than
+    skipping single nodes. Instead of one `Network.SendCommand` with a catalog picker,
+    each registered command is its own `Network.Command.<name>` node with typed inputs,
+    and each event a `Network.Event.<name>` event node, made when the registry freezes
+    (`registerNetworkNodes`), so the node schema documents them. Network events are
+    dispatched at the start of a fixed tick, the existing safe boundary.
+73. Moving cover is not rewound (10.1 step 5): doors, platforms and other moving bodies
+    are tested where they are now. Documented in `docs/Networking.md`.
+74. Batch 9, 2026-10-25: hosting, finding, joining, inviting and leaving are one class,
+    `Multiplayer/OnlineMatch.h`, which the player, the editor and game menus share
+    (`game.onlineMatch`, null where there's no match control). It only produces a
+    `NetworkStart`; the application plays the scene with it. IOnlineServices gained
+    `lobbyInfo` (a joined lobby's details) and `displayName`.
+75. Which scene a match plays is a new setting, `match_scene` (empty: the manifest's
+    first scene), because Arena's manifest lists its offline scene first. The editor's
+    Host also plays `match_scene`, not "the currently loaded scene" (12.2), so a host and
+    its clients always agree; `--host --scene` overrides it from the command line.
+76. A host's lobby is made unjoinable and opened only when its session is Active, so a
+    search never lists a host that isn't listening yet. `sw_session` is 16 random bytes in
+    hex, and `sw_players` / `sw_capacity` are advertised for the lobby list.
+77. Direct joins (`--join-steam ID --dev-direct-join`) need a host started with
+    `--host --dev-direct-join`, which makes no lobby: a host with a lobby admits only its
+    members. Both are labelled developer paths in the editor too.
+78. The peer table omits the team column: teams are game state, not the engine's. The
+    display name comes from Steam (`displayName`), shown as untrusted text.
+79. Captures name peers by opaque numbers in order of appearance, never Steam IDs, and
+    are made by an `ITransport` decorator (`Network/CaptureTransport.h`) rather than
+    inside each transport. The editor captures the next match it plays.
+80. `--assign-network-keys --seed N` makes keys from SHA-256 of the seed and a counter
+    (UUID-shaped), so tests are repeatable; without it keys come from the OS.
+81. Arena's menu lists at most six lobbies (its menu height), with refused ones showing
+    the reason; Retry repeats the last Host, Find or Join. Arena's offline scene shows the
+    online panel beside the main menu; the match scene shows it beside the match panel.
+    A failed match reopens the menu in the offline scene with the error.
+82. GameUI gained `elementVisible()` (an element and its parents displayed), because
+    a hidden element keeps its last laid-out rectangle; the menu test needs it.
+83. Cancelling a lobby join and joining the same lobby again lost the membership when
+    the cancelled join's late answer arrived (found by the menu test): SteamServices now
+    leaves such a lobby only if no later join wants it, and the mock no longer adds a
+    member twice.
+84. Packaging can't read network settings, so the application passes how the project
+    uses Steam (`PackageOptions::steam`, from `net::projectSteamUse`). Development
+    packages (`--dev-package`, or the editor's checkbox) are a per-run option, never a
+    saved setting. A packaged development game (AppID 480) isn't restarted through Steam,
+    which would start Spacewar instead.
+85. A Steam-enabled engine's player links `libsteam_api` directly, so every package
+    from such an engine ships it, Steam game or not; Packaging fails only when a Steam
+    engine's package lacks it. Packet captures stay allowed in packaged games (tickets
+    are redacted); they just never ship in a package.
+86. The editor itself can't be opened in the cloud (it needs a Vulkan window), so the
+    UI gate is the Arena menu test through the real RmlUi document plus the editor smoke
+    on the project owner's PC (`editor --network`). No engine-rendered screenshot of the
+    editor window exists yet.
 
 Re-read `AGENTS.md`, `docs/Architecture.md`, `docs/UI.md`, and the named integration
 points before implementation: another contributor may have changed them.

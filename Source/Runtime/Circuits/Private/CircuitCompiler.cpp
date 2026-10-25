@@ -57,6 +57,8 @@ std::shared_ptr<const NodeDesc> variableNode(std::string_view type, const Circui
     NodeDesc node;
     node.id = std::string(type);
     node.category = "Variable";
+    // A circuit's variables are its own, on each machine: they never replicate.
+    node.capability = NodeCapability::Presentation;
     PinDesc value;
     value.name = "value";
     value.type = variable.type;
@@ -423,7 +425,10 @@ struct Compiler {
                 CircuitProgram::EventEntry entry;
                 entry.event = desc.event;
                 entry.site = i;
-                if (!site.inputs.empty()) entry.param = program->registers[site.inputs[0]].text;
+                if (!desc.eventParam.empty())
+                    entry.param = desc.eventParam;
+                else if (!site.inputs.empty())
+                    entry.param = program->registers[site.inputs[0]].text;
                 program->events.push_back(std::move(entry));
             }
             if (desc.component) {
@@ -464,6 +469,24 @@ std::shared_ptr<const CircuitProgram> compileCircuit(
         return a.line < b.line;
     });
     return program;
+}
+
+std::vector<CircuitProblem> circuitScopeProblems(const CircuitProgram& program, CircuitExecution execution) {
+    std::vector<CircuitProblem> problems;
+    if (execution == CircuitExecution::Authority) return problems;
+    for (const auto& site : program.sites) {
+        const NodeCapability capability = site.node->capability;
+        if (capability == NodeCapability::Presentation ||
+            (capability == NodeCapability::NetworkRequest && execution == CircuitExecution::LocalOwner))
+            continue;
+        problems.push_back(
+            {site.line,
+             "node " + site.name + " (" + site.node->id + ") " +
+                 (capability == NodeCapability::Authority ? "changes gameplay" : "sends a request to the host") +
+                 ", which a " + circuitExecutionName(execution) +
+                 " circuit can't do; run it as Authority or use another node"});
+    }
+    return problems;
 }
 
 std::string dumpCircuit(const CircuitProgram& program) {

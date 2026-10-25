@@ -41,7 +41,9 @@ std::string allowed(const NetworkSettingField& field) {
     }
     case SettingKind::Integer: return number(field.min) + ".." + number(field.max);
     case SettingKind::Seconds: return number(field.min) + ".." + number(field.max) + " seconds";
-    case SettingKind::Path: return "quoted path inside the project, ending .swnetmanifest";
+    case SettingKind::Path:
+        return std::string(field.key) == "match_scene" ? "quoted path inside the project, ending .swscene, or \"\""
+                                                       : "quoted path inside the project, ending .swnetmanifest";
     }
     return "";
 }
@@ -356,10 +358,8 @@ std::string networkInfoJson(const NetworkInfo& info) {
     if (!build.steamworks)
         unsupported.push_back(
             "steam transport: this build has no Steamworks SDK (configure with -DSHOCKWAVE_STEAMWORKS=ON)");
-    unsupported.push_back("hosting and joining from the player or editor (--host, --join: later batches)");
-    unsupported.push_back(
-        "lag compensation in sessions (Batch 8; the rewind library exists but no session uses it) and delta "
-        "snapshots (sessions send full-state snapshots)");
+    unsupported.push_back("delta snapshots in sessions: they send full-state snapshots");
+    unsupported.push_back("host migration: when the host leaves, the match ends for everyone");
     unsupported.push_back(
         "predicted characters against moving bodies: they collide with static bodies only in v1 (--check reports "
         "moving bodies in a network scene with them)");
