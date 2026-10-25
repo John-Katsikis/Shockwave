@@ -191,6 +191,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Input", nullptr, &m_showInput);
             ImGui::MenuItem("Save Games", nullptr, &m_showSaveGames);
             ImGui::MenuItem("Circuits", nullptr, &m_showCircuits);
+            ImGui::MenuItem("Network", nullptr, &m_showNetwork);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
             ImGui::EndMenu();

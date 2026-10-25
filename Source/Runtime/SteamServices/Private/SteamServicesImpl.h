@@ -128,6 +128,7 @@ public:
         uint64_t call = 0;
         RequestId request;
         bool cancelled = false;
+        uint64_t lobby = 0;   // JoinLobby: the lobby asked for
     };
     std::array<Call, 32> calls{};
     std::array<uint64_t, 4> joinedLobbies{};

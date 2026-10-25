@@ -6,8 +6,15 @@ if(BUILD_TESTING)
     target_link_libraries(arena_graphics_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(arena_graphics_test)
     add_test(NAME arena_graphics COMMAND arena_graphics_test ${CMAKE_CURRENT_SOURCE_DIR})
+    # Batch 9 gate: the online menu through the real document, over the Steam mock.
+    add_executable(arena_online_menu_test Tests/OnlineMenuTest.cpp Source/ArenaOnlineMenu.cpp)
+    target_include_directories(arena_online_menu_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    target_link_libraries(arena_online_menu_test PRIVATE Shockwave::GameFramework Shockwave::SteamServices)
+    shockwave_warnings(arena_online_menu_test)
+    add_test(NAME arena_online_menu COMMAND arena_online_menu_test ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(arena_online_menu PROPERTIES TIMEOUT 120)
     # Exercise the arena shooter against real Jolt collision/character simulation, no GPU.
-    set(ARENA_GAME_SOURCES Source/ArenaGame.cpp Source/ArenaGraphicsMenu.cpp Source/ArenaPresentation.cpp
+    set(ARENA_GAME_SOURCES Source/ArenaGame.cpp Source/ArenaGraphicsMenu.cpp Source/ArenaOnlineMenu.cpp Source/ArenaPresentation.cpp
         Source/ArenaSimulation.cpp)
     add_executable(arena_test Tests/ArenaTest.cpp ${ARENA_GAME_SOURCES})
     target_include_directories(arena_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)

@@ -25,6 +25,7 @@
 //   --content-folder path  show a folder inside Content on startup
 //   --preferences          show the Preferences window on startup
 //   --graphics-guide       show the graphics implementation guide on startup
+//   --network              show the Network window on startup
 //   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
@@ -72,6 +73,8 @@ int main(int argc, char** argv) {
                 options.showPreferences = true;
             else if (arg == "--graphics-guide")
                 options.showGraphicsGuide = true;
+            else if (arg == "--network")
+                options.showNetwork = true;
             else if (arg == "--graphics-guide-path") {
                 const auto path = editor::graphicsGuidePath();
                 if (path.empty()) throw std::runtime_error("Graphics guide not found; rebuild the editor target");
@@ -94,13 +97,12 @@ int main(int argc, char** argv) {
             else if (arg == "--circuit")
                 options.circuitOnStart = value();
             else if (arg == "--help") {
-                std::puts(
-                    "editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
-                    "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
-                    "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
-                    "       [--play] [--select N] [--circuit path]\n"
-                    "       [--graphics-guide] [--graphics-guide-path]\n"
-                    "       [--frames N]");
+                std::puts("editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
+                          "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
+                          "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
+                          "       [--play] [--select N] [--circuit path]\n"
+                          "       [--graphics-guide] [--graphics-guide-path] [--network]\n"
+                          "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;

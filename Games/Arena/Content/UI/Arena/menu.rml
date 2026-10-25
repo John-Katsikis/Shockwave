@@ -8,9 +8,16 @@
 <div id="match-panel" data-if="arena_match"><h1>MATCH / 6v6</h1><p class="hint">{{arena_network}}</p>
 <button id="ready" onclick="arena_ready">READY</button>
 <div class="teams"><button id="team-blue" onclick="arena_team_blue">JOIN BLUE</button><button id="team-orange" onclick="arena_team_orange">JOIN ORANGE</button></div>
-<button id="leave" onclick="arena_leave" data-if="arena_online">LEAVE MATCH</button>
-<div class="later"><button id="host" class="unavailable">HOST FRIENDS MATCH</button><button id="find" class="unavailable">FIND / JOIN</button><button id="invite" class="unavailable">INVITE</button><p class="hint">Hosting, finding and inviting come with Steam play.</p></div>
 <div class="roster"><div class="column blue"><span class="caption">BLUE</span><br/>{{arena_blue_1}}<br/>{{arena_blue_2}}<br/>{{arena_blue_3}}<br/>{{arena_blue_4}}<br/>{{arena_blue_5}}<br/>{{arena_blue_6}}</div><div class="column orange"><span class="caption">ORANGE</span><br/>{{arena_orange_1}}<br/>{{arena_orange_2}}<br/>{{arena_orange_3}}<br/>{{arena_orange_4}}<br/>{{arena_orange_5}}<br/>{{arena_orange_6}}</div></div>
+</div>
+<div id="online-panel" data-class-solo="!arena_match"><h1>ONLINE</h1><p id="online-status" class="hint">{{arena_online_status}}</p>
+<div class="actions" data-if="arena_online_idle"><button id="host" onclick="arena_host">HOST FRIENDS MATCH</button><button id="find" onclick="arena_find">FIND / JOIN</button></div>
+<div class="actions" data-if="!arena_online_available &amp;&amp; !arena_online_in_match"><button id="host-off" class="unavailable">HOST FRIENDS MATCH</button><button id="find-off" class="unavailable">FIND / JOIN</button></div>
+<button id="retry" onclick="arena_retry" data-if="arena_online_failed">RETRY</button>
+<button id="cancel" onclick="arena_cancel" data-if="arena_online_busy">CANCEL</button>
+<div class="actions" data-if="arena_online_in_match"><button id="invite" onclick="arena_invite" data-if="arena_online_hosting">INVITE</button><button id="leave" onclick="arena_cancel">LEAVE MATCH / PLAY OFFLINE</button></div>
+<div class="lobbies"><button id="lobby-1" onclick="arena_join_1" data-if="arena_lobby_count >= 1">{{arena_lobby_1}}</button><button id="lobby-2" onclick="arena_join_2" data-if="arena_lobby_count >= 2">{{arena_lobby_2}}</button><button id="lobby-3" onclick="arena_join_3" data-if="arena_lobby_count >= 3">{{arena_lobby_3}}</button><button id="lobby-4" onclick="arena_join_4" data-if="arena_lobby_count >= 4">{{arena_lobby_4}}</button><button id="lobby-5" onclick="arena_join_5" data-if="arena_lobby_count >= 5">{{arena_lobby_5}}</button><button id="lobby-6" onclick="arena_join_6" data-if="arena_lobby_count >= 6">{{arena_lobby_6}}</button></div>
+<div class="invite" data-if="arena_invite_pending"><p class="hint">A FRIEND INVITED YOU TO THEIR MATCH</p><div class="actions"><button id="accept-invite" onclick="arena_accept_invite">ACCEPT</button><button id="decline-invite" onclick="arena_decline_invite">DECLINE</button></div></div>
 </div>
 <div id="graphics-panel" class="hidden">
 <h1>GRAPHICS SETTINGS</h1>

@@ -99,6 +99,11 @@ void Editor::closeProject() {
     rememberCamera();
     saveEditorState();
     log("Closed project " + m_project.name);
+    m_match.leave();   // its setup was this project's
+    m_match.setSetup({});
+    m_matchScene.clear();
+    if (m_capture) m_capture->close();
+    m_capture.reset();
     m_steam.reset();   // shuts Steam down: its AppID was this project's
     m_steamMessage.clear();
     m_hasProject = false;

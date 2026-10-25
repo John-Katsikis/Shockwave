@@ -18,6 +18,7 @@
 
 #include "ArenaGraphicsMenu.h"
 #include "ArenaNetwork.h"
+#include "ArenaOnlineMenu.h"
 #include "ArenaPresentation.h"
 #include "ArenaSimulation.h"
 
@@ -216,11 +217,10 @@ public:
         game.ui().on("arena_ready", [this, &game](const UIEvent&) { request(game, kReadyToPlay, 1); });
         game.ui().on("arena_team_blue", [this, &game](const UIEvent&) { request(game, kRequestTeam, 0); });
         game.ui().on("arena_team_orange", [this, &game](const UIEvent&) { request(game, kRequestTeam, 1); });
-        game.ui().on("arena_leave", [&game](const UIEvent&) {
-            if (game.network().online()) game.network().close();
-        });
-        game.ui().set("arena_online", network.online());
+        m_onlineMenu.bind(game);
         game.ui().set("arena_match", m_match);
+        // Back from a match that failed or ended badly: the menu says why.
+        if (game.onlineMatch && game.onlineMatch->state() == net::MatchState::Failed) pause(game, true);
         SW_LOG(
             LogGame, Info, "Arena: {} ready; click to capture mouse, P for menu, F2 to restart",
             !m_match                                     ? "local bot match"
@@ -290,6 +290,7 @@ public:
             game, frameDt, pawn, autoAim ? fighter->yaw : m_input.yaw(), autoAim ? fighter->pitch : m_input.pitch(),
             !m_paused && !rules.finished, hud);
         if (m_match) scoreboard(game);
+        m_onlineMenu.refresh(game);
     }
 
     void endPlay(GameContext& game) override {
@@ -658,6 +659,7 @@ private:
     }
 
     GraphicsMenu m_graphicsMenu;
+    OnlineMenu m_onlineMenu;
     void pause(GameContext& game, bool paused) {
         m_graphicsMenu.close(game);
         m_paused = paused && !game.network().online();   // online the match keeps running

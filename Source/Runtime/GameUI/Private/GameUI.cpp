@@ -1652,6 +1652,13 @@ std::optional<glm::vec4> GameUI::elementRect(Entity e, std::string_view id) {
     return glm::vec4(offset.x, offset.y, size.x, size.y);
 }
 
+bool GameUI::elementVisible(Entity e, std::string_view id) {
+    Rml::Element* el = m->element(e, id);
+    if (!el) return false;
+    m->context->Update();
+    return el->IsVisible(true);
+}
+
 bool GameUI::click(Entity e, std::string_view id) {
     Rml::Element* el = m->element(e, id);
     if (!el) return false;

@@ -25,12 +25,18 @@ button:hover, button:focus-visible { background-color: #365767; border-color: #5
 #graphics-panel .presets button { width: 25%; text-align: center; }
 #graphics-panel .graphics-actions button { width: 33.33%; font-size: 13dp; text-align: center; }
 
-#match-panel { position: absolute; left: 50%; top: 50%; margin-left: 190dp; margin-top: -220dp; width: 360dp; padding: 20dp; background-color: #14232b; border: 1dp #5c7984; }
+#match-panel { position: absolute; left: 50%; top: 50%; margin-left: 222dp; margin-top: -220dp; width: 360dp; padding: 20dp; background-color: #14232b; border: 1dp #5c7984; }
 #match-panel button { box-sizing: border-box; width: 100%; }
-#match-panel .teams, #match-panel .later, #match-panel .roster { display: flex; gap: 6dp; }
-#match-panel .later { flex-wrap: wrap; }
+#match-panel .teams, #match-panel .roster { display: flex; gap: 6dp; }
 #match-panel .teams button { width: 50%; }
-#match-panel .later button { width: 31%; font-size: 12dp; padding: 7dp 4dp; }
-#match-panel button.unavailable { color: #6c858c; border-color: #2c414a; background-color: #182a33; }
 #match-panel .hint { font-size: 13dp; color: #b8cbd0; margin: 8dp 0; }
 #match-panel .column { width: 50%; font-size: 13dp; line-height: 1.6; }
+
+#online-panel { position: absolute; left: 50%; top: 50%; margin-left: -608dp; margin-top: -220dp; width: 340dp; padding: 20dp; background-color: #14232b; border: 1dp #5c7984; }
+#online-panel.solo { margin-left: 222dp; }
+#online-panel button { box-sizing: border-box; width: 100%; font-size: 14dp; }
+#online-panel .actions { display: flex; gap: 6dp; }
+#online-panel .actions button { width: 50%; }
+#online-panel .lobbies button { text-align: left; font-size: 12dp; padding: 7dp 8dp; margin: 4dp 0; }
+#online-panel button.unavailable { color: #6c858c; border-color: #2c414a; background-color: #182a33; }
+#online-panel .hint { font-size: 13dp; color: #b8cbd0; margin: 8dp 0; }

@@ -29,14 +29,14 @@ SteamLobbyType lobbyType(LobbyVisibility visibility) {
 }   // namespace
 
 static NetResult<RequestId>
-track(SteamServicesImpl& s, SteamServicesImpl::CallKind kind, uint64_t call, const char* failure) {
+track(SteamServicesImpl& s, SteamServicesImpl::CallKind kind, uint64_t call, const char* failure, uint64_t lobby = 0) {
     if (!call) return NetError{NetErrorCode::Io, failure};
     auto slot = std::find_if(s.calls.begin(), s.calls.end(), [](const SteamServicesImpl::Call& c) {
         return c.kind == SteamServicesImpl::CallKind::None;
     });
     // Checked by the callers before starting the call; full here means a bug.
     if (slot == s.calls.end()) return NetError{NetErrorCode::CapacityExceeded, "too many Steam requests in flight"};
-    *slot = {kind, call, s.newRequest(), false};
+    *slot = {kind, call, s.newRequest(), false, lobby};
     return slot->request;
 }
 
@@ -77,7 +77,8 @@ NetResult<RequestId> SteamServicesImpl::joinLobby(LobbyId lobby) {
     if (state != SteamServiceState::Client) return noLobbies();
     if (!lobby.valid()) return NetError{NetErrorCode::InvalidArgument, "no lobby ID"};
     if (!callSlotFree(*this)) return NetError{NetErrorCode::CapacityExceeded, "too many Steam requests in flight"};
-    return track(*this, CallKind::JoinLobby, api->joinLobby(lobby.value), "Steam couldn't start joining the lobby");
+    return track(
+        *this, CallKind::JoinLobby, api->joinLobby(lobby.value), "Steam couldn't start joining the lobby", lobby.value);
 }
 
 NetResult<void> SteamServicesImpl::leaveLobby(LobbyId lobby) {
@@ -209,7 +210,13 @@ void SteamServicesImpl::lobbyEntered(uint64_t call, bool ok, uint64_t lobby) {
     const Call done = *c;
     *c = {};
     if (done.cancelled) {
-        if (ok && lobby) api->leaveLobby(lobby);
+        // Nobody wants this lobby, unless a later join asked for it again (cancel, then
+        // join the same lobby): leaving then would take that join's membership away.
+        const bool wanted = std::find(joinedLobbies.begin(), joinedLobbies.end(), lobby) != joinedLobbies.end() ||
+                            std::any_of(calls.begin(), calls.end(), [&](const Call& other) {
+                                return other.kind == CallKind::JoinLobby && !other.cancelled && other.lobby == lobby;
+                            });
+        if (ok && lobby && !wanted) api->leaveLobby(lobby);
         return;
     }
     if (!ok || !lobby) return failed(*this, done.request, "couldn't join the lobby: it's full, gone or private");

@@ -90,6 +90,7 @@ void Editor::onStart() {
 
     m_showPreferences = m_options.showPreferences;
     m_showGraphicsGuide = m_options.showGraphicsGuide;
+    m_showNetwork = m_options.showNetwork;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -210,6 +211,7 @@ void Editor::onGui() {
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();
     if (m_showCircuits) drawCircuitsWindow();
+    if (m_showNetwork) drawNetworkWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
@@ -229,7 +231,9 @@ void Editor::onGui() {
 
 // Every frame, editing too: Steam's callbacks, then Play's network and input (GameFramework/NetworkPump.h).
 void Editor::onPump(double rawFrameDt) {
-    shockwave::pumpNetworkFrame(engine(), m_steam.get(), m_session.get(), rawFrameDt);
+    shockwave::pumpNetworkFrame(
+        engine(), m_steam.get(), m_session.get(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
+    updateOnlineMatch();
 }
 
 // Play mode runs the project's gameplay and physics at the fixed tick rate, like the player.

@@ -219,6 +219,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     drawSpatialAudioNotes(info, e);
     if (info.id == shockwave::componentId<shockwave::ParticleEffect>()) drawParticleEffectNotes(e);
     if (info.id == shockwave::componentId<shockwave::Animator>()) drawAnimatorNotes(e);
+    if (info.id == shockwave::componentId<shockwave::net::NetworkObject>()) drawNetworkObjectNotes(e);
     if (info.id == shockwave::componentId<shockwave::Circuit>()) {
         const auto& circuit = *m_world.get<shockwave::Circuit>(e);
         const bool exists =
