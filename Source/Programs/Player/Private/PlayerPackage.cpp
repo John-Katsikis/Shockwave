@@ -2,6 +2,7 @@
 // Packaging/Package.h and docs/Packaging.md.
 #include "Player.h"
 
+#include <Multiplayer/NetworkValidation.h>
 #include <Packaging/Package.h>
 
 #include <cstdio>
@@ -20,6 +21,8 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
     if (command.noArchive) settings.archive = false;
 
     shockwave::PackageOptions options;
+    const shockwave::net::ProjectSteamUse steam = shockwave::net::projectSteamUse(project);
+    options.steam = {steam.uses, steam.appId, command.development};
     // Progress and results on standard output, for people and scripts alike; problems
     // are marked so they stand out.
     options.log = [](shockwave::LogLevel level, std::string_view line) {

@@ -136,6 +136,7 @@ private:
         if (packagedProject()) fail("This is a packaged game. Package from the engine's build instead");
         if (const auto problems = validatePackageSettings(m_project, m_settings); !problems.empty())
             fail(problems.front());
+        checkSteam();
         if (std::string(SHOCKWAVE_BUILD_CONFIG) == "Debug")
             log(LogLevel::Warning,
                 "This engine is a Debug build, so the packaged game will run slowly. Package from a Release build "
@@ -161,6 +162,31 @@ private:
         copy();
         verify();
         finish();
+    }
+
+    // ---- Steam --------------------------------------------------------------------------
+    // A Steam game needs its own AppID; 480 (Spacewar, Valve's shared test app) only
+    // goes into a development package. An engine built without the SDK still packages
+    // the game, which then plays offline only.
+    void checkSteam() {
+        std::error_code ec;
+        m_steamEngine = fs::exists(m_engine / steamRuntimeLibrary(), ec);
+        const PackageSteam& steam = m_options.steam;
+        if (!steam.uses) return;
+        if (steam.appId == 0)
+            fail("The game plays over Steam but has no steam_app_id; set it in Config/Network.swnetwork");
+        if (steam.appId == 480 && !steam.development)
+            fail("steam_app_id is 480, Valve's shared test app (Spacewar). Set your game's own AppID in "
+                 "Config/Network.swnetwork, or make a development package to test with it (player --package "
+                 "--dev-package, or Development package in the editor)");
+        if (steam.appId == 480)
+            log(LogLevel::Warning,
+                "Development package with AppID 480: for testing only; don't upload it to Steam or give it to "
+                "players");
+        if (!m_steamEngine)
+            log(LogLevel::Warning,
+                "This engine was built without the Steamworks SDK, so the package plays offline only. Package from "
+                "a build configured with -DSHOCKWAVE_STEAMWORKS=ON for online play");
     }
 
     // ---- Build --------------------------------------------------------------------------
@@ -407,8 +433,11 @@ private:
 #endif
 
     bool excluded(const std::string& rel, const std::string& name) const {
-        static const char* always[] = {".*",   "Saved", "Source", "Tools", "CMakeLists.txt", "Config/Package.swpackage",
-                                       "*.tmp"};
+        // steam_appid.txt makes Steam treat the folder as a development launch, and packet
+        // captures hold players' traffic: neither ships, even when the project has them.
+        static const char* always[] = {".*",    "Saved",           "Source",
+                                       "Tools", "CMakeLists.txt",  "Config/Package.swpackage",
+                                       "*.tmp", "steam_appid.txt", "*.swnetcap"};
         auto matches = [&](const std::string& pattern) {
             return pattern.find('/') != std::string::npos ? globMatch(pattern, rel) : globMatch(pattern, name);
         };
@@ -603,9 +632,17 @@ private:
              << "  --vsync on|off    sync frames to the screen\n"
              << "  --size WxH        window size, like 1920x1080\n"
              << "  --help            every option\n\n"
-             << "Made with the Shockwave engine (MIT license).\n";
+             << steamReadme() << "Made with the Shockwave engine (MIT license).\n";
         m_readmeText = text.str();
         writeFile(m_staging / "README.txt", m_readmeText);
+    }
+
+    std::string steamReadme() const {
+        if (!m_options.steam.uses) return {};
+        if (!m_steamEngine) return "This build plays offline only.\n\n";
+        return std::string("Online play needs Steam running and signed in; without it the game plays offline.\n") +
+               "The Steam runtime (" + steamRuntimeLibrary() +
+               ") is Valve Corporation's, redistributed under the Steamworks SDK Access Agreement.\n\n";
     }
 
     // ---- Verify -------------------------------------------------------------------------
@@ -644,6 +681,18 @@ private:
             if (!runtimeItself && packaging::compareVersions(info.glibcxx, m_result.minimumCppRuntime) > 0)
                 m_result.minimumCppRuntime = info.glibcxx;
         }
+        // Steam: the runtime the player links ships next to it; nothing that would make it a
+        // development launch, or anyone's captured traffic, ships at all.
+        if (m_steamEngine && !shipped.count(steamRuntimeLibrary()))
+            fail(std::string("The package is missing the Steam runtime ") + steamRuntimeLibrary());
+        for (const auto& entry : fs::recursive_directory_iterator(m_staging, ec)) {
+            const std::string name = entry.path().filename().string();
+            if (name == "steam_appid.txt" || entry.path().extension() == ".swnetcap")
+                fail(
+                    "The package would ship " + entry.path().lexically_relative(m_staging).generic_string() +
+                    ", which never goes to players");
+        }
+        if (m_steamEngine) log(LogLevel::Info, std::string("Steam runtime: ") + steamRuntimeLibrary());
         progress(PackageStep::Verify, 0.3f);
 
         // What the oldest system it runs on needs, now that it's known.
@@ -741,12 +790,23 @@ private:
     fs::path m_engine, m_player, m_final, m_staging;
     std::string m_executable, m_launcherText, m_readmeText;
     std::vector<std::pair<fs::path, std::string>> m_extraFiles;   // written with the copy
+    bool m_steamEngine = false;   // the engine was built with Steamworks
 };
 
 }   // namespace
 
 PackageResult packageProject(const Project& project, const PackageSettings& settings, const PackageOptions& options) {
     return Packager(project, settings, options).run();
+}
+
+const char* steamRuntimeLibrary() {
+#if defined(_WIN32)
+    return "steam_api64.dll";
+#elif defined(__APPLE__)
+    return "libsteam_api.dylib";
+#else
+    return "libsteam_api.so";
+#endif
 }
 
 std::optional<fs::path> packagedProject() {

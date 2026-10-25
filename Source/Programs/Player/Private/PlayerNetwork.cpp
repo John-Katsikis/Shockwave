@@ -239,6 +239,9 @@ bool relaunchThroughSteam(const shockwave::Project& project) {
         return false;
     const net::NetworkSettings& s = file.settings;
     if (!s.enabled || s.transport != net::NetTransportKind::Steam || s.steamAppId == 0) return false;
+    // A development package (AppID 480, Valve's shared test app) runs as it was started:
+    // Steam would start Spacewar instead.
+    if (s.steamAppId == 480) return false;
     if (!net::SteamServices::create()->restartThroughSteamIfNeeded(s.steamAppId)) return false;
     std::puts("Steam is starting the game");
     return true;

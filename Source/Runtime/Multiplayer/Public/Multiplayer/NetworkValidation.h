@@ -34,6 +34,14 @@ struct NetworkProject {
 // problems; a missing settings file isn't one. False on a problem that stops checking.
 bool loadNetworkProject(const Project& project, NetworkProject& out, std::vector<NetProblem>& problems);
 
+// How the project plays online, for packaging (PackageOptions::steam): multiplayer is on
+// over Steam, with this AppID. Off when the settings are missing or don't parse.
+struct ProjectSteamUse {
+    bool uses = false;
+    uint32_t appId = 0;
+};
+ProjectSteamUse projectSteamUse(const Project& project);
+
 // Settings rules (tick_rate equal to the project's), the manifest, the registry's
 // profiles, and whether max_players' snapshots fit the bandwidth budget. The registry
 // must be frozen.

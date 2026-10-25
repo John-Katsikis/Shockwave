@@ -113,6 +113,7 @@ struct PackageCommand {
     bool requested = false;
     fs::path output;
     bool noBuild = false, noArchive = false;
+    bool development = false;   // --dev-package: a test build (allows Steam AppID 480)
 };
 int packageGame(const shockwave::Project& project, const PackageCommand& command);
 // In a packaged game, the project it ships with; empty otherwise.

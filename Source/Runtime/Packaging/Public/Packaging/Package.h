@@ -74,6 +74,17 @@ enum class PackageStep { Build, Check, Copy, Verify, Archive, Done };
 inline constexpr int kPackageStepCount = 5;   // Build..Archive
 const char* packageStepName(PackageStep step);
 
+// How the project uses Steam, which the application reads from Config/Network.swnetwork
+// (Packaging doesn't read network settings itself). A Steam-enabled engine ships Valve's
+// runtime library (libsteam_api), never the SDK, steam_appid.txt or packet captures.
+struct PackageSteam {
+    bool uses = false;   // multiplayer is on and plays over Steam
+    uint32_t appId = 0;   // steam_app_id
+    // A development package: AppID 480 (Valve's shared test app) is allowed, with a
+    // warning. Never saved in the settings file, so a release can't ship as one by mistake.
+    bool development = false;
+};
+
 struct PackageOptions {
     // Where the engine that gets shipped lives: the folder with the player and its
     // libraries. Defaults to the running program's folder (build/bin).
@@ -87,6 +98,7 @@ struct PackageOptions {
     std::function<void(PackageStep, float)> progress;
     // Set from any thread to stop at the next file; the half-made package is removed.
     const std::atomic<bool>* cancel = nullptr;
+    PackageSteam steam;
 };
 
 struct PackageResult {
@@ -102,6 +114,10 @@ struct PackageResult {
     // The oldest system the package runs on (Linux): glibc and the C++ runtime it needs.
     std::string minimumGlibc, minimumCppRuntime;
 };
+
+// The Steam runtime library's file name on this platform ("libsteam_api.so"); a
+// Steam-enabled engine has it next to the player.
+const char* steamRuntimeLibrary();
 
 // Packages the project: optionally builds, runs the project checks, copies the engine
 // and the project into a new folder next to any older package, verifies that folder runs

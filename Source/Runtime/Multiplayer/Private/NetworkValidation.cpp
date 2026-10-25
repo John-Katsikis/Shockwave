@@ -239,4 +239,15 @@ bool readyForSession(
     return problems.size() == before;
 }
 
+ProjectSteamUse projectSteamUse(const Project& project) {
+    NetworkProject network;
+    std::vector<NetProblem> problems;
+    loadNetworkProject(project, network, problems);
+    const NetworkSettings& settings = network.settings.settings;
+    ProjectSteamUse use;
+    use.uses = network.present && settings.enabled && settings.transport == NetTransportKind::Steam;
+    use.appId = settings.steamAppId;
+    return use;
+}
+
 }   // namespace shockwave::net

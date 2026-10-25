@@ -1,6 +1,8 @@
 // Build > Package game: see PackageWindow.h and docs/Packaging.md.
 #include "PackageWindow.h"
 
+#include <Multiplayer/NetworkValidation.h>
+
 #include <UI/Gui.h>
 
 #include <imgui.h>
@@ -109,11 +111,14 @@ void PackageWindow::start(const shockwave::Project& project) {
     }
     m_jobProject = project;
     m_jobSettings = m_edit;
+    const shockwave::net::ProjectSteamUse steam = shockwave::net::projectSteamUse(project);
+    m_jobSteam = {steam.uses, steam.appId, m_development};
     m_cancel = false;
     m_running = true;
     m_thread = std::thread([this] {
         shockwave::PackageOptions options;
         options.cancel = &m_cancel;
+        options.steam = m_jobSteam;
         options.log = [this](shockwave::LogLevel level, std::string_view text) {
             // Problems also go to the Console, where the rest of the editor's are.
             if (level >= shockwave::LogLevel::Warning) shockwave::logMessage(shockwave::LogPackage, level, text);
@@ -233,6 +238,10 @@ void PackageWindow::drawSettings(const shockwave::Project& project) {
     ImGui::Checkbox("##cpp_runtime", &m_edit.cppRuntime);
     ImGui::SetItemTooltip("Include this machine's C++ runtime, used only on older systems whose own is too old\n"
                           "for the game (cpp_runtime)");
+    gui::propertyLabel("Development package");
+    ImGui::Checkbox("##development", &m_development);
+    ImGui::SetItemTooltip("A test build: allows Steam AppID 480 (Valve's shared test app). Never saved, so a\n"
+                          "release can't ship as one by mistake (player --package --dev-package)");
     ImGui::EndDisabled();
     gui::propertyLabel("Makes");
     ImGui::TextWrapped(

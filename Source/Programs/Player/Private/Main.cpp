@@ -124,6 +124,8 @@ int main(int argc, char** argv) {
                 package.noBuild = true;
             } else if (arg == "--no-archive") {
                 package.noArchive = true;
+            } else if (arg == "--dev-package") {
+                package.development = true;
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
             } else if (arg == "--bake-navmesh") {
@@ -331,7 +333,7 @@ int main(int argc, char** argv) {
                 if (!shockwave::validSaveSlot(tool.save))
                     throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
-                std::puts("player --package [--output folder] [--no-build] [--no-archive]\n"
+                std::puts("player --package [--output folder] [--no-build] [--no-archive] [--dev-package]\n"
                           "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
@@ -479,6 +481,8 @@ int main(int argc, char** argv) {
                 tool.mode != Tool::Mode::NetworkManifest && tool.mode != Tool::Mode::AssignNetworkKeys)
                 throw player::UsageError("--output goes with --package, --net-encode, --network-manifest or "
                                          "--assign-network-keys");
+            if ((package.development || package.noBuild || package.noArchive) && !package.requested)
+                throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
             package.output = tool.output = output;
         }
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
