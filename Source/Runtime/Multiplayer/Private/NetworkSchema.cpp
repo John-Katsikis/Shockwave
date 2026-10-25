@@ -294,7 +294,7 @@ std::string networkInfoJson(const NetworkInfo& info) {
             else if (field.kind == SettingKind::Choice)
                 out += jsonQuote(settingText(s, field));
             else if (field.kind == SettingKind::Path)
-                out += jsonQuote(s.manifest);
+                out += jsonQuote(std::string_view(field.key) == "match_scene" ? s.matchScene : s.manifest);
             else if (std::string_view(field.key) == "steam_app_id")
                 out += jsonU64(s.steamAppId);   // an ID: a string, like every ID in network JSON
             else
