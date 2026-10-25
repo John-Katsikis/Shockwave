@@ -197,6 +197,14 @@ const NetworkSettingField kFields[] = {
      {},
      "Manifest",
      "The network manifest (.swnetmanifest), relative to the project folder"},
+    {"match_scene",
+     SettingKind::Path,
+     &S::matchScene,
+     0,
+     0,
+     {},
+     "Match scene",
+     "The manifest scene Host plays (.swscene, relative to the project folder); empty: the manifest's first"},
 };
 
 constexpr size_t kFieldCount = std::size(kFields);
@@ -288,9 +296,16 @@ bool setSettingText(
                 settings.*member = value;
             } else if constexpr (std::is_same_v<M, std::string>) {
                 std::string problem;
+                const bool scene = key == "match_scene";
+                if (scene && text.empty()) {
+                    settings.*member = std::string();   // the manifest's first scene
+                    return true;
+                }
                 if (!validRelativeNetworkPath(text, problem))
                     return why = key + " \"" + std::string(text) + "\" " + problem, false;
-                if (!text.ends_with(".swnetmanifest")) return why = key + " must name a .swnetmanifest file", false;
+                if (!scene && !text.ends_with(".swnetmanifest"))
+                    return why = key + " must name a .swnetmanifest file", false;
+                if (scene && !text.ends_with(".swscene")) return why = key + " must name a .swscene file", false;
                 settings.*member = std::string(text);
             } else {
                 for (size_t i = 0; i < field.choices.size(); ++i)
@@ -336,7 +351,7 @@ void validateNetworkSettings(
     for (const NetworkSettingField& field : kFields) {
         NetworkSettings copy = s;
         std::string why, text = settingText(s, field);
-        if (field.kind == SettingKind::Path) text = s.manifest;
+        if (field.kind == SettingKind::Path) text = s.*std::get<std::string NetworkSettings::*>(field.member);
         if (!setSettingText(copy, field, text, why)) error(field.key, why);
     }
     if (projectTickRate > 0 && double(s.tickRate) != projectTickRate)

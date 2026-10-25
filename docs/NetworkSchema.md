@@ -31,6 +31,7 @@ A project without this file plays offline only. The first line is `shockwave_net
 | `max_receive_bytes_per_pump` | 16384..1048576 | 262144 | Bytes an endpoint reads per frame, all peers together |
 | `max_receive_messages_per_pump` | 16..1024 | 256 | Messages an endpoint reads per frame, all peers together |
 | `manifest` | quoted path inside the project, ending .swnetmanifest | "Config/NetworkManifest.swnetmanifest" | The network manifest (.swnetmanifest), relative to the project folder |
+| `match_scene` | quoted path inside the project, ending .swnetmanifest | "" | The manifest scene Host plays (.swscene, relative to the project folder); empty: the manifest's first |
 
 Rules between keys, checked by `player --check`:
 

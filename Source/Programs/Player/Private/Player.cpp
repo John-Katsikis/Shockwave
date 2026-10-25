@@ -76,14 +76,16 @@ void Player::onStart() {
     m_effects->setContentFolder(m_project.assetFolder);
     shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     if (m_tool.mode != Tool::Mode::Play) {
-        m_exitCode = m_tool.mode == Tool::Mode::Check         ? check(importProblems)
-                     : m_tool.mode == Tool::Mode::BakeNavMesh ? bakeNavMeshes()
-                     : m_tool.mode == Tool::Mode::AudioMix    ? audioMix()
-                     : m_tool.mode == Tool::Mode::Animations  ? listAnimations()
-                     : m_tool.mode == Tool::Mode::NodeSchema  ? nodeSchema()
-                     : m_tool.mode == Tool::Mode::CircuitRun  ? runCircuit()
-                     : m_tool.mode == Tool::Mode::CircuitDump ? dumpCircuit()
-                                                              : schema();
+        m_exitCode = m_tool.mode == Tool::Mode::Check               ? check(importProblems)
+                     : m_tool.mode == Tool::Mode::BakeNavMesh       ? bakeNavMeshes()
+                     : m_tool.mode == Tool::Mode::AudioMix          ? audioMix()
+                     : m_tool.mode == Tool::Mode::Animations        ? listAnimations()
+                     : m_tool.mode == Tool::Mode::NodeSchema        ? nodeSchema()
+                     : m_tool.mode == Tool::Mode::CircuitRun        ? runCircuit()
+                     : m_tool.mode == Tool::Mode::CircuitDump       ? dumpCircuit()
+                     : m_tool.mode == Tool::Mode::NetworkManifest   ? networkManifest()
+                     : m_tool.mode == Tool::Mode::AssignNetworkKeys ? assignNetworkKeysTool()
+                                                                    : schema();
         engine().quit();
         return;
     }
@@ -136,9 +138,16 @@ void Player::onStart() {
     }
     m_ui->setInputEnabled(true);
     m_ui->setPreview(m_tool.uiPreview);
+    setUpOnline();
+    if (m_tool.online != Tool::Online::None) {
+        // --host and the joins play the match's scene once the lobby is ready.
+        SW_LOG(shockwave::LogNetwork, Info, "Online: {}", m_match.status());
+        return;
+    }
     m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
     m_session->setSaveFolder(saveFolder(), m_project.relative(m_project.startupScene));
     m_session->setGameCircuit(m_project.gameCircuitPath());
+    m_session->setOnlineMatch(m_match.configured() ? &m_match : nullptr);
     if (!m_tool.netPreview.empty()) startNetPreview();
     m_session->start();
     if (!loadFile.empty()) {
@@ -175,7 +184,9 @@ void Player::onPump(double rawFrameDt) {
         shockwave::pumpNetworkFrame(engine(), m_previewClientServices.get(), m_session.get(), rawFrameDt);
         return;
     }
-    shockwave::pumpNetworkFrame(engine(), m_services.get(), m_session.get(), rawFrameDt);
+    shockwave::pumpNetworkFrame(
+        engine(), services(), m_session.get(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
+    updateOnline();
 }
 
 void Player::onUpdate(double dt) {
@@ -350,6 +361,16 @@ void Player::onShutdown() {
     m_session.reset();
     if (m_previewHost) m_previewHost->stop();
     m_previewHost.reset();
+    // The session's transport and auth sessions were Steam's: Steam goes after them.
+    m_match.leave();
+    if (m_steam) m_steam->shutdown();
+    m_steam.reset();
+    if (m_capture) {
+        std::printf(
+            "net capture: %llu records in %s\n", static_cast<unsigned long long>(m_capture->recordsWritten()),
+            m_tool.netCapture.string().c_str());
+        m_capture->close();
+    }
     if (m_instance) m_instance->shutdown();
     m_ui.reset();
     m_effects.reset();

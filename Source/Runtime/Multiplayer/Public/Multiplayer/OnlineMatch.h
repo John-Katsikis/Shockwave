@@ -57,7 +57,8 @@ struct MatchSetup {
 };
 
 // Reads the project's network settings and manifest and fills setup for its network
-// scene: `scene` (inside the project) when given, else the manifest's first scene. False,
+// scene: `scene` (inside the project) when given, else match_scene, else the manifest's
+// first scene. False,
 // with every reason in problems, when the project can't play online (multiplayer off,
 // errors in the settings or manifest, the scene isn't a network scene). Reads every
 // content file for the content digest; opens no socket and starts nothing.

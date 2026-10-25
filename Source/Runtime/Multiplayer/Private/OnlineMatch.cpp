@@ -63,17 +63,18 @@ bool prepareMatchSetup(
     loadNetworkProject(project, network, found);
     uint16_t sceneId = 0;
     std::string scenePath;
+    const std::string wanted = scene.empty() ? network.settings.settings.matchScene : scene;
     if (network.manifest) {
         for (const ManifestScene& s : network.manifest->scenes)
-            if (scene.empty() ? sceneId == 0 : s.path == scene) {
+            if (wanted.empty() ? sceneId == 0 : s.path == wanted) {
                 sceneId = s.id;
                 scenePath = s.path;
             }
         if (sceneId == 0)
             found.push_back(
                 {false, network.manifestShown + ": " +
-                            (scene.empty() ? std::string("there's no scene to play online")
-                                           : scene + " isn't a network scene in the manifest")});
+                            (wanted.empty() ? std::string("there's no scene to play online")
+                                            : wanted + " isn't a scene in the manifest")});
     }
     if (sceneId)
         readyForSession(project, network, registry, sceneId, found);
@@ -94,6 +95,9 @@ bool prepareMatchSetup(
     setup.compatibility.sceneId = sceneId;
     setup.scenePath = scenePath;
     setup.registry = &registry;
+    setup.visibility = setup.settings.lobbyVisibility;
+    setup.addressKind = setup.settings.transport == NetTransportKind::Loopback ? TransportAddress::Loopback
+                                                                               : TransportAddress::SteamPeer;
     for (const ManifestPrefab& p : network.manifest->prefabs) setup.prefabs.push_back({p.id, p.path, p.profile});
     return true;
 }

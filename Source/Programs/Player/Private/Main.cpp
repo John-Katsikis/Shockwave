@@ -51,11 +51,23 @@ int main(int argc, char** argv) {
         std::filesystem::path networkSchema;   // --network-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
+        std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
+        std::filesystem::path output;   // --output: --package, --net-encode and the network tools
+        bool devDirectJoin = false;   // --dev-direct-join
+        bool joinSteam = false, joinLobby = false;
         auto wholeNumber = [](const std::string& value, uint64_t max, const char* what) {
             uint64_t n = 0;
             const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), n);
             if (ec != std::errc{} || end != value.data() + value.size() || n > max)
-                throw std::runtime_error(std::string(what) + " takes a whole number up to " + std::to_string(max));
+                throw player::UsageError(std::string(what) + " takes a whole number up to " + std::to_string(max));
+            return n;
+        };
+        // Lobby and Steam IDs: decimal, nonzero, 64-bit.
+        auto steamNumber = [](const std::string& value, const char* what) {
+            uint64_t n = 0;
+            const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), n);
+            if (ec != std::errc{} || end != value.data() + value.size() || n == 0 || value.size() > 20)
+                throw player::UsageError(std::string(what) + " takes a decimal Steam ID (a nonzero 64-bit number)");
             return n;
         };
         for (int i = 1; i < argc; ++i) {
@@ -107,7 +119,7 @@ int main(int argc, char** argv) {
             } else if (arg == "--package") {
                 package.requested = true;
             } else if (arg == "--output" && i + 1 < argc) {
-                package.output = argv[++i];
+                output = argv[++i];
             } else if (arg == "--no-build") {
                 package.noBuild = true;
             } else if (arg == "--no-archive") {
@@ -276,7 +288,38 @@ int main(int argc, char** argv) {
             } else if (arg == "--preset" && i + 1 < argc) {
                 netTest.preset = argv[++i];
             } else if (arg == "--seed" && i + 1 < argc) {
-                netTest.seed = wholeNumber(argv[++i], UINT64_MAX, "--seed");
+                netTest.seed = tool.keySeed = wholeNumber(argv[++i], UINT64_MAX, "--seed");
+                tool.keySeedGiven = true;
+            } else if (arg == "--host") {
+                if (tool.online != Tool::Online::None)
+                    throw player::UsageError("--host, --join-lobby and --join-steam are one each");
+                tool.online = Tool::Online::Host;
+            } else if (arg == "--join-lobby" && i + 1 < argc) {
+                if (tool.online != Tool::Online::None)
+                    throw player::UsageError("--host, --join-lobby and --join-steam are one each");
+                tool.online = Tool::Online::JoinLobby;
+                tool.onlineId = steamNumber(argv[++i], "--join-lobby");
+                joinLobby = true;
+            } else if (arg == "--join-steam" && i + 1 < argc) {
+                if (tool.online != Tool::Online::None)
+                    throw player::UsageError("--host, --join-lobby and --join-steam are one each");
+                tool.online = Tool::Online::JoinDirect;
+                tool.onlineId = steamNumber(argv[++i], "--join-steam");
+                joinSteam = true;
+            } else if (arg == "+connect_lobby" && i + 1 < argc) {
+                tool.connectLobby = steamNumber(argv[++i], "+connect_lobby");   // Steam's own launch option
+            } else if (arg == "--dev-direct-join") {
+                devDirectJoin = true;
+            } else if (arg == "--net-capture" && i + 1 < argc) {
+                tool.netCapture = argv[++i];
+            } else if (arg == "--net-dump" && i + 1 < argc) {
+                netDump = argv[++i];
+            } else if (arg == "--net-encode" && i + 1 < argc) {
+                netEncode = argv[++i];
+            } else if (arg == "--network-manifest") {
+                tool.mode = Tool::Mode::NetworkManifest;
+            } else if (arg == "--assign-network-keys") {
+                tool.mode = Tool::Mode::AssignNetworkKeys;
             } else if (arg == "--clients" && i + 1 < argc) {
                 netTest.clients = uint32_t(wholeNumber(argv[++i], 63, "--clients"));
             } else if (arg == "--saves") {
@@ -358,8 +401,88 @@ int main(int argc, char** argv) {
                 else
                     manifest = arg;
             } else
-                throw std::runtime_error("Unknown or incomplete option: " + arg);
+                throw player::UsageError("Unknown or incomplete option: " + arg);
         }
+        // Developer direct joins say so, on both sides.
+        if (joinSteam && !devDirectJoin)
+            throw player::UsageError("--join-steam is a developer direct join: add --dev-direct-join (friends join "
+                                     "with --join-lobby or an invite)");
+        if (devDirectJoin && tool.online == Tool::Online::Host)
+            tool.online = Tool::Online::HostDirect;
+        else if (devDirectJoin && !joinSteam)
+            throw player::UsageError("--dev-direct-join goes with --host or --join-steam");
+        (void)joinLobby;
+        // Each of these is a mode of its own; two at once is a mistake, never a choice.
+        {
+            std::vector<std::string> modes;
+            auto mode = [&](bool on, const char* name) {
+                if (on) modes.push_back(name);
+            };
+            static const char* toolNames[] = {
+                "",
+                "--check",
+                "--schema",
+                "--bake-navmesh",
+                "--audio-mix",
+                "--animations",
+                "--node-schema",
+                "--run-circuit",
+                "--circuit --dump",
+                "--network-manifest",
+                "--assign-network-keys"};
+            mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
+            mode(package.requested, "--package");
+            mode(!tool.screenshot.empty(), "--screenshot");
+            mode(tool.benchmarkSeconds > 0, "--benchmark");
+            mode(tool.optimise, "--optimise");
+            mode(!tool.save.empty(), "--save");
+            mode(tool.listSaves, "--saves");
+            mode(networkInfo, "--network-info");
+            mode(!networkSchema.empty(), "--network-schema");
+            mode(steamStatus != 0, "--steam-status");
+            mode(netTest.requested, "--net-test");
+            mode(!netDump.empty(), "--net-dump");
+            mode(!netEncode.empty(), "--net-encode");
+            mode(!tool.netPreview.empty(), "--net-preview");
+            mode(tool.online == Tool::Online::Host || tool.online == Tool::Online::HostDirect, "--host");
+            mode(tool.online == Tool::Online::JoinLobby, "--join-lobby");
+            mode(tool.online == Tool::Online::JoinDirect, "--join-steam");
+            // Only the network and online modes are strict: older tools keep combining as before.
+            static const std::vector<std::string> strict = {
+                "--package",        "--network-info",     "--network-schema",     "--steam-status",
+                "--net-test",       "--net-dump",         "--net-encode",         "--net-preview",
+                "--host",           "--join-lobby",       "--join-steam",         "--run-circuit",
+                "--circuit --dump", "--network-manifest", "--assign-network-keys"};
+            const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
+                return std::find(strict.begin(), strict.end(), m) != strict.end();
+            });
+            if (modes.size() > 1 && anyStrict) {
+                std::fprintf(
+                    stderr, "Player: %s and %s can't be combined: they run on their own\n", modes[0].c_str(),
+                    modes[1].c_str());
+                return 2;
+            }
+            const bool online = tool.online != Tool::Online::None || tool.connectLobby;
+            if (!tool.netCapture.empty() && tool.online == Tool::Online::None && tool.netPreview.empty())
+                throw player::UsageError("--net-capture records a session: add --host, a join or --net-preview");
+            if (online && (!tool.load.empty() || !tool.netPreview.empty()))
+                throw player::UsageError("online play doesn't go with --load or --net-preview");
+            if (tool.online != Tool::Online::None && tool.connectLobby)
+                throw player::UsageError("+connect_lobby is a join of its own: drop --host and the join switches");
+            if (!netEncode.empty() && output.empty())
+                throw player::UsageError("--net-encode needs --output file.swnetcap");
+            if (tool.mode == Tool::Mode::NetworkManifest && output.empty())
+                throw player::UsageError("--network-manifest needs --output file: it never rewrites the manifest");
+            if (tool.mode == Tool::Mode::AssignNetworkKeys && (tool.scene.empty() || output.empty()))
+                throw player::UsageError("--assign-network-keys needs --scene file.swscene and --output new-file");
+            if (!output.empty() && !package.requested && netEncode.empty() &&
+                tool.mode != Tool::Mode::NetworkManifest && tool.mode != Tool::Mode::AssignNetworkKeys)
+                throw player::UsageError("--output goes with --package, --net-encode, --network-manifest or "
+                                         "--assign-network-keys");
+            package.output = tool.output = output;
+        }
+        if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
+        if (!netEncode.empty()) return player::netEncode(netEncode, output);
         if (!graphicsSchema.empty()) {
             const auto schema = shockwave::graphicsSettingsSchema();
             if (graphicsSchema == "-")
@@ -460,20 +583,20 @@ int main(int argc, char** argv) {
             return 0;
         }
         const bool networkTool = networkInfo || !networkSchema.empty() || steamStatus || netTest.requested;
-        if (networkTool &&
-            (int(networkInfo) + int(!networkSchema.empty()) + int(steamStatus != 0) + int(netTest.requested) != 1 ||
-             tool.mode != Tool::Mode::Play || package.requested || tool.listSaves || !tool.screenshot.empty() ||
-             tool.benchmarkSeconds > 0 || tool.optimise || !tool.save.empty())) {
+        if (networkTool && (!tool.load.empty() || tool.online != Tool::Online::None)) {
             std::fprintf(
-                stderr, "Player: --network-info, --network-schema, --steam-status and --net-test run on their own "
-                        "(--network-info and --net-test with --json)\n");
+                stderr, "Player: --network-info, --network-schema, --steam-status and --net-test run on their own\n");
             return 2;
         }
-        if (!tool.netPreview.empty() && (networkTool || tool.mode != Tool::Mode::Play || package.requested ||
-                                         tool.listSaves || !tool.save.empty() || !tool.load.empty())) {
+        if (!tool.netPreview.empty() &&
+            (tool.mode != Tool::Mode::Play || tool.listSaves || !tool.save.empty() || !tool.load.empty())) {
             std::fprintf(stderr, "Player: --net-preview plays the scene; it doesn't go with tools, --save or --load\n");
             return 2;
         }
+        // A packaged Steam game started outside Steam: Steam starts it again, its way.
+        if (tool.mode == Tool::Mode::Play && !player::packagedProjectFile().empty() &&
+            player::relaunchThroughSteam(project))
+            return 0;
         if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
@@ -534,6 +657,9 @@ int main(int argc, char** argv) {
         Player player(std::move(project), std::move(tool), gameModule->module());
         engine.run(player);
         if (player.exitCode() != 0) return player.exitCode();
+    } catch (const player::UsageError& e) {
+        std::fprintf(stderr, "Player: %s\n", e.what());
+        return 2;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "Player: %s\n", e.what());
         return 1;

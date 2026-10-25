@@ -88,8 +88,17 @@ void validateNetworkProject(
                  std::to_string(kReservedControlBytesPerSecond) + " for events; raise it to at least " +
                  std::to_string(estimate + kReservedControlBytesPerSecond) + " or lower snapshot_rate or max_players"});
     }
-    if (network.manifest)
+    if (network.manifest) {
         validateNetworkManifest(*network.manifest, project, &registry, network.manifestShown, problems);
+        if (!s.matchScene.empty() && std::none_of(
+                                         network.manifest->scenes.begin(), network.manifest->scenes.end(),
+                                         [&](const ManifestScene& scene) { return scene.path == s.matchScene; })) {
+            const int line = network.settings.line("match_scene");
+            problems.push_back(
+                {false, network.settingsShown + (line ? ":" + std::to_string(line) : "") + ": match_scene \"" +
+                            s.matchScene + "\" isn't a scene in " + network.manifestShown});
+        }
+    }
 }
 
 void validateNetworkWorld(
