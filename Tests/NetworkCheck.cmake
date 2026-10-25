@@ -208,6 +208,7 @@ run(2 "run on their own" --steam-status --network-info)
 # Batch 9: online play from the command line, and the capture and authoring tools.
 # Invalid arguments exit 2 and say what's wrong; nothing starts.
 run(2 "--host, --join-lobby and --join-steam are one each" --host --join-lobby 5)
+run(2 "--dev-package, --no-build and --no-archive go with --package" --dev-package)
 run(2 "--join-steam is a developer direct join: add --dev-direct-join" --join-steam 123)
 run(2 "--dev-direct-join goes with --host or --join-steam" --dev-direct-join)
 run(2 "--dev-direct-join goes with --host or --join-steam" --join-lobby 5 --dev-direct-join)

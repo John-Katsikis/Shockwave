@@ -609,3 +609,64 @@ Outstanding for this batch:
 - No `--net-test` combat scenario: combat is tested by `network_combat` and through Arena
   in `network_arena`.
 - Moving cover isn't rewound (adjustment 73).
+
+## Plan Batch 9 (2026-10-25): editor, command line, invites and packaging
+
+Implemented:
+
+- `Multiplayer/OnlineMatch.h`: host (friends lobby, details, joinable once Active,
+  player count), find (bounded, checked listings), join (details checked before
+  connecting), invite, leave and cancel, pending joins from invites and `+connect_lobby`,
+  developer direct hosting and joining. `IOnlineServices::lobbyInfo` and `displayName`;
+  Steam's persona names; `SteamAPI_RestartAppIfNecessary` for packaged launches.
+- `Network/CaptureTransport.h` and `NetworkStart::capture`; `NetworkWorld::peerInfo`.
+- Player: `--host`, `--join-lobby`, `+connect_lobby`, `--join-steam --dev-direct-join`,
+  `--host --dev-direct-join`, `--net-capture`, `--net-dump`, `--net-encode`,
+  `--network-manifest`, `--assign-network-keys [--seed]`, the `match_scene` setting,
+  strict mode combinations (exit 2) and `--help` for all of them.
+- Editor: Window > Network (`--network`) with Host / Find / Join / Invite / Leave, the
+  developer joins, the peer table and session counters, Copy diagnostics, Capture packets,
+  Run local test, Assign missing network keys (with undo), the reload-pending warning and
+  the last match's end; the Inspector's NetworkObject Play status; Development package in
+  Build > Package game.
+- Arena: the online menu (`ArenaOnlineMenu.cpp`) on `game.onlineMatch`, beside the main
+  menu offline and beside the match panel in the match scene; a failed match reopens the
+  menu with the reason. No Steam calls in Arena.
+- Packaging: `PackageOptions::steam`, AppID 480 only in development packages
+  (`--dev-package`), the Steam runtime required from a Steam-enabled engine, offline-only
+  packages from one without the SDK, `steam_appid.txt` and captures never shipped.
+- Fixed: cancelling a lobby join and joining the same lobby again lost the membership
+  (adjustment 83).
+- Docs: `Networking.md` (Hosting and joining, the command line, captures, Steam
+  packages, tests), `Packaging.md` (Steam), Arena's README, adjustments 74 to 86,
+  regenerated `NetworkSchema.md` (`match_scene`, the unsupported list).
+- Tests `online_match`, `arena_online_menu`, `package_steam`; `network_cli` extended.
+
+Results in the headless Linux container (GCC 13.3):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds everything, no warnings; CTest 48/50 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | the network, `test_*`, Arena, online and circuits set passes with no sanitizer reports, except `package_steam`, which packages 1.4 GB of sanitizer binaries and passes its first steps but times out at 300 s |
+| Steamworks on (SDK 1.65) | builds; `arena_online_menu`, `network_cli`, `package_steam`, `test_steam_services`, `online_match` pass |
+| `player --check` | Arena 0 problems in 3 scenes, Sample 0 problems in 18 scenes |
+
+The gate:
+
+| Gate item | Evidence |
+|---|---|
+| Real UI tests | `arena_online_menu` loads Arena's `menu.rml` in RmlUi and clicks every online button over the Steam mock with a real host session: Find shows "SEARCHING FOR MATCHES", then two listings (one compatible, one "CAN'T JOIN: ..." which does nothing when clicked); Join shows Cancel and hides Host and the list; Cancel returns to offline; Join again reaches "PLAYING AS PLAYER 2" with Leave; a friend's invite during the match shows Accept/Decline and Decline keeps the match; Leave ends it; a Host that fails shows the reason and Retry, which hosts; Invite opens Steam's dialog once; with no match control the section is greyed with its reason and the offline menu is untouched; at 1280x720 the panels fit and don't overlap, offline and in the match scene |
+| Screenshots | Not from the cloud: the editor needs a Vulkan window and the container has none (adjustment 86). Outstanding on the desktop |
+| CLI invalid arguments | `network_cli`: unknown options, missing values, `--host` with a join, two joins, `--dev-direct-join` alone or with `--join-lobby`, `+connect_lobby` with `--host`, `--host` with `--check`, `--net-test`, `--load` or `--net-preview`, `--output` with nothing that writes, `--network-manifest` without `--output` or onto the manifest, `--assign-network-keys` without a scene or onto it; each exits 2 with its message. `--dev-package` without `--package` exits 2. Host failures exit 1 with the reason (multiplayer off; no Steamworks SDK) |
+| Packet inspection | `network_cli`: a `--net-preview` run with `--net-capture`, dumped with `--net-dump --json` and encoded back with `--net-encode`: byte-identical. `online_match`: a client's capture has its ticket redacted and opaque peers, and round-trips through JSON |
+| Moved-package smoke | `package_steam`: Arena packaged as a development Steam package, the folder renamed to `moved here` and started from a third folder: its `--check` passes with 0 problems |
+| SDK-off package | `package_steam` on the default build: the package warns it plays offline only, has no Steam runtime, and its `--host` exits 1 with "this build has no Steamworks SDK". On the Steam build the same test finds `libsteam_api.so` in `Binaries/` |
+| No debug AppID or auth capture in packages | `package_steam`: AppID 480 refused without `--dev-package` and nothing left behind; `steam_appid.txt`, a `.swnetcap` in Content and one in `Saved/Captures` all absent from the package; Verify fails on either |
+
+Outstanding for this batch:
+
+- On the desktop: `editor --network` (Window > Network) on Arena with `enabled 1` and
+  `steam_app_id 480`, and Arena's menu (P) Host and Find; how the menu and the editor
+  window look.
+- Two Steam accounts hosting, finding, inviting and joining for real: Batch 10.
+- A packaged Steam game launched from Steam (the restart path) needs a real AppID.

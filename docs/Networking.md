@@ -20,6 +20,7 @@ renderer or Steam.
 | `Network/Transport.h` | `ITransport`, the interface gameplay networking will use for Steam and for tests |
 | `Network/Loopback.h` | `LoopbackHub`: in-process transports on a virtual clock with seeded latency, jitter, loss, duplication, outages and bandwidth limits |
 | `Network/NetworkCapture.h` | `.swnetcap` packet captures, and conversion to and from JSON |
+| `Network/CaptureTransport.h` | `makeCapturingTransport()`: an `ITransport` that records what passes through it into a capture, tickets redacted |
 | `Network/OnlineServices.h` | `IOnlineServices`, the lobby and identity interface Steam will implement; `makeUnavailableOnlineServices()` for builds without it |
 | `Network/LoopbackServices.h` | `LoopbackOnlineServices`: an `IOnlineServices` on a `LoopbackHub`, with made-up session tickets and switchable failures, for tests and `--net-test` |
 
@@ -40,6 +41,7 @@ on Engine and Network and holds what a game configures (Batch 2):
 | `Multiplayer/NetworkWorld.h` | `NetworkWorld`, a Play session's network side as `game.network()`: role, state, the connection handshake, replication (network IDs, the baseline, spawns, owners, snapshots, budgets), input commands, game commands, the Ping/Pong tick clock, prediction and reconciliation of the local character, presentation (`PresentationTransform`), lag-compensated shots (`resolveShot`), game events (`sendEvent`, `readGameEvent`) and shutdown order |
 | `Multiplayer/PresentationDedup.h` | `PresentationDedup`: each shot's effects shown once, whether this machine predicted it or the host announced it |
 | `Multiplayer/NetTest.h` | The `player --net-test` scenarios |
+| `Multiplayer/OnlineMatch.h` | `OnlineMatch`: hosting, finding, joining, inviting and leaving, shared by the player's command line, the editor's Network window and game menus (`game.onlineMatch`) |
 
 The `SteamServices` module (`Source/Runtime/SteamServices`, `Shockwave::SteamServices`)
 sits on Network and is Steam (Batch 3). The Player and Editor link it; nothing else does.
@@ -61,10 +63,66 @@ corrects it; every other object is drawn interpolated behind the host's clock (s
 tells everyone what happened with game events, which circuits can listen to (see
 [Combat and events](#combat-and-events)). Arena plays 6v6 this way on its multiplayer
 scene, in tests.
-Nothing yet starts a session from the player or the editor: the `--host` and `--join`
-commands come in a later batch. Nothing advertises those as working; `--network-info`
-lists them under `unsupported`. Delta snapshots are a library tested on its own; no
-session uses them yet.
+Matches are hosted and joined through Steam lobbies from the player's command line, the
+editor's Network window and Arena's menu (see [Hosting and joining](#hosting-and-joining)).
+Delta snapshots are a library tested on its own; sessions send full-state snapshots, and
+`--network-info` lists that under `unsupported`.
+
+## Hosting and joining
+
+`OnlineMatch` (`Multiplayer/OnlineMatch.h`) is the one implementation of the lobby side.
+The player and the editor each own one and hand it to game code as `game.onlineMatch`;
+it's null where the application offers none (tools, tests, a project with no network
+scene), and menus grey their online buttons then. It never opens a transport or starts
+Play itself: it hands the application a `NetworkStart`, and the application plays the
+match scene with it.
+
+- **Host**: makes a friends-only lobby for `max_players`, sets its details (`sw_protocol`,
+  `sw_game`, `sw_schema`, `sw_content`, `sw_scene`, `sw_host`, `sw_session`, `sw_state`,
+  `sw_port`, `sw_players`, `sw_capacity`), then plays the match scene as host. The lobby
+  only opens to joins once the session listens, and `sw_players` follows the players.
+- **Find**: at most 50 lobbies of this game and protocol. Each listing says whether it's
+  compatible and, when not, why (a different build, content or scene, or full).
+- **Join**: enters the lobby, checks its details against ours (and that the advertised
+  host is the lobby's owner) before connecting, then plays the match scene as a client of
+  the owner. A mismatch fails before any connection.
+- **Invite** opens Steam's invite dialog for our lobby. A friend's invite accepted in
+  Steam, or a cold start with `+connect_lobby ID`, joins at once when idle; during a match
+  it waits (`pendingJoin()`) until the player accepts or declines it. A callback never
+  replaces the match being played.
+- **Leave** (also Cancel while connecting) leaves the lobby; the application stops Play.
+  A session that fails or ends (the host left, a timeout, a refusal) ends the match with
+  the reason in `error()`, and the application goes back to the offline scene, whose menu
+  says what happened. When the host leaves, the match ends for everyone (no host
+  migration).
+
+Which scene a match plays is `match_scene` in `Config/Network.swnetwork` (a scene in the
+manifest; empty means the manifest's first). Steam starts only when someone asks to play
+online, never for tools, `--check` or tests, unless a packaged game sets `steam_required`.
+
+Game code calls it from menu handlers:
+
+```cpp
+game.ui().on("host", [&game](const UIEvent&) {
+    if (game.onlineMatch) game.onlineMatch->host();   // false, with error(), when it can't begin
+});
+// Every frame: game.onlineMatch->state(), status(), error(), lobbies(), pendingJoin()
+```
+
+Arena's menu (`Games/Arena/Source/ArenaOnlineMenu.cpp`) has Host friends match, Find/Join
+(six listed matches, refused ones with the reason), Invite, Cancel, Retry, Leave match /
+play offline, and Accept/Decline for a friend's invite.
+
+The editor's **Window > Network** (or `editor --network`) has the same requests for the
+open project: Host plays the match scene, Find lists lobbies with Join, Invite and Leave,
+and a developer section for joining a lobby by ID and direct joins. While playing it shows
+a peer table (slot, name, status, RTT, KiB/s each way, queued bytes, input and snapshot
+age) and the session's counters. Its footer has Copy diagnostics, Capture packets (the
+next match, to `Saved/Captures/`), Run local test (the loopback handshake) and Assign
+missing network keys for the open scene, with undo. It warns when the game module was
+rebuilt and a reload is pending, and keeps the last match's end reason. The Inspector
+shows a `NetworkObject`'s network ID, owner, role here, profile and snapshot age during
+Play.
 
 ## Network settings
 
@@ -234,6 +292,42 @@ for an unknown scenario or preset.
 ```sh
 build/bin/player --project <file.swproject> --scene <network scene> --net-preview [clean|cafe|poor|hostile]
 ```
+
+```sh
+build/bin/player --project <file.swproject> --host [--scene <network scene>] [--net-capture file.swnetcap]
+build/bin/player --project <file.swproject> --join-lobby <lobby ID>
+build/bin/player --project <file.swproject> +connect_lobby <lobby ID>
+build/bin/player --project <file.swproject> --host --dev-direct-join
+build/bin/player --project <file.swproject> --join-steam <host SteamID64> --dev-direct-join
+```
+
+`--host` starts Steam, makes a lobby and plays the match scene (or `--scene`) as host;
+`--join-lobby` joins one (Steam passes `+connect_lobby` when a friend launches the game
+from an invite). A command-line match that can't start or that ends exits 1 with the
+reason (`can't host: this build has no Steamworks SDK ...`, `can't play online: ...
+multiplayer isn't enabled`), and 0 when you close the window. The developer pair skips
+lobbies: `--host --dev-direct-join` admits direct connections (still authenticated), and
+`--join-steam` connects to such a host by its Steam ID. Without `--dev-direct-join`,
+`--join-steam` is refused. `--net-capture` records this machine's session to a capture.
+
+```sh
+build/bin/player --net-dump file.swnetcap [--json out.json]
+build/bin/player --net-encode decoded.json --output file.swnetcap
+build/bin/player --project <file.swproject> --network-manifest --output candidate.swnetmanifest
+build/bin/player --project <file.swproject> --assign-network-keys --scene <file.swscene> --output <new.swscene> [--seed N]
+```
+
+`--net-dump` decodes a capture (no project needed); `--net-encode` turns that JSON back
+into the identical file, refusing redacted ticket records. `--network-manifest` writes a
+candidate manifest with the project's network scenes and prefabs and prints its schema
+and content digests; it never overwrites the manifest in use. `--assign-network-keys`
+writes a copy of the scene with every missing or duplicate key filled (valid unique keys
+kept) and prints each change; `--seed` makes the keys repeatable. Neither rewrites its
+input.
+
+Exit codes: 0 success, 1 a failure (a refused join, a check, a file), 2 bad arguments:
+an unknown option, a missing value, or modes that can't be combined (`--host`, the joins,
+`--package`, `--screenshot`, `--check`, `--net-test` and the tools each run on their own).
 
 `--net-preview` plays the scene as a client of a host running in the same process, over
 the loopback hub with the preset's latency, jitter and loss (default `poor`: 75 ms one
@@ -799,6 +893,13 @@ How `SteamNetworkAdapter` behaves:
 - `stats()` has Steam's RTT and queued bytes; `broadcast()` sends to every connected peer.
 - Once the adapter exists, polling and sending allocate nothing.
 
+A Steam game's package (see [Packaging.md](Packaging.md#steam)) ships Valve's runtime
+library from a Steam-enabled engine, never the SDK, `steam_appid.txt` or captures. AppID
+480 only goes into a development package (`player --package --dev-package`). A packaged
+game started outside Steam is started again by Steam (`SteamAPI_RestartAppIfNecessary`),
+except with AppID 480. An engine built without the SDK packages a game that plays
+offline.
+
 `MockSteamApi` plays Steam in-process: listen sockets, connections, a message pool,
 tickets, lobbies and a virtual clock, with faults to switch on (failed init, listen
 socket, poll group, send results, tickets, validation, held lobby results, injected
@@ -814,8 +915,10 @@ are marked redacted and hold no bytes. `captureToJson()` decodes every record by
 and field, with 64-bit IDs as decimal strings; `captureFromJson()` turns that JSON back
 into the identical capture. Nothing in this API can send traffic.
 
-The `player --net-capture`, `--net-dump` and `--net-encode` commands that will use it
-come in a later batch.
+`player --net-capture` records a session (`--host`, the joins or `--net-preview`'s
+client) with `makeCapturingTransport()`. Peers appear as opaque numbers (1, 2, ...) in
+order of appearance, never Steam IDs. `--net-dump` and `--net-encode` are the command-line
+form of the JSON conversion. Captures are never packaged.
 
 ## Tests
 
@@ -835,6 +938,9 @@ ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewin
 | `network_prediction` | Physics' network API: host steps and client predictions of the same walk and jumps agreeing within 0.1 mm, predicted characters passing through a dynamic box that blocks them offline, `characterState`, `correctCharacter`, bad arguments, client proxies that don't fall and keep their authored components, `applyReplicaBodyPose`, mode changes rebuilding the same bodies, no contact events from prediction; the `--check` rule's errors, warnings and quiet cases; the engine `InputSampler` at 24 to 1000 fps at 60 and 120 Hz (each press in one command, held controls within a frame, the same aim); the `prediction` net-test on all four presets at 60 and 120 Hz (convergence, drawing, replays running no game code, the offset gone within 150 ms) |
 | `network_combat` | Lag compensation at 20 ms and 120 ms round trips, with Jolt on the host: a delayed real hit, the present position missed with the same claimed view, a future view clamped, no view time and a forged old one refused, one out of the window refused, the host's own shot at the present, a target behind a static wall, a dead target, a hit from before a respawn naming the old life; a view 12 ticks back a hit at 120 ms but refused at 20 ms; game events under loss and jitter arriving once each in order, refused for an unknown ID, an out-of-range payload or a client sender, none replayed to a late joiner, a reader that falls behind; a scripted host's duplicated and old events kept once; `PresentationDedup`; circuit scopes when compiled, and at run time on a client: a LocalOwner circuit that sets health and the host's circuit not running, the host's events running a Presentation circuit's handler once each, a duplicated event once |
 | `network_arena` | Arena on its multiplayer scene with a host and eleven clients, each a real PlaySession with Jolt: six a side, one primary camera per process following the local pawn, each client predicting only its own pawn; a full team and a host-only restart refused; the round starting when everyone is ready; four inputs a tick moving a pawn no faster; ten seconds of autoplay with every client ending on the host's teams, ammo, health, kills and positions, the clients' shots rewound to their view times (none refused) and every shot's event reaching every client once; clients sent away for a shot event, an ownership claim, an unknown command, far-ahead inputs and an over-long move; a client that stops sending (two ticks of fallback, then standing, fire never held); the offline input path at 24, 30, 60, 144, 240 and 1000 fps (same shots and reloads, each press in exactly one command, catch-up ticks, menus) |
+| `online_match` | `OnlineMatch` over the Steam mock with real sessions: host, find (compatible and full listings), join, the lobby's details and player count, invite, leave; a mismatched build refused before connecting; invites while idle and while playing; developer direct joins; no services; a capture of a client's session (tickets redacted, peers opaque) round-tripping through JSON; the peer table |
+| `arena_online_menu` | Arena's online menu in the real RmlUi document over the Steam mock: every button clicked, searching, the lobby list with a refused lobby's reason, join, cancel and join again, a friend's invite declined, leave, a failed host with Retry, invite; greyed out without a match control; the panels side by side at 720p |
+| `package_steam` | A copy of Arena packaged as a Steam game: AppID 480 refused, then a development package; the runtime library shipped (Steam builds) or the offline-only warning (others); no `steam_appid.txt` or captures shipped; the folder moved and run from elsewhere (`--check`, and `--host` failing with the reason without the SDK) |
 | `test_steam_services` | Without the SDK, `create()` fails visibly; then on `MockSteamApi`: init failure, bad settings, double init, a dedicated server, shutdown exactly once, an idle `framePass` allocating nothing; lobbies (create, metadata, find, join, members, leave); late lobby results after cancel and after a restart; auth both ways, a ticket for someone else, sizes, duplicates, revocation, cancellation, the 15-second timeout, stale results, everything cancelled and ended at shutdown |
 | `test_sdr_transport_mock` | The connection state table (Incoming, refusals when full or late, Rejected with the host's reason, no listener, our own Connecting, Connected and Closed once, stale handles, queue overflow); listen, poll-group, connect and accept failures and their cleanup; sizes, send flags and every Steam send result; the 32 KiB backpressure; budgets and the ring buffer; every Steam message released once, including when the sink throws; broadcast; RTT; shutdown with transports alive; 0 allocations over 10,000 messages from four clients with echoes |
 | `test_snapshot_delta` | Quantization limits and round trips; 64 moving players at 120 Hz in one part under 1152 bytes; keyframes split to fit 1152 and 512; 1024 worst-case slots; loss, reordering, duplicates and lost acks with every completed snapshot identical to the host's; acks and baselines leaving the history; respawns and despawns; every kind of malformed part; one encoder shared by clients; interpolation (Hermite, slerp, extrapolation limit, out-of-order and duplicate samples, teleports, the server clock, the 3-tick jitter buffer); host and client time per tick (under 150 us asserted in optimised builds) |

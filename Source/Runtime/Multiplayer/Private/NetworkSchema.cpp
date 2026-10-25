@@ -41,7 +41,9 @@ std::string allowed(const NetworkSettingField& field) {
     }
     case SettingKind::Integer: return number(field.min) + ".." + number(field.max);
     case SettingKind::Seconds: return number(field.min) + ".." + number(field.max) + " seconds";
-    case SettingKind::Path: return "quoted path inside the project, ending .swnetmanifest";
+    case SettingKind::Path:
+        return std::string(field.key) == "match_scene" ? "quoted path inside the project, ending .swscene, or \"\""
+                                                       : "quoted path inside the project, ending .swnetmanifest";
     }
     return "";
 }
