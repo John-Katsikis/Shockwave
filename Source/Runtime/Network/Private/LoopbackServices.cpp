@@ -188,6 +188,14 @@ NetResult<void> LoopbackOnlineServices::beginAuthSession(PeerId remote, std::spa
     return {};
 }
 
+void LoopbackOnlineServices::revoke(PeerId remote) {
+    OnlineEvent event;
+    event.kind = OnlineEventKind::AuthFailed;
+    event.peer = remote;
+    event.reason = ReasonCode::AuthenticationFailed;
+    m_pending.push_back(std::move(event));
+}
+
 void LoopbackOnlineServices::endAuthSession(PeerId remote) {
     m_calls.push_back("endAuthSession");
     std::erase(m_authSessions, remote);

@@ -281,6 +281,9 @@ struct NetworkWorldStats {
     uint64_t gameEventsSent = 0;   // host: events made (each goes to every Active client)
     uint64_t gameEventsReceived = 0, duplicateEvents = 0;   // client
     uint64_t gameEventsMissed = 0;   // readers that fell more than kGameEventHistory behind
+    // Cost: time in pump, drain, prepareStep, endTick and present, and the part of it a
+    // client spent replaying predicted movement (physics). Nanoseconds, from the start.
+    uint64_t workNanos = 0, replayNanos = 0;
 };
 
 // One remote machine as the Network window shows it: on the host each connection, on a
@@ -354,6 +357,10 @@ public:
     bool hasTransport() const { return m_transport != nullptr; }
     const NetworkStart& start() const { return m_start; }
     const NetworkWorldStats& stats() const;
+    // Heap bytes the session's own buffers hold: its state, every peer's queues and
+    // histories, objects, interpolation and rewind. Not the transport's (Steam's or the
+    // hub's), the World's entities or physics.
+    size_t memoryBytes() const;
     // Every connected peer, by slot (handshakes last). Fills out; allocates only if out is
     // too small.
     void peerInfo(std::vector<NetworkPeerInfo>& out) const;

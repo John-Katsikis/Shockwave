@@ -43,6 +43,9 @@ public:
     }
     // createTransport fails.
     void setTransportFailure(bool fail) { m_transportFails = fail; }
+    // A session that already validated fails later, as Steam reports a ban or a lost
+    // licence: AuthFailed on the next pump, if the session is still open then.
+    void revoke(PeerId remote);
 
     // For tests: what is still open, and the order things happened in.
     uint64_t pumps() const { return m_pumps; }

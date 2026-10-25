@@ -670,3 +670,86 @@ Outstanding for this batch:
   window look.
 - Two Steam accounts hosting, finding, inviting and joining for real: Batch 10.
 - A packaged Steam game launched from Steam (the restart path) needs a real AppID.
+
+## Plan Batch 10 (2026-10-25): soaks, fault cases and budgets
+
+Implemented:
+
+- The 12-player soak: `arena_network_test --soak clean|cafe|poor|hostile|throttled|outage|all
+  [seconds]` and CTest `network_arena_soak` (`--soak all 20`), adjustment 93.
+- Cost and memory counters: `NetworkWorldStats::workNanos` and `replayNanos`,
+  `NetworkWorld::memoryBytes()` (adjustment 92).
+- Fixed from the soak: `view_tick` 0 sent in a session's first moments (adjustment 87);
+  the host sending honest clients away for resync requests a resend brought close
+  together (88); no idle timeout once Active, so a 12 s outage left everyone waiting
+  (89); every shot refused once a client's view was older than `max_rewind_ms` (90).
+- Fixed from the case list: a ticket revoked after validating was ignored (91).
+- Tests: `network_arena_soak`; `network_session` revocation by host and client;
+  `network_replication` memory at 12 players and 512 objects.
+
+Results in the headless Linux container (GCC 13.3, 4 cores; twelve sessions in one
+process share them):
+
+| Configuration | Result |
+|---|---|
+| Debug, modular | builds; CTest 49/51 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Release, `--soak all 20` | 171 checks pass |
+| Release, 30 simulated minutes, cafe | 33 checks pass; 79 rounds, 85,190 shots, 9,498 hits; 293 corrections (max 0.045 m), 0 prediction resets |
+| Release, 30 simulated minutes, poor | 33 checks pass; 88 rounds, 75,403 shots, 10,197 hits; 237 corrections (max 0.045 m), 0 resets |
+| Release, 30 simulated minutes, hostile | 32 checks pass; 87 rounds, 60,877 shots, 10,020 hits; 95 corrections (max 0.045 m), 7 resets |
+
+Release network cost per tick (microseconds; one tick per frame at 60 fps):
+
+| Preset (run) | Host p50 / p95 / p99 / max | Client p50 / p95 / p99 / max | Client replay max | Out per client (max) | Late join |
+|---|---|---|---|---|---|
+| clean (20 s) | 10 / 36 / 54 / 290 | 3 / 23 / 38 / 54 | 7 | 28.9 KiB/s | 0.10 s |
+| cafe (20 s) | 12 / 42 / 58 / 138 | 6 / 28 / 45 / 209 | 17 | 27.8 KiB/s | 0.45 s |
+| poor (20 s) | 12 / 40 / 63 / 127 | 6 / 24 / 34 / 179 | 30 | 26.8 KiB/s | 0.90 s |
+| hostile (20 s) | 13 / 45 / 61 / 400 | 4 / 27 / 52 / 173 | 46 | 26.1 KiB/s | 2.63 s |
+| throttled (20 s) | 12 / 35 / 51 / 87 | 6 / 22 / 35 / 48 | 14 | 28.5 KiB/s | 0.48 s |
+| cafe (30 min) | 13 / 45 / 58 / 4141 | 6 / 29 / 40 / 2159 | 49 | 29.5 KiB/s | 0.45 s |
+| poor (30 min) | 13 / 45 / 60 / 3878 | 6 / 28 / 44 / 618 | 61 | 29.0 KiB/s | 0.87 s |
+| hostile (30 min, before p99 was reported) | 14 / 47 / - / 4100 | 4 / 27 / - / 1171 | 98 | 28.2 KiB/s | 2.58 s |
+
+Against 14.4:
+
+| Target | Measured |
+|---|---|
+| Host network p95 < 1 ms/tick | 35 to 45 us on every preset (whole network cost, adjustment 92). The rare 4 ms maximums in 30-minute runs weren't traced; twelve sessions share four cores here |
+| Client p95 < 0.5 ms/tick, prediction physics excluded | 22 to 29 us; replay itself at most 61 us |
+| Buffers <= 32 MiB at 12 peers, 512 objects | `network_replication`: host 1.57 MiB, client 1.85 MiB with 512 objects. Arena's 13 objects: host 0.89, client 1.84. Transport, World and Jolt not included; the whole 12-session soak process peaked at 147 MiB RSS |
+| <= 64 KiB/s outbound per peer | 26 to 30 KiB/s per client; about 310 KiB/s for the host's eleven |
+| Offline Arena before and after (`player --benchmark`) | Not measured: needs the desktop's GPU |
+| Steam callback duration, SDK RTT and queue delay, loss | Not measured: needs real Steam |
+
+The 14.2 cases:
+
+| Case | Evidence |
+|---|---|
+| clean, cafe, poor, hostile | `network_arena_soak`, and 30 minutes of cafe, poor and hostile above |
+| 500 ms burst outage | in every soak, at a quarter of the run |
+| 12 s severe outage | `--soak outage`: every client fails with Timeout within the outage, the host frees each slot, keeps its own player and keeps listening; three new players join and match its state |
+| Bandwidth throttling | the throttled soak (64 KiB/s a direction a link); `network_replication` budget test |
+| Connection reset during baseline | `network_replication` "the host goes away halfway through a slow baseline": the client fails and its world is untouched |
+| Auth revocation | `network_session` (host and client side), `test_steam_services` (Steam's late VacBanned) |
+| Malformed messages | `network_wire` (truncation, bad enums), `network_replication` (ten bad authority messages), `network_session` (handshake failures), `network_arena` (forged events, ownership claims, unknown commands, far-ahead inputs) |
+| Invariant 1, 12 players and six a side | checked every second in each soak |
+| 2, no claiming another's ID | `network_arena` ownership claim |
+| 3, spam inputs | `network_arena` four inputs a tick; far-ahead inputs |
+| 4, convergence | each soak once traffic recovers |
+| 5, no resurrected entities | `network_replication` despawned ID spawned again; `duplicateEvents` 0 in soaks |
+| 6, late join | each soak's late joiner: current state, fewer events than the host sent |
+| 7, caps | pawns, admitted, hub pools and buffers in each soak; `network_replication` zero allocations while replicating |
+| 8, explicit recovery | the severe outage; the resync limit no longer drops honest clients |
+| 9, offline | the Arena, physics and save tests |
+| 10, independent sessions | every network test runs its sessions in one process with separate Worlds |
+
+Outstanding for this batch (manual gates; no mock stands in for them):
+
+- Two Steam accounts on two machines, same test AppID: host, find, invite, join,
+  play, leave, rejoin. Blocked in the cloud: no Steam client or accounts.
+- Windows host with a Linux client and back, and a relayed (SDR) connection: needs
+  both machines.
+- Arena offline `player --benchmark` before and after networking on the desktop's 3080,
+  and a 12-player Release session's frame time p95/p99.
+- Batch 9's UI look on the desktop (`editor --network`, Arena's online menu).

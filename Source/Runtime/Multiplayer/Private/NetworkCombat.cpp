@@ -137,7 +137,14 @@ bool NetworkWorld::resolveShot(const ShotQuery& shot, ShotResult& out) {
             view = newest;
             out.rewind = ShotRewind::Clamped;
         }
-        const double at = double(arrival) + view;
+        double at = double(arrival) + view;
+        // A plausible time older than max_rewind_ms is held to the window's edge (10.1 step
+        // 3): a player whose round trip is longer gets that much compensation, not none.
+        const double edge = double(history->latestTick()) - double(history->maxRewindTicks());
+        if (out.rewind != ShotRewind::Refused && at < edge) {
+            at = edge;
+            out.rewind = ShotRewind::Clamped;
+        }
         viewTick = uint32_t(int64_t(std::floor(at)));
         fraction = float(at - std::floor(at));
     }

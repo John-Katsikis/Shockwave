@@ -82,6 +82,10 @@ public:
     NetTime renderTime(double nowSeconds) const;
 
     InterpolationResult sample(uint16_t slot, NetTime time, InterpolatedPose& out) const;
+    // Heap bytes it holds (its samples).
+    size_t memoryBytes() const {
+        return size_t(m_slotCount) * (m_settings.samplesPerSlot * sizeof(Sample) + sizeof(uint16_t));
+    }
 
 private:
     struct Sample {

@@ -291,9 +291,10 @@ void NetworkWorld::Impl::resyncRequest(Peer& p) {
     if (p.phase != Peer::Phase::Active) return reject(p, ReasonCode::MalformedPacket, "ResyncRequest before Active");
     ++stats.resyncRequests;
     auto& times = p.resyncs;   // oldest first
-    // The client spaces its requests by its own clock; network jitter can bring two of
-    // them closer here, so the host allows half the interval and 55 s for the minute.
-    if (now - times.back() < kResyncIntervalSeconds * 0.5 || now - times.front() < 55)
+    // The client sends at most three a minute by its own clock. A lost request is resent
+    // and can reach here right behind the next one, so arrival spacing proves nothing; the
+    // minute can shrink by at most the idle timeout, after which the connection is gone.
+    if (now - times.front() < 60 - settings().idleTimeoutSeconds)
         return reject(p, ReasonCode::RateLimited, "too many resync requests");
     std::rotate(times.begin(), times.begin() + 1, times.end());
     times.back() = now;

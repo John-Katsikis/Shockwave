@@ -82,6 +82,8 @@ public:
     uint16_t playerSlots() const { return m_slots; }
     uint16_t capacityTicks() const { return m_capacity; }
     uint32_t maxRewindTicks() const { return m_maxRewindTicks; }
+    // Heap bytes it holds (its samples and raycast scratch).
+    size_t memoryBytes() const;
 
     // One authority tick: a state per player slot (exactly playerSlots of them). The tick
     // must be newer than the last; skipped ticks simply aren't in the history.
