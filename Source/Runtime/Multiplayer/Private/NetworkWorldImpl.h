@@ -62,6 +62,7 @@ struct Peer {
     bool tookAny = false;
     InputCommand lastInput{};
     bool haveLastInput = false;
+    double lastInputAt = -1;   // when the newest input arrived (for the Network window)
     uint32_t missing = 0;
     uint32_t aheadViolations = 0;
     double aheadWindow = -1;
@@ -154,6 +155,7 @@ struct NetworkWorld::Impl final : TransportSink {
     std::array<HeldSnapshot, kMaxHeldSnapshots> held{};
     uint32_t lastAppliedTick = 0;   // client: newest snapshot tick applied to anything
     bool haveApplied = false;
+    double lastSnapshotAt = -1;   // client: when a snapshot record was last applied
     double lastResync = -1e9;
     std::array<double, kMaxResyncsPerMinute> resyncTimes{-1e9, -1e9, -1e9};
     // Host scratch, sized once: records picked for a peer, part boundaries, a part.

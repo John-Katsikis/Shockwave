@@ -216,6 +216,13 @@ void MockSteamApi::injectValidation(uint64_t steamId, SteamAuthResponse response
     post(*m_state, c);
 }
 
+void MockSteamApi::injectJoinRequest(uint64_t lobby) {
+    Callback c;
+    c.kind = Callback::JoinRequested;
+    c.a = lobby;
+    post(*m_state, c);
+}
+
 void MockSteamApi::releaseHeldResults() {
     for (const Callback& c : m_state->held) post(*m_state, c);
     m_state->held.clear();

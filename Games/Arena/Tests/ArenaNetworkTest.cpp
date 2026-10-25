@@ -149,6 +149,7 @@ struct CheatServices final : net::IOnlineServices {
     net::NetResult<std::vector<net::PeerId>> lobbyMembers(net::LobbyId l) const override {
         return inner.lobbyMembers(l);
     }
+    net::NetResult<net::LobbySummary> lobbyInfo(net::LobbyId l) const override { return inner.lobbyInfo(l); }
     net::NetResult<std::unique_ptr<net::ITransport>> createTransport() override {
         auto t = inner.createTransport();
         if (!t) return t;
@@ -620,7 +621,7 @@ Result playAt(double fps) {
     world.add<ArenaWeapon>(player, gun);
     JobSystem jobs(1);
     PhysicsWorld physics(world, jobs, nullptr);
-    ArenaSim sim{world, physics, rules, 60, {}};
+    ArenaSim sim{world, physics, rules, 60, nullptr, {}};
     sim.startRound();
     Result result;
     sim.hooks.reloaded = [&](Entity) { ++result.reloads; };

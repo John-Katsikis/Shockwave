@@ -69,6 +69,7 @@
 #include <Multiplayer/NetworkSettings.h>
 #include <Multiplayer/Replication.h>
 #include <Network/Messages.h>
+#include <Network/NetworkCapture.h>
 #include <Network/OnlineServices.h>
 #include <Network/Transport.h>
 
@@ -141,6 +142,9 @@ struct NetworkStart {
     const ReplicationRegistry* registry = nullptr;
     std::vector<NetworkPrefab> prefabs;
     NetworkSpawnFn spawnPrefab;   // null: the prefab file
+    // Record every message this session sends and receives into this open capture
+    // (Network/CaptureTransport.h), AuthTicket bytes redacted. It must outlive the session.
+    CaptureWriter* capture = nullptr;
 };
 
 enum class NetworkEventKind : uint8_t {
@@ -279,6 +283,20 @@ struct NetworkWorldStats {
     uint64_t gameEventsMissed = 0;   // readers that fell more than kGameEventHistory behind
 };
 
+// One remote machine as the Network window shows it: on the host each connection, on a
+// client the host. Ages are seconds, -1 until there's been one.
+struct NetworkPeerInfo {
+    uint16_t slot = 0;   // 0 while still in the handshake
+    PeerId peer;
+    const char* status = "";   // connecting, authenticating, synchronizing, active
+    double rttMs = 0;   // 0 until measured
+    uint32_t pendingReliableBytes = 0, pendingUnreliableBytes = 0;   // the transport's queues
+    uint32_t queuedControlBytes = 0;   // host: lifecycle messages waiting for the peer's budget
+    uint64_t bytesReceived = 0, bytesSent = 0;   // over the connection so far
+    double inputAge = -1;   // host: since this player's newest input arrived
+    double snapshotAge = -1;   // client: since a snapshot was last applied
+};
+
 class NetworkWorld final : public Subsystem {
 public:
     // Offline: local authority, nothing to do.
@@ -336,6 +354,11 @@ public:
     bool hasTransport() const { return m_transport != nullptr; }
     const NetworkStart& start() const { return m_start; }
     const NetworkWorldStats& stats() const;
+    // Every connected peer, by slot (handshakes last). Fills out; allocates only if out is
+    // too small.
+    void peerInfo(std::vector<NetworkPeerInfo>& out) const;
+    // The session's transport, for its counters (a capture's, say); null offline.
+    const ITransport* transport() const { return m_transport.get(); }
 
     // ---- Replication (game.network()) ----
     // The local player's slot: 1 for the host and offline play, a client's once welcomed.

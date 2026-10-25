@@ -810,6 +810,7 @@ bool NetworkWorld::Impl::applySnapshot(const Snapshot& snapshot) {
         o->haveTick = true;
         if (!haveApplied || newer(snapshot.serverTick, lastAppliedTick)) lastAppliedTick = snapshot.serverTick;
         haveApplied = true;
+        lastSnapshotAt = now;
         if (predictsControlled() && o->entity == controlledEntityNow())
             applyPredicted(*o, snapshot.serverTick);
         else {

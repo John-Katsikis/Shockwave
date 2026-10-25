@@ -51,6 +51,9 @@ public:
         m_services = services;
     }
     const net::NetworkStart& networkStart() const { return m_networkStart; }
+    // The application's match control, which game code sees as game.onlineMatch. Must
+    // outlive the session.
+    void setOnlineMatch(net::OnlineMatch* match) { m_context.onlineMatch = match; }
     // Null while editing; offline Play has one too, with role Offline.
     net::NetworkWorld* network() const;
     // Playing (or paused) as a host or client. Stays true after a network failure until

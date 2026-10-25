@@ -287,6 +287,14 @@ endif()
 add_test(NAME test_steam_services COMMAND test_steam_services)
 set_tests_properties(test_steam_services PROPERTIES TIMEOUT 60)
 
+# Batch 9: hosting, finding, joining, inviting and leaving (OnlineMatch) over the Steam
+# mock with real sessions, and a packet capture of one.
+add_executable(online_match_test OnlineMatchTest.cpp)
+target_link_libraries(online_match_test PRIVATE Shockwave::Multiplayer Shockwave::SteamServices)
+shockwave_warnings(online_match_test)
+add_test(NAME online_match COMMAND online_match_test)
+set_tests_properties(online_match PROPERTIES TIMEOUT 120)
+
 add_executable(test_sdr_transport_mock SdrTransportMockTest.cpp)
 target_link_libraries(test_sdr_transport_mock PRIVATE Shockwave::SteamServices)
 shockwave_warnings(test_sdr_transport_mock)

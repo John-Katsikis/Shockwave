@@ -237,6 +237,7 @@ void NetworkWorld::Impl::inputsMessage(Peer& p, const Inputs& m) {
         p.inputs[slot] = c;
         p.haveInput[slot] = true;
         p.inputArrival[slot] = tick;
+        p.lastInputAt = this->now;
     }
     if (!ahead) return;
     // A client whose clock runs ahead now and then gets its inputs ignored; one whose

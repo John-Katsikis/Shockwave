@@ -108,6 +108,14 @@ public:
     virtual NetResult<void> setLobbyJoinable(LobbyId lobby, bool joinable) = 0;
     virtual NetResult<void> setLobbyMetadata(LobbyId lobby, const std::string& key, const std::string& value) = 0;
     virtual NetResult<std::vector<PeerId>> lobbyMembers(LobbyId lobby) const = 0;
+    // A lobby we're in, as the platform sees it now: owner, members, capacity, metadata.
+    virtual NetResult<LobbySummary> lobbyInfo(LobbyId lobby) const = 0;
+    // A player's platform name (their Steam persona), for display only: untrusted text,
+    // never an identity or a widget ID. "" when there's none.
+    virtual std::string displayName(PeerId peer) const {
+        (void)peer;
+        return {};
+    }
     virtual NetResult<std::unique_ptr<ITransport>> createTransport() = 0;
 
     // Authentication, both ways: each side asks for a session ticket for the other's

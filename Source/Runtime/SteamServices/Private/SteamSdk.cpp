@@ -353,6 +353,12 @@ public:
             steamIdFrom(lobby), int(index), key.data(), int(key.size()), value.data(), int(value.size()));
     }
     void inviteToLobby(uint64_t lobby) override { SteamFriends()->ActivateGameOverlayInviteDialog(steamIdFrom(lobby)); }
+    std::string personaName(uint64_t steamId) const override {
+        if (!SteamFriends()) return {};
+        const char* name = SteamFriends()->GetFriendPersonaName(steamIdFrom(steamId));
+        return name ? std::string(name) : std::string();
+    }
+    bool restartAppIfNecessary(uint32_t appId) override { return SteamAPI_RestartAppIfNecessary(appId); }
 
     // CallHolder results.
     void finish(uint64_t call, LobbyCreated_t* data, bool ioFailure) {

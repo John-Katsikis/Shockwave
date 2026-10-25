@@ -5,6 +5,7 @@
 #include "NetworkWorldImpl.h"
 
 #include <Core/Log.h>
+#include <Network/CaptureTransport.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -517,6 +518,42 @@ const NetworkWorldStats& NetworkWorld::stats() const {
     return impl.stats;
 }
 
+void NetworkWorld::peerInfo(std::vector<NetworkPeerInfo>& out) const {
+    out.clear();
+    const Impl& impl = *m_impl;
+    if (!m_transport) return;
+    for (const Peer& p : impl.peers) {
+        if (p.phase == Peer::Phase::Free) continue;
+        NetworkPeerInfo info;
+        info.slot = p.admitted() ? p.slot : 0;
+        info.peer = p.peer;
+        switch (p.phase) {
+        case Peer::Phase::AwaitingHello: info.status = "connecting"; break;
+        case Peer::Phase::Authenticating: info.status = "authenticating"; break;
+        case Peer::Phase::Synchronizing: info.status = "synchronizing"; break;
+        case Peer::Phase::Active: info.status = "active"; break;
+        case Peer::Phase::Free: break;
+        }
+        info.rttMs = 1000 * (m_role == NetworkRole::Client ? impl.bestRtt() : impl.peerRoundTrip(p));
+        if (const auto stats = m_transport->stats(p.connection)) {
+            info.pendingReliableBytes = stats->pendingReliableBytes;
+            info.pendingUnreliableBytes = stats->pendingUnreliableBytes;
+            info.bytesReceived = stats->bytesReceived;
+            info.bytesSent = stats->bytesSent;
+            if (!info.peer.valid()) info.peer = stats->peer;
+        }
+        info.queuedControlBytes = uint32_t(p.queued());
+        if (m_role == NetworkRole::Authority && p.lastInputAt >= 0) info.inputAge = impl.now - p.lastInputAt;
+        if (m_role == NetworkRole::Client && impl.lastSnapshotAt >= 0)
+            info.snapshotAge = impl.now - impl.lastSnapshotAt;
+        out.push_back(info);
+        if (m_role == NetworkRole::Client) break;   // [0] is the host
+    }
+    std::stable_sort(out.begin(), out.end(), [](const NetworkPeerInfo& a, const NetworkPeerInfo& b) {
+        return (a.slot ? a.slot : 0xFFFF) < (b.slot ? b.slot : 0xFFFF);
+    });
+}
+
 void NetworkWorld::setState(NetworkState state) {
     if (state == m_state) return;
     m_state = state;
@@ -576,6 +613,8 @@ NetResult<void> NetworkWorld::begin() {
     auto transport = m_services->createTransport();
     if (!transport) return failStart(ReasonCode::ServiceUnavailable, transport.error());
     m_transport = std::move(transport.value());
+    if (m_start.capture && m_start.capture->isOpen())
+        m_transport = makeCapturingTransport(std::move(m_transport), *m_start.capture);
     if (m_role == NetworkRole::Authority) {
         TransportLimits limits;
         limits.maxConnections = std::min(kMaxTransportConnections, impl.maxClients() + kMaxPendingBeyondCapacity);
