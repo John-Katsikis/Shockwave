@@ -172,12 +172,24 @@ their CPU time.
 build/bin/player --scene Games/Sample/Scenes/effects.swscene --benchmark 5 --json out.json
 ```
 
-You'll see lines like these, and `effects_update_ms` and `effects_build_ms` in the JSON:
+You'll see lines like these, and `effects_update_ms`, `effects_build_ms` and a
+`particles` object in the JSON:
 
 ```text
-  pass particles                0.411 ms
-effects cpu:  0.161 ms simulation (worker) + 0.083 ms build (2 effects, 191 particles, 6 draws, 756 vertices)
+  pass particles                6.835 ms
+effects cpu:  0.153 ms simulation (worker) + 0.089 ms build (2 effects, 219 particles, 6 draws, 868 vertices)
+particles:    152 average, 301 peak (cap 20000)
+  simulate    0.153 ms (worker; main thread waited 0.045 ms)
+  build quads 0.089 ms (main thread)
+  upload      0.010 ms (main thread, 0.03 MB a frame)
+  gpu draw    4.892 ms (particles pass)
 ```
+
+(That's the software driver, so the GPU times are far higher than on a real GPU. The
+`pass` line is the last frame; the `particles:` block is the average over the run.)
+
+The `particles:` block splits the cost into the four stages a particle goes through
+each frame, averaged over the run. "What it costs" below says what each one means.
 
 ## Reload effects
 
@@ -197,6 +209,7 @@ works in the editor, during Play and in the player.
 | Check for mistakes | Inspector, Console | | `player --check` |
 | See it | the viewport | | `player --screenshot out.png` |
 | Measure it | Window > Stats > Particle effects, and the `particles` GPU pass | | `player --benchmark 5` |
+| Stress test it | open `Scenes/particle-stress-16v16.swscene` | | `player --scene .../particle-stress-16v16.swscene --benchmark 20` |
 
 ## In the editor
 
@@ -218,6 +231,63 @@ Measured on the sample's two lasers at 1280 x 720, on the software Vulkan driver
 With no effect on screen, the `particles` pass is left out of the frame, so it costs
 nothing. Window > Stats shows the same numbers for your own effects while the editor
 runs, under Particle effects and GPU time per pass.
+
+Each frame, a particle goes through four stages, and `player --benchmark` times each:
+
+| Stage | Where | What it is |
+|---|---|---|
+| simulate | a worker thread | Effekseer moves, spawns and ages every particle. The main thread only pays for it when it has to wait for the worker before building (`main thread waited`). |
+| build quads | main thread | Each particle becomes a camera-facing quad: 4 vertices of 48 bytes. |
+| upload | main thread | The renderer gathers the frame's quads and copies them into GPU memory. |
+| gpu draw | GPU | The `particles` pass: every quad blended into the scene. Big, overlapping smoke costs the most here. |
+
+### The particle stress test
+
+`Games/Sample/Scenes/particle-stress-<N>v<N>.swscene` is a firefight: two teams of N
+rifles behind cover, 30 m apart, every rifle firing about twelve rounds a second (muzzle
+flash, flame, sparks, a tracer and smoke per shot), bullets landing on both lines of
+cover (flash, sparks, dust), burning wrecks with smoke columns, and grenades going off.
+The camera stands just behind one team, so the near flashes and smoke overlap the far
+ones. `Games/Sample/Tools/MakeParticleStress.py` writes the scenes and the four
+`firefight-*.efkefc` effects they use; change it and run it again rather than editing
+the files (the effects carry no Effekseer editor data).
+
+```sh
+build/bin/player --project Games/Sample/Sample.swproject \
+    --scene Games/Sample/Scenes/particle-stress-16v16.swscene \
+    --benchmark 20 --vsync off --fps 0 --json out.json
+```
+
+In the editor, open the scene and look at Window > Stats > Particle effects.
+
+Particles alive on average, measured with the null renderer (counts don't depend on the
+GPU), and the CPU stages on the cloud build machine:
+
+| Scene | Particles | Peak | simulate | build quads |
+|---|---|---|---|---|
+| 4v4 | 2,600 | 2,900 | 0.36 ms | 0.79 ms |
+| 8v8 | 5,200 | 5,800 | 0.80 ms | 1.69 ms |
+| 16v16 | 10,500 | 11,200 | 1.75 ms | 3.49 ms |
+| 24v24 | 15,800 | 16,600 | 2.84 ms | 5.41 ms |
+| 32v32 | 18,500 | 18,900 | 3.31 ms | 6.16 ms |
+
+32v32 is at the limit: it wants more particles than fit, so some shots don't spawn
+everything. In practice the pool fills at about 18,900 rather than 20,000, because
+Effekseer hands out particles in blocks of 16 and counts the invisible "one shot"
+emitters too.
+
+How to read a run, to decide what to change first:
+
+- **build quads and upload are most of the main thread's time**: build each particle's
+  quad on the GPU instead (upload one small record per particle and expand it in the
+  vertex shader). That removes most of the build cost and about three quarters of the
+  bytes uploaded.
+- **main thread waited is large, or you need more than 20,000 particles**: the
+  simulation itself is the limit, which only moving it to compute shaders on the GPU
+  fixes.
+- **gpu draw is the biggest number**: it's the pixels, not the particle count. Fewer or
+  smaller blended quads (smoke especially), or drawing particles at a lower resolution,
+  help; neither change above does.
 
 To keep frames steady, effects don't allocate memory each frame once they've settled.
 Effekseer keeps its particles in a fixed pool, and the triangle lists and GPU buffers are

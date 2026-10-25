@@ -21,3 +21,12 @@ def beam(x, y):
     u = abs((x + 0.5) / N * 2 - 1)
     return math.exp(-(v / 0.22) ** 2) * min(1.0, (1 - u) * 6)
 png(os.path.join(out, 'LaserMain01.png'), N, N, beam)
+# A lumpy smoke puff: a soft disc broken up by nine overlapping blobs (fixed seed).
+import random
+rng = random.Random(7)
+blobs = [(rng.uniform(-0.45, 0.45), rng.uniform(-0.45, 0.45), rng.uniform(0.25, 0.5)) for _ in range(9)]
+def smoke(x, y):
+    u, v = (x + 0.5) / N * 2 - 1, (y + 0.5) / N * 2 - 1
+    lumps = sum(max(0.0, 1 - math.hypot(u - bx, v - by) / br) ** 2 for bx, by, br in blobs)
+    return min(1.0, max(0.0, 1 - r(x, y)) ** 1.5 * (0.45 + 0.35 * min(lumps, 1.6)))
+png(os.path.join(out, 'Smoke01.png'), N, N, smoke)

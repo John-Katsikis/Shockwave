@@ -133,6 +133,7 @@ float VulkanRenderer::aspectRatio() const {
 const char* VulkanRenderer::gpuName() const { return m_impl->context->gpuName(); }
 const GpuChoice* VulkanRenderer::gpuChoice() const { return &m_impl->context->gpuChoice(); }
 uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
+ParticleStats VulkanRenderer::particleStats() const { return m_impl->lastParticleStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 bool VulkanRenderer::beginFrame() { return m_impl->beginFrame(); }
 void VulkanRenderer::endFrame() { m_impl->endFrame(); }

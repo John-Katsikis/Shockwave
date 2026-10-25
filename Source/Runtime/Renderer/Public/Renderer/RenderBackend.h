@@ -115,6 +115,7 @@ public:
     virtual uint32_t drawCount() const = 0;
     // Of those, how many were outside the camera's view and not drawn (shadows may still be).
     virtual uint32_t culledDraws() const { return 0; }
+    virtual ParticleStats particleStats() const { return {}; }
 
     // ---- Screenshots ----
     virtual void requestScreenshot(const std::string& path) = 0;

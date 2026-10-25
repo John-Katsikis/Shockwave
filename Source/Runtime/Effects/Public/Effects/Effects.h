@@ -60,6 +60,7 @@ struct EffectsStats {
     uint32_t skippedBatches = 0;   // distortion and custom materials, not drawn yet
     float updateMs = 0;   // simulation, on a worker
     float buildMs = 0;   // building the triangles, on the main thread
+    float waitMs = 0;   // the main thread waiting for the simulation to finish, before the build
 };
 
 class Effects {

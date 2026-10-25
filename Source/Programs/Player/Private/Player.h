@@ -250,6 +250,11 @@ private:
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;
     double m_effectsUpdateMs = 0, m_effectsBuildMs = 0;   // particle effects, the same way
+    // Each particle stage on its own (docs/Effects.md, "What it costs"), averaged per frame.
+    struct ParticleTotals {
+        double waitMs = 0, uploadMs = 0, gpuMs = 0, uploadBytes = 0, particles = 0;
+        uint32_t peakParticles = 0;
+    } m_particles;
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     std::unique_ptr<shockwave::AssetFolder> m_assets;

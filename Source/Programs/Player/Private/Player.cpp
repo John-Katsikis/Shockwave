@@ -243,6 +243,14 @@ void Player::benchmark(double dt) {
         const shockwave::EffectsStats effects = m_effects->stats();
         m_effectsUpdateMs += effects.updateMs;
         m_effectsBuildMs += effects.buildMs;
+        m_particles.waitMs += effects.waitMs;
+        m_particles.particles += effects.particles;
+        m_particles.peakParticles = std::max(m_particles.peakParticles, effects.particles);
+        const shockwave::ParticleStats upload = engine().renderer().particleStats();
+        m_particles.uploadMs += upload.uploadMs;
+        m_particles.uploadBytes += static_cast<double>(upload.uploadBytes);
+        for (const auto& pass : engine().renderer().passTimings())   // the latest frame the GPU finished
+            if (pass.name == "particles") m_particles.gpuMs += pass.gpuMs;
         ++m_uiFrames;
     }
     if (m_benchmarkMeasuring && m_benchmarkTime >= m_tool.benchmarkSeconds) {
@@ -284,6 +292,18 @@ void Player::reportBenchmark() {
         "effects cpu:  %.3f ms simulation (worker) + %.3f ms build (%u effects, %u particles, %u draws, %u vertices)\n",
         m_effectsUpdateMs / frames, m_effectsBuildMs / frames, effects.playing, effects.particles, effects.batches,
         effects.vertices);
+    if (m_particles.peakParticles > 0) {
+        // One line per stage, so a particle rewrite can be judged by where the time goes.
+        std::printf(
+            "particles:    %.0f average, %u peak (cap %d)\n"
+            "  simulate    %.3f ms (worker; main thread waited %.3f ms)\n"
+            "  build quads %.3f ms (main thread)\n"
+            "  upload      %.3f ms (main thread, %.2f MB a frame)\n"
+            "  gpu draw    %.3f ms (particles pass)\n",
+            m_particles.particles / frames, m_particles.peakParticles, shockwave::Effects::kMaxParticles,
+            m_effectsUpdateMs / frames, m_particles.waitMs / frames, m_effectsBuildMs / frames,
+            m_particles.uploadMs / frames, m_particles.uploadBytes / frames / 1e6, m_particles.gpuMs / frames);
+    }
     if (const shockwave::AnimationWorld* animation = m_session ? m_session->animation() : nullptr) {
         const shockwave::AnimationStats a = animation->stats();
         std::printf(
@@ -322,6 +342,12 @@ void Player::reportBenchmark() {
          << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
          << "  \"effects_update_ms\": " << m_effectsUpdateMs / frames << ",\n"
          << "  \"effects_build_ms\": " << m_effectsBuildMs / frames << ",\n"
+         << "  \"particles\": {\"average\": " << m_particles.particles / frames
+         << ", \"peak\": " << m_particles.peakParticles << ", \"cap\": " << shockwave::Effects::kMaxParticles
+         << ", \"simulate_ms\": " << m_effectsUpdateMs / frames << ", \"wait_ms\": " << m_particles.waitMs / frames
+         << ", \"build_ms\": " << m_effectsBuildMs / frames << ", \"upload_ms\": " << m_particles.uploadMs / frames
+         << ", \"upload_bytes\": " << m_particles.uploadBytes / frames << ", \"gpu_ms\": " << m_particles.gpuMs / frames
+         << "},\n"
          << "  \"passes\": [";
     const auto& passes = renderer.passTimings();
     for (size_t i = 0; i < passes.size(); ++i) {

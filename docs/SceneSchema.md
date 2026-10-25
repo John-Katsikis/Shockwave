@@ -411,6 +411,7 @@ Names a scene can use, built-in and from this project's asset folder.
 - `Effects/Texture/LaserMain01.png`
 - `Effects/Texture/Particle01.png`
 - `Effects/Texture/Particle02.png`
+- `Effects/Texture/Smoke01.png`
 - `textures/bricks.png`
 - `textures/wood.png`
 
