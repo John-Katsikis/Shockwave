@@ -693,6 +693,7 @@ process share them):
 | Configuration | Result |
 |---|---|
 | Debug, modular | builds; CTest 49/51 (`renderer_swap` and `save_games_cli`, the known no-display failures) |
+| Debug with `-fsanitize=address,undefined` | `network_session`, `network_replication`, `network_combat`, `network_arena` and `--soak all 20` pass with no sanitizer reports |
 | Release, `--soak all 20` | 171 checks pass |
 | Release, 30 simulated minutes, cafe | 33 checks pass; 79 rounds, 85,190 shots, 9,498 hits; 293 corrections (max 0.045 m), 0 prediction resets |
 | Release, 30 simulated minutes, poor | 33 checks pass; 88 rounds, 75,403 shots, 10,197 hits; 237 corrections (max 0.045 m), 0 resets |
