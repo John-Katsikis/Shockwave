@@ -36,7 +36,8 @@ run(0 "schema digest [0-9a-f]+" --network-info)
 run(0 "content digest [0-9a-f]+" --network-info)
 run(0 "Wrote" --network-info --json "${TEMP}/info.json")
 file(READ "${TEMP}/info.json" json)
-if(NOT json MATCHES "\"steam_app_id\": \"0\"" OR NOT json MATCHES "\"schema\": \"[0-9a-f]+\"")
+if(NOT json MATCHES "\"steam_app_id\": \"0\"" OR NOT json MATCHES "\"schema\": \"[0-9a-f]+\"" OR
+   NOT json MATCHES "\"match_scene\": \"Scenes/arena-mp.swscene\"")
     message(FATAL_ERROR "--network-info --json is missing fields:\n${json}")
 endif()
 
