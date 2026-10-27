@@ -632,7 +632,7 @@ private:
              << "  --vsync on|off    sync frames to the screen\n"
              << "  --size WxH        window size, like 1920x1080\n"
              << "  --help            every option\n\n"
-             << steamReadme() << "Made with the Shockwave engine (MIT license).\n";
+             << steamReadme() << "Made with the Shockwave engine.\n";
         m_readmeText = text.str();
         writeFile(m_staging / "README.txt", m_readmeText);
     }

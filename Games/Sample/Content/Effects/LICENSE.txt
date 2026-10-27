@@ -22,7 +22,7 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 The textures in Texture/ (LaserMain01.png, Particle01.png, Particle02.png, Smoke01.png)
 are drawn by Games/Sample/Tools/GenerateEffectTextures.py and are part of this project,
-under its MIT license. They keep the file names the effects look for.
+under its license (all rights reserved, see LICENSE at the repository root). They keep the file names the effects look for.
 
 The firefight-*.efkefc effects are written by Games/Sample/Tools/MakeParticleStress.py
-and are part of this project, under its MIT license.
+and are part of this project, under its license (all rights reserved).

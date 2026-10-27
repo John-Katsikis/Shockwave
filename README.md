@@ -2,9 +2,9 @@
 
 [![Build](https://github.com/John-Katsikis/Shockwave/actions/workflows/build.yml/badge.svg)](https://github.com/John-Katsikis/Shockwave/actions/workflows/build.yml)
 
-Shockwave is a free, open source 3D game engine written in C++20. It draws with Vulkan,
-uses every CPU core by default, and comes with an editor for building scenes and playing
-them. It's MIT licensed with no royalties.
+Shockwave is a 3D game engine written in C++20. It draws with Vulkan, uses every CPU core
+by default, and comes with an editor for building scenes and playing them. It's
+proprietary: all rights reserved (see [LICENSE](LICENSE)).
 
 Shockwave runs on Linux and macOS (through MoltenVK, a layer that runs Vulkan on Apple's
 Metal). Windows builds are checked in CI but haven't been tried on a Windows PC yet. If you

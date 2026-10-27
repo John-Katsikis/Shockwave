@@ -886,7 +886,7 @@ void Editor::drawAboutWindow() {
         return;
     }
     ImGui::Text("Shockwave Editor");
-    ImGui::TextDisabled("A free, open source 3D engine. MIT licensed.");
+    ImGui::TextDisabled("A 3D engine. All rights reserved.");
     ImGui::Spacing();
     ImGui::Text("Vulkan 1.3 on %s", engine().renderer().gpuName());
     ImGui::Text("%u job system threads", engine().jobs().threadCount());
