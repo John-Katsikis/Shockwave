@@ -171,8 +171,8 @@ and Intel, or NVIDIA's driver 525 or newer.
 
 ## Third-party licenses
 
-The engine is MIT licensed, and the libraries in it each have a license that asks you
-to include it when you ship. Packages do that for you, in `Licenses/`. They come from
+The engine is proprietary (all rights reserved, see `LICENSE`), and the libraries in it
+each have a license that asks you to include it when you ship. Packages do that for you, in `Licenses/`. They come from
 `build/bin/licenses`. If you add a library to the engine, copy its license there in its
 CMake file, the way `cmake/RmlUi.cmake` and `Source/Runtime/Packaging/CMakeLists.txt`
 do.
