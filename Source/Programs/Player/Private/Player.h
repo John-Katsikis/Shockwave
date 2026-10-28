@@ -64,6 +64,8 @@ struct Tool {
     bool optimise = false;   // --optimise: compress every texture now, report (with --json), quit
     bool lodColors = false;   // --lod-colors: tint each level of detail its own colour
     int screenshotFrame = 30;   // --frames with --screenshot
+    std::string camera;   // --camera: look through this named Camera entity instead of the primary one
+    bool fixedStep = false;   // --fixed-step: every frame advances exactly one tick (reproducible motion)
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     bool showNavMesh = false;   // --view navmesh: the lit scene with the navigation mesh and agents' paths
     shockwave::GraphicsSettings graphics, graphicsDefaults;
@@ -146,6 +148,12 @@ int netTest(const shockwave::Project& project, const NetTestCommand& command, co
 // the reverse, refusing redacted payloads. Neither needs a project.
 int netDump(const fs::path& capture, const fs::path& json);
 int netEncode(const fs::path& json, const fs::path& output);
+// --image-stats file.png [--json out]: size and mean colour. --image-diff reference.png
+// candidate.png [--tolerance rmse] [--json out]: how far apart two screenshots are (RMSE in
+// 0..255 steps, PSNR, largest channel difference, share of visibly changed pixels). Exit 1
+// when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
+int imageStats(const fs::path& image, const fs::path& json);
+int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
 // A packaged Steam game launched outside Steam: asks Steam to relaunch it (and the player
 // exits). False for everything else: tools, the editor, development builds.
 bool relaunchThroughSteam(const shockwave::Project& project);
@@ -257,6 +265,7 @@ private:
     } m_particles;
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
+    shockwave::Entity m_toolCamera;   // --camera: the Camera entity to look through
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
     // Online services, pumped every frame; they outlive the session. Unavailable ones

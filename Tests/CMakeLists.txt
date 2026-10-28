@@ -201,6 +201,22 @@ if(TARGET game_arena)
     set_tests_properties(graphics_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
 endif()
 
+# The renderer's fixture project (Tests/fixtures/graphics, docs/GraphicsVerification.md):
+# every scene must pass --check without a GPU, and render (gpu) deterministically.
+if(TARGET game_sample)
+    add_test(NAME graphics_fixtures COMMAND player --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject
+        --check)
+    set_tests_properties(graphics_fixtures PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                         TIMEOUT 120)
+    add_test(NAME graphics_fixtures_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFixtures
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
+    set_tests_properties(graphics_fixtures_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS gpu)
+endif()
+
 # Networking (Network module): the wire format and its reference doc, the loopback
 # transport with fault injection, and packet captures. No Steam, sockets or display.
 add_executable(network_wire_test NetworkWireTest.cpp)

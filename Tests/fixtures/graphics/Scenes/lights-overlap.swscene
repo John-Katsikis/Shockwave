@@ -1,0 +1,93 @@
+# Two shadowed spot lights and two point lights whose volumes overlap, around a pillar.
+# Clustered lighting (G11) must match the brute-force result here, light for light.
+# Camera: "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+    ambient_intensity 0.15
+end
+
+entity "Floor"
+  Transform
+    scale 20 1 20
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.8 0.8 0.8 1
+end
+
+entity "Back wall"
+  Transform
+    position 0 2 -3
+    scale 10 4 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.8 1
+end
+
+entity "Pillar"
+  Transform
+    position 0 1 -1.2
+    scale 0.4 2 0.4
+  MeshRenderer
+    mesh cube
+    tint 0.7 0.7 0.7 1
+end
+
+entity "Red spot"
+  Transform
+    position -1.2 3.5 1
+    rotation -55 -15 0
+  Light
+    type Spot
+    color 1 0.2 0.15 1
+    intensity 30
+    range 12
+    spot_angle 35
+end
+
+entity "Blue spot"
+  Transform
+    position 1.2 3.5 1
+    rotation -55 15 0
+  Light
+    type Spot
+    color 0.2 0.4 1 1
+    intensity 30
+    range 12
+    spot_angle 35
+end
+
+entity "Warm point"
+  Transform
+    position -1 0.8 0
+  Light
+    type Point
+    color 1 0.7 0.4 1
+    intensity 4
+    range 4
+end
+
+entity "Cool point"
+  Transform
+    position 1 0.8 0
+  Light
+    type Point
+    color 0.5 0.8 1 1
+    intensity 4
+    range 4
+end
+
+entity "Main Camera"
+  Transform
+    position 0 1.8 5
+    rotation -12 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end

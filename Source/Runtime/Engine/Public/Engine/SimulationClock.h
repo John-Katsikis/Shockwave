@@ -12,6 +12,10 @@
 // kMaxDebt, is an overrun, which ends network play (SimulationOverrun) rather than
 // catching up with a burst of ticks. The debt is then dropped so the next frame starts
 // clean. See docs/Networking.md, "Session integration".
+//
+// Fixed ignores real time: every frame runs exactly one tick of dt and renders it with no
+// interpolation, so frame N always shows the same moment. For reproducible screenshots and
+// image sequences (player --fixed-step); never for play.
 
 #include <cstdint>
 
@@ -20,6 +24,7 @@ namespace shockwave {
 enum class SimulationTime : uint8_t {
     Smoothed,   // offline: smoothed frame time, clamped
     Monotonic,   // online: raw monotonic time, bounded catch-up
+    Fixed,   // tools: one tick per frame, whatever the real time
 };
 
 const char* simulationTimeName(SimulationTime time);

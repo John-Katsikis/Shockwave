@@ -1,0 +1,240 @@
+# Thin slanted geometry: bars at many angles, near-horizontal wires and a fine checker
+# floor at a grazing angle. Shows edge stair-stepping, crawling and texture shimmer: the
+# anti-aliasing fixture (G01 FXAA, G10 TAA). Cameras: "Main Camera", "Grazing".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+end
+
+entity "Sun"
+  Transform
+    rotation -45 30 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Floor"
+  Transform
+    scale 40 1 40
+  MeshRenderer
+    mesh floor
+    texture textures/checker-fine.png
+    tint 0.9 0.9 0.9 1
+    tiling 0.05 0.05
+end
+
+entity "Bar 0"
+  Transform
+    position -3.3 1.6 -3
+    rotation 0 0 -40
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 1"
+  Transform
+    position -2.7 1.6 -3
+    rotation 0 0 -33
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 2"
+  Transform
+    position -2.1 1.6 -3
+    rotation 0 0 -26
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 3"
+  Transform
+    position -1.5 1.6 -3
+    rotation 0 0 -19
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 4"
+  Transform
+    position -0.9 1.6 -3
+    rotation 0 0 -12
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 5"
+  Transform
+    position -0.3 1.6 -3
+    rotation 0 0 -5
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 6"
+  Transform
+    position 0.3 1.6 -3
+    rotation 0 0 2
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 7"
+  Transform
+    position 0.9 1.6 -3
+    rotation 0 0 9
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 8"
+  Transform
+    position 1.5 1.6 -3
+    rotation 0 0 16
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 9"
+  Transform
+    position 2.1 1.6 -3
+    rotation 0 0 23
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 10"
+  Transform
+    position 2.7 1.6 -3
+    rotation 0 0 30
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Bar 11"
+  Transform
+    position 3.3 1.6 -3
+    rotation 0 0 37
+    scale 0.03 3 0.03
+  MeshRenderer
+    mesh cube
+    tint 0.95 0.95 0.95 1
+end
+
+entity "Wire 0"
+  Transform
+    position 0 0.5 -5
+    rotation 0 0 1
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Wire 1"
+  Transform
+    position 0 0.95 -5
+    rotation 0 0 2.5
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Wire 2"
+  Transform
+    position 0 1.4 -5
+    rotation 0 0 4
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Wire 3"
+  Transform
+    position 0 1.85 -5
+    rotation 0 0 5.5
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Wire 4"
+  Transform
+    position 0 2.3 -5
+    rotation 0 0 7
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Wire 5"
+  Transform
+    position 0 2.75 -5
+    rotation 0 0 8.5
+    scale 9 0.012 0.012
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.1 0.1 1
+end
+
+entity "Slanted plate"
+  Transform
+    position 3 1.2 -1.5
+    rotation 10 -25 17
+    scale 1.6 1.6 0.05
+  MeshRenderer
+    mesh cube
+    tint 0.85 0.2 0.15 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 1.6 4
+    rotation -8 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end
+
+entity "Grazing"
+  Transform
+    position 0 0.35 6
+    rotation -2 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 0
+end

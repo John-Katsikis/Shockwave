@@ -1,0 +1,87 @@
+# A spinning cube (rigid motion), a bending skinned strip and an orbiting camera. Run with
+# player --fixed-step so frame N is the same moment every time. Motion vectors and
+# history (G09, G10). Cameras: "Orbit camera" (moves), "Fixed".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+end
+
+entity "Sun"
+  Transform
+    rotation -45 30 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Floor"
+  Transform
+    scale 30 1 30
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.7 0.7 0.7 1
+end
+
+entity "Spinning cube"
+  Transform
+    position -1.5 0.8 0
+    rotation 0 0 20
+  MeshRenderer
+    mesh cube
+    tint 0.85 0.3 0.2 1
+  Circuit
+    circuit "Circuits/Spin.swcircuit"
+end
+
+entity "Skinned strip"
+  Transform
+    position 1.2 0 0
+  ModelRenderer
+    model models/skinned-strip.glb
+  Animator
+    clip "bend"
+end
+
+entity "Reference column"
+  Transform
+    position 0 1 -2
+    scale 0.3 2 0.3
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.8 1
+end
+
+entity "Camera pivot"
+  Transform
+    position 0 0 0
+  Circuit
+    circuit "Circuits/Orbit.swcircuit"
+end
+
+entity "Orbit camera"
+  Transform
+    position 0 1.8 5
+    rotation -10 0 0
+  Parent
+    entity "Camera pivot"
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end
+
+entity "Fixed"
+  Transform
+    position 0 1.8 5
+    rotation -10 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 0
+end

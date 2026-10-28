@@ -9,6 +9,7 @@ const char* simulationTimeName(SimulationTime time) {
     switch (time) {
     case SimulationTime::Smoothed: return "smoothed";
     case SimulationTime::Monotonic: return "monotonic";
+    case SimulationTime::Fixed: return "fixed";
     }
     return "?";
 }
@@ -21,6 +22,12 @@ SimulationStep SimulationClock::advance(double rawFrameTime, double smoothedFram
     SimulationStep step;
     const double raw = sane(rawFrameTime);
     if (!(dt > 0) || !std::isfinite(dt)) return step;
+    if (m_source == SimulationTime::Fixed) {
+        m_accumulator = 0;
+        step.frameTime = dt;
+        step.ticks = 1;
+        return step;
+    }
     if (m_source == SimulationTime::Smoothed) {
         // Exactly the loop the engine always ran: subtract one tick at a time.
         step.frameTime = std::min(sane(smoothedFrameTime), kMaxFrameTime);

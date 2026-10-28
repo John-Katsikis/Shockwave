@@ -1,0 +1,11 @@
+# The renderer's test project (docs/GraphicsVerification.md): small generated scenes that
+# isolate one rendering problem each. Everything in it is generated or hand-written here;
+# see Content/LICENSE.md. It borrows the Sample game's module for its component types.
+shockwave_project 1
+name "Graphics fixtures"
+game_module "sample"
+startup_scene "Scenes/thin-geometry.swscene"
+assets "Content"
+tick_rate 60
+window_size 1280 720
+vsync false
