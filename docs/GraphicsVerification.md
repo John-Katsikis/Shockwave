@@ -106,6 +106,10 @@ regressions on this machine, and record hardware numbers alongside when a GPU is
   fallback is logged once each time it changes, never silently) and `memoryReport()`.
 - **Plugin ABI** is now 3: renderer plugins must be rebuilt.
 
+Result: `capture.py --compare` after these changes found all 52 images pixel-identical to
+the baseline (8 by `--image-diff`, RMSE 0; the other 44 by SHA-256), so G00 changed no
+output, as the plan requires.
+
 ## Known limits
 
 - Synchronization validation (`VK_LAYER_KHRONOS_validation` with sync checks) was not run
