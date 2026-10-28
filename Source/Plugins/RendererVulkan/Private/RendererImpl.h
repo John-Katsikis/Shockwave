@@ -187,6 +187,9 @@ struct DrawCommand {
     // shadows into the view.
     bool visible = true;
     float depth = 0.0f;
+    // Which object this is across frames (RenderTypes.h). drawIndex is only its place in
+    // this frame's sorted table: per-object history must be found by key, never by index.
+    RenderInstanceKey key;
 };
 
 // One shadow map to draw this frame: where in which atlas, from where, and which draws.
@@ -330,6 +333,7 @@ struct VulkanRenderer::Impl {
         // Skinning (RendererSkinning.cpp): this frame's joint matrices, written by the CPU,
         // and the skinned vertices the compute pass writes for the scene and shadows.
         vk::Buffer jointBuffer, skinnedBuffer;
+        vk::BufferState skinnedState;   // the render graph's, reset when the buffer is replaced
         glm::mat4* joints = nullptr;
         VkDeviceAddress jointAddress = 0, skinnedAddress = 0;
         size_t jointCapacity = 0, skinnedCapacity = 0;   // matrices; vertices
@@ -407,6 +411,7 @@ struct VulkanRenderer::Impl {
     vk::RenderGraph graph;
     vk::ImageState sceneColorState, sceneDepthState, displayState;
     std::string frameGraphText;
+    uint32_t untimedPasses = 0;   // passes past the GPU timer's capacity last frame
 
     // A screenshot asked for by requestScreenshot, taken at the end of the next frame.
     std::string screenshotPath;
@@ -432,6 +437,7 @@ struct VulkanRenderer::Impl {
     DrawList foreignDraws;   // threads the job system doesn't own
     uint32_t lastDrawCount = 0;
     uint32_t lastCulledDraws = 0;   // of those, outside the camera's view
+    uint32_t lastUnkeyedDraws = 0;   // of those, without a RenderInstanceKey
     std::vector<DrawCommand> gatheredDraws;
 
     vk::Image sceneColor;
@@ -573,7 +579,7 @@ struct VulkanRenderer::Impl {
     // joints: a skinned draw's joint matrices (drawSkinnedMesh); empty for a plain one.
     void drawMesh(
         MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-        const DrawMaterial& material, std::span<const glm::mat4> joints = {});
+        const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints = {});
 
     void clearDrawLists();
 
@@ -612,12 +618,12 @@ struct VulkanRenderer::Impl {
     void setMeshSkin(MeshHandle handle, std::span<const VertexSkin> skin);
     void drawSkinnedMesh(
         MeshHandle handle, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-        const glm::vec4& tint, const DrawMaterial& material);
+        const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key);
     // A sphere around every place the joints can move the mesh's vertices to.
     static glm::vec4 skinnedBounds(const Mesh& mesh, std::span<const glm::mat4> joints);
     // Adds a draw to a thread's list, with its joints when it's skinned.
-    static void addDraw(
-        DrawList& list, uint32_t listIndex, DrawCommand& command, uint32_t mesh, std::span<const glm::mat4> joints);
+    static void
+    addDraw(DrawList& list, uint32_t listIndex, DrawCommand& command, uint32_t mesh, std::span<const glm::mat4> joints);
     // After gathering: uploads the joints, plans the dispatches and points each skinned
     // draw at its skinned vertices.
     void prepareSkinning(Frame& f);
@@ -799,6 +805,19 @@ struct VulkanRenderer::Impl {
     void finishScreenshot();
 
     vk::ImageState swapchainState;
+
+    // ---- Identity and reports (RendererReports.cpp) -----------------------------------
+
+    RenderViewId currentView;   // the view being drawn (Renderer::setCamera)
+    uint32_t viewChanges = 0;   // times the view changed: each one starts history afresh
+    std::string loggedFallbacks;   // the settings fallbacks last logged
+
+    void setView(RenderViewId id);
+    RendererCapabilities capabilities() const;
+    std::vector<EffectiveSetting> effectiveSettings() const;
+    // Logs requested settings the device can't honour, once each time that changes.
+    void logSettingFallbacks();
+    RendererMemoryReport memoryReport() const;
 };
 
 }   // namespace shockwave

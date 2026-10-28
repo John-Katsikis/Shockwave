@@ -76,6 +76,11 @@ before gameplay starts; no game-specific renderer code is necessary.
 
 ## Verify from the command line
 
+To see what the GPU supports, each setting as asked for and as actually running (with
+the reason for any fallback), and GPU memory by category, use `--graphics-report`; the
+editor's Stats window shows the same. Fixtures, baselines and image comparison are in
+[GraphicsVerification.md](GraphicsVerification.md).
+
 ```sh
 build/bin/player --project Games/Arena/Arena.swproject --graphics-info
 build/bin/player --project Games/Arena/Arena.swproject --no-user-graphics --graphics-info

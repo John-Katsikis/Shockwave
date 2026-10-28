@@ -139,8 +139,8 @@ public:
         m_projection = projection;
     }
     void drawMesh(
-        MeshHandle mesh, const glm::mat4& transform, TextureHandle, const glm::vec4& tint,
-        const DrawMaterial& material) override {
+        MeshHandle mesh, const glm::mat4& transform, TextureHandle, const glm::vec4& tint, const DrawMaterial& material,
+        const RenderInstanceKey&) override {
         std::shared_ptr<const MeshVolume> volume;
         {
             std::lock_guard lock(m_meshMutex);
@@ -164,8 +164,8 @@ public:
     }
     void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4>, TextureHandle texture,
-        const glm::vec4& tint, const DrawMaterial& material) override {
-        drawMesh(mesh, transform, texture, tint, material);   // bind pose for now
+        const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) override {
+        drawMesh(mesh, transform, texture, tint, material, key);   // bind pose for now
     }
     void addLight(const LightDesc& light) override {
         std::lock_guard lock(m_frameMutex);

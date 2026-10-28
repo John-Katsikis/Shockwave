@@ -36,4 +36,23 @@ execute_process(COMMAND "${PLAYER}" --image-diff "${TEMP}/motion.png" "${TEMP}/m
 if(result EQUAL 0)
     message(FATAL_ERROR "frame 10 and frame 40 of the moving scene are identical: nothing moved")
 endif()
+# --graphics-report: the capabilities, settings and memory report, and that every draw in
+# the fixtures carries a stable instance key (temporal effects depend on it).
+execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+    --scene "${FIXTURE}/Scenes/motion.swscene" --size 320x180 --graphics-report --json "${TEMP}/report.json"
+    RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "--graphics-report failed: ${out}\n${err}")
+endif()
+file(READ "${TEMP}/report.json" report)
+string(JSON gpu_bytes GET "${report}" memory gpu_bytes)
+string(JSON unkeyed GET "${report}" unkeyed_draws)
+string(JSON draws GET "${report}" draws)
+string(JSON settings LENGTH "${report}" settings)
+if(gpu_bytes EQUAL 0 OR draws EQUAL 0 OR settings EQUAL 0)
+    message(FATAL_ERROR "--graphics-report is missing memory, draws or settings: ${report}")
+endif()
+if(NOT unkeyed EQUAL 0)
+    message(FATAL_ERROR "${unkeyed} of ${draws} draws have no RenderInstanceKey")
+endif()
 file(REMOVE_RECURSE "${TEMP}")

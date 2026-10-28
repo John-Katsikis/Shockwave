@@ -238,6 +238,8 @@ int main(int argc, char** argv) {
                 tool.optimise = true;
             } else if (arg == "--lod-colors") {
                 tool.lodColors = true;
+            } else if (arg == "--graphics-report") {
+                tool.graphicsReportFrame = 10;
             } else if (arg == "--benchmark") {
                 tool.benchmarkSeconds = 10;
                 if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -374,6 +376,10 @@ int main(int argc, char** argv) {
                     "                                    compare two screenshots; exit 1 over the tolerance\n"
                     "       [--ui-preview] [--ui-nav down,down,confirm]\n"
                     "                                    show UI preview values; step through menus first\n"
+                    "player --graphics-report [--frames N] [--json file]\n"
+                    "                                    play N frames (default 10) hidden, then print what\n"
+                    "                                    the GPU supports, each graphics setting as asked for\n"
+                    "                                    and as running (with why), and GPU memory by category\n"
                     "player --benchmark [seconds] [--json file]\n"
                     "                                    run the scene for that long (default 10) and report\n"
                     "                                    frame times, 1%/0.1% lows and GPU time per pass\n"
@@ -473,6 +479,7 @@ int main(int argc, char** argv) {
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
             mode(tool.benchmarkSeconds > 0, "--benchmark");
+            mode(tool.graphicsReportFrame > 0, "--graphics-report");
             mode(tool.optimise, "--optimise");
             mode(!tool.save.empty(), "--save");
             mode(tool.listSaves, "--saves");
@@ -606,7 +613,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(error);
         } else if (
             !noUserGraphics && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
-            tool.screenshot.empty() && !package.requested) {
+            tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested) {
             if (char* pref = SDL_GetPrefPath("Shockwave", project.gameModule.c_str())) {
                 tool.graphicsFile = std::filesystem::path(pref) / "Graphics.swgraphics";
                 SDL_free(pref);
@@ -673,6 +680,13 @@ int main(int argc, char** argv) {
             // Runs hidden until the frame is saved; maxFrames is only a safety net.
             if (frames) tool.screenshotFrame = frames;
             config.maxFrames = tool.screenshotFrame + 120;
+            config.window.hidden = true;
+            config.window.vsync = false;
+        }
+        if (tool.graphicsReportFrame > 0) {
+            // Like a screenshot: hidden, a few frames so everything sized on the first is counted.
+            if (frames) tool.graphicsReportFrame = frames;
+            config.maxFrames = tool.graphicsReportFrame + 120;
             config.window.hidden = true;
             config.window.vsync = false;
         }

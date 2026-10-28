@@ -134,6 +134,11 @@ public:
     World(World&&) noexcept = default;
     World& operator=(World&&) noexcept = default;
 
+    // Unique per world for this run, and new for every copy (play mode, undo snapshots):
+    // with an entity's index and generation it names one object for the renderer's history
+    // (RenderInstanceKey). Never saved.
+    uint64_t lifetime() const { return m_lifetime; }
+
     Entity create();
     void destroy(Entity e);
     bool alive(Entity e) const {
@@ -262,11 +267,14 @@ private:
         }
     }
 
+    static uint64_t newLifetime();
+
     std::vector<uint32_t> m_generations;
     std::vector<uint8_t> m_alive;
     std::deque<uint32_t> m_free;
     size_t m_count = 0;
     std::vector<std::unique_ptr<PoolBase>> m_pools;   // indexed by componentId
+    uint64_t m_lifetime = newLifetime();
 };
 
 // Structural changes recorded while a Schedule runs and applied once it finishes.

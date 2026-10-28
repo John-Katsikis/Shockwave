@@ -5,9 +5,11 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace shockwave {
 
@@ -23,6 +25,38 @@ struct MeshHandle {
 struct TextureHandle {
     uint32_t id = 0;   // 0 is the built-in white texture, so "no texture" just works
 };
+
+// ---- View and object identity ----
+// Temporal effects (motion vectors, TAA, previous skinning) keep history per view and per
+// object. Neither identity is a position in a sorted list, a transform, or an ImGui window,
+// and neither is saved: they're only stable within one run.
+
+// One place the renderer draws from: the editor's viewport, the game's camera, later a
+// reflection capture. Each owner makes its own once with create() and passes it to
+// Renderer::setCamera, so two views never share history. Default: unknown, no history.
+struct RenderViewId {
+    uint64_t value = 0;
+    bool valid() const { return value != 0; }
+    bool operator==(const RenderViewId&) const = default;
+    static RenderViewId create();   // unique within this run
+};
+
+// Which object a draw is, the same from one frame to the next. World::lifetime() tells a
+// copied world (play mode, undo) from the original; entity index and generation tell a
+// reused slot from its old owner; part names the model node and mesh. The renderer adds the
+// mesh slot's generation, so a reloaded mesh doesn't inherit its old history. A draw without
+// a key renders normally, but has no history (Renderer::unkeyedDraws counts them).
+struct RenderInstanceKey {
+    uint64_t world = 0;
+    uint32_t entity = UINT32_MAX;
+    uint32_t generation = 0;
+    uint32_t part = 0;
+    uint32_t meshGeneration = 0;   // filled in by Renderer
+    bool valid() const { return world != 0 && entity != UINT32_MAX; }
+    bool operator==(const RenderInstanceKey&) const = default;
+};
+// A ModelRenderer's part: the node, then which of its meshes.
+constexpr uint32_t modelPartKey(uint32_t node, uint32_t mesh) { return (node << 8) | (mesh & 0xFF); }
 
 // A reference grid on the ground plane (y = 0), drawn into the scene with depth testing,
 // for editors and debug views. Lines fade out towards fadeDistance from the camera.
@@ -126,6 +160,80 @@ struct ShadowStats {
 struct PassTiming {
     std::string name;
     float gpuMs = 0;
+};
+
+// ---- Capabilities, effective settings and memory (Renderer::capabilities, ...) ----
+
+// One thing the device can or can't do that an effect depends on.
+struct RenderCapability {
+    std::string name;   // "storage image rgba16f", "multi draw indirect", ...
+    bool supported = false;
+    std::string detail;   // the value, or why it's missing
+};
+struct RenderLimit {
+    std::string name;
+    uint64_t value = 0;
+};
+struct RendererCapabilities {
+    std::string backend;   // the plugin: "vulkan", "null"
+    std::string device, driver, api;   // empty without a GPU
+    std::vector<RenderCapability> features;
+    std::vector<RenderLimit> limits;
+};
+
+// A graphics setting as asked for, and as the renderer actually runs it. They differ when
+// the device can't do what was asked; reason says why. A fallback is never silent.
+struct EffectiveSetting {
+    std::string name;   // as spelled in .swgraphics: "render_scale", "vsync", ...
+    std::string requested, effective;
+    std::string reason;   // empty when they agree
+};
+
+// GPU memory by what it's for. Later effects (prepass, AO, history, baked lighting,
+// clusters, HZB) report into their own categories from the start.
+enum class GpuMemoryCategory : uint32_t {
+    RenderTargets,   // scene color, depth, display
+    ShadowMaps,
+    Environment,   // image-based lighting cubes and BRDF table
+    Bloom,
+    Meshes,   // vertices, indices, levels of detail, skin weights
+    Textures,
+    FrameData,   // per-frame draw tables, lights, joints, skinned vertices
+    Particles,
+    GameUi,
+    Readback,   // screenshots
+    Staging,   // uploads in flight
+    SurfaceBuffers,
+    AmbientOcclusion,
+    TemporalHistory,
+    Lightmaps,
+    DiffuseProbes,
+    ReflectionProbes,
+    Clusters,
+    Hzb,
+    Count
+};
+const char* gpuMemoryCategoryName(GpuMemoryCategory category);   // "render targets", ...
+struct GpuMemoryUsage {
+    uint64_t bytes = 0;   // allocated, as the driver sized it
+    uint32_t allocations = 0;
+};
+struct RendererMemoryReport {
+    std::array<GpuMemoryUsage, size_t(GpuMemoryCategory::Count)> gpu{};
+    uint64_t pipelineCacheBytes = 0;
+    // The driver's view of device-local memory, all heaps: what this process uses and how
+    // much it may use before things slow down or fail. 0: unknown.
+    uint64_t deviceUsage = 0, deviceBudget = 0;
+    // CPU copies of meshes and textures kept for swapping the backend (editor). Shared
+    // memory GPUs don't make these free: they're separate copies.
+    uint64_t cpuCopyBytes = 0;
+    uint64_t gpuBytes() const {
+        uint64_t total = 0;
+        for (const auto& usage : gpu) total += usage.bytes;
+        return total;
+    }
+    GpuMemoryUsage& operator[](GpuMemoryCategory c) { return gpu[size_t(c)]; }
+    const GpuMemoryUsage& operator[](GpuMemoryCategory c) const { return gpu[size_t(c)]; }
 };
 
 // ---- Game UI overlay (GameUI module, docs/GameUI.md) ----

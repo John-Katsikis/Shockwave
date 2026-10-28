@@ -104,6 +104,11 @@ if(SHOCKWAVE_XVFB_RUN AND TARGET game_sample)
     set_tests_properties(save_games_cli PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
 endif()
 
+add_executable(render_graph_test RenderGraphTest.cpp)
+target_link_libraries(render_graph_test PRIVATE Shockwave::RHI)
+shockwave_warnings(render_graph_test)
+add_test(NAME render_graph COMMAND render_graph_test)
+
 add_executable(gpu_selection_test GpuSelectionTest.cpp)
 target_link_libraries(gpu_selection_test PRIVATE Shockwave::Renderer)
 shockwave_warnings(gpu_selection_test)
@@ -215,6 +220,11 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS gpu)
+    # The same report without a GPU: the null renderer says what it can't do, and why.
+    add_test(NAME graphics_report_null COMMAND player --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject
+        --no-user-graphics --renderer null --graphics-report)
+    set_tests_properties(graphics_report_null PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                         TIMEOUT 120 PASS_REGULAR_EXPRESSION "renderer: null.*settings \\(requested -> effective\\)")
 endif()
 
 # Networking (Network module): the wire format and its reference doc, the loopback

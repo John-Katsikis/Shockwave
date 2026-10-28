@@ -133,13 +133,14 @@ public:
     void onFrame(double frameDt) override { m_camera.update(engine().input(), frameDt); }
 
     void onRender(shockwave::Renderer& renderer, double alpha) override {
-        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
+        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()), m_view);
         shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
     }
 
 private:
     int m_grid;
     shockwave::FlyCamera m_camera;
+    shockwave::RenderViewId m_view = shockwave::RenderViewId::create();
     shockwave::World m_world;
     shockwave::Schedule m_schedule;
 };

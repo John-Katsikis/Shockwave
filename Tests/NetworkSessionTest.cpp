@@ -235,6 +235,20 @@ void simulationClock() {
         check(ended, "debt growing past 250 ms is an overrun");
         check(clock.advance(-1, NAN, dt).ticks == 0, "negative and NaN times count as nothing");
     }
+    {
+        // Fixed (player --fixed-step): exactly one tick a frame, however long it took, so
+        // frame N of a capture is the same moment every run.
+        SimulationClock fixed;
+        fixed.setSource(SimulationTime::Fixed);
+        const double dt = 1.0 / 60;
+        bool exact = true;
+        for (double frame : {0.0, 0.001, 0.5, 3.0, -1.0, double(NAN)}) {
+            const SimulationStep step = fixed.advance(frame, frame, dt);
+            exact = exact && step.ticks == 1 && step.frameTime == dt && !step.overrun;
+        }
+        check(exact, "fixed: one tick and one dt a frame, whatever the real time");
+        check(fixed.accumulator() == 0 && fixed.alpha(dt) == 0, "fixed: renders exactly on the tick");
+    }
 }
 
 // ---- Offline -----------------------------------------------------------------------------

@@ -74,6 +74,7 @@ struct Tool {
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
     fs::path benchmarkJson;   // --json with --benchmark
+    int graphicsReportFrame = 0;   // --graphics-report: report after this many frames, then quit
     bool uiPreview = false;   // --ui-preview: unset {{values}} show UIDocument preview values
     std::vector<shockwave::UINav> uiNav;   // --ui-nav: menu steps, one a frame from frame 5
     fs::path audioMix;   // --audio-mix: render the scene's sound offline to this .wav
@@ -183,6 +184,8 @@ private:
     void reportBenchmark();
     // --save: saves to the slot, waits for the file, reports and quits.
     void saveAndQuit();
+    // --graphics-report: capabilities, requested and effective settings, memory by category.
+    void graphicsReport();
     fs::path saveFolder() const { return m_project.statePath() / "SaveGames"; }
 
     // Loads each scene the way the game would and reports every problem as file:line.
@@ -254,6 +257,7 @@ private:
     bool m_screenshotRequested = false;
     double m_benchmarkTime = 0;
     int m_saveFrames = 0;   // frames played, for --save
+    int m_reportFrames = 0;   // frames played, for --graphics-report
     bool m_benchmarkMeasuring = false;
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;
@@ -266,6 +270,8 @@ private:
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
     shockwave::Entity m_toolCamera;   // --camera: the Camera entity to look through
+    shockwave::RenderViewId m_view;   // what the renderer keeps history for
+    shockwave::Entity m_viewCamera;   // the camera m_view looks through
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
     // Online services, pumped every frame; they outlive the session. Unavailable ones

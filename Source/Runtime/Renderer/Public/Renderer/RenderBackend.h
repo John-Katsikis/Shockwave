@@ -79,16 +79,20 @@ public:
     // ---- Per frame ----
     virtual void setClearColor(const Color& color) = 0;
     virtual void setCamera(const glm::mat4& view, const glm::mat4& projection) = 0;
+    // Before setCamera: which view the camera belongs to (RenderTypes.h). A different view
+    // than last frame's means no history carries over.
+    virtual void setView(RenderViewId) {}
+    // key: which object this is (RenderTypes.h); invalid for draws without one.
     virtual void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-        const DrawMaterial& material) = 0;
+        const DrawMaterial& material, const RenderInstanceKey& key) = 0;
     virtual void addLight(const LightDesc& light) = 0;
     // This frame's particles (Renderer/Particles.h); copy what you need before returning.
     virtual void drawParticles(const ParticleDrawList& particles) = 0;
     // Renderer::drawSkinnedMesh; joints must be copied before returning.
     virtual void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-        const glm::vec4& tint, const DrawMaterial& material) = 0;
+        const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) = 0;
 
     // ---- Settings ----
     virtual void setGrid(const GridSettings& grid) = 0;
@@ -116,6 +120,17 @@ public:
     // Of those, how many were outside the camera's view and not drawn (shadows may still be).
     virtual uint32_t culledDraws() const { return 0; }
     virtual ParticleStats particleStats() const { return {}; }
+    // Of drawCount, how many came without a RenderInstanceKey (so have no history).
+    virtual uint32_t unkeyedDraws() const { return 0; }
+
+    // ---- Capabilities, effective settings and memory (RenderTypes.h) ----
+    // What the device supports, for picking effects and fallbacks. Fill in backend.
+    virtual RendererCapabilities capabilities() const { return {}; }
+    // Every setting Renderer passed in (render_scale, shadow_quality, vsync, low_latency,
+    // and later effects), as requested and as actually running.
+    virtual std::vector<EffectiveSetting> effectiveSettings() const { return {}; }
+    // GPU memory by category; Renderer adds its own CPU copies.
+    virtual RendererMemoryReport memoryReport() const { return {}; }
 
     // ---- Screenshots ----
     virtual void requestScreenshot(const std::string& path) = 0;

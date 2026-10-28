@@ -18,8 +18,14 @@ namespace {
 constexpr size_t kMinFreeBeforeReuse = 1024;
 }   // namespace
 
+uint64_t World::newLifetime() {
+    static std::atomic<uint64_t> next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
 World& World::operator=(const World& other) {
     if (this == &other) return *this;
+    m_lifetime = newLifetime();   // a copy is another world, even with the same entities
     m_generations = other.m_generations;
     m_alive = other.m_alive;
     m_free = other.m_free;

@@ -262,7 +262,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     glm::mat4 view = m_camera.view(), proj = projection(renderer.aspectRatio());
     if (sceneCamera)
         shockwave::cameraMatrices(m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, proj);
-    renderer.setCamera(view, proj);
+    renderer.setCamera(view, proj, sceneCamera ? m_sceneView : m_editorView);
 
     shockwave::GridSettings grid;
     grid.enabled = m_prefs.showGrid && !sceneCamera;

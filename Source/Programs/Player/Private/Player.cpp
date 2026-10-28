@@ -219,6 +219,10 @@ void Player::onFrame(double dt) {
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
     if (!m_tool.save.empty() && ++m_saveFrames == m_tool.saveFrame) saveAndQuit();
+    if (m_tool.graphicsReportFrame > 0 && ++m_reportFrames == m_tool.graphicsReportFrame) {
+        graphicsReport();
+        engine().quit();
+    }
 }
 
 void Player::saveAndQuit() {
@@ -345,6 +349,7 @@ void Player::reportBenchmark() {
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"
          << "  \"draws\": " << renderer.drawCount() << ",\n"
          << "  \"culled_draws\": " << renderer.culledDraws() << ",\n"
+         << "  \"gpu_memory_bytes\": " << renderer.memoryReport().gpuBytes() << ",\n"
          << "  \"ui_update_ms\": " << m_uiUpdateMs / frames << ",\n"
          << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
          << "  \"effects_update_ms\": " << m_effectsUpdateMs / frames << ",\n"
@@ -370,10 +375,15 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     // one --camera names).
     glm::mat4 view, projection;
     const shockwave::Entity camera = m_world.alive(m_toolCamera) ? m_toolCamera : shockwave::primaryCamera(m_world);
+    // A different camera is a different view: nothing carries over from the last one.
+    if (!m_view.valid() || camera != m_viewCamera) {
+        m_view = shockwave::RenderViewId::create();
+        m_viewCamera = camera;
+    }
     if (shockwave::cameraMatrices(m_world, camera, renderer.aspectRatio(), view, projection)) {
-        renderer.setCamera(view, projection);
+        renderer.setCamera(view, projection, m_view);
     } else {
-        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
+        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()), m_view);
     }
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
     m_effects->render(renderer);

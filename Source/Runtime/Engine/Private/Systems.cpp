@@ -13,6 +13,15 @@
 
 namespace shockwave {
 
+namespace {
+
+// Which world, entity and part of it a draw is: the same every frame while the entity lives.
+RenderInstanceKey instanceKey(const World& world, Entity e, uint32_t part = 0) {
+    return {world.lifetime(), e.index, e.generation, part, 0};
+}
+
+}   // namespace
+
 void addBuiltinSystems(Schedule& schedule) {
     schedule.each<Transform, const Spin>("Spin", [](const SystemContext& ctx, Transform& t, const Spin& spin) {
         const float length = glm::length(spin.axis);
@@ -111,7 +120,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             material.metallic = m.metallic;
             material.emissive = glm::vec3(m.emissive) * m.emissiveIntensity;
             material.castShadows = m.castShadows;
-            renderer.drawMesh(m.mesh, model, m.texture, m.tint, material);
+            renderer.drawMesh(m.mesh, model, m.texture, m.tint, material, instanceKey(world, e));
         },
         256);
     const Pool<ModelPose>* poses = world.pool<ModelPose>();
@@ -137,7 +146,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                 thread_local std::vector<glm::mat4> joints;
                 for (size_t n = 0; n < asset->data.nodes.size(); ++n) {
                     const auto& node = asset->data.nodes[n];
-                    for (auto index : node.meshes) {
+                    for (const auto& index : node.meshes) {
                         const auto& mesh = asset->data.meshes[index];
                         const auto& material = asset->data.materials[mesh.material];
                         auto map = [&](int index) {
@@ -160,6 +169,9 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         options.normalScale = material.normalScale;
                         options.occlusionStrength = material.occlusionStrength;
                         options.castShadows = instance.castShadows;
+                        // Node and slot within it: the same part of the model every frame.
+                        const auto slot = static_cast<uint32_t>(&index - node.meshes.data());
+                        const RenderInstanceKey key = instanceKey(world, e, modelPartKey(uint32_t(n), slot));
                         if (mesh.skinned()) {
                             // Skinned vertices end up in the model's space, whatever node holds the mesh.
                             if (!pose && rest.empty())
@@ -167,12 +179,12 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                             skinMatrices(mesh, pose ? std::span<const glm::mat4>(pose->nodes) : rest, joints);
                             renderer.drawSkinnedMesh(
                                 asset->meshes[index], model, joints, texture, material.baseColor * instance.tint,
-                                options);
+                                options, key);
                             continue;
                         }
                         renderer.drawMesh(
                             asset->meshes[index], model * (pose ? pose->nodes[n] : node.world), texture,
-                            material.baseColor * instance.tint, options);
+                            material.baseColor * instance.tint, options, key);
                     }
                 }
             },
