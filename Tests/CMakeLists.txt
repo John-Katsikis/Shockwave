@@ -221,10 +221,15 @@ if(TARGET game_sample)
     set_tests_properties(graphics_fixtures_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS gpu)
     # The same report without a GPU: the null renderer says what it can't do, and why.
-    add_test(NAME graphics_report_null COMMAND player --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject
-        --no-user-graphics --renderer null --graphics-report)
-    set_tests_properties(graphics_report_null PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
-                         TIMEOUT 120 PASS_REGULAR_EXPRESSION "renderer: null.*settings \\(requested -> effective\\)")
+    # It plays a few frames, so like the other headless play tests it needs Xvfb.
+    find_program(SHOCKWAVE_XVFB_RUN xvfb-run)
+    if(SHOCKWAVE_XVFB_RUN)
+        add_test(NAME graphics_report_null COMMAND ${SHOCKWAVE_XVFB_RUN} -a $<TARGET_FILE:player>
+            --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject --no-user-graphics --renderer null
+            --graphics-report)
+        set_tests_properties(graphics_report_null PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy"
+                             TIMEOUT 120 PASS_REGULAR_EXPRESSION "renderer: null.*settings \\(requested -> effective\\)")
+    endif()
 endif()
 
 # Networking (Network module): the wire format and its reference doc, the loopback

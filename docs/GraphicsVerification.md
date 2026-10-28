@@ -64,7 +64,7 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
 | `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key |
-| `graphics_report_null` | no | the report works on the null renderer |
+| `graphics_report_null` | no (runs under Xvfb, so Linux only, like the other headless play tests) | the report works on the null renderer |
 | `network_session` | no | includes the fixed-step clock: one tick a frame whatever the real time |
 
 ## Baseline (G00)
