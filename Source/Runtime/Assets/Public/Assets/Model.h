@@ -25,6 +25,15 @@ struct ModelTexture {
     // image used both ways is imported twice, once for each.
     bool srgb = true;
 };
+// How a material slot reads its texture, as the file says: the UV set (glTF texCoord),
+// the KHR_texture_transform, and the glTF sampler. The renderer turns the sampler into a
+// SamplerHandle when the model is loaded (AssetFolder).
+struct ModelTextureBinding {
+    uint32_t uvSet = 0;
+    UvTransform transform;
+    SamplerDesc sampler;
+    bool operator==(const ModelTextureBinding&) const = default;
+};
 struct ModelMaterial {
     std::string name;
     glm::vec4 baseColor{1.0f};
@@ -37,6 +46,8 @@ struct ModelMaterial {
     Alpha alpha = Alpha::Opaque;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
+    // Indexed by MaterialSlot, like materialTextures below.
+    std::array<ModelTextureBinding, kMaterialSlots> bindings{};
 };
 // Every texture a material samples (base color, normal, metallic-roughness, emissive,
 // occlusion), as indices into ModelData::textures; -1 where it has none.
@@ -109,7 +120,11 @@ struct ModelAsset {
     ModelData data;
     std::vector<MeshHandle> meshes;
     std::vector<TextureHandle> textures;
+    // Per material, each slot's cached sampler (Renderer::sampler of its binding).
+    std::vector<std::array<SamplerHandle, kMaterialSlots>> samplers;
 };
+// The renderer's binding for one material slot of a loaded model.
+TextureBinding drawBinding(const ModelAsset& model, uint32_t material, MaterialSlot slot);
 
 bool isModelFile(const std::filesystem::path& path);
 std::string modelExtensions();   // formats enabled in this build

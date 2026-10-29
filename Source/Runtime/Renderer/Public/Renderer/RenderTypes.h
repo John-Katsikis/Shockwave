@@ -68,6 +68,80 @@ struct GridSettings {
     float opacity = 1.0f;
 };
 
+// ---- How a material reads its textures (G02, docs/Graphics.md) ----
+
+// Addressing outside 0..1 and filtering, per texture slot. glTF samplers map onto these
+// one to one; a texture that asks for nearest filtering (pixel art) keeps it whatever the
+// graphics settings say.
+enum class TextureWrap : uint8_t { Repeat, Clamp, Mirror };
+enum class TextureFilter : uint8_t { Linear, Nearest };
+const char* textureWrapName(TextureWrap wrap);   // "repeat", "clamp", "mirror"
+const char* textureFilterName(TextureFilter filter);   // "linear", "nearest"
+struct SamplerDesc {
+    TextureWrap wrapU = TextureWrap::Repeat, wrapV = TextureWrap::Repeat;
+    TextureFilter magFilter = TextureFilter::Linear, minFilter = TextureFilter::Linear;
+    TextureFilter mipFilter = TextureFilter::Linear;
+    bool mipmaps = true;   // false: only the largest resident level (glTF's NEAREST / LINEAR min filters)
+    // What the asset asks for, 1..16. The anisotropy graphics setting and the device cap it.
+    uint8_t maxAnisotropy = 16;
+    bool operator==(const SamplerDesc&) const = default;
+};
+// A cached sampler (Renderer::sampler). 0 is the default: SamplerDesc{}.
+struct SamplerHandle {
+    uint32_t id = 0;
+    bool operator==(const SamplerHandle&) const = default;
+};
+inline constexpr uint32_t kMaxSamplers = 64;   // distinct SamplerDescs, the default included
+
+// glTF's KHR_texture_transform: uv' = offset + R(rotation) * (scale * uv), rotating about
+// the UV origin, with R = [cos sin; -sin cos] as glTF defines it.
+struct UvTransform {
+    glm::vec2 offset{0.0f};
+    glm::vec2 scale{1.0f};
+    float rotation = 0.0f;   // radians
+    bool identity() const { return offset == glm::vec2(0.0f) && scale == glm::vec2(1.0f) && rotation == 0.0f; }
+    glm::vec2 apply(glm::vec2 uv) const;   // the formula above, as the shaders do it
+    bool operator==(const UvTransform&) const = default;
+};
+// The texture slots of a material, in this order everywhere (ModelMaterial, DrawMaterial).
+enum class MaterialSlot : uint8_t { BaseColor, Normal, MetallicRoughness, Emissive, Occlusion, Count };
+inline constexpr size_t kMaterialSlots = size_t(MaterialSlot::Count);
+const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ...
+// How one slot reads its texture: which UV set, transformed how, sampled how.
+struct TextureBinding {
+    uint32_t uvSet = 0;   // 0: TEXCOORD_0, 1: TEXCOORD_1 (Vertex::uv, then MeshData::uv1)
+    UvTransform transform;
+    SamplerHandle sampler;
+    bool operator==(const TextureBinding&) const = default;
+};
+
+// What a texture is for decides whether the texture_quality setting may shrink it (A01).
+// Material textures (base color, normal and data maps, decals, particle sprites) drop
+// their largest mip levels at lower quality; Fixed ones (UI, fonts, lookup tables,
+// environment maps) always stay whole.
+enum class TextureUsage : uint8_t { Fixed, Material };
+// Texture detail: how many of a material texture's largest mip levels stay on the GPU.
+//            first level kept   memory (about)
+//   Low      3 (1/8 size)       1/64
+//   Medium   2 (1/4 size)       1/16
+//   High     1 (1/2 size)       1/4
+//   Ultra    0 (full size)      all
+// Levels are dropped from the GPU copy, not just skipped when sampling, so the memory
+// really is freed. Textures never shrink below kMinResidentSize on their longer side.
+enum class TextureQuality : uint32_t { Low, Medium, High, Ultra };
+const char* textureQualityName(TextureQuality quality);   // "low", "medium", "high", "ultra"
+uint32_t textureQualityFirstMip(TextureQuality quality);   // 3, 2, 1, 0
+inline constexpr uint32_t kMinResidentSize = 32;
+// What the texture_quality setting is doing, for reports (Renderer::textureResidency).
+struct TextureResidencyStats {
+    uint32_t textures = 0;   // material textures the setting applies to
+    uint32_t reduced = 0;   // of those, how many have levels dropped now
+    uint32_t pending = 0;   // waiting for, or in the middle of, a change of levels
+    uint64_t residentBytes = 0;   // what those textures take on the GPU now
+    uint64_t fullBytes = 0;   // ...and what they would take at ultra
+    uint64_t retainedBytes = 0;   // CPU copies kept so their levels can change without reloading
+};
+
 struct DrawMaterial {
     float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
@@ -85,6 +159,9 @@ struct DrawMaterial {
     TextureHandle occlusionTexture;   // linear: red darkens ambient light only
     float normalScale = 1.0f;   // how strongly the normal map tilts the surface
     float occlusionStrength = 1.0f;   // 0 ignores the occlusion map .. 1 full
+    // Each slot's UV set, UV transform and sampler, indexed by MaterialSlot. uvScale above
+    // applies first, to every slot.
+    std::array<TextureBinding, kMaterialSlots> bindings{};
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of
@@ -239,7 +316,8 @@ struct RendererMemoryReport {
     // The driver's view of device-local memory, all heaps: what this process uses and how
     // much it may use before things slow down or fail. 0: unknown.
     uint64_t deviceUsage = 0, deviceBudget = 0;
-    // CPU copies of meshes and textures kept for swapping the backend (editor). Shared
+    // CPU copies of meshes and textures kept for swapping the backend (editor), and of
+    // material textures kept so texture_quality can change their levels (A01). Shared
     // memory GPUs don't make these free: they're separate copies.
     uint64_t cpuCopyBytes = 0;
     uint64_t gpuBytes() const {

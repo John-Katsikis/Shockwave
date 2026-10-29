@@ -115,14 +115,13 @@ void Editor::drawOptimisationWindow() {
         gui::propertyLabel("LOD pixel error");
         ImGui::SetNextItemWidth(-1.0f);
         if (!m_lodErrorActive) m_lodErrorEdit = static_cast<float>(m_project.lodErrorPixels);
-        if (ImGui::DragFloat("##lod_error", &m_lodErrorEdit, 0.05f, 0.0f, 100.0f, "%.2f px",
-                             ImGuiSliderFlags_AlwaysClamp)) {
+        if (ImGui::DragFloat(
+                "##lod_error", &m_lodErrorEdit, 0.05f, 0.0f, 100.0f, "%.2f px", ImGuiSliderFlags_AlwaysClamp)) {
             m_project.lodErrorPixels = m_lodErrorEdit;
             applyOptimisationSettings();   // live: just which level each draw picks
         }
-        ImGui::SetItemTooltip(
-            "How far, in pixels, a simpler level may stray from the full mesh on screen.\n"
-            "Lower is sharper, higher draws fewer triangles. 0 always draws full detail.");
+        ImGui::SetItemTooltip("How far, in pixels, a simpler level may stray from the full mesh on screen.\n"
+                              "Lower is sharper, higher draws fewer triangles. 0 always draws full detail.");
         m_lodErrorActive = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) saveOptimisationSettings();
         ImGui::EndTable();
@@ -143,6 +142,14 @@ void Editor::drawOptimisationWindow() {
         if (gui::beginPropertyGrid("optimisation_asset")) {
             gui::propertyLabel("Texture compression");
             changed |= modeCombo("##asset_compression", settings.compression);
+            gui::propertyLabel("Texture category");
+            bool ui = settings.category == shockwave::TextureCategory::Ui;
+            if (ImGui::Checkbox("UI: always full size##asset_category", &ui)) {
+                settings.category = ui ? shockwave::TextureCategory::Ui : shockwave::TextureCategory::Material;
+                changed = true;
+            }
+            ImGui::SetItemTooltip("Material textures follow the Textures quality setting.\n"
+                                  "UI textures (menus, icons, anything read as text) keep every level.");
             if (file->kind == Kind::Model) {
                 gui::propertyLabel("Levels of detail");
                 // While dragging, the slider keeps its own value; it's saved when let go.
@@ -160,7 +167,8 @@ void Editor::drawOptimisationWindow() {
         }
         const bool overridden = !(file->settings == defaults);
         if (overridden)
-            ImGui::TextDisabled("Overrides the project in %s", shockwave::importSettingsPath(file->path).filename().string().c_str());
+            ImGui::TextDisabled(
+                "Overrides the project in %s", shockwave::importSettingsPath(file->path).filename().string().c_str());
         else
             ImGui::TextDisabled("Uses the project's settings");
         ImGui::BeginDisabled(!overridden);
@@ -182,12 +190,14 @@ void Editor::drawOptimisationWindow() {
         if (file && file->imported && file->error.empty() && gui::beginPropertyGrid("optimisation_asset_stats")) {
             if (file->textures > 0) {
                 gui::propertyLabel("GPU memory");
-                ImGui::Text("%s (%s uncompressed)", megabytes(file->gpuBytes).c_str(),
-                            megabytes(file->uncompressedBytes).c_str());
+                ImGui::Text(
+                    "%s (%s uncompressed)", megabytes(file->gpuBytes).c_str(),
+                    megabytes(file->uncompressedBytes).c_str());
                 gui::propertyLabel("Compressed");
                 if (file->compressing > 0)
-                    ImGui::TextColored(gui::accent(), "%u of %u, %u compressing...", file->compressedTextures,
-                                       file->textures, file->compressing);
+                    ImGui::TextColored(
+                        gui::accent(), "%u of %u, %u compressing...", file->compressedTextures, file->textures,
+                        file->compressing);
                 else
                     ImGui::Text("%u of %u textures", file->compressedTextures, file->textures);
                 if (file->compressedFileBytes > 0) {
@@ -200,8 +210,9 @@ void Editor::drawOptimisationWindow() {
                 ImGui::TextWrapped("%s", levelText(file->meshes).c_str());
                 ImGui::SetItemTooltip("Full detail first. Small meshes (under 256 triangles) get no levels.");
                 gui::propertyLabel("Vertices shaded");
-                ImGui::Text("%.2f per triangle (%.2f before)", static_cast<double>(file->meshes.shadedPerTriangleAfter),
-                            static_cast<double>(file->meshes.shadedPerTriangleBefore));
+                ImGui::Text(
+                    "%.2f per triangle (%.2f before)", static_cast<double>(file->meshes.shadedPerTriangleAfter),
+                    static_cast<double>(file->meshes.shadedPerTriangleBefore));
                 ImGui::SetItemTooltip("Lower is better: triangles are reordered so the GPU reuses shaded vertices.");
             }
             ImGui::EndTable();
@@ -227,10 +238,25 @@ void Editor::drawOptimisationWindow() {
         ImGui::SetItemTooltip("Uses every thread until it's done; the editor pauses meanwhile.");
     }
     if (!engine().renderer().supportsTextureFormat(shockwave::TextureFormat::BC7))
-        ImGui::TextColored(gui::semanticColor(gui::currentTheme().warning),
-                           "This GPU can't sample BC7: textures are drawn uncompressed.");
+        ImGui::TextColored(
+            gui::semanticColor(gui::currentTheme().warning),
+            "This GPU can't sample BC7: textures are drawn uncompressed.");
     ImGui::TextDisabled("Cache: %s", m_project.relative(m_assetFolder->cacheFolder()).c_str());
     ImGui::SetItemTooltip("Compressed copies kept between runs. Safe to delete; they're rebuilt.");
+
+    // Texture quality (A01): how much of each material texture the GPU holds now.
+    const shockwave::TextureResidencyStats residency = engine().renderer().textureResidency();
+    ImGui::Text(
+        "Texture quality %s: %u of %u material textures reduced",
+        shockwave::textureQualityName(engine().renderer().textureQuality()), residency.reduced, residency.textures);
+    ImGui::SetItemTooltip("Preferences > Graphics > Textures. Textures never shrink below 32 pixels;\n"
+                          "UI textures (category ui in their .swimport) always keep their full size.");
+    ImGui::Text(
+        "%s on the GPU (%s at ultra), %s of CPU copies", megabytes(residency.residentBytes).c_str(),
+        megabytes(residency.fullBytes).c_str(), megabytes(residency.retainedBytes).c_str());
+    ImGui::SetItemTooltip("Kept so a quality change rebuilds textures without reading files again.");
+    if (residency.pending)
+        ImGui::TextColored(gui::accent(), "Changing %u textures to the new quality...", residency.pending);
 
     // ---- What the renderer did last frame ----
     ImGui::SeparatorText("View");
@@ -244,8 +270,9 @@ void Editor::drawOptimisationWindow() {
 void Editor::drawOptimisationStats() {
     const shockwave::LodStats stats = engine().renderer().lodStats();
     if (stats.fullTriangles == 0) return;
-    ImGui::Text("%llu triangles drawn, %llu at full detail", static_cast<unsigned long long>(stats.triangles),
-                static_cast<unsigned long long>(stats.fullTriangles));
+    ImGui::Text(
+        "%llu triangles drawn, %llu at full detail", static_cast<unsigned long long>(stats.triangles),
+        static_cast<unsigned long long>(stats.fullTriangles));
     ImGui::SetItemTooltip("%u draws used a simpler level of detail", stats.reducedDraws);
 }
 

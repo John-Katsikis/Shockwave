@@ -39,6 +39,10 @@ struct MeshData {
     // picking, physics and navigation read. Renderer::setMeshLods sends them to the GPU.
     std::vector<uint32_t> lodIndices{};
     std::vector<struct MeshLod> lods{};
+    // A second set of texture coordinates (glTF's TEXCOORD_1), one per vertex, or empty.
+    // Kept beside the vertices rather than in Vertex, so meshes without it cost nothing;
+    // materials pick it with TextureBinding::uvSet. Renderer::setMeshUv1 uploads it.
+    std::vector<glm::vec2> uv1{};
 };
 
 // Built-in shapes, centred on the origin.

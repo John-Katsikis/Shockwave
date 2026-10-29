@@ -6,6 +6,7 @@
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <rapidjson/document.h>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -16,6 +17,7 @@
 #include <cmath>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <stdexcept>
 #include <unordered_map>
@@ -164,6 +166,112 @@ void readTangents(const aiMesh& src, ModelMesh& mesh) {
     }
 }
 
+// The glTF JSON of a .gltf or .glb file, or empty when it can't be read.
+std::string gltfJson(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return {};
+    if (extension(path) == ".gltf") return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    // GLB: a 12-byte header, then chunks of (length, type, data); the JSON chunk comes first.
+    uint32_t header[5]{};
+    if (!in.read(reinterpret_cast<char*>(header), sizeof(header)) || header[0] != 0x46546C67u ||
+        header[4] != 0x4E4F534Au || header[3] > (64u << 20))
+        return {};
+    std::string json(header[3], '\0');
+    if (!in.read(json.data(), json.size())) return {};
+    return json;
+}
+// KHR_texture_transform may name its own texCoord, which wins over the texture info's.
+// Assimp 6 doesn't pass it on, so it is read here from the JSON: per glTF material, the
+// override for each MaterialSlot, or -1.
+std::vector<std::array<int, kMaterialSlots>> gltfTexCoordOverrides(const fs::path& path) {
+    std::vector<std::array<int, kMaterialSlots>> result;
+    const std::string text = gltfJson(path);
+    rapidjson::Document doc;
+    if (text.empty() || doc.Parse(text.data(), text.size()).HasParseError() || !doc.IsObject()) return result;
+    const auto materials = doc.FindMember("materials");
+    if (materials == doc.MemberEnd() || !materials->value.IsArray()) return result;
+    auto member = [](const rapidjson::Value& v, const char* name) -> const rapidjson::Value* {
+        if (!v.IsObject()) return nullptr;
+        const auto it = v.FindMember(name);
+        return it == v.MemberEnd() ? nullptr : &it->value;
+    };
+    auto override = [&](const rapidjson::Value* info) {
+        if (!info) return -1;
+        const auto* extensions = member(*info, "extensions");
+        const auto* transform = extensions ? member(*extensions, "KHR_texture_transform") : nullptr;
+        const auto* texCoord = transform ? member(*transform, "texCoord") : nullptr;
+        return texCoord && texCoord->IsUint() && texCoord->GetUint() < 256 ? int(texCoord->GetUint()) : -1;
+    };
+    for (const auto& material : materials->value.GetArray()) {
+        const auto* pbr = member(material, "pbrMetallicRoughness");
+        result.push_back(
+            {override(pbr ? member(*pbr, "baseColorTexture") : nullptr), override(member(material, "normalTexture")),
+             override(pbr ? member(*pbr, "metallicRoughnessTexture") : nullptr),
+             override(member(material, "emissiveTexture")), override(member(material, "occlusionTexture"))});
+    }
+    return result;
+}
+TextureWrap wrapMode(int mode) {
+    switch (mode) {
+    case aiTextureMapMode_Clamp:
+    case aiTextureMapMode_Decal: return TextureWrap::Clamp;
+    case aiTextureMapMode_Mirror: return TextureWrap::Mirror;
+    default: return TextureWrap::Repeat;
+    }
+}
+// One slot's UV set, UV transform and sampler, as Assimp reports them. glTF files keep
+// their sampler and KHR_texture_transform; other formats keep UV set and wrap modes.
+ModelTextureBinding readBinding(
+    const aiMaterial& m, aiTextureType type, bool gltf, int texCoordOverride, const std::string& material,
+    MaterialSlot slot, std::vector<std::string>& warnings) {
+    ModelTextureBinding b;
+    const std::string where = "Material '" + material + "' " + materialSlotName(slot) + " map";
+    int uv = 0;
+    m.Get(AI_MATKEY_UVWSRC(type, 0), uv);
+    if (texCoordOverride >= 0) uv = texCoordOverride;
+    if (uv == 0 || uv == 1)
+        b.uvSet = uint32_t(uv);
+    else
+        warnings.emplace_back(
+            where + " uses UV set " + std::to_string(uv) + "; only UV0 and UV1 are supported, so UV0 is used");
+    int u = aiTextureMapMode_Wrap, v = aiTextureMapMode_Wrap;
+    m.Get(AI_MATKEY_MAPPINGMODE_U(type, 0), u);
+    m.Get(AI_MATKEY_MAPPINGMODE_V(type, 0), v);
+    b.sampler.wrapU = wrapMode(u);
+    b.sampler.wrapV = wrapMode(v);
+    int mag = 0, min = 0;
+    if (gltf && m.Get(AI_MATKEY_GLTF_MAPPINGFILTER_MAG(type, 0), mag) == AI_SUCCESS && mag == 9728)
+        b.sampler.magFilter = TextureFilter::Nearest;
+    if (gltf && m.Get(AI_MATKEY_GLTF_MAPPINGFILTER_MIN(type, 0), min) == AI_SUCCESS) {
+        // 9728 NEAREST, 9729 LINEAR, then 9984..9987: {NEAREST,LINEAR}_MIPMAP_{NEAREST,LINEAR}.
+        b.sampler.mipmaps = min >= 9984 && min <= 9987;
+        b.sampler.minFilter =
+            (min == 9728 || min == 9984 || min == 9986) ? TextureFilter::Nearest : TextureFilter::Linear;
+        b.sampler.mipFilter = (min == 9984 || min == 9985) ? TextureFilter::Nearest : TextureFilter::Linear;
+    }
+    aiUVTransform t;
+    if (m.Get(AI_MATKEY_UVTRANSFORM(type, 0), t) != AI_SUCCESS) return b;
+    if (gltf) {
+        // Undo Assimp's change of coordinates (glTF2Importer.cpp, then FlipUVs negating
+        // translation.y and rotation) to get KHR_texture_transform's own numbers back.
+        const float r = t.mRotation, c = std::cos(r), s = std::sin(r);
+        const glm::vec2 scale{t.mScaling.x, t.mScaling.y};
+        b.transform.scale = scale;
+        b.transform.rotation = r;
+        b.transform.offset = {
+            t.mTranslation.x - 0.5f * scale.x * (-c + s + 1.0f),
+            0.5f * scale.y * (s + c - 1.0f) + 1.0f - scale.y + t.mTranslation.y};
+        // Float noise from the round trip: an identity transform must stay exactly identity.
+        for (float* f : {&b.transform.offset.x, &b.transform.offset.y})
+            if (std::abs(*f) < 1e-6f) *f = 0.0f;
+    } else if (
+        t.mScaling.x != 1.0f || t.mScaling.y != 1.0f || t.mTranslation.x != 0.0f || t.mTranslation.y != 0.0f ||
+        t.mRotation != 0.0f)
+        warnings.emplace_back(
+            where + " has a UV transform; only glTF's KHR_texture_transform is supported, so it is ignored");
+    return b;
+}
+
 // Up to four joints per vertex (aiProcess_LimitBoneWeights keeps the strongest), weights
 // normalized to add up to 1. Bone names are resolved to nodes once the hierarchy is read.
 void readSkin(const aiMesh& src, ModelMesh& mesh, std::vector<std::string>& boneNames) {
@@ -203,7 +311,8 @@ void readSkin(const aiMesh& src, ModelMesh& mesh, std::vector<std::string>& bone
 // A skinned mesh's vertices where the model's rest pose puts them, in the model's space.
 std::vector<glm::vec3> restPositions(const ModelData& model, const ModelMesh& mesh) {
     std::vector<glm::mat4> joints(mesh.bones.size());
-    for (size_t b = 0; b < mesh.bones.size(); ++b) joints[b] = model.nodes[mesh.bones[b].node].world * mesh.bones[b].offset;
+    for (size_t b = 0; b < mesh.bones.size(); ++b)
+        joints[b] = model.nodes[mesh.bones[b].node].world * mesh.bones[b].offset;
     std::vector<glm::vec3> positions(mesh.data.vertices.size());
     for (size_t v = 0; v < positions.size(); ++v) {
         const VertexSkin& skin = mesh.skin[v];
@@ -297,6 +406,15 @@ const ModelAnimation* findAnimation(const ModelData& model, std::string_view nam
     return nullptr;
 }
 
+TextureBinding drawBinding(const ModelAsset& model, uint32_t material, MaterialSlot slot) {
+    if (material >= model.data.materials.size()) return {};
+    const auto& binding = model.data.materials[material].bindings[size_t(slot)];
+    TextureBinding result;
+    result.uvSet = binding.uvSet;
+    result.transform = binding.transform;
+    if (material < model.samplers.size()) result.sampler = model.samplers[material][size_t(slot)];
+    return result;
+}
 bool hasSkinnedMeshes(const ModelData& model) {
     for (const auto& mesh : model.meshes)
         if (mesh.skinned() && !mesh.data.indices.empty()) return true;
@@ -368,9 +486,6 @@ bool loadModel(
             const std::string key = source.C_Str();
             const std::string cacheKey = key + (srgb ? "" : "\n(linear)");
             if (auto it = textureCache.find(cacheKey); it != textureCache.end()) return it->second;
-            if (uv != 0)
-                model.warnings.emplace_back(
-                    "Texture " + key + " uses a UV channel other than UV0; UV0 is used by the current renderer");
             ModelTexture tex;
             tex.source = key;
             tex.srgb = srgb;
@@ -410,6 +525,9 @@ bool loadModel(
             if ((mesh.mPrimitiveTypes & aiPrimitiveType_TRIANGLE) && mesh.mMaterialIndex < usedMaterial.size())
                 usedMaterial[mesh.mMaterialIndex] = true;
         }
+        const bool gltf = extension(importedPath) == ".gltf" || extension(importedPath) == ".glb";
+        const auto texCoordOverrides =
+            gltf ? gltfTexCoordOverrides(importedPath) : decltype(gltfTexCoordOverrides({})){};
         model.materials.resize(scene->mNumMaterials);
         for (unsigned i = 0; i < scene->mNumMaterials; ++i) {
             if (!usedMaterial[i]) continue;
@@ -441,18 +559,33 @@ bool loadModel(
             else if (std::string(alpha.C_Str()) == "BLEND" || (alpha.length == 0 && m.baseColor.a < 0.999f))
                 m.alpha = ModelMaterial::Alpha::Blend;
             src.Get(AI_MATKEY_GLTF_ALPHACUTOFF, m.alphaCutoff);
+            // Each slot remembers which Assimp texture type it came from, for its binding.
+            std::array<aiTextureType, kMaterialSlots> types{
+                aiTextureType_BASE_COLOR, aiTextureType_NORMALS, aiTextureType_GLTF_METALLIC_ROUGHNESS,
+                aiTextureType_EMISSIVE, aiTextureType_AMBIENT_OCCLUSION};
             m.baseColorTexture = texture(src, aiTextureType_BASE_COLOR, true);
-            if (m.baseColorTexture < 0) m.baseColorTexture = texture(src, aiTextureType_DIFFUSE, true);
+            if (m.baseColorTexture < 0) {
+                m.baseColorTexture = texture(src, aiTextureType_DIFFUSE, true);
+                types[size_t(MaterialSlot::BaseColor)] = aiTextureType_DIFFUSE;
+            }
             m.normalTexture = texture(src, aiTextureType_NORMALS, false);
             m.metallicRoughnessTexture = texture(src, aiTextureType_GLTF_METALLIC_ROUGHNESS, false);
             m.emissiveTexture = texture(src, aiTextureType_EMISSIVE, true);
             m.occlusionTexture = texture(src, aiTextureType_AMBIENT_OCCLUSION, false);
             // Assimp hands glTF's occlusion map over as a light map, with its strength.
             if (m.occlusionTexture < 0 &&
-                src.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), m.occlusionStrength) == AI_SUCCESS)
+                src.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_LIGHTMAP, 0), m.occlusionStrength) ==
+                    AI_SUCCESS) {
                 m.occlusionTexture = texture(src, aiTextureType_LIGHTMAP, false);
-            else
+                types[size_t(MaterialSlot::Occlusion)] = aiTextureType_LIGHTMAP;
+            } else
                 src.Get(AI_MATKEY_GLTF_TEXTURE_STRENGTH(aiTextureType_AMBIENT_OCCLUSION, 0), m.occlusionStrength);
+            const auto slots = materialTextures(m);
+            for (size_t slot = 0; slot < kMaterialSlots; ++slot)
+                if (slots[slot] >= 0)
+                    m.bindings[slot] = readBinding(
+                        src, types[slot], gltf, i < texCoordOverrides.size() ? texCoordOverrides[i][slot] : -1, m.name,
+                        MaterialSlot(slot), model.warnings);
             src.Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), m.normalScale);
             m.occlusionStrength = std::clamp(m.occlusionStrength, 0.0f, 1.0f);
             model.materials[i] = std::move(m);
@@ -478,6 +611,8 @@ bool loadModel(
                     throw std::runtime_error("Mesh has non-finite vertex positions");
                 if (src.HasNormals()) vertex.normal = vector(src.mNormals[v]);
                 if (src.HasTextureCoords(0)) vertex.uv = {src.mTextureCoords[0][v].x, src.mTextureCoords[0][v].y};
+                if (src.HasTextureCoords(1))
+                    mesh.data.uv1.emplace_back(src.mTextureCoords[1][v].x, src.mTextureCoords[1][v].y);
                 if (src.HasVertexColors(0)) {
                     const auto& c = src.mColors[0][v];
                     vertex.color = {c.r, c.g, c.b, c.a};
@@ -504,6 +639,13 @@ bool loadModel(
                 model.warnings.emplace_back(
                     "Mesh '" + mesh.name + "' has no texture coordinates, so material '" + material.name +
                     "' can't place its texture maps on it");
+            else if (mesh.data.uv1.empty())
+                for (size_t slot = 0; slot < kMaterialSlots; ++slot)
+                    if (materialTextures(material)[slot] >= 0 && material.bindings[slot].uvSet != 0)
+                        model.warnings.emplace_back(
+                            "Mesh '" + mesh.name + "' has no second UV set (TEXCOORD_1), so material '" +
+                            material.name + "' reads its " + materialSlotName(MaterialSlot(slot)) +
+                            " map with UV0 instead");
         }
         // Assimp sometimes appends an unused fallback material. Keep only actual
         // triangle materials so the browser/inspector represent source parts.

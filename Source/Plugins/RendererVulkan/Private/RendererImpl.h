@@ -39,6 +39,13 @@ constexpr uint32_t kMaxMeshes = 65536;
 // slot the old one isn't using, so it can be made while frames still read the old one.
 // Shadow atlases likewise have two pairs of slots.
 constexpr uint32_t kInternalTextureSlots = 8;
+// Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
+// goes into a spare while frames in flight still read the old slot, which becomes a spare
+// once they finish. Below the internal slots.
+constexpr uint32_t kSpareTextureSlots = 256;
+// Material samplers (G02): two banks of kMaxSamplers, so changing anisotropy writes the
+// bank no frame in flight is reading.
+constexpr uint32_t kSamplerBanks = 2;
 // Image-based lighting's cube maps (environment, specular, irradiance) sit beside the
 // bindless table in the same set, so they come out of the same descriptor budget.
 constexpr uint32_t kEnvironmentCubes = 3;
@@ -48,7 +55,18 @@ constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
 // The tonemapped result at output resolution: what the window or editor viewport shows.
 constexpr VkFormat kDisplayFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
-// One entry per draw in the frame's draw table. Must match DrawData in shaders/mesh.vert.
+// How one material slot reads its texture. Must match SlotBinding in shaders/draw.glsl.
+struct SlotBinding {
+    glm::vec2 offset{0.0f};
+    glm::vec2 scale{1.0f};
+    float rotation = 0.0f;
+    uint32_t samplerAndSet = 0;   // bits 0..15: the sampler's bindless slot, bit 16: UV set 1
+};
+static_assert(sizeof(SlotBinding) == 24, "SlotBinding must match the shader's scalar layout");
+constexpr uint32_t kSlotUvSet1 = 0x10000u;
+constexpr uint32_t kDrawDerivativeTangents = 1u;   // DrawData::flags; see shaders/mesh.frag
+
+// One entry per draw in the frame's draw table. Must match DrawData in shaders/draw.glsl.
 struct DrawData {
     glm::mat4 mvp;
     glm::mat4 model;
@@ -67,12 +85,14 @@ struct DrawData {
     uint32_t occlusionTexture;
     float normalScale;
     float occlusionStrength;
-    uint32_t pad;
+    uint32_t flags;
+    VkDeviceAddress uv1Buffer;   // the mesh's second UV set; 0: none
+    SlotBinding slots[kMaterialSlots];
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
         offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
-        sizeof(DrawData) == 280,
+        offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && sizeof(DrawData) == 408,
     "DrawData must match the shader's scalar layout");
 
 // Shadow maps hold reverse-Z depth, like the scene: cleared to 0, closer is greater.
@@ -276,6 +296,9 @@ struct Mesh {
     vk::Buffer skin;
     VkDeviceAddress skinAddress = 0;
     uint32_t vertexCount = 0;
+    // A second UV set (setMeshUv1), one vec2 per vertex.
+    vk::Buffer uv1;
+    VkDeviceAddress uv1Address = 0;
 };
 
 // Records a layout transition with synchronization2.
@@ -438,9 +461,44 @@ struct VulkanRenderer::Impl {
     // Indexed by the ids Renderer hands out (RenderBackend.h). Texture 0 is white; the
     // renderer's own bindless slots (scene, shadow atlases) sit at the top of the table.
     std::unique_ptr<vk::Image[]> textures;
-    // Slots in the bindless texture array: the renderer's own are the last kInternalTextureSlots.
+    // Slots in the bindless texture array: the renderer's own are the last kInternalTextureSlots,
+    // with kSpareTextureSlots below them.
     uint32_t bindlessSlots() const { return context->maxBindlessTextures() - kEnvironmentCubes; }
-    uint32_t textureCapacity() const { return bindlessSlots() - kInternalTextureSlots; }
+    uint32_t spareTextureSlots() const { return std::min(kSpareTextureSlots, bindlessSlots() / 8); }
+    uint32_t textureCapacity() const { return bindlessSlots() - kInternalTextureSlots - spareTextureSlots(); }
+    // Which bindless slot each texture id's current image is in: its own id until it's
+    // replaced, then a spare. Shaders get slots, never ids (textureSlot()).
+    static constexpr uint32_t kNoSlot = UINT32_MAX;
+    std::unique_ptr<std::atomic<uint32_t>[]> textureSlots;
+    std::mutex textureSlotMutex;
+    std::vector<uint32_t> freeTextureSlots;   // spares, and slots whose old image has been freed
+    uint32_t textureSlot(uint32_t id) const {
+        const uint32_t slot = id < textureCapacity() ? textureSlots[id].load(std::memory_order_acquire) : kNoSlot;
+        return slot == kNoSlot ? 0 : slot;   // 0: white
+    }
+    uint32_t takeTextureSlot();   // kNoSlot when none is free
+    void publishTexture(uint32_t id, vk::Image& image);
+
+    // ---- Material samplers (G02) ----
+    // Indexed by SamplerHandle; slot id + bank * kMaxSamplers in binding 6.
+    std::mutex samplerMutex;
+    std::vector<SamplerDesc> samplerDescs{SamplerDesc{}};
+    std::array<std::array<VkSampler, kMaxSamplers>, kSamplerBanks> samplerObjects{};
+    uint32_t samplerBank = 0;
+    bool samplerBankBusy[kSamplerBanks] = {false, false};
+    uint32_t anisotropy = 16;   // the setting
+    bool needsSamplerRebuild = false;
+    float effectiveAnisotropy(const SamplerDesc& desc) const;
+    VkSampler makeSampler(const SamplerDesc& desc);
+    void writeSamplerDescriptor(uint32_t slot, VkSampler sampler);
+    void createSampler(SamplerHandle handle, const SamplerDesc& desc);
+    void setAnisotropy(uint32_t value);
+    void rebuildSamplers();   // at a frame boundary, after setAnisotropy
+    void destroySamplers();
+    uint32_t samplerSlot(SamplerHandle handle) const {
+        return (handle.id < kMaxSamplers ? handle.id : 0) + samplerBank * kMaxSamplers;
+    }
+    void setMeshUv1(MeshHandle handle, std::span<const glm::vec2> uv1);
 
     std::mutex queueMutex;   // VkQueue access must be externally synchronized
     VkCommandPool uploadPool = VK_NULL_HANDLE;
@@ -562,13 +620,14 @@ struct VulkanRenderer::Impl {
     void
     updateTexture(TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);
 
-    // Frames in flight may still be sampling the old images, so wait for the GPU to
-    // finish them before swapping. Reloads are rare (a file changed), so a short stall is fine.
+    // At a frame boundary: each new image goes into a spare slot and the draws from this frame
+    // on use it; the old image and slot are retired, freed once the frames reading them
+    // finish. Nothing waits for the GPU unless every spare is still in flight.
     void applyTextureSwaps();
 
     uint64_t guiTexture(TextureHandle texture);
 
-    void writeTextureDescriptor(uint32_t id);
+    void writeTextureDescriptor(uint32_t slot, VkImageView view);
 
     // Uploads RGBA8 pixels into a new sampled image with a full mip chain.
     vk::Image uploadTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb);

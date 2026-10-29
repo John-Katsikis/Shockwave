@@ -58,6 +58,7 @@ void Player::graphicsReport() {
     const shockwave::RendererCapabilities caps = renderer.capabilities();
     const auto settings = renderer.effectiveSettings();
     const shockwave::RendererMemoryReport memory = renderer.memoryReport();
+    const shockwave::TextureResidencyStats residency = renderer.textureResidency();
 
     std::printf("renderer: %s\n", caps.backend.c_str());
     if (!caps.device.empty())
@@ -92,6 +93,11 @@ void Player::graphicsReport() {
             "  %-20s %9.2f of %.2f MiB (the driver's count, device-local heaps)\n", "device usage",
             mib(memory.deviceUsage), mib(memory.deviceBudget));
     std::printf("  %-20s %9.2f MiB (CPU copies for swapping the renderer)\n", "cpu copies", mib(memory.cpuCopyBytes));
+    std::printf(
+        "\ntexture quality: %u of %u material textures reduced, %u pending; %.2f MiB on the GPU (%.2f MiB at "
+        "ultra)\n",
+        residency.reduced, residency.textures, residency.pending, mib(residency.residentBytes),
+        mib(residency.fullBytes));
 
     if (m_tool.benchmarkJson.empty()) return;
     std::ostringstream json;
@@ -122,7 +128,11 @@ void Player::graphicsReport() {
          << ",\n    \"device_usage_bytes\": " << memory.deviceUsage
          << ",\n    \"device_budget_bytes\": " << memory.deviceBudget
          << ",\n    \"cpu_copy_bytes\": " << memory.cpuCopyBytes
-         << "\n  },\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
+         << "\n  },\n  \"texture_residency\": {\"material_textures\": " << residency.textures
+         << ", \"reduced\": " << residency.reduced << ", \"pending\": " << residency.pending
+         << ", \"resident_bytes\": " << residency.residentBytes << ", \"full_bytes\": " << residency.fullBytes
+         << ", \"retained_cpu_bytes\": " << residency.retainedBytes
+         << "},\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
     out << json.str();

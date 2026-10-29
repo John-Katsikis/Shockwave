@@ -109,6 +109,28 @@ int Player::check(const std::vector<std::string>& importProblems) {
         if (primaries == 0) report(scene.string() + ": no entity has a primary Camera; the game has no view");
         if (primaries > 1) report(scene.string() + ": " + std::to_string(primaries) + " primary Cameras; keep one");
 
+        // Material bindings (G02): a map read through TEXCOORD_1 on a mesh that has none
+        // falls back to UV0, which is rarely what the artist meant.
+        world.each<const shockwave::ModelRenderer>([&](shockwave::Entity e, const shockwave::ModelRenderer& m) {
+            const auto asset = engine().assets().model(m.model);
+            if (!asset) return;
+            for (const auto& mesh : asset->data.meshes) {
+                if (mesh.data.indices.empty() || !mesh.data.uv1.empty()) continue;
+                const auto& material = asset->data.materials[mesh.material];
+                const auto textures = shockwave::materialTextures(material);
+                for (size_t slot = 0; slot < shockwave::kMaterialSlots; ++slot)
+                    if (textures[slot] >= 0 && material.bindings[slot].uvSet == 1) {
+                        const auto* name = world.get<shockwave::Name>(e);
+                        report(
+                            scene.string() + ": entity '" + (name ? name->value : "?") + "': model " +
+                            engine().assets().modelName(m.model) + ", mesh '" + mesh.name + "': material '" +
+                            material.name + "' reads its " +
+                            shockwave::materialSlotName(shockwave::MaterialSlot(slot)) +
+                            " map from UV1, which the mesh doesn't have (UV0 is used)");
+                    }
+            }
+        });
+
         // Lighting: a light needs a Transform to be placed, the renderer has a light
         // budget, and only the first Environment is used.
         auto entityName = [&](shockwave::Entity e) {

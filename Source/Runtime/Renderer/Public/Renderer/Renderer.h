@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -57,7 +58,8 @@ public:
 
     // Resources live until the renderer shuts down.
     MeshHandle createMesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices);
-    MeshHandle createMesh(const MeshData& mesh) { return createMesh(mesh.vertices, mesh.indices); }
+    // With its second UV set, when it has one (setMeshUv1).
+    MeshHandle createMesh(const MeshData& mesh);
     // A mesh that bends with a skeleton: one VertexSkin per vertex. Draw it with
     // drawSkinnedMesh to pose it; drawMesh shows it as modelled (its bind pose).
     MeshHandle createSkinnedMesh(
@@ -68,11 +70,17 @@ public:
     void destroyTexture(TextureHandle texture);
     // RGBA8 pixels, rows top to bottom. Mipmaps are generated on the GPU. Every texture
     // lives in one bindless table, so any draw can use any texture at no extra cost.
-    TextureHandle createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
+    // usage: Material lets texture_quality drop its largest levels (setTextureQuality); the
+    // renderer then keeps a CPU copy to rebuild it from when the setting changes.
+    TextureHandle createTexture(
+        uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true,
+        TextureUsage usage = TextureUsage::Fixed);
     // Replaces a texture's pixels (and size, if it changed) for hot reload. Everything
-    // using the handle shows the new image from the next frame. Any thread.
+    // using the handle shows the new image from the next frame, at the texture's current
+    // quality. Any thread. usage, when given, replaces the one it was made with.
     void updateTexture(
-        TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true);
+        TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb = true,
+        std::optional<TextureUsage> usage = {});
     // An ImTextureID for showing a texture in the GUI (an asset browser thumbnail, say);
     // 0 when the GUI is off. Main thread. Valid for the current frame: ask every frame,
     // since a reload hands out a new one.
@@ -85,9 +93,36 @@ public:
     void setMeshLods(MeshHandle mesh, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices);
     // A texture in a format the backend supports (supportsTextureFormat), mipmaps
     // included: BC7 from a .ktx2 file, say. Same threads as createTexture.
-    TextureHandle createTexture(const TextureData& texture);
-    void updateTexture(TextureHandle texture, const TextureData& data);
+    TextureHandle createTexture(const TextureData& texture, TextureUsage usage = TextureUsage::Fixed);
+    void updateTexture(TextureHandle texture, const TextureData& data, std::optional<TextureUsage> usage = {});
     bool supportsTextureFormat(TextureFormat format) const;
+    // ---- Material bindings (G02) ----
+    // A second UV set for a mesh (MeshData::uv1), one per vertex, right after createMesh
+    // or createSkinnedMesh. Same threads as createMesh.
+    void setMeshUv1(MeshHandle mesh, std::span<const glm::vec2> uv1);
+    // The sampler for desc, made the first time it's asked for and the same handle after
+    // that. Any thread; resolve them when loading a material, not per draw. Past
+    // kMaxSamplers distinct descs it logs once and returns the default.
+    SamplerHandle sampler(const SamplerDesc& desc);
+    SamplerDesc samplerDesc(SamplerHandle sampler) const;
+    // The most anisotropic filtering any texture gets, 1 (off), 2, 4, 8 or 16; the device's
+    // limit caps it too. Samplers are remade at the frame boundary and the old ones freed
+    // once no frame uses them. Main thread.
+    void setAnisotropy(uint32_t anisotropy);
+    uint32_t anisotropy() const;
+
+    // ---- Texture quality (A01) ----
+    // Main thread. Material textures (TextureUsage::Material) are rebuilt with their
+    // largest levels dropped, or brought back, on worker threads, a few per frame, and
+    // each swaps in at a frame boundary; the old image is freed once no frame uses it.
+    // Nothing waits for the GPU. textureResidency says how far along it is.
+    void setTextureQuality(TextureQuality quality);
+    TextureQuality textureQuality() const;
+    TextureResidencyStats textureResidency() const;
+    // A texture's levels as the GPU has them now: its full size, and the first level kept.
+    // False for an unknown texture.
+    bool textureResidency(TextureHandle texture, uint32_t& width, uint32_t& height, uint32_t& firstMip) const;
+
     // Kept until changed. Main thread.
     void setLodSettings(const LodSettings& settings);
     const LodSettings& lodSettings() const;

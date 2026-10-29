@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
         player::NetTestCommand netTest;   // --net-test
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
+        std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
         double imageTolerance = 1.0;   // --tolerance
         std::filesystem::path output;   // --output: --package, --net-encode and the network tools
         bool devDirectJoin = false;   // --dev-direct-join
@@ -192,6 +193,10 @@ int main(int argc, char** argv) {
                 tool.fixedStep = true;
             } else if (arg == "--image-stats" && i + 1 < argc) {
                 imageStats = argv[++i];
+            } else if (arg == "--material-info" && i + 1 < argc) {
+                materialInfo = argv[++i];
+            } else if (arg == "--texture-info" && i + 1 < argc) {
+                textureInfo = argv[++i];
             } else if (arg == "--image-diff" && i + 2 < argc) {
                 imageReference = argv[++i];
                 imageCandidate = argv[++i];
@@ -385,6 +390,10 @@ int main(int argc, char** argv) {
                     "player --image-stats file.png [--json file]\n"
                     "player --image-diff reference.png candidate.png [--tolerance rmse] [--json file]\n"
                     "                                    compare two screenshots; exit 1 over the tolerance\n"
+                    "player --material-info model.glb [--json file]\n"
+                    "                                    each material slot's UV set, transform and sampler\n"
+                    "player --texture-info texture.png|model.glb [--json file]\n"
+                    "                                    levels and GPU bytes at each texture_quality\n"
                     "       [--ui-preview] [--ui-nav down,down,confirm]\n"
                     "                                    show UI preview values; step through menus first\n"
                     "player --graphics-report [--frames N] [--json file]\n"
@@ -541,6 +550,8 @@ int main(int argc, char** argv) {
             package.output = tool.output = output;
         }
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson);   // no project
+        if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
+        if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())
             return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson);
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project

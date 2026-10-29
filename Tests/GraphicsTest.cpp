@@ -119,6 +119,22 @@ int main() {
             check(matchingGraphicsPreset(applied) == preset, "preset recognised");
         }
         check(graphicsPreset(GraphicsPreset::Low).bloomQuality == BloomQuality::Low, "low preset uses low bloom");
+        check(
+            graphicsPreset(GraphicsPreset::Low).textureQuality == TextureQuality::Low &&
+                graphicsPreset(GraphicsPreset::Low).anisotropy == 4,
+            "low preset lowers texture quality and filtering");
+        check(
+            graphicsPreset(GraphicsPreset::Ultra).textureQuality == TextureQuality::Ultra &&
+                GraphicsSettings{}.textureQuality == TextureQuality::Ultra && GraphicsSettings{}.anisotropy == 16,
+            "defaults keep full textures and 16x filtering");
+        auto textures = initial;
+        check(setGraphicsSetting(textures, "texture_quality", "medium", error), "set texture_quality");
+        check(setGraphicsSetting(textures, "anisotropy", "2", error), "set anisotropy");
+        check(textures.textureQuality == TextureQuality::Medium && textures.anisotropy == 2, "texture setters");
+        for (const char* bad : {"3", "0", "32", "x", "16x"})
+            check(
+                !setGraphicsSetting(textures, "anisotropy", bad, error) && textures.anisotropy == 2,
+                "anisotropy values");
         auto custom = graphicsPreset(GraphicsPreset::High);
         custom.antiAliasing = AntiAliasing::None;
         check(!matchingGraphicsPreset(custom), "hand-tuned settings are Custom");

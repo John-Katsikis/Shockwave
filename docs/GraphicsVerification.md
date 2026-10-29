@@ -22,6 +22,8 @@ frame 30 is the same moment on every run.
 | motion | Orbit camera, Fixed | a moving camera, spinning, orbiting and skinned objects (motion vectors, TAA) |
 | decal-wall | Main Camera | a wall and floor for projected decals |
 | dense-occluder | Main Camera, Overhead | 1215 entities behind a wall (instancing, HZB culling) |
+| materials | Main Camera | nine quads, each reading its maps through one material binding (G02) |
+| materials-expected | Main Camera | the same quads with every binding baked into plain UV0: must match `materials` |
 
 `Tools/generate.py` writes the textures, glTF models and the dense scene with only the
 Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
@@ -63,9 +65,12 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 |---|---|---|
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
-| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both |
+| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `texture_quality low` shrinks material textures, settles, and changes the image |
 | `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; hand-tuned settings read as Custom; `status()` |
 | `graphics_cli` | no | `--graphics-set`, `--anti-aliasing`, refused values with file and line, `--graphics-info --json` |
+| `graphics_materials_info` | no | `--material-info` on materials.glb: KHR_texture_transform values as authored, UV sets (including KHR's own `texCoord`), colour spaces, wrap and filter modes; a missing UV1 warns on import and fails `--check`; `--texture-info` sizes and bytes per quality |
+| `texture_quality` | no | exact BC7 and RGBA8 chain bytes, the 32-pixel floor, explicit LOD mapping, CPU tails averaged in linear light, sliced chains, UV transform maths, the sampler cache; then low, a reload at low, three changes in one frame, a change while one is running, and back to ultra, on the null renderer |
+| `texture_quality_vulkan` | yes | the same transitions with real images swapped in while they're drawn |
 | `graphics_report_null` | no (runs under Xvfb, so Linux only, like the other headless play tests) | the report works on the null renderer |
 | `network_session` | no | includes the fixed-step clock: one tick a frame whatever the real time |
 
@@ -135,9 +140,65 @@ Result: `capture.py --compare` found all 52 images identical to the G00 baseline
 defaults (`anti_aliasing none`, `bloom_quality high`, `bloom_scale 1`) reproduce the old
 output exactly.
 
+## G02 + A01: material bindings and texture quality
+
+- **Bindings.** Every material slot (base colour, normal, metallic-roughness, emissive,
+  occlusion) has its own UV set (0 or 1), UV transform and sampler, from import to the
+  shaders. The transform is `uv' = offset + R(rotation) * (scale * uv)` with
+  `R = [[cos, sin], [-sin, cos]]` applied as rows, as the Khronos glTF sample renderer and
+  three.js do it (the GLSL in the KHR_texture_transform README reads the other way round
+  if taken as column-major; the sample renderer is what its test models are checked
+  against). An identity transform leaves UVs bit for bit, so untextured and plain scenes
+  are unchanged.
+- **Importer facts, checked with fixtures** (Assimp 6.0.5): texture `texCoord`, wrap modes
+  and glTF filters arrive per slot. KHR_texture_transform arrives rewritten into Assimp's
+  convention and then flipped by `FlipUVs`; the importer undoes both and gets the
+  authored numbers back exactly. Assimp drops KHR_texture_transform's own `texCoord`, so
+  the importer reads it from the glTF JSON itself. Other formats' UV transforms are
+  reported and ignored. TEXCOORD_1 becomes `MeshData::uv1`, an optional stream next to the
+  64-byte vertex, for static and skinned meshes.
+- **Normal maps** use the vertex tangents when they follow UV0 as modelled. Read through
+  UV1, rotated or mirrored, they use a tangent frame built from the screen derivatives of
+  their own UVs (`mesh.frag`, `derivativeTangents`). Where those derivatives are
+  degenerate (UVs that don't change across the pixel) the map is skipped and the
+  interpolated normal is used, rather than a made-up frame.
+- **One copy of the shared code.** `Shaders/draw.glsl` holds the draw table, vertex layout,
+  slot UVs and sampling, and the alpha test; the scene and shadow passes both include it,
+  so a cut-out casts exactly the shadow it shows.
+- **Samplers** are cached by description (at most 64; the default is handle 0) and made
+  once per material, never per draw. `anisotropy` caps them, the device caps that, and
+  nearest-filtered or unmipmapped samplers never get it. Changing it builds a second bank
+  and retires the first; no GPU idle.
+- **Texture quality** keeps the tail of each material texture from level 0 (ultra), 1, 2 or
+  3 (low), never below 32 pixels. Multi-level textures (BC7 from `.ktx2`) are sliced; a lone
+  RGBA8 level is halved on the CPU in linear light, then the GPU makes the rest of the
+  chain as before. Changes run on workers (8 started a frame, 16 at once), and each new
+  image goes into a spare bindless slot at a frame boundary while the old one is retired.
+  The logical texture id never changes. If no spare slot is free, the swap falls back to a
+  device wait (and says so in the log); 256 spares make that rare.
+- **Measured.** `materials` against `materials-expected` on llvmpipe at 640x360: unlit RMSE
+  0.69-1.14 (the nearest-sampled quad rounds texel edges a pixel either way), normals 0.01,
+  lit 0.76, with the alpha-tested shadows identical. On transparency, `texture_quality low`
+  reduces 3 of its 14 material textures (the rest are 32 pixels or smaller already) and
+  holds 19,072 bytes of them on the GPU against 114,560 at ultra; all are BC7 from the
+  texture cache, so the CPU copies are the cached chains (114,560 bytes).
+- **Plugin ABI** is now 5.
+
+Result: `capture.py --compare` found all 52 images identical to the G00 baseline (8 by
+`--image-diff`, RMSE 0; 44 by mean colour). The defaults (`texture_quality ultra`,
+`anisotropy 16`, identity bindings, the default sampler) reproduce the old output exactly.
+
 ## Known limits
 
-- Anisotropic filtering and texture quality, listed with A00's settings, arrive with A01.
+- Normal-map mips are box-filtered like colour (no renormalisation or roughness
+  adjustment) and alpha-mask mips don't preserve coverage: both are A02's.
+- Texture quality is whole-level only: no streaming by distance or visibility yet, and
+  every material texture keeps a CPU copy while it's loaded (shown in the report and the
+  Optimisation window).
+- MeshRenderer components still have one texture with tiling; per-slot overrides and
+  `.swmaterial` authoring come with A02. The editor shows each imported slot's UV set,
+  transform and sampler, read-only.
+- Generated lightmap UVs (a third stream) are G05's.
 - The editor grid is drawn in the scene pass, so FXAA smooths it too.
 - Images waiting to be freed after a change aren't counted in the memory report.
 

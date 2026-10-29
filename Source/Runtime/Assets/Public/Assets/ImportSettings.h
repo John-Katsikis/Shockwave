@@ -7,6 +7,7 @@
 //     # bricks.png.swimport
 //     shockwave_import 1
 //     compression small
+//     category ui
 //
 // The editor writes these files from the Optimisation window; people and tools can write
 // them by hand. Saving one re-imports its asset.
@@ -26,9 +27,16 @@ enum class TextureCompression : uint8_t {
 const char* textureCompressionName(TextureCompression mode);   // "off", "high", "small"
 bool parseTextureCompression(std::string_view name, TextureCompression& mode);
 
+// What a texture is for (A01). Material textures follow the texture_quality setting; UI
+// textures (menu art, icons, anything read as text) always keep their full size.
+enum class TextureCategory : uint8_t { Material, Ui };
+const char* textureCategoryName(TextureCategory category);   // "material", "ui"
+bool parseTextureCategory(std::string_view name, TextureCategory& category);
+
 struct ImportSettings {
     TextureCompression compression = TextureCompression::High;   // textures, and a model's textures
     uint32_t lods = 4;   // models: simpler levels of detail to make, 0..7
+    TextureCategory category = TextureCategory::Material;   // textures, and a model's textures
     bool operator==(const ImportSettings&) const = default;
 };
 

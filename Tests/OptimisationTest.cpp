@@ -31,9 +31,9 @@ void check(bool value, const char* message) {
 }
 
 fs::path tempFolder(const char* name) {
-    const fs::path root = fs::temp_directory_path() /
-                          (std::string("shockwave-") + name + "-" +
-                           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path root =
+        fs::temp_directory_path() / (std::string("shockwave-") + name + "-" +
+                                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(root);
     return root;
 }
@@ -97,8 +97,9 @@ void meshes() {
     for (const auto& t : triangles) shuffled.indices.insert(shuffled.indices.end(), t.begin(), t.end());
     const MeshOptimiseReport reordered = optimiseMesh(shuffled, {.lods = 0});
     check(shuffled.lods.empty(), "lods 0 makes no levels");
-    check(reordered.shadedPerTriangleAfter < reordered.shadedPerTriangleBefore * 0.5f,
-          "Reordering at least halves the vertices shaded per triangle");
+    check(
+        reordered.shadedPerTriangleAfter < reordered.shadedPerTriangleBefore * 0.5f,
+        "Reordering at least halves the vertices shaded per triangle");
 
     MeshData cube = makeCube(1.0f);
     optimiseMesh(cube);
@@ -134,8 +135,9 @@ void textures() {
 
     TextureData rgba;
     check(transcodeKtx2(ktx2, false, rgba, error), "Transcodes to RGBA8 for GPUs without BC7");
-    check(rgba.format == TextureFormat::RGBA8 && rgba.levels.size() == 7 && rgba.levels[0].size == 64 * 64 * 4,
-          "RGBA8 with mipmaps");
+    check(
+        rgba.format == TextureFormat::RGBA8 && rgba.levels.size() == 7 && rgba.levels[0].size == 64 * 64 * 4,
+        "RGBA8 with mipmaps");
     int worst = 0;
     for (size_t i = 0; i < size_t(64) * 64 * 4 && i < rgba.bytes.size(); ++i)
         worst = std::max(worst, std::abs(int(rgba.bytes[i]) - int(image.rgba[i])));
@@ -151,10 +153,12 @@ void textures() {
 
     // The cache: a key per source and mode, and only the newest copy of an asset kept.
     const std::vector<uint8_t> a{1, 2, 3}, b{1, 2, 4};
-    check(textureCacheKey(a, TextureCompression::High) != textureCacheKey(b, TextureCompression::High),
-          "Edited textures get a new cache key");
-    check(textureCacheKey(a, TextureCompression::High) != textureCacheKey(a, TextureCompression::Small),
-          "A different mode gets a new cache key");
+    check(
+        textureCacheKey(a, TextureCompression::High) != textureCacheKey(b, TextureCompression::High),
+        "Edited textures get a new cache key");
+    check(
+        textureCacheKey(a, TextureCompression::High) != textureCacheKey(a, TextureCompression::Small),
+        "A different mode gets a new cache key");
     const fs::path folder = tempFolder("texture-cache");
     const fs::path first = textureCachePath(folder, "textures/wood.png", 1);
     const fs::path second = textureCachePath(folder, "textures/wood.png", 2);
@@ -180,25 +184,29 @@ void importSettings() {
     custom.compression = TextureCompression::Small;
     check(saveImportSettings(asset, custom, defaults, error), "Saving an override works");
     const std::string text = readText(importSettingsPath(asset));
-    check(text.find("shockwave_import 1") != std::string::npos && text.find("compression small") != std::string::npos &&
-              text.find("lods") == std::string::npos,
-          "Only what differs is written");
+    check(
+        text.find("shockwave_import 1") != std::string::npos && text.find("compression small") != std::string::npos &&
+            text.find("lods") == std::string::npos,
+        "Only what differs is written");
     ImportSettings loaded;
     check(loadImportSettings(importSettingsPath(asset), loaded, error) && loaded == custom, "Overrides load back");
     check(isImportSettingsFile(importSettingsPath(asset)) && !isImportSettingsFile(asset), ".swimport is recognised");
 
-    for (const char* bad : {"shockwave_import 1\ncompression tiny\n", "shockwave_import 1\nlods 9\n",
-                            "shockwave_import 1\nsharpen 1\n", "shockwave_import 2\n"}) {
+    for (const char* bad :
+         {"shockwave_import 1\ncompression tiny\n", "shockwave_import 1\nlods 9\n", "shockwave_import 1\nsharpen 1\n",
+          "shockwave_import 2\n"}) {
         std::ofstream(importSettingsPath(asset)) << bad;
         ImportSettings untouched;
-        check(!loadImportSettings(importSettingsPath(asset), untouched, error) && untouched == ImportSettings{},
-              "Bad settings fail and change nothing");
+        check(
+            !loadImportSettings(importSettingsPath(asset), untouched, error) && untouched == ImportSettings{},
+            "Bad settings fail and change nothing");
         check(error.find(":") != std::string::npos, "Errors name the file and line");
     }
     ImportSettings none;
     check(loadImportSettings(folder / "missing.png.swimport", none, error), "No file is fine");
-    check(saveImportSettings(asset, defaults, defaults, error) && !fs::exists(importSettingsPath(asset)),
-          "Saving defaults again removes the file");
+    check(
+        saveImportSettings(asset, defaults, defaults, error) && !fs::exists(importSettingsPath(asset)),
+        "Saving defaults again removes the file");
     fs::remove_all(folder);
 }
 
@@ -211,17 +219,19 @@ void projectKeys() {
     std::ofstream(project.startupScene) << "shockwave_scene 2\n";
     const fs::path file = project.file;
     check(loadProject(file, project, error), "Project loads");
-    check(project.textureCompression == "high" && project.meshLods == 4 && project.lodErrorPixels == 1.0,
-          "Defaults: high, 4 levels, 1 pixel");
+    check(
+        project.textureCompression == "high" && project.meshLods == 4 && project.lodErrorPixels == 1.0,
+        "Defaults: high, 4 levels, 1 pixel");
     check(readText(file).find("texture_compression") == std::string::npos, "Defaults aren't written");
     project.textureCompression = "small";
     project.meshLods = 2;
     project.lodErrorPixels = 2.5;
     check(saveProject(project, error), "Project saves");
     Project reloaded;
-    check(loadProject(file, reloaded, error) && reloaded.textureCompression == "small" && reloaded.meshLods == 2 &&
-              reloaded.lodErrorPixels == 2.5,
-          "Optimisation keys round-trip");
+    check(
+        loadProject(file, reloaded, error) && reloaded.textureCompression == "small" && reloaded.meshLods == 2 &&
+            reloaded.lodErrorPixels == 2.5,
+        "Optimisation keys round-trip");
     for (const char* bad : {"texture_compression tiny\n", "mesh_lods 8\n", "lod_error_pixels -1\n"}) {
         std::ofstream(file, std::ios::app) << bad;
         Project broken;
@@ -251,7 +261,7 @@ void hdrImages() {
 
     check(textureLevelBytes(TextureFormat::RGBA16F, 4, 2) == 64, "RGBA16F is 8 bytes a pixel");
     TextureData half{TextureFormat::RGBA16F, false, 4, 2, {{4, 2, 0, 64}}, std::vector<uint8_t>(64)};
-    check(half.valid() && half.gpuBytes() == 64 + 64 / 3, "A lone RGBA16F level gets mipmaps");
+    check(half.valid() && half.gpuBytes() == 64 + 16 + 8, "A lone RGBA16F level gets mipmaps: 4x2, 2x1, 1x1");
     check(std::string(textureFormatName(TextureFormat::RGBA16F)) == "RGBA16F", "RGBA16F's name");
 }
 }   // namespace

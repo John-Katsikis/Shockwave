@@ -327,9 +327,9 @@ void VulkanRenderer::Impl::recordEnvironment(VkCommandBuffer cmd) {
     sky.rotation = {std::cos(environmentKey.rotation), std::sin(environmentKey.rotation)};
     sky.size = environmentCube.size;
     if (environmentKey.map) {
-        sky.map = lighting.environmentMap.id;
+        sky.map = textureSlot(lighting.environmentMap.id);
         // The map's width spans four cube faces.
-        const float width = static_cast<float>(textures[sky.map].extent.width);
+        const float width = static_cast<float>(textures[lighting.environmentMap.id].extent.width);
         sky.mapLevel = std::max(0.0f, std::log2(width / (4.0f * static_cast<float>(environmentCube.size))));
     }
     vkCmdPushConstants(cmd, environmentLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(sky), &sky);

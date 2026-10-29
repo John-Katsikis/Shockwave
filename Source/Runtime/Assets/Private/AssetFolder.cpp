@@ -33,6 +33,9 @@ bool changed(const AssetFolder::Dependency& old) {
     const auto now = stamp(old.path);
     return old.exists != now.exists || old.bytes != now.bytes || old.modified != now.modified;
 }
+TextureUsage textureUsage(const ImportSettings& settings) {
+    return settings.category == TextureCategory::Ui ? TextureUsage::Fixed : TextureUsage::Material;
+}
 void release(Renderer& renderer, const ModelAsset& model) {
     for (auto handle : model.meshes) renderer.destroyMesh(handle);
     for (auto handle : model.textures) renderer.destroyTexture(handle);
@@ -218,9 +221,9 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             f.path = it->path();
             f.name = fs::relative(f.path, m_root, ec).generic_string();
             f.kind = isImageFile(f.path) || isKtx2File(f.path) ? Kind::Texture
-                     : isModelFile(f.path) ? Kind::Model
-                     : isAudioFile(f.path) ? Kind::Audio
-                                           : Kind::Other;
+                     : isModelFile(f.path)                     ? Kind::Model
+                     : isAudioFile(f.path)                     ? Kind::Audio
+                                                               : Kind::Other;
             f.bytes = it->file_size(ec);
             f.modified = it->last_write_time(ec);
             found.push_back(std::move(f));
@@ -272,7 +275,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             if (!needsImport) continue;
         }
         if (f.kind == Kind::Other) {
-            if (!old) changes.push_back({f.error.empty() ? Change::What::Added : Change::What::Failed, f.name, f.error});
+            if (!old)
+                changes.push_back({f.error.empty() ? Change::What::Added : Change::What::Failed, f.name, f.error});
             continue;
         }
         if (f.kind == Kind::Audio && !m_initialImport) {
@@ -363,8 +367,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             auto& job = imports[i];
             const auto& f = found[job.file];
             job.settings = m_defaults;
-            if (f.kind != Kind::Audio &&
-                !loadImportSettings(importSettingsPath(f.path), job.settings, job.error))
+            if (f.kind != Kind::Audio && !loadImportSettings(importSettingsPath(f.path), job.settings, job.error))
                 continue;
             if (f.kind == Kind::Audio)
                 loadAudioClip(f.path, job.audio, job.error);
@@ -445,26 +448,37 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 uploaded->meshes.reserve(uploaded->data.meshes.size());
                 std::shared_ptr<const ModelAsset> previous;
                 try {
-                    for (const auto& mesh : uploaded->data.meshes)
+                    for (const auto& mesh : uploaded->data.meshes) {
                         uploaded->meshes.push_back(
-                            mesh.skinned() ? m_renderer->createSkinnedMesh(mesh.data.vertices, mesh.data.indices, mesh.skin)
-                                           : m_renderer->createMesh(mesh.data));
-                    // Every map a material samples: colour maps as sRGB, data maps linear.
+                            mesh.skinned()
+                                ? m_renderer->createSkinnedMesh(mesh.data.vertices, mesh.data.indices, mesh.skin)
+                                : m_renderer->createMesh(mesh.data));
+                        if (mesh.skinned()) m_renderer->setMeshUv1(uploaded->meshes.back(), mesh.data.uv1);
+                    }
+                    // Every map a material samples: colour maps as sRGB, data maps linear. They
+                    // are material textures, so texture_quality may shrink them (A01).
                     uploaded->textures.resize(uploaded->data.textures.size());
-                    for (const auto& material : uploaded->data.materials)
-                        for (const int index : materialTextures(material)) {
-                            if (index < 0 || uploaded->textures[index].id != 0) continue;
+                    const auto usage = textureUsage(job.settings);
+                    for (const auto& material : uploaded->data.materials) {
+                        auto& samplers = uploaded->samplers.emplace_back();
+                        for (size_t slot = 0; slot < kMaterialSlots; ++slot) {
+                            const int index = materialTextures(material)[slot];
+                            if (index < 0) continue;
+                            samplers[slot] = m_renderer->sampler(material.bindings[slot].sampler);
+                            if (uploaded->textures[index].id != 0) continue;
                             const auto& texture = uploaded->data.textures[index];
-                            uploaded->textures[index] =
-                                job.modelTextures[index].valid()
-                                    ? m_renderer->createTexture(job.modelTextures[index])
-                                    : m_renderer->createTexture(
-                                          texture.image.width, texture.image.height, texture.image.rgba, texture.srgb);
+                            uploaded->textures[index] = job.modelTextures[index].valid()
+                                                            ? m_renderer->createTexture(job.modelTextures[index], usage)
+                                                            : m_renderer->createTexture(
+                                                                  texture.image.width, texture.image.height,
+                                                                  texture.image.rgba, texture.srgb, usage);
                         }
+                    }
                     // Simpler versions of each mesh for distant draws (MeshOptimise.h).
                     for (size_t i = 0; i < uploaded->meshes.size(); ++i) {
                         const MeshData& mesh = uploaded->data.meshes[i].data;
-                        if (!mesh.lods.empty()) m_renderer->setMeshLods(uploaded->meshes[i], mesh.lods, mesh.lodIndices);
+                        if (!mesh.lods.empty())
+                            m_renderer->setMeshLods(uploaded->meshes[i], mesh.lods, mesh.lodIndices);
                     }
                     previous = m_assets.model(m_assets.findModel(f.name));
                     f.warnings = uploaded->data.warnings;
@@ -476,14 +490,20 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 if (job.error.empty() && previous) release(*m_renderer, *previous);
             } else {
                 try {
+                    // HDR environment maps light the scene; they keep their full size.
+                    const auto usage = job.texture.valid() && job.texture.format == TextureFormat::RGBA16F
+                                           ? TextureUsage::Fixed
+                                           : textureUsage(job.settings);
                     if (job.texture.valid() && job.reload)
-                        m_renderer->updateTexture(f.texture, job.texture);
+                        m_renderer->updateTexture(f.texture, job.texture, usage);
                     else if (job.texture.valid())
-                        f.texture = m_renderer->createTexture(job.texture);
+                        f.texture = m_renderer->createTexture(job.texture, usage);
                     else if (job.reload)
-                        m_renderer->updateTexture(f.texture, job.image.width, job.image.height, job.image.rgba);
+                        m_renderer->updateTexture(
+                            f.texture, job.image.width, job.image.height, job.image.rgba, true, usage);
                     else
-                        f.texture = m_renderer->createTexture(job.image.width, job.image.height, job.image.rgba);
+                        f.texture =
+                            m_renderer->createTexture(job.image.width, job.image.height, job.image.rgba, true, usage);
                 } catch (const std::exception& e) {
                     job.error = e.what();
                 }

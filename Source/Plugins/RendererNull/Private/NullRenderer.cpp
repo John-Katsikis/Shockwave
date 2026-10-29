@@ -50,6 +50,7 @@ public:
     void setShadowQuality(ShadowQuality quality) override { m_shadows = quality; }
     void setAntiAliasing(AntiAliasing aa) override { m_antiAliasing = aa; }
     void setBloom(BloomQuality quality, float) override { m_bloom = quality; }
+    void setAnisotropy(uint32_t anisotropy) override { m_anisotropy = anisotropy; }
     void setRenderScale(float scale) override { m_scale = scale; }
     void setViewport(uint32_t width, uint32_t height) override {
         m_viewportWidth = width;
@@ -93,6 +94,7 @@ public:
             {"anti_aliasing", antiAliasingName(m_antiAliasing), "none", m_antiAliasing == AntiAliasing::None ? "" : why,
              ""},
             {"bloom_quality", bloomQualityName(m_bloom), "off", m_bloom == BloomQuality::Off ? "" : why, ""},
+            {"anisotropy", std::to_string(m_anisotropy), "1", m_anisotropy == 1 ? "" : why, ""},
         };
     }
 
@@ -138,6 +140,7 @@ private:
     uint32_t m_lastDraws = 0, m_lastLights = 0, m_lastUnkeyed = 0;
     ShadowQuality m_shadows = ShadowQuality::High;
     AntiAliasing m_antiAliasing = AntiAliasing::None;
+    uint32_t m_anisotropy = 16;
     BloomQuality m_bloom = BloomQuality::High;
     bool m_vsync = true, m_lowLatency = false;
     float m_scale = 1.0f;

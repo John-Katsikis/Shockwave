@@ -47,6 +47,8 @@ const std::vector<const char*> kBool = {"true", "false"};
 const std::vector<const char*> kShadowChoices = {"off", "low", "medium", "high", "ultra"};
 const std::vector<const char*> kAntiAliasingChoices = {"none", "fxaa"};
 const std::vector<const char*> kBloomChoices = {"off", "low", "medium", "high"};
+const std::vector<const char*> kTextureQualityChoices = {"low", "medium", "high", "ultra"};
+const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -154,6 +156,32 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return true;
          }});
     info.push_back(
+        {"texture_quality", "Textures", "Quality",
+         "How much of each material texture stays on the GPU: ultra keeps full size, high drops the largest mip "
+         "level (a quarter of the memory), medium two, low three. UI textures always keep full size.",
+         "low, medium, high, ultra", kTextureQualityChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(textureQualityName(s.textureQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kTextureQualityChoices, v, s.textureQuality)) return true;
+             error = "texture_quality must be " + list(kTextureQualityChoices);
+             return false;
+         }});
+    info.push_back(
+        {"anisotropy", "Texture filtering", "Quality",
+         "Anisotropic filtering: the most samples a texture seen at a grazing angle may take. Higher keeps floors "
+         "and roads sharp into the distance. Nearest-filtered (pixel art) textures are unaffected.",
+         "1, 2, 4, 8, 16", kAnisotropyChoices, GraphicsApply::Pipeline, true,
+         [](const S& s) { return std::to_string(s.anisotropy); },
+         [](S& s, const std::string& v, std::string& error) {
+             for (const char* c : kAnisotropyChoices)
+                 if (v == c) {
+                     s.anisotropy = uint32_t(std::stoul(v));
+                     return true;
+                 }
+             error = "anisotropy must be " + list(kAnisotropyChoices);
+             return false;
+         }});
+    info.push_back(
         {"vsync", "VSync", "Display", "Synchronize presentation with the display, so frames never tear.", "true, false",
          kBool, GraphicsApply::Targets, false, [](const S& s) { return std::string(s.vsync ? "true" : "false"); },
          [](S& s, const std::string& v, std::string& error) { return boolean(v, s.vsync, "vsync", error); }});
@@ -233,24 +261,32 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.shadows = ShadowQuality::Low;
         base.lodErrorPixels = 2;
         base.bloomQuality = BloomQuality::Low;
+        base.textureQuality = TextureQuality::Low;
+        base.anisotropy = 4;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
         base.shadows = ShadowQuality::Medium;
         base.lodErrorPixels = 1.5f;
         base.bloomQuality = BloomQuality::Medium;
+        base.textureQuality = TextureQuality::Medium;
+        base.anisotropy = 8;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
         base.shadows = ShadowQuality::High;
         base.lodErrorPixels = 1;
         base.bloomQuality = BloomQuality::High;
+        base.textureQuality = TextureQuality::High;
+        base.anisotropy = 16;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
         base.shadows = ShadowQuality::Ultra;
         base.lodErrorPixels = 0.5f;
         base.bloomQuality = BloomQuality::High;
+        base.textureQuality = TextureQuality::Ultra;
+        base.anisotropy = 16;
         break;
     }
     return base;
@@ -407,6 +443,8 @@ GraphicsSettings Graphics::current() const {
     s.antiAliasing = r.antiAliasing();
     s.bloomQuality = r.bloomQuality();
     s.bloomScale = r.bloomScale();
+    s.textureQuality = r.textureQuality();
+    s.anisotropy = r.anisotropy();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -456,6 +494,8 @@ void Graphics::commit() {
     if (s.antiAliasing != previous.antiAliasing) r.setAntiAliasing(s.antiAliasing);
     if (s.bloomQuality != previous.bloomQuality || s.bloomScale != previous.bloomScale)
         r.setBloom(s.bloomQuality, s.bloomScale);
+    if (s.textureQuality != previous.textureQuality) r.setTextureQuality(s.textureQuality);
+    if (s.anisotropy != previous.anisotropy) r.setAnisotropy(s.anisotropy);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

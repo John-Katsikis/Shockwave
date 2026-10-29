@@ -7,6 +7,12 @@ after changing it; the outputs are committed so tests don't need Python.
   Content/textures/ramp.png          left-to-right 0..255 ramp: brightness and banding
   Content/models/panels.glb          blended and alpha-masked panels (double-sided)
   Content/models/skinned-strip.glb   a strip on two joints with a "bend" animation
+  Content/models/materials.glb       material slot bindings (G02): KHR_texture_transform,
+                                     TEXCOORD_1, wrap and filter modes, transformed normal maps
+  Content/models/materials-expected.glb  the same quads with every transform baked into
+                                     plain UV0 and the default sampler: must look identical
+  Content/models/missing-uv1.glb     a material reading TEXCOORD_1 on a mesh without it
+  Scenes/materials.swscene, Scenes/materials-expected.swscene  one of each, same framing
   Scenes/dense-occluder.swscene      1200 small cubes behind a wall, plus a visible row
 """
 import json, math, struct, zlib
@@ -227,8 +233,225 @@ def dense_scene():
     (root / 'Scenes/dense-occluder.swscene').write_text('\n'.join(lines))
 
 
+# ---- Material bindings (G02) ----
+# Every quad of materials.glb has a twin in materials-expected.glb whose UV0 already holds
+# what the binding computes (offset + R(rotation) * (scale * uv), R = [[c, s], [-s, c]] as
+# the Khronos sample renderer and three.js apply it), so the two scenes must render the
+# same image in the unlit, normals and lit views.
+
+def arrow(size=32):
+    """A gradient with a white arrow pointing up the texture and a red top-left corner:
+    any flip, rotation or offset error shows."""
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            r, g, b = x * 255 // (size - 1), y * 255 // (size - 1), 60
+            shaft = 14 <= x <= 17 and 9 <= y <= 27
+            head = 3 <= y <= 10 and abs(x - 15.5) <= (y - 3) * 0.9
+            if shaft or head:
+                r, g, b = 250, 250, 250
+            if x < 6 and y < 6:
+                r, g, b = 255, 20, 20
+            pixels += [r, g, b, 255]
+    return png(size, size, pixels)
+
+
+def bumps(size=32):
+    """Tangent-space normals (green up the texture): a dome top-left, a slope tilting +u
+    on the right half, flat elsewhere."""
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            dx = dy = 0.0
+            cx, cy = x - 9.5, y - 9.5
+            if cx * cx + cy * cy < 64:
+                dx, dy = cx / 10.0, -cy / 10.0   # dy: towards smaller v
+            elif x >= size // 2:
+                dx = 0.6
+            length = math.sqrt(dx * dx + dy * dy + 1)
+            n = (dx / length, dy / length, 1 / length)
+            pixels += [round((c * 0.5 + 0.5) * 255) for c in n] + [255]
+    return png(size, size, pixels)
+
+
+def leaf(size=32):
+    """An alpha mask: a disc and a triangle, opaque; the rest cut out."""
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            disc = (x - 10) ** 2 + (y - 10) ** 2 < 64
+            tri = x > 16 and y > 16 and x + y > 44
+            pixels += [60, 170, 70, 255 if disc or tri else 0]
+    return png(size, size, pixels)
+
+
+TILE = 16
+
+
+def tile_texel(x, y):
+    # Gentle steps between neighbours (nearest sampling may round a texel boundary a pixel
+    # either way), and a fine checker in blue that linear filtering would blur away.
+    return [40 + x * 10, 40 + y * 10, 100 + (x + y) % 2 * 60, 255]
+
+
+def tile():
+    return png(TILE, TILE, [c for y in range(TILE) for x in range(TILE) for c in tile_texel(x, y)])
+
+
+def tile_expected():
+    """What a clamp-U, mirror-V sampler shows across uv -1..2 of tile(), as one image
+    sampled with plain repeat."""
+    def clamp(j):
+        return min(max(j, 0), TILE - 1)
+
+    def mirror(j):
+        j %= 2 * TILE
+        return j if j < TILE else 2 * TILE - 1 - j
+    size = 3 * TILE
+    return png(size, size, [c for y in range(size) for x in range(size)
+                            for c in tile_texel(clamp(x - TILE), mirror(y - TILE))])
+
+
+def transform_uv(uv, t):
+    if not t:
+        return list(uv)
+    c, s = math.cos(t.get('rotation', 0)), math.sin(t.get('rotation', 0))
+    sx, sy = t.get('scale', [1, 1])
+    ox, oy = t.get('offset', [0, 0])
+    out = []
+    for i in range(0, len(uv), 2):
+        u, v = uv[i] * sx, uv[i + 1] * sy
+        out += [ox + c * u + s * v, oy - s * u + c * v]
+    return out
+
+
+QUAD_UV = [0, 1, 1, 1, 1, 0, 0, 0]
+TURNED_UV = [1, 1, 1, 0, 0, 0, 0, 1]   # the same square turned a quarter
+FLAT_UV = [0.5, 0.5] * 4               # all one point: wrong if anything reads it
+
+
+def material_quads():
+    """(name, material, uv0, uv1, expected material, expected uv0, expected uv1)."""
+    t0 = {'offset': [0.3, -0.2], 'scale': [1.5, -0.8], 'rotation': 0.7}
+    tn = {'rotation': 1.1, 'scale': [-1, 1]}
+    tm = {'offset': [0.1, 0.0], 'scale': [2, 2], 'rotation': 0.5}
+    te = {'offset': [0.2, 0.1], 'scale': [1.25, 1.25], 'rotation': -0.4}
+    tc = {'offset': [-1, -1], 'scale': [3, 3]}
+    white = {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0, 'roughnessFactor': 0.6}
+
+    def pbr(**extra):
+        return dict(white, **extra)
+
+    def tex(index, tt=None, tex_coord=None, **extra):
+        info = dict({'index': index}, **extra)
+        if tex_coord is not None:
+            info['texCoord'] = tex_coord
+        if tt is not None:
+            info['extensions'] = {'KHR_texture_transform': tt}
+        return info
+    ARROW, BUMPS, LEAF, TILEX, ARROW_LINEAR, TILE_BIG = 0, 1, 2, 3, 4, 5
+    return [
+        ('Transform', {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW, t0))}, QUAD_UV, None,
+         {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW))}, transform_uv(QUAD_UV, t0), None),
+        ('UV1', {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW, tex_coord=1))}, FLAT_UV, TURNED_UV,
+         {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW))}, TURNED_UV, None),
+        ('KHR texCoord', {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW, {'texCoord': 1, 'offset': [0.25, 0]}))},
+         FLAT_UV, TURNED_UV, {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW))},
+         transform_uv(TURNED_UV, {'offset': [0.25, 0]}), None),
+        ('Normal transformed', {'pbrMetallicRoughness': white, 'normalTexture': tex(BUMPS, tn)}, QUAD_UV, None,
+         {'pbrMetallicRoughness': white, 'normalTexture': tex(BUMPS)}, transform_uv(QUAD_UV, tn), None),
+        ('Normal UV1', {'pbrMetallicRoughness': white, 'normalTexture': tex(BUMPS, tex_coord=1)}, QUAD_UV, TURNED_UV,
+         {'pbrMetallicRoughness': white, 'normalTexture': tex(BUMPS)}, TURNED_UV, None),
+        ('Masked', {'alphaMode': 'MASK', 'alphaCutoff': 0.5, 'doubleSided': True,
+                    'pbrMetallicRoughness': pbr(baseColorTexture=tex(LEAF, tm))}, QUAD_UV, None,
+         {'alphaMode': 'MASK', 'alphaCutoff': 0.5, 'doubleSided': True,
+          'pbrMetallicRoughness': pbr(baseColorTexture=tex(LEAF))}, transform_uv(QUAD_UV, tm), None),
+        ('Clamp mirror nearest', {'pbrMetallicRoughness': pbr(baseColorTexture=tex(TILEX, tc))}, QUAD_UV, None,
+         {'pbrMetallicRoughness': pbr(baseColorTexture=tex(TILE_BIG))}, QUAD_UV, None),
+        ('Per-slot UV sets', {'pbrMetallicRoughness': pbr(baseColorTexture=tex(ARROW_LINEAR)),
+                              'emissiveTexture': tex(ARROW_LINEAR, tex_coord=1), 'emissiveFactor': [0.3, 0.3, 0.3]},
+         QUAD_UV, TURNED_UV, None, None, None),
+        ('Emissive occlusion', {'pbrMetallicRoughness': pbr(baseColorFactor=[0.2, 0.2, 0.2, 1]),
+                                'emissiveTexture': tex(ARROW, te), 'emissiveFactor': [0.6, 0.6, 0.6],
+                                'occlusionTexture': tex(ARROW, te)}, QUAD_UV, None,
+         {'pbrMetallicRoughness': pbr(baseColorFactor=[0.2, 0.2, 0.2, 1]), 'emissiveTexture': tex(ARROW),
+          'emissiveFactor': [0.6, 0.6, 0.6], 'occlusionTexture': tex(ARROW)}, transform_uv(QUAD_UV, te), None),
+    ]
+
+
+def materials_models():
+    for expected in (False, True):
+        glb = Glb()
+        images = [glb.image(arrow()), glb.image(bumps()), glb.image(leaf()), glb.image(tile()), glb.image(tile_expected())]
+        nearest = {'magFilter': 9728, 'minFilter': 9728}
+        samplers = [{'magFilter': 9729, 'minFilter': 9987},
+                    dict(nearest, wrapS=33071, wrapT=33648),   # clamp U, mirror V
+                    dict(nearest)]                            # repeat, for the expected tile
+        textures = [{'source': 0, 'sampler': 0}, {'source': 1, 'sampler': 0}, {'source': 2, 'sampler': 0},
+                    {'source': 3, 'sampler': 1}, {'source': 0}, {'source': 4, 'sampler': 2}]
+        materials, meshes, nodes = [], [], [{'name': 'Quads', 'children': []}]
+        p = [-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]
+        position, normal = glb.add(p, 'f', 'VEC3', 34962, minmax=True), glb.add([0, 0, 1] * 4, 'f', 'VEC3', 34962)
+        indices = glb.add([0, 1, 2, 0, 2, 3], 'I', 'SCALAR', 34963)
+        for i, (name, material, uv0, uv1, ex_material, ex_uv0, ex_uv1) in enumerate(material_quads()):
+            if expected and ex_material is not None:
+                material, uv0, uv1 = ex_material, ex_uv0, ex_uv1
+            materials.append(dict(material, name=name))
+            attributes = {'POSITION': position, 'NORMAL': normal, 'TEXCOORD_0': glb.add(uv0, 'f', 'VEC2', 34962)}
+            if uv1 is not None:
+                attributes['TEXCOORD_1'] = glb.add(uv1, 'f', 'VEC2', 34962)
+            meshes.append({'name': name, 'primitives': [{'attributes': attributes, 'indices': indices, 'material': i}]})
+            nodes[0]['children'].append(len(nodes))
+            nodes.append({'name': name, 'mesh': i, 'translation': [(i % 3 - 1) * 1.2, (1 - i // 3) * 1.2, 0]})
+        doc = {'extensionsUsed': ['KHR_texture_transform'], 'samplers': samplers, 'textures': textures,
+               'materials': materials, 'meshes': meshes, 'nodes': nodes, 'scenes': [{'nodes': [0]}], 'scene': 0}
+        name = 'materials-expected.glb' if expected else 'materials.glb'
+        glb.write(root / 'Content/models' / name, doc)
+
+
+def missing_uv1():
+    """A material asking for TEXCOORD_1 on a mesh that has none: the importer warns, and
+    --check flags any scene using it. No fixture scene does."""
+    glb = Glb()
+    image = glb.image(arrow())
+    shape = quad(glb, 1, 1)
+    doc = {'textures': [{'source': image}],
+           'materials': [{'name': 'Missing UV1', 'pbrMetallicRoughness': {'baseColorTexture': {'index': 0, 'texCoord': 1}}}],
+           'meshes': [{'name': 'Missing UV1', 'primitives': [dict(shape, material=0)]}],
+           'nodes': [{'name': 'Missing UV1', 'mesh': 0}], 'scenes': [{'nodes': [0]}], 'scene': 0}
+    glb.write(root / 'Content/models/missing-uv1.glb', doc)
+
+
+def materials_scene(expected):
+    model = 'models/materials-expected.glb' if expected else 'models/materials.glb'
+    lines = [
+        '# Generated by Tools/generate.py; edit that, not this file.',
+        '# Material slot bindings (G02): nine quads, each testing one binding. materials.swscene',
+        '# reads them through KHR_texture_transform, TEXCOORD_1 and sampler modes;',
+        '# materials-expected.swscene draws the same quads with everything baked into UV0.',
+        '# Rendered in the unlit, normals and lit views the two must match (GraphicsMaterialsCheck).',
+        '# Camera: "Main Camera".',
+        'shockwave_scene 2', '',
+        'entity "Environment"', '  Environment', '    sky_color 0.35 0.42 0.55 1', '    ground_color 0.2 0.18 0.15 1',
+        '    ambient_intensity 0.6', 'end', '',
+        'entity "Sun"', '  Transform', '    rotation -25 20 0', '  Light', '    type Directional',
+        '    color 1 0.95 0.88 1', '    intensity 3', 'end', '',
+        'entity "Backdrop"', '  Transform', '    position 0 0 -0.6', '    scale 5 5 0.2', '  MeshRenderer',
+        '    mesh cube', '    tint 0.7 0.7 0.7 1', 'end', '',
+        'entity "Quads"', '  Transform', '    position 0 0 0', '  ModelRenderer', f'    model {model}', 'end', '',
+        'entity "Main Camera"', '  Transform', '    position 0 0 4.4', '  Camera', '    fov 50', '    primary 1',
+        'end', '',
+    ]
+    name = 'materials-expected.swscene' if expected else 'materials.swscene'
+    (root / 'Scenes' / name).write_text('\n'.join(lines))
+
+
 (root / 'Content/textures/checker-fine.png').write_bytes(checker())
 (root / 'Content/textures/ramp.png').write_bytes(ramp())
 panels()
 skinned_strip()
 dense_scene()
+materials_models()
+missing_uv1()
+materials_scene(False)
+materials_scene(True)

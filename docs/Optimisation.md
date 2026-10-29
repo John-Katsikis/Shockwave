@@ -114,8 +114,8 @@ Some textures need different settings, such as pixel art that must stay exact. T
 change one asset:
 
 1. Select it in the Content window.
-2. In **Window > Optimisation**, under **Selected asset**, pick its compression or its
-   number of levels.
+2. In **Window > Optimisation**, under **Selected asset**, pick its compression, its
+   number of levels, or whether it's a UI texture.
 
 The editor saves your choice next to the asset, in a file named after it with
 `.swimport` added: `bricks.png.swimport`. **Use project settings** removes the file.
@@ -133,6 +133,7 @@ compression off
 |---|---|---|
 | `compression` | `high`, `small`, `off` | Textures, and a model's textures |
 | `lods` | `0` to `7` | Models |
+| `category` | `material`, `ui` | Textures, and a model's textures. `ui` keeps every level whatever the player's Textures quality; use it for menu art, icons and anything read as text |
 
 - Saving the file re-imports its asset, in the editor and in a running game.
 - A mistake in the file, such as an unknown key or a bad value, makes the asset fail to

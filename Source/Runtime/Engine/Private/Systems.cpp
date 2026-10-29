@@ -168,6 +168,8 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         options.occlusionTexture = map(material.occlusionTexture);
                         options.normalScale = material.normalScale;
                         options.occlusionStrength = material.occlusionStrength;
+                        for (size_t slot = 0; slot < kMaterialSlots; ++slot)
+                            options.bindings[slot] = drawBinding(*asset, mesh.material, MaterialSlot(slot));
                         options.castShadows = instance.castShadows;
                         // Node and slot within it: the same part of the model every frame.
                         const auto slot = static_cast<uint32_t>(&index - node.meshes.data());
