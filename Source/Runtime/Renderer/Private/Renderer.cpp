@@ -5,6 +5,7 @@
 #include <Renderer/RenderBackend.h>
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <functional>
 #include <map>
@@ -20,12 +21,20 @@ RenderViewId RenderViewId::create() {
     return {next.fetch_add(1, std::memory_order_relaxed)};
 }
 
+const char* antiAliasingName(AntiAliasing aa) { return aa == AntiAliasing::Fxaa ? "fxaa" : "none"; }
+
+const char* bloomQualityName(BloomQuality quality) {
+    constexpr const char* names[] = {"off", "low", "medium", "high"};
+    return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
+}
+
 const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
     switch (category) {
     case GpuMemoryCategory::RenderTargets: return "render targets";
     case GpuMemoryCategory::ShadowMaps: return "shadow maps";
     case GpuMemoryCategory::Environment: return "environment lighting";
     case GpuMemoryCategory::Bloom: return "bloom";
+    case GpuMemoryCategory::AntiAliasing: return "anti-aliasing";
     case GpuMemoryCategory::Meshes: return "meshes";
     case GpuMemoryCategory::Textures: return "textures";
     case GpuMemoryCategory::FrameData: return "frame data";
@@ -63,6 +72,9 @@ struct Renderer::State {
     LightingDesc lighting;
     DebugView debugView = DebugView::Lit;
     ShadowQuality shadowQuality = ShadowQuality::High;
+    AntiAliasing antiAliasing = AntiAliasing::None;
+    BloomQuality bloomQuality = BloomQuality::High;
+    float bloomScale = 1.0f;
     LodSettings lodSettings;
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -131,6 +143,8 @@ struct Renderer::State {
         backend->setLighting(lighting);
         backend->setDebugView(debugView);
         backend->setShadowQuality(shadowQuality);
+        backend->setAntiAliasing(antiAliasing);
+        backend->setBloom(bloomQuality, bloomScale);
         backend->setRenderScale(renderScale);
         backend->setViewport(viewportWidth, viewportHeight);
         backend->setLowLatency(lowLatency);
@@ -397,6 +411,18 @@ void Renderer::setShadowQuality(ShadowQuality quality) {
     m->backend->setShadowQuality(quality);
 }
 ShadowQuality Renderer::shadowQuality() const { return m->shadowQuality; }
+void Renderer::setAntiAliasing(AntiAliasing aa) {
+    m->antiAliasing = aa;
+    m->backend->setAntiAliasing(aa);
+}
+AntiAliasing Renderer::antiAliasing() const { return m->antiAliasing; }
+void Renderer::setBloom(BloomQuality quality, float scale) {
+    m->bloomQuality = quality;
+    m->bloomScale = std::isfinite(scale) ? std::clamp(scale, 0.0f, 1.0f) : 1.0f;
+    m->backend->setBloom(m->bloomQuality, m->bloomScale);
+}
+BloomQuality Renderer::bloomQuality() const { return m->bloomQuality; }
+float Renderer::bloomScale() const { return m->bloomScale; }
 void Renderer::setRenderScale(float scale) {
     m->renderScale = std::clamp(scale, 0.25f, 2.0f);
     m->backend->setRenderScale(m->renderScale);

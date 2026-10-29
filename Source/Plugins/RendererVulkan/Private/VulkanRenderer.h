@@ -49,6 +49,8 @@ public:
     void setLighting(const LightingDesc& lighting) override;
     void setDebugView(DebugView view) override;
     void setShadowQuality(ShadowQuality quality) override;
+    void setAntiAliasing(AntiAliasing aa) override;
+    void setBloom(BloomQuality quality, float scale) override;
     void setRenderScale(float scale) override;
     void setViewport(uint32_t width, uint32_t height) override;
     void setVsync(bool vsync) override;

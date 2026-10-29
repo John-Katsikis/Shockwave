@@ -677,6 +677,47 @@ void Editor::drawPreferencesWindow() {
         changed = true;
     }
     ImGui::SetItemTooltip("Shadow quality in the editor's viewport. The player uses the project's setting");
+    // The rest come straight from the shared settings table: same names, values and help as
+    // .swgraphics files and game menus.
+    auto choiceSetting = [&](const char* key, std::string& pref) {
+        const shockwave::GraphicsSettingInfo* info = shockwave::findGraphicsSetting(key);
+        if (!info) return;
+        if (ImGui::BeginCombo(info->label, pref.c_str())) {
+            for (const char* choice : info->choices) {
+                if (ImGui::Selectable(choice, pref == choice) && pref != choice) {
+                    auto settings = engine().graphics().requested();
+                    std::string error;
+                    if (shockwave::setGraphicsSetting(settings, key, choice, error) &&
+                        engine().graphics().apply(settings, error)) {
+                        pref = choice;
+                        changed = true;
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("%s", info->tooltip);
+    };
+    choiceSetting("anti_aliasing", m_prefs.antiAliasing);
+    choiceSetting("bloom_quality", m_prefs.bloomQuality);
+    if (const auto* info = shockwave::findGraphicsSetting("bloom_scale")) {
+        if (ImGui::SliderFloat(info->label, &m_prefs.bloomScale, 0.0f, 1.0f, "%.2fx")) {
+            auto settings = engine().graphics().requested();
+            settings.bloomScale = m_prefs.bloomScale;
+            std::string error;
+            engine().graphics().apply(settings, error);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("%s", info->tooltip);
+    }
+    // Requested and running can differ (a fallback, or a change still being made): say so.
+    for (const shockwave::EffectiveSetting& setting : renderer.effectiveSettings()) {
+        if (setting.reason.empty() || setting.name == "render_scale") continue;
+        ImGui::TextColored(
+            gui::semanticColor(gui::currentTheme().warning), "%s: %s, not %s", setting.name.c_str(),
+            setting.effective.c_str(), setting.requested.c_str());
+        ImGui::SetItemTooltip("%s", setting.reason.c_str());
+    }
 
     ImGui::SeparatorText("Plugins");
     if (ImGui::BeginCombo("Renderer", renderer.backendName().c_str())) {

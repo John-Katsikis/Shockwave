@@ -48,6 +48,7 @@ float filterRadius(float softness) { return 0.75f + std::clamp(softness, 0.0f, 1
 
 void VulkanRenderer::Impl::createShadowMaps() {
     shadowSettings = shadowConfig(shadowQuality);
+    builtShadowQuality = shadowQuality;
     if (shadowQuality == ShadowQuality::Off) return;
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     const uint32_t cascades = shadowSettings.cascadeSize * 2;
@@ -73,6 +74,28 @@ void VulkanRenderer::Impl::createShadowMaps() {
         writes[i].pImageInfo = &infos[i];
     }
     vkUpdateDescriptorSets(context->device(), 2, writes, 0, nullptr);
+}
+
+bool VulkanRenderer::Impl::rebuildShadowMaps() {
+    const int next = 1 - shadowPair;
+    if (shadowPairBusy[next]) return false;
+    if (cascadeAtlas.image || localAtlas.image) {
+        shadowPairBusy[shadowPair] = true;
+        retire([this, cascade = cascadeAtlas, local = localAtlas, pair = shadowPair]() mutable {
+            destroyImage(cascade);
+            destroyImage(local);
+            shadowPairBusy[pair] = false;
+        });
+        cascadeAtlas = {};
+        localAtlas = {};
+    }
+    cascadePasses.clear();
+    localPasses.clear();
+    shadowPair = next;
+    cascadeSlot = shadowSlots[next][0];
+    localSlot = shadowSlots[next][1];
+    createShadowMaps();
+    return true;
 }
 
 void VulkanRenderer::Impl::destroyShadowMaps() {

@@ -152,6 +152,12 @@ void Editor::applyViewPreferences() {
     engine().setLowLatency(m_prefs.lowLatency);
     engine().renderer().setRenderScale(m_prefs.renderScale);
     engine().renderer().setShadowQuality(static_cast<shockwave::ShadowQuality>(m_prefs.shadowQuality));
+    shockwave::GraphicsSettings settings;
+    std::string error;
+    if (shockwave::setGraphicsSetting(settings, "anti_aliasing", m_prefs.antiAliasing, error))
+        engine().renderer().setAntiAliasing(settings.antiAliasing);
+    if (shockwave::setGraphicsSetting(settings, "bloom_quality", m_prefs.bloomQuality, error))
+        engine().renderer().setBloom(settings.bloomQuality, m_prefs.bloomScale);
 }
 
 void Editor::savePreferences() {

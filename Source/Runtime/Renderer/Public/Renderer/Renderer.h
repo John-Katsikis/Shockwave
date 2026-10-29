@@ -138,6 +138,15 @@ public:
     void setShadowQuality(ShadowQuality quality);
     ShadowQuality shadowQuality() const;
     ShadowStats shadowStats() const;
+    // Main thread, like the rest of the settings. Turning either off skips its passes and
+    // frees its images once the frames using them finish; neither waits for the GPU.
+    void setAntiAliasing(AntiAliasing aa);
+    AntiAliasing antiAliasing() const;
+    // scale: the player's multiplier on the scene's authored bloom intensity, 0..1; 0 or
+    // BloomQuality::Off draws no bloom.
+    void setBloom(BloomQuality quality, float scale);
+    BloomQuality bloomQuality() const;
+    float bloomScale() const;
 
     // Saves the next finished frame, tonemapped, as a PNG at output resolution (the
     // editor viewport or the window, without GUI). Main thread. The result is reported

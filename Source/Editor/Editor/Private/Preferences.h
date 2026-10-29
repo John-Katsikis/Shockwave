@@ -26,6 +26,10 @@ struct Preferences {
     bool autoReloadGameCode = true;   // reload the game module whenever it's rebuilt
     bool autoReloadRenderer = true;   // reload the renderer plugin whenever it's rebuilt
     int shadowQuality = 3;   // shockwave::ShadowQuality: 0 off .. 4 ultra
+    // As spelled in .swgraphics (docs/GraphicsSchema.md).
+    std::string antiAliasing = "none";
+    std::string bloomQuality = "high";
+    float bloomScale = 1.0f;
     float masterVolume = 1.0f;
 
     float cameraSpeed = 8.0f;

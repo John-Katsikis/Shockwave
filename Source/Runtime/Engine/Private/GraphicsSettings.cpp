@@ -14,52 +14,267 @@
 #include <sstream>
 
 namespace shockwave {
-GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
-    switch (preset) {
-    case GraphicsPreset::Low:
-        base.renderScale = 0.67f;
-        base.shadows = ShadowQuality::Low;
-        base.lodErrorPixels = 2;
-        break;
-    case GraphicsPreset::Medium:
-        base.renderScale = 0.85f;
-        base.shadows = ShadowQuality::Medium;
-        base.lodErrorPixels = 1.5f;
-        break;
-    case GraphicsPreset::High:
-        base.renderScale = 1;
-        base.shadows = ShadowQuality::High;
-        base.lodErrorPixels = 1;
-        break;
-    case GraphicsPreset::Ultra:
-        base.renderScale = 1;
-        base.shadows = ShadowQuality::Ultra;
-        base.lodErrorPixels = 0.5f;
-        break;
-    }
-    return base;
-}
-bool validateGraphicsSettings(const GraphicsSettings& s, std::string& error) {
-    error.clear();
-    if (!std::isfinite(s.renderScale) || s.renderScale < 0.25f || s.renderScale > 2)
-        error = "render_scale must be in 0.25..2";
-    else if (static_cast<uint32_t>(s.shadows) > 4)
-        error = "shadow_quality must be off, low, medium, high or ultra";
-    else if (!std::isfinite(s.lodErrorPixels) || s.lodErrorPixels < 0 || s.lodErrorPixels > 100)
-        error = "lod_error_pixels must be in 0..100";
-    else if (
-        !std::isfinite(s.frameLimit) || s.frameLimit < 0 || (s.frameLimit > 0 && s.frameLimit < 10) ||
-        s.frameLimit > 1000)
-        error = "frame_limit must be 0 (uncapped) or in 10..1000";
-    return error.empty();
-}
 namespace {
 template <class T>
 bool number(const std::string& text, T& value) {
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
     return ec == std::errc{} && end == text.data() + text.size() && std::isfinite(value);
 }
+template <class T>
+std::string numberText(T value) {
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<T>::max_digits10) << value;
+    return out.str();
+}
+// An enum stored by its index into choices.
+template <class E>
+bool choice(const std::vector<const char*>& choices, const std::string& value, E& out) {
+    for (size_t i = 0; i < choices.size(); ++i)
+        if (value == choices[i]) {
+            out = static_cast<E>(i);
+            return true;
+        }
+    return false;
+}
+std::string list(const std::vector<const char*>& choices) {
+    std::string text;
+    for (size_t i = 0; i < choices.size(); ++i)
+        text += (i ? (i + 1 == choices.size() ? " or " : ", ") : "") + std::string(choices[i]);
+    return text;
+}
+const std::vector<const char*> kBool = {"true", "false"};
+const std::vector<const char*> kShadowChoices = {"off", "low", "medium", "high", "ultra"};
+const std::vector<const char*> kAntiAliasingChoices = {"none", "fxaa"};
+const std::vector<const char*> kBloomChoices = {"off", "low", "medium", "high"};
+
+bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
+    if (value != "true" && value != "false") {
+        error = std::string(key) + " must be true or false";
+        return false;
+    }
+    out = value == "true";
+    return true;
+}
+
+std::vector<GraphicsSettingInfo> makeInfo() {
+    using S = GraphicsSettings;
+    std::vector<GraphicsSettingInfo> info;
+    info.push_back(
+        {"render_scale",
+         "Render scale",
+         "Quality",
+         "Scene resolution as a multiple of the output. Below 1 is faster and softer; above 1 supersamples. "
+         "Game UI always draws at output resolution.",
+         "0.25..2",
+         {},
+         GraphicsApply::Targets,
+         true,
+         [](const S& s) { return numberText(s.renderScale); },
+         [](S& s, const std::string& v, std::string& error) {
+             float x = 0;
+             if (!number(v, x) || x < 0.25f || x > 2) {
+                 error = "render_scale must be a number in 0.25..2";
+                 return false;
+             }
+             s.renderScale = x;
+             return true;
+         }});
+    info.push_back(
+        {"shadow_quality", "Shadows", "Quality",
+         "Shadow map size and filtering. Off keeps direct lighting but draws no shadow maps.",
+         "off, low, medium, high, ultra", kShadowChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(kShadowChoices[std::min<size_t>(size_t(s.shadows), 4)]); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kShadowChoices, v, s.shadows)) return true;
+             error = "shadow_quality must be " + list(kShadowChoices);
+             return false;
+         }});
+    info.push_back(
+        {"anti_aliasing", "Anti-aliasing", "Quality",
+         "Smooths jagged edges. FXAA is a fast pass after tone mapping; it never touches game UI. "
+         "TAA comes later (batch G10).",
+         "none, fxaa", kAntiAliasingChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(antiAliasingName(s.antiAliasing)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kAntiAliasingChoices, v, s.antiAliasing)) return true;
+             error = v == "taa" ? "anti_aliasing taa isn't available yet (it arrives with temporal anti-aliasing, "
+                                  "batch G10); use none or fxaa"
+                                : "anti_aliasing must be " + list(kAntiAliasingChoices);
+             return false;
+         }});
+    info.push_back(
+        {"bloom_quality", "Bloom", "Quality",
+         "How finely bloom is filtered: low starts at quarter resolution with 4 levels, medium at half with 5, "
+         "high at half with 6. Off skips bloom and frees its memory. The scene's bloom intensity stays as authored.",
+         "off, low, medium, high", kBloomChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(bloomQualityName(s.bloomQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kBloomChoices, v, s.bloomQuality)) return true;
+             error = "bloom_quality must be " + list(kBloomChoices);
+             return false;
+         }});
+    info.push_back(
+        {"bloom_scale",
+         "Bloom strength",
+         "Quality",
+         "Your multiplier on each scene's bloom intensity: 1 is as the artist set it, 0 turns bloom off.",
+         "0..1",
+         {},
+         GraphicsApply::Uniform,
+         false,
+         [](const S& s) { return numberText(s.bloomScale); },
+         [](S& s, const std::string& v, std::string& error) {
+             float x = 0;
+             if (!number(v, x) || x < 0 || x > 1) {
+                 error = "bloom_scale must be a number in 0..1";
+                 return false;
+             }
+             s.bloomScale = x;
+             return true;
+         }});
+    info.push_back(
+        {"lod_error_pixels",
+         "Mesh detail",
+         "Quality",
+         "How far, in rendered pixels, a simpler mesh level may differ from the full one. 0 always draws full "
+         "detail. Needs imported levels of detail.",
+         "0..100",
+         {},
+         GraphicsApply::Uniform,
+         true,
+         [](const S& s) { return numberText(s.lodErrorPixels); },
+         [](S& s, const std::string& v, std::string& error) {
+             float x = 0;
+             if (!number(v, x) || x < 0 || x > 100) {
+                 error = "lod_error_pixels must be a number in 0..100";
+                 return false;
+             }
+             s.lodErrorPixels = x;
+             return true;
+         }});
+    info.push_back(
+        {"vsync", "VSync", "Display", "Synchronize presentation with the display, so frames never tear.", "true, false",
+         kBool, GraphicsApply::Targets, false, [](const S& s) { return std::string(s.vsync ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) { return boolean(v, s.vsync, "vsync", error); }});
+    info.push_back(
+        {"frame_limit",
+         "Frame limit",
+         "Display",
+         "Frames per second at most; 0 means uncapped apart from VSync.",
+         "0 or 10..1000",
+         {},
+         GraphicsApply::Uniform,
+         false,
+         [](const S& s) { return numberText(s.frameLimit); },
+         [](S& s, const std::string& v, std::string& error) {
+             double x = 0;
+             if (!number(v, x) || x < 0 || (x > 0 && x < 10) || x > 1000) {
+                 error = "frame_limit must be 0 (uncapped) or in 10..1000";
+                 return false;
+             }
+             s.frameLimit = x;
+             return true;
+         }});
+    info.push_back(
+        {"low_latency", "Low latency", "Display",
+         "Wait for each frame to reach the screen before reading input for the next, so input feels more "
+         "immediate. Costs some frame rate when the GPU is the bottleneck.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.lowLatency ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.lowLatency, "low_latency", error);
+         }});
+    return info;
+}
 }   // namespace
+
+const std::vector<GraphicsSettingInfo>& graphicsSettingInfo() {
+    static const std::vector<GraphicsSettingInfo> info = makeInfo();
+    return info;
+}
+const GraphicsSettingInfo* findGraphicsSetting(const std::string& key) {
+    for (const auto& info : graphicsSettingInfo())
+        if (key == info.key) return &info;
+    return nullptr;
+}
+bool setGraphicsSetting(
+    GraphicsSettings& settings, const std::string& key, const std::string& value, std::string& error) {
+    const GraphicsSettingInfo* info = findGraphicsSetting(key);
+    if (!info) {
+        error = "unknown graphics setting " + key;
+        return false;
+    }
+    GraphicsSettings next = settings;
+    if (!info->set(next, value, error)) return false;
+    settings = next;
+    error.clear();
+    return true;
+}
+const char* graphicsApplyName(GraphicsApply apply) {
+    switch (apply) {
+    case GraphicsApply::Uniform: return "uniform";
+    case GraphicsApply::Pipeline: return "pipeline";
+    case GraphicsApply::Targets: return "targets";
+    case GraphicsApply::Restart: return "restart";
+    }
+    return "?";
+}
+const char* graphicsPresetName(GraphicsPreset preset) {
+    constexpr const char* names[] = {"low", "medium", "high", "ultra"};
+    return names[std::min<size_t>(size_t(preset), 3)];
+}
+GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
+    // Every preset smooths edges with FXAA: it costs little, and TAA isn't here yet.
+    base.antiAliasing = AntiAliasing::Fxaa;
+    switch (preset) {
+    case GraphicsPreset::Low:
+        base.renderScale = 0.67f;
+        base.shadows = ShadowQuality::Low;
+        base.lodErrorPixels = 2;
+        base.bloomQuality = BloomQuality::Low;
+        break;
+    case GraphicsPreset::Medium:
+        base.renderScale = 0.85f;
+        base.shadows = ShadowQuality::Medium;
+        base.lodErrorPixels = 1.5f;
+        base.bloomQuality = BloomQuality::Medium;
+        break;
+    case GraphicsPreset::High:
+        base.renderScale = 1;
+        base.shadows = ShadowQuality::High;
+        base.lodErrorPixels = 1;
+        base.bloomQuality = BloomQuality::High;
+        break;
+    case GraphicsPreset::Ultra:
+        base.renderScale = 1;
+        base.shadows = ShadowQuality::Ultra;
+        base.lodErrorPixels = 0.5f;
+        base.bloomQuality = BloomQuality::High;
+        break;
+    }
+    return base;
+}
+std::optional<GraphicsPreset> matchingGraphicsPreset(const GraphicsSettings& settings) {
+    for (int i = 0; i < 4; ++i) {
+        const auto preset = static_cast<GraphicsPreset>(i);
+        const GraphicsSettings candidate = graphicsPreset(preset, settings);
+        bool same = true;
+        for (const auto& info : graphicsSettingInfo())
+            if (info.preset && info.get(candidate) != info.get(settings)) same = false;
+        if (same) return preset;
+    }
+    return std::nullopt;
+}
+bool validateGraphicsSettings(const GraphicsSettings& s, std::string& error) {
+    // Each value must survive its own text form: that's the range check, in one place.
+    for (const auto& info : graphicsSettingInfo()) {
+        GraphicsSettings copy = s;
+        if (!info.set(copy, info.get(s), error)) return false;
+    }
+    error.clear();
+    return true;
+}
 bool loadGraphicsSettings(const std::filesystem::path& file, GraphicsSettings& out, std::string& error) {
     error.clear();
     std::ifstream in(file);
@@ -89,21 +304,8 @@ bool loadGraphicsSettings(const std::filesystem::path& file, GraphicsSettings& o
             continue;
         }
         if (!seen.insert(key).second) return fail("duplicate setting " + key);
-        if (key == "render_scale") {
-            if (!number(value, result.renderScale)) return fail("invalid render_scale");
-        } else if (key == "lod_error_pixels") {
-            if (!number(value, result.lodErrorPixels)) return fail("invalid lod_error_pixels");
-        } else if (key == "frame_limit") {
-            if (!number(value, result.frameLimit)) return fail("invalid frame_limit");
-        } else if (key == "shadow_quality")
-            result.shadows = static_cast<ShadowQuality>(parseShadowQuality(value));
-        else if (key == "vsync" || key == "low_latency") {
-            if (value != "true" && value != "false") return fail(key + " must be true or false");
-            (key == "vsync" ? result.vsync : result.lowLatency) = value == "true";
-        } else
-            return fail("unknown graphics setting " + key);
         std::string problem;
-        if (!validateGraphicsSettings(result, problem)) return fail(problem);
+        if (!setGraphicsSetting(result, key, value, problem)) return fail(problem);
     }
     if (!header) return fail("expected swgraphics 1");
     if (in.bad()) return fail("failed reading graphics settings");
@@ -112,13 +314,9 @@ bool loadGraphicsSettings(const std::filesystem::path& file, GraphicsSettings& o
     return true;
 }
 std::string graphicsSettingsText(const GraphicsSettings& s) {
-    std::ostringstream out;
-    out.imbue(std::locale::classic());
-    out << std::setprecision(std::numeric_limits<double>::max_digits10) << "swgraphics 1\nrender_scale "
-        << s.renderScale << "\nshadow_quality " << shadowQualityName(static_cast<int>(s.shadows))
-        << "\nlod_error_pixels " << s.lodErrorPixels << "\nvsync " << (s.vsync ? "true" : "false") << "\nframe_limit "
-        << s.frameLimit << "\nlow_latency " << (s.lowLatency ? "true" : "false") << '\n';
-    return out.str();
+    std::string text = "swgraphics 1\n";
+    for (const auto& info : graphicsSettingInfo()) text += std::string(info.key) + " " + info.get(s) + "\n";
+    return text;
 }
 bool saveGraphicsSettings(const std::filesystem::path& file, const GraphicsSettings& s, std::string& error) {
     if (!validateGraphicsSettings(s, error)) return false;
@@ -154,7 +352,7 @@ bool saveGraphicsSettings(const std::filesystem::path& file, const GraphicsSetti
     return true;
 }
 std::string graphicsSettingsSchema() {
-    return R"(# Graphics settings schema
+    std::string text = R"(# Graphics settings schema
 
 Generated by `player --graphics-schema docs/GraphicsSchema.md`.
 
@@ -163,24 +361,27 @@ Unknown keys, duplicate keys, non-finite numbers and unsupported versions are er
 Omitted keys inherit the preceding layer: project manifest, Config/Graphics.swgraphics,
 user preferences, then command-line overrides. See [Graphics](Graphics.md).
 
-| Key | Values | Built-in default | Meaning |
-|---|---|---|---|
-| render_scale | 0.25..2 | 1 | Scene resolution multiplier; game UI stays at output resolution. |
-| shadow_quality | off, low, medium, high, ultra | high | Shadow map quality. |
-| lod_error_pixels | 0..100 | 1 | Mesh LOD error in rendered pixels; 0 forces full detail. Needs imported LODs. |
-| vsync | true, false | true | Synchronize presentation with the display. |
-| frame_limit | 0 or 10..1000 | 0 | FPS cap; 0 means uncapped except for VSync. |
-| low_latency | true, false | false | Wait for presentation before polling the next frame's input. |
+Presets (low, medium, high, ultra) set the keys marked *preset* and keep the others.
+*Applies* says how a change reaches the screen: `uniform` next frame; `targets` once new
+images are made, the old ones freed after the frames using them finish. No setting needs a
+restart, and none waits for the GPU to go idle except where noted in Graphics.md.
+
+| Key | Values | Built-in default | Preset | Applies | Meaning |
+|---|---|---|---|---|---|
 )";
+    const GraphicsSettings defaults;
+    for (const auto& info : graphicsSettingInfo())
+        text += std::string("| ") + info.key + " | " + info.values + " | " + info.get(defaults) + " | " +
+                (info.preset ? "preset" : "") + " | " + graphicsApplyName(info.apply) + " | " + info.tooltip + " |\n";
+    return text;
 }
 bool projectGraphicsSettings(const Project& project, GraphicsSettings& out, std::string& error) {
-    GraphicsSettings settings{
-        1,
-        static_cast<ShadowQuality>(project.shadowQuality),
-        static_cast<float>(project.lodErrorPixels),
-        project.vsync,
-        project.frameLimit,
-        project.lowLatency};
+    GraphicsSettings settings;
+    settings.shadows = static_cast<ShadowQuality>(project.shadowQuality);
+    settings.lodErrorPixels = static_cast<float>(project.lodErrorPixels);
+    settings.vsync = project.vsync;
+    settings.frameLimit = project.frameLimit;
+    settings.lowLatency = project.lowLatency;
     const auto file = project.root / "Config" / "Graphics.swgraphics";
     std::error_code ec;
     const bool exists = std::filesystem::exists(file, ec);
@@ -196,17 +397,44 @@ bool projectGraphicsSettings(const Project& project, GraphicsSettings& out, std:
 GraphicsSettings Graphics::current() const {
     if (!m_engine) return m_headless;
     const auto& r = m_engine->renderer();
-    return {r.renderScale(), r.shadowQuality(),      r.lodSettings().maxErrorPixels,
-            r.vsync(),       m_engine->frameLimit(), m_engine->lowLatency()};
+    GraphicsSettings s;
+    s.renderScale = r.renderScale();
+    s.shadows = r.shadowQuality();
+    s.lodErrorPixels = r.lodSettings().maxErrorPixels;
+    s.vsync = r.vsync();
+    s.frameLimit = m_engine->frameLimit();
+    s.lowLatency = m_engine->lowLatency();
+    s.antiAliasing = r.antiAliasing();
+    s.bloomQuality = r.bloomQuality();
+    s.bloomScale = r.bloomScale();
+    return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
 bool Graphics::apply(const GraphicsSettings& s, std::string& error) {
     if (!validateGraphicsSettings(s, error)) return false;
+    ++m_generation;
     if (m_engine)
         m_pending = s;
     else
         m_headless = s;
     return true;
+}
+Graphics::Status Graphics::status() const {
+    Status status;
+    status.generation = m_generation;
+    if (m_pending) {
+        status.state = State::Pending;
+        return status;
+    }
+    if (!m_engine) return status;
+    for (EffectiveSetting& setting : m_engine->renderer().effectiveSettings()) {
+        // Rounding the scene to whole pixels isn't a fallback.
+        if (setting.reason.empty() || setting.name == "render_scale") continue;
+        if (setting.reason.rfind("pending", 0) == 0) status.state = State::Pending;
+        status.fallbacks.push_back(std::move(setting));
+    }
+    if (status.state != State::Pending && !status.fallbacks.empty()) status.state = State::AppliedWithFallback;
+    return status;
 }
 bool Graphics::configure(const GraphicsSettings& defaults, std::filesystem::path file, std::string& error) {
     if (!validateGraphicsSettings(defaults, error)) return false;
@@ -225,6 +453,9 @@ void Graphics::commit() {
     auto& r = m_engine->renderer();
     if (s.renderScale != previous.renderScale) r.setRenderScale(s.renderScale);
     if (s.shadows != previous.shadows) r.setShadowQuality(s.shadows);
+    if (s.antiAliasing != previous.antiAliasing) r.setAntiAliasing(s.antiAliasing);
+    if (s.bloomQuality != previous.bloomQuality || s.bloomScale != previous.bloomScale)
+        r.setBloom(s.bloomQuality, s.bloomScale);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

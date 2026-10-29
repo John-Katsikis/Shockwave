@@ -140,6 +140,19 @@ enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades 
 // A spot light takes one tile, a point light six.
 enum class ShadowQuality : uint32_t { Off, Low, Medium, High, Ultra };
 
+// Spatial anti-aliasing after tone mapping, before game UI (G01). TAA arrives with G10.
+enum class AntiAliasing : uint32_t { None, Fxaa };
+const char* antiAliasingName(AntiAliasing aa);   // "none", "fxaa"
+// Bloom's workload (A00). The scene's look stays Environment::bloom_intensity; this picks
+// how finely it's filtered:
+//            first level   levels
+//   Low      1/4 scene     4
+//   Medium   1/2 scene     5
+//   High     1/2 scene     6      (what bloom always was before A00)
+// Off skips the passes and frees the bloom chain.
+enum class BloomQuality : uint32_t { Off, Low, Medium, High };
+const char* bloomQualityName(BloomQuality quality);   // "off", "low", "medium", "high"
+
 // Lights used per frame; more are dropped and counted (Renderer::droppedLights).
 inline constexpr uint32_t kMaxLights = 256;
 
@@ -187,6 +200,7 @@ struct EffectiveSetting {
     std::string name;   // as spelled in .swgraphics: "render_scale", "vsync", ...
     std::string requested, effective;
     std::string reason;   // empty when they agree
+    std::string detail;   // what the effective value costs or comes to: atlas sizes, levels, ...
 };
 
 // GPU memory by what it's for. Later effects (prepass, AO, history, baked lighting,
@@ -196,6 +210,7 @@ enum class GpuMemoryCategory : uint32_t {
     ShadowMaps,
     Environment,   // image-based lighting cubes and BRDF table
     Bloom,
+    AntiAliasing,   // FXAA's input image
     Meshes,   // vertices, indices, levels of detail, skin weights
     Textures,
     FrameData,   // per-frame draw tables, lights, joints, skinned vertices

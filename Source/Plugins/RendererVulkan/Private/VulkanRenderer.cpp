@@ -61,6 +61,12 @@ void VulkanRenderer::setLighting(const LightingDesc& lighting) { m_impl->lightin
 void VulkanRenderer::setDebugView(DebugView view) { m_impl->debugView = view; }
 uint32_t VulkanRenderer::lightCount() const { return m_impl->lastLightCount; }
 uint32_t VulkanRenderer::droppedLights() const { return m_impl->lastDroppedLights; }
+// Both take effect at the next frame boundary (beginFrame), without waiting for the GPU.
+void VulkanRenderer::setAntiAliasing(AntiAliasing aa) { m_impl->antiAliasing = aa; }
+void VulkanRenderer::setBloom(BloomQuality quality, float scale) {
+    m_impl->bloomQuality = quality;
+    m_impl->bloomScale = scale;
+}
 void VulkanRenderer::setShadowQuality(ShadowQuality quality) {
     if (quality == m_impl->shadowQuality) return;
     m_impl->shadowQuality = quality;
