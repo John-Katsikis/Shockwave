@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
         std::filesystem::path graphicsFile, graphicsSchema;
         bool graphicsInfo = false, noUserGraphics = false;
         float renderScaleOverride = -1;
+        std::vector<std::pair<std::string, std::string>> graphicsSets;   // --graphics-set key=value, --anti-aliasing
         bool listGpus = false;   // --gpus
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
@@ -82,6 +83,14 @@ int main(int argc, char** argv) {
                 graphicsInfo = true;
             else if (arg == "--no-user-graphics")
                 noUserGraphics = true;
+            else if (arg == "--graphics-set" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto equals = value.find('=');
+                if (equals == std::string::npos || equals == 0)
+                    throw std::runtime_error("--graphics-set takes key=value, like anti_aliasing=fxaa");
+                graphicsSets.emplace_back(value.substr(0, equals), value.substr(equals + 1));
+            } else if (arg == "--anti-aliasing" && i + 1 < argc)
+                graphicsSets.emplace_back("anti_aliasing", argv[++i]);
             else if (arg == "--render-scale" && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), renderScaleOverride);
@@ -360,7 +369,9 @@ int main(int argc, char** argv) {
                     "                                    create an independent C++ starter in an empty folder\n"
                     "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
-                    "       [--graphics-info] [--graphics-schema file|-]\n"
+                    "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
+                    "       [--graphics-set key=value]... [--anti-aliasing none|fxaa]\n"
+                    "                                    any setting in docs/GraphicsSchema.md, for this run\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
                     "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
@@ -627,9 +638,20 @@ int main(int argc, char** argv) {
         if (lowLatency) tool.graphics.lowLatency = true;
         if (tool.shadows >= 0) tool.graphics.shadows = static_cast<shockwave::ShadowQuality>(tool.shadows);
         if (renderScaleOverride >= 0) tool.graphics.renderScale = renderScaleOverride;
+        for (const auto& [key, value] : graphicsSets)
+            if (!shockwave::setGraphicsSetting(tool.graphics, key, value, error))
+                throw std::runtime_error("--graphics-set: " + error);
         if (graphicsInfo) {
+            const auto preset = shockwave::matchingGraphicsPreset(tool.graphics);
+            if (!tool.benchmarkJson.empty()) {
+                std::ofstream(tool.benchmarkJson) << player::graphicsInfoJson(tool.graphics, tool.graphicsFile);
+                std::printf("Wrote %s\n", tool.benchmarkJson.string().c_str());
+                return 0;
+            }
             std::printf(
-                "# user file: %s\n", tool.graphicsFile.empty() ? "disabled" : tool.graphicsFile.string().c_str());
+                "# user file: %s\n# preset: %s\n",
+                tool.graphicsFile.empty() ? "disabled" : tool.graphicsFile.string().c_str(),
+                preset ? shockwave::graphicsPresetName(*preset) : "custom");
             std::fputs(shockwave::graphicsSettingsText(tool.graphics).c_str(), stdout);
             return 0;
         }

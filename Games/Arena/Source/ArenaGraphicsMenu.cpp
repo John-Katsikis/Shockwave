@@ -36,6 +36,18 @@ void GraphicsMenu::bind(GameContext& game) {
         m_draft.shadows = static_cast<ShadowQuality>((static_cast<int>(m_draft.shadows) + 1) % 5);
         refresh(game);
     });
+    ui.on("graphics_aa", [this, &game](const UIEvent&) {
+        m_draft.antiAliasing = m_draft.antiAliasing == AntiAliasing::None ? AntiAliasing::Fxaa : AntiAliasing::None;
+        refresh(game);
+    });
+    ui.on("graphics_bloom", [this, &game](const UIEvent&) {
+        m_draft.bloomQuality = static_cast<BloomQuality>((static_cast<int>(m_draft.bloomQuality) + 1) % 4);
+        refresh(game);
+    });
+    ui.on("graphics_bloom_scale", [this, &game](const UIEvent&) {
+        m_draft.bloomScale = next(m_draft.bloomScale, std::array{0.f, 0.25f, 0.5f, 0.75f, 1.f});
+        refresh(game);
+    });
     ui.on("graphics_lod", [this, &game](const UIEvent&) {
         m_draft.lodErrorPixels = next(m_draft.lodErrorPixels, std::array{0.f, 0.5f, 1.f, 1.5f, 2.f, 4.f});
         refresh(game);
@@ -94,6 +106,15 @@ void GraphicsMenu::refresh(GameContext& game) {
     std::snprintf(text, sizeof(text), "Render scale: %.0f%%", m_draft.renderScale * 100);
     label("graphics-scale", text);
     label("graphics-shadows", std::string("Shadows: ") + shadowQualityName(static_cast<int>(m_draft.shadows)));
+    label("graphics-aa", m_draft.antiAliasing == AntiAliasing::Fxaa ? "Anti-aliasing: FXAA" : "Anti-aliasing: none");
+    label("graphics-bloom", std::string("Bloom: ") + bloomQualityName(m_draft.bloomQuality));
+    std::snprintf(text, sizeof(text), "Bloom strength: %.0f%%", m_draft.bloomScale * 100);
+    label("graphics-bloom-scale", text);
+    const auto preset = matchingGraphicsPreset(m_draft);
+    std::snprintf(
+        text, sizeof(text), "Preset: %s. Select a setting to cycle its value. Apply when ready.",
+        preset ? graphicsPresetName(*preset) : "custom");
+    label("graphics-preset", text);
     std::snprintf(
         text, sizeof(text), "Mesh LOD error: %.2g px%s", m_draft.lodErrorPixels,
         m_draft.lodErrorPixels == 0 ? " (full detail)" : "");

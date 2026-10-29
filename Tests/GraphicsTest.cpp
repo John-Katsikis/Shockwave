@@ -89,6 +89,48 @@ int main() {
         check(!api.save(invalid, error), "invalid saves refused");
         std::ofstream(temp / "not-a-directory") << "keep me";
         check(!saveGraphicsSettings(temp / "not-a-directory" / "file", low, error), "write failure reported");
+        // The shared table: every key round-trips through its own text, presets set only
+        // quality keys, and a hand-tuned selection reads as Custom.
+        for (const auto& info : graphicsSettingInfo()) {
+            auto copy = initial;
+            check(info.set(copy, info.get(initial), error) && copy == initial, info.key);
+            check(findGraphicsSetting(info.key) == &info, "lookup by key");
+        }
+        auto edited = initial;
+        check(setGraphicsSetting(edited, "anti_aliasing", "fxaa", error), "set anti_aliasing");
+        check(setGraphicsSetting(edited, "bloom_quality", "low", error), "set bloom_quality");
+        check(setGraphicsSetting(edited, "bloom_scale", "0.25", error), "set bloom_scale");
+        check(
+            edited.antiAliasing == AntiAliasing::Fxaa && edited.bloomQuality == BloomQuality::Low &&
+                edited.bloomScale == 0.25f,
+            "setters reach the fields");
+        auto unchanged = edited;
+        check(!setGraphicsSetting(edited, "anti_aliasing", "taa", error) && edited == unchanged, "taa refused");
+        check(error.find("taa") != std::string::npos, "taa refusal says why");
+        for (const char* bad : {"2", "-0.5", "nan", "inf", "x"})
+            check(!setGraphicsSetting(edited, "bloom_scale", bad, error) && edited == unchanged, "bloom_scale range");
+        check(!setGraphicsSetting(edited, "no_such_key", "1", error), "unknown key refused");
+        check(
+            api.save(edited, error) && loadGraphicsSettings(file, loaded, error) && loaded == edited, "new keys saved");
+        for (auto preset : {GraphicsPreset::Low, GraphicsPreset::Medium, GraphicsPreset::High, GraphicsPreset::Ultra}) {
+            const auto applied = graphicsPreset(preset, edited);
+            check(applied.antiAliasing == AntiAliasing::Fxaa, "presets turn on FXAA");
+            check(applied.bloomScale == edited.bloomScale, "presets keep personal bloom strength");
+            check(matchingGraphicsPreset(applied) == preset, "preset recognised");
+        }
+        check(graphicsPreset(GraphicsPreset::Low).bloomQuality == BloomQuality::Low, "low preset uses low bloom");
+        auto custom = graphicsPreset(GraphicsPreset::High);
+        custom.antiAliasing = AntiAliasing::None;
+        check(!matchingGraphicsPreset(custom), "hand-tuned settings are Custom");
+        const auto schema = graphicsSettingsSchema();
+        for (const auto& info : graphicsSettingInfo())
+            check(schema.find(info.key) != std::string::npos, "schema lists every key");
+        Graphics headless;
+        const auto generation = headless.status().generation;
+        check(headless.apply(edited, error), "headless apply");
+        check(
+            headless.status().generation == generation + 1 && headless.status().state == Graphics::State::Applied,
+            "status counts applies");
         Project project;
         project.root = temp;
         project.shadowQuality = 1;

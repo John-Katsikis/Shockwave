@@ -32,6 +32,27 @@ double mib(uint64_t bytes) { return double(bytes) / (1024.0 * 1024.0); }
 
 }   // namespace
 
+std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
+    const auto preset = shockwave::matchingGraphicsPreset(settings);
+    std::ostringstream json;
+    json << "{\n  \"user_file\": " << quoted(userFile.string())
+         << ",\n  \"preset\": " << quoted(preset ? shockwave::graphicsPresetName(*preset) : "custom")
+         << ",\n  \"settings\": {";
+    const auto& info = shockwave::graphicsSettingInfo();
+    for (size_t i = 0; i < info.size(); ++i)
+        json << (i ? ", " : "") << quoted(info[i].key) << ": " << quoted(info[i].get(settings));
+    json << "},\n  \"descriptors\": [";
+    for (size_t i = 0; i < info.size(); ++i) {
+        const auto& d = info[i];
+        json << (i ? ",\n" : "\n") << "    {\"key\": " << quoted(d.key) << ", \"label\": " << quoted(d.label)
+             << ", \"category\": " << quoted(d.category) << ", \"values\": " << quoted(d.values)
+             << ", \"applies\": " << quoted(shockwave::graphicsApplyName(d.apply))
+             << ", \"preset\": " << (d.preset ? "true" : "false") << ", \"tooltip\": " << quoted(d.tooltip) << "}";
+    }
+    json << "\n  ]\n}\n";
+    return json.str();
+}
+
 void Player::graphicsReport() {
     const shockwave::Renderer& renderer = engine().renderer();
     const shockwave::RendererCapabilities caps = renderer.capabilities();
@@ -50,10 +71,12 @@ void Player::graphicsReport() {
     for (const auto& l : caps.limits)
         std::printf("  %-34s %llu\n", l.name.c_str(), static_cast<unsigned long long>(l.value));
     std::printf("\nsettings (requested -> effective):\n");
-    for (const auto& s : settings)
+    for (const auto& s : settings) {
         std::printf(
             "  %-16s %s -> %s%s%s\n", s.name.c_str(), s.requested.c_str(), s.effective.c_str(),
             s.reason.empty() ? "" : "  (", s.reason.empty() ? "" : (s.reason + ")").c_str());
+        if (!s.detail.empty()) std::printf("  %-16s   %s\n", "", s.detail.c_str());
+    }
     std::printf("\ngpu memory:\n");
     for (size_t i = 0; i < memory.gpu.size(); ++i) {
         const auto& usage = memory.gpu[i];
@@ -87,7 +110,8 @@ void Player::graphicsReport() {
     for (size_t i = 0; i < settings.size(); ++i) {
         const auto& s = settings[i];
         json << (i ? ",\n" : "\n") << "    {\"name\": " << quoted(s.name) << ", \"requested\": " << quoted(s.requested)
-             << ", \"effective\": " << quoted(s.effective) << ", \"reason\": " << quoted(s.reason) << "}";
+             << ", \"effective\": " << quoted(s.effective) << ", \"reason\": " << quoted(s.reason)
+             << ", \"detail\": " << quoted(s.detail) << "}";
     }
     json << "\n  ],\n  \"memory\": {\n    \"categories\": {";
     for (size_t i = 0; i < memory.gpu.size(); ++i)
@@ -99,7 +123,7 @@ void Player::graphicsReport() {
          << ",\n    \"device_budget_bytes\": " << memory.deviceBudget
          << ",\n    \"cpu_copy_bytes\": " << memory.cpuCopyBytes
          << "\n  },\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
-         << "\n}\n";
+         << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
     out << json.str();
     out.close();

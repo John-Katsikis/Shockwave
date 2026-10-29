@@ -23,10 +23,15 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     const uint8_t white[4] = {255, 255, 255, 255};
     createTexture({0}, 1, 1, white, false);   // slot 0: the default texture
     sceneSlot = bindlessSlots() - 1;
-    cascadeSlot = bindlessSlots() - 2;
-    localSlot = bindlessSlots() - 3;
+    shadowSlots[0][0] = bindlessSlots() - 2;
+    shadowSlots[0][1] = bindlessSlots() - 3;
+    shadowSlots[1][0] = bindlessSlots() - 7;
+    shadowSlots[1][1] = bindlessSlots() - 8;
+    cascadeSlot = shadowSlots[0][0];
+    localSlot = shadowSlots[0][1];
     brdfSlot = bindlessSlots() - 4;
-    bloomSlot = bindlessSlots() - 5;
+    bloomSlots[0] = bindlessSlots() - 5;
+    bloomSlots[1] = bindlessSlots() - 6;
     createRenderTargets();
     createShadowMaps();
     createEnvironment();
@@ -48,8 +53,11 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroyCommandPool(device, uploadPool, nullptr);
     destroyParticles();
     destroySkinning();
+    collectRetired(true);
     destroyBloomTargets();
     destroyBloomPipeline();
+    destroyAaTarget(aaTarget);
+    destroyAntiAliasingPipeline();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -158,7 +166,8 @@ void VulkanRenderer::Impl::createRenderTargets() {
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 1, true, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT);
     createDisplayUiView();
-    createBloomTargets();
+    createBloomTargets();   // the GPU is idle, so a slot is free
+    if (antiAliasing == AntiAliasing::Fxaa) createAaTarget();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
     // The tonemap pass reads the scene through the bindless table like any texture.
@@ -186,7 +195,9 @@ void VulkanRenderer::Impl::registerGuiSceneTexture() {
 
 void VulkanRenderer::Impl::recreateSceneTargets() {
     vkDeviceWaitIdle(context->device());
+    collectRetired(true);
     destroyBloomTargets();
+    destroyAaTarget(aaTarget);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

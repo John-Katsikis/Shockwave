@@ -63,7 +63,9 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 |---|---|---|
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
-| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key |
+| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both |
+| `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; hand-tuned settings read as Custom; `status()` |
+| `graphics_cli` | no | `--graphics-set`, `--anti-aliasing`, refused values with file and line, `--graphics-info --json` |
 | `graphics_report_null` | no (runs under Xvfb, so Linux only, like the other headless play tests) | the report works on the null renderer |
 | `network_session` | no | includes the fixed-step clock: one tick a frame whatever the real time |
 
@@ -110,7 +112,34 @@ Result: `capture.py --compare` after these changes found all 52 images pixel-ide
 the baseline (8 by `--image-diff`, RMSE 0; the other 44 by SHA-256), so G00 changed no
 output, as the plan requires.
 
+## A00 + G01: settings table and FXAA
+
+- **One table** (`graphicsSettingInfo()`) describes every setting: files, the schema,
+  `--graphics-set key=value`, editor Preferences and Arena's menu all read it. Presets and
+  "Custom" come from its `preset` flag.
+- **Off means free.** Bloom off and anti-aliasing `none` add no frame-graph pass and hold no
+  GPU memory (checked by `graphics_fixtures_render`). Bloom memory at 1280x720: off 0, low
+  0.59 MiB, medium and high 2.35 MiB; the FXAA input image is 3.52 MiB.
+- **No GPU idle on a change.** Bloom, FXAA and shadow-map images are rebuilt at the frame
+  boundary into spare bindless slots; the old ones are freed once the frames using them
+  finish.
+- **FXAA** runs after tone mapping, before game UI, on display-encoded values (read and
+  written through UNORM views, so nothing is encoded twice). On thin-geometry (640x360)
+  against a render-scale-2 reference: RMSE 4.95 without, 4.84 with; 1.1% of pixels change
+  and mean luma moves 0.14 of 255. On edges alone (1280x720) the error falls from 11.03 to
+  10.43. Cost on llvmpipe at 1280x720: about 40-60 ms on a 550-600 ms frame; measure on a
+  GPU before drawing conclusions.
+- **Plugin ABI** is now 4.
+
+Result: `capture.py --compare` found all 52 images identical to the G00 baseline: the
+defaults (`anti_aliasing none`, `bloom_quality high`, `bloom_scale 1`) reproduce the old
+output exactly.
+
 ## Known limits
+
+- Anisotropic filtering and texture quality, listed with A00's settings, arrive with A01.
+- The editor grid is drawn in the scene pass, so FXAA smooths it too.
+- Images waiting to be freed after a change aren't counted in the memory report.
 
 - Synchronization validation (`VK_LAYER_KHRONOS_validation` with sync checks) was not run
   for G00: the layer isn't installed on the machine that recorded the baseline. The render

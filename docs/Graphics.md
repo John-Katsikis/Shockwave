@@ -1,8 +1,9 @@
 # Game graphics settings
 
 Game code and menus use `game.graphics()` (include `<Shockwave/Game.h>`). The shared
-service wraps the engine's existing graphics controls: render scale, shadow quality,
-mesh LOD error, VSync, frame limit and low latency. It doesn't change scene lighting,
+service wraps the engine's graphics controls: render scale, shadow quality,
+anti-aliasing (FXAA), bloom quality and strength, mesh LOD error, VSync, frame limit and
+low latency. It doesn't change scene lighting,
 materials, cameras, asset import quality, or the renderer backend.
 
 ```cpp
@@ -20,11 +21,27 @@ Call this on the main thread from GameMode hooks or UI callbacks, not ECS worker
 systems. `apply` validates the entire struct and queues the request; the engine applies
 it at the next frame boundary, before GPU command recording. `requested()` includes
 queued values; `current()` reads the applied renderer/pacing values. An invalid request
-changes neither. Unchanged settings aren't reapplied each frame. Changing shadow maps
-or render resolution can still cause a one-time GPU allocation stall.
+changes neither. Unchanged settings aren't reapplied each frame. Changing shadow maps,
+bloom or anti-aliasing never waits for the GPU to go idle: new images are made at the frame
+boundary and the old ones are freed once the frames using them finish. Render resolution
+changes still rebuild the scene targets. `status()` says whether the last request is still
+pending, applied, or applied with a fallback (and why).
+
+Every setting is described once, in `graphicsSettingInfo()`: key, label, tooltip, range,
+how it applies, and whether presets set it. Files, the schema, `--graphics-set`, the editor
+and Arena's menu all read that table, so a new setting appears everywhere at once. A setting
+that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory.
+
+- `anti_aliasing`: `none` (the default) or `fxaa`, which smooths edges after tone mapping
+  and before game UI. `taa` is refused with a message until temporal anti-aliasing exists.
+- `bloom_quality`: `off`, `low` (quarter resolution, 4 levels), `medium` (half, 5) or
+  `high` (half, 6, the default).
+- `bloom_scale` (0..1): the player's multiplier on the scene's authored bloom intensity.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
-VSync, the FPS cap and low-latency mode. Medium, High and Ultra are also available. These
+VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
+sets bloom quality low, medium or high. `matchingGraphicsPreset` names the preset the
+quality settings match, or none ("Custom"). Medium, High and Ultra are also available. These
 are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in
 memory and uses the same validation.
@@ -38,7 +55,8 @@ lists every key and range. The player resolves settings in this order:
 2. Optional `<project>/Config/Graphics.swgraphics`, shipped with the game.
 3. The player's `Graphics.swgraphics` in SDL's OS preferences folder, keyed by game module
    ID. On Linux this is normally `~/.local/share/Shockwave/<game_module>/Graphics.swgraphics`.
-4. Explicit command-line overrides (`--fps`, `--vsync`, `--low-latency`, `--shadows`, `--render-scale`).
+4. Explicit command-line overrides (`--fps`, `--vsync`, `--low-latency`, `--shadows`, `--render-scale`,
+   `--anti-aliasing`, and `--graphics-set key=value` for any key, repeatable).
 
 `--graphics path.swgraphics` uses an explicit user file instead of the OS path. It must
 exist; Apply & Save writes back to that file. `--no-user-graphics` skips automatic user
@@ -86,15 +104,18 @@ build/bin/player --project Games/Arena/Arena.swproject --graphics-info
 build/bin/player --project Games/Arena/Arena.swproject --no-user-graphics --graphics-info
 build/bin/player --project Games/Arena/Arena.swproject --graphics my.swgraphics --check
 build/bin/player --project Games/Arena/Arena.swproject --render-scale 0.75 --shadows low --fps 120
+build/bin/player --project Games/Arena/Arena.swproject --anti-aliasing fxaa --graphics-set bloom_quality=low
+build/bin/player --project Games/Arena/Arena.swproject --graphics-info --json settings.json
 build/bin/player --graphics-schema docs/GraphicsSchema.md
 ```
 
-`--graphics-info` prints resolved settings and the user file path without loading the
-renderer. `--check` always validates Config/Graphics.swgraphics if present and any explicit
+`--graphics-info` prints resolved settings, the matching preset and the user file path
+without loading the renderer; `--json file` also writes them, with every setting's
+descriptor. `--check` always validates Config/Graphics.swgraphics if present and any explicit
 user file. Regenerate the schema when changing the format or its validation. Tests cover
 file errors, inheritance, persistence, deferred renderer changes, CLI overrides and Arena's
 real menu draft/apply/cancel behavior.
 
 This API currently exposes the engine's implemented runtime quality controls. Window size
-remains a startup setting (`--size` / `window_size`); fullscreen switching, anti-aliasing,
+remains a startup setting (`--size` / `window_size`); fullscreen switching, TAA,
 upscaling technologies and automatic hardware presets are not provided by this wrapper.

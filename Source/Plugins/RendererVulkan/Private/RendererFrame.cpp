@@ -77,8 +77,10 @@ void VulkanRenderer::Impl::clearDrawLists() {
 
 void VulkanRenderer::Impl::recreateSwapchain() {
     vkDeviceWaitIdle(context->device());
+    collectRetired(true);
     destroyRenderFinishedSemaphores();
     destroyBloomTargets();
+    destroyAaTarget(aaTarget);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -105,12 +107,6 @@ bool VulkanRenderer::Impl::beginFrame() {
     } else if (needsSceneResize) {
         recreateSceneTargets();
     }
-    if (needsShadowRebuild) {
-        vkDeviceWaitIdle(context->device());
-        destroyShadowMaps();
-        createShadowMaps();
-        needsShadowRebuild = false;
-    }
 
     VkDevice device = context->device();
     Frame& f = frames[frameIndex];
@@ -128,6 +124,11 @@ bool VulkanRenderer::Impl::beginFrame() {
     }
     readTimestamps(f);   // the GPU is done with this slot's last frame
     applyTextureSwaps();
+    // Settings that change images: the new ones made, the old ones retired, no GPU wait.
+    collectRetired(false);
+    if (needsShadowRebuild && rebuildShadowMaps()) needsShadowRebuild = false;
+    updateBloomTargets();
+    updateAaTarget();
 
     SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
@@ -510,9 +511,21 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
     // writes it and only the tonemap reads it.
     if (bloomIntensity() > 0.0f)
         graph.addPass("bloom", {{color, ImageUse::ComputeSampled}}, [this](VkCommandBuffer cmd) { recordBloom(cmd); });
-    graph.addPass(
-        "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
-        [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+    if (fxaaActive()) {
+        // Tone mapping into FXAA's input, then FXAA into the display image, before game UI.
+        const auto aaInput =
+            graph.import("anti-aliasing input", aaTarget.image.image, VK_IMAGE_ASPECT_COLOR_BIT, aaState, true);
+        graph.addPass(
+            "tonemap", {{color, ImageUse::Sampled}, {aaInput, ImageUse::ColorAttachment}},
+            [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+        graph.addPass(
+            "fxaa", {{aaInput, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
+            [this](VkCommandBuffer cmd) { recordFxaa(cmd); });
+    } else {
+        graph.addPass(
+            "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
+            [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+    }
     if (!uiCommands.empty()) {
         graph.addPass(
             "ui", {{display, ImageUse::ColorAttachment}}, [this, &f](VkCommandBuffer cmd) { recordUi(cmd, f); });
@@ -576,7 +589,7 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
 void VulkanRenderer::Impl::recordTonemap(VkCommandBuffer cmd) {
     VkRenderingAttachmentInfo target{};
     target.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    target.imageView = displayColor.view;
+    target.imageView = fxaaActive() ? aaTarget.image.view : displayColor.view;   // same size and format
     target.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     target.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;   // every pixel is written
     target.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -603,7 +616,7 @@ void VulkanRenderer::Impl::recordTonemap(VkCommandBuffer cmd) {
         debugView == DebugView::Lit || debugView == DebugView::Lighting || debugView == DebugView::ShadowCascades
             ? static_cast<uint32_t>(lighting.tonemapper)
             : 99u;
-    push.bloomTexture = bloomSlot;
+    push.bloomTexture = bloom.slot;
     push.bloomIntensity = bloomIntensity();
     vkCmdPushConstants(cmd, tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(cmd, 3, 1, 0, 0);

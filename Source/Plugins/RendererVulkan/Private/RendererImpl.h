@@ -35,7 +35,10 @@ namespace detail {
 
 constexpr uint32_t kFramesInFlight = 2;
 constexpr uint32_t kMaxMeshes = 65536;
-constexpr uint32_t kInternalTextureSlots = 5;   // scene color, two shadow atlases, BRDF table, bloom
+// Scene color, BRDF table, two for bloom: a new bloom chain takes the
+// slot the old one isn't using, so it can be made while frames still read the old one.
+// Shadow atlases likewise have two pairs of slots.
+constexpr uint32_t kInternalTextureSlots = 8;
 // Image-based lighting's cube maps (environment, specular, irradiance) sit beside the
 // bindless table in the same set, so they come out of the same descriptor budget.
 constexpr uint32_t kEnvironmentCubes = 3;
@@ -386,10 +389,20 @@ struct VulkanRenderer::Impl {
     // sampled through the bindless table with a comparison sampler.
     ShadowQuality shadowQuality = ShadowQuality::High;
     ShadowConfig shadowSettings;
+    ShadowQuality builtShadowQuality = ShadowQuality::Off;   // what the atlases in use were made for
     bool needsShadowRebuild = false;
     vk::Image cascadeAtlas, localAtlas;
     vk::ImageState cascadeState, localState;
-    uint32_t cascadeSlot = 0, localSlot = 0;
+    uint32_t cascadeSlot = 0, localSlot = 0;   // the pair in use
+    // Two pairs of slots: new atlases take the pair the old ones (still read by frames in
+    // flight) aren't using, and the old ones are retired, so a quality change never waits
+    // for the GPU.
+    uint32_t shadowSlots[2][2] = {};
+    int shadowPair = 0;
+    bool shadowPairBusy[2] = {false, false};
+    // At a frame boundary: atlases for shadowQuality, the old ones retired. False while
+    // both pairs are still in flight (the next frame tries again).
+    bool rebuildShadowMaps();
     VkSampler shadowSampler = VK_NULL_HANDLE;
     VkPipelineLayout shadowLayout = VK_NULL_HANDLE;
     VkPipeline shadowPipeline = VK_NULL_HANDLE;   // alpha-tested casters
@@ -775,24 +788,75 @@ struct VulkanRenderer::Impl {
     // scene is filtered down a chain of half-size levels and back up again, each level
     // adding a wider blur, and the tonemap pass mixes the result in.
 
-    vk::Image bloomChain;   // half the scene's size, then halving per level
-    std::vector<VkImageView> bloomLevelViews;
-    std::vector<VkExtent2D> bloomExtents;
-    std::vector<VkDescriptorSet> bloomDownSets, bloomUpSets;
+    // One chain of levels, with the descriptors that read and write it. A quality change
+    // makes a new chain and retires the old one (retire()), so nothing waits for the GPU.
+    struct BloomChain {
+        vk::Image image;   // the first level's size, then halving per level
+        std::vector<VkImageView> levelViews;
+        std::vector<VkExtent2D> extents;
+        std::vector<VkDescriptorSet> downSets, upSets;
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        uint32_t slot = 0;   // bindless slot the tonemap pass reads the top level from
+        BloomQuality quality = BloomQuality::Off;
+    };
+    BloomChain bloom;   // the one in use; no image when bloom is off
+    BloomQuality bloomQuality = BloomQuality::High;   // asked for
+    float bloomScale = 1.0f;   // the player's multiplier on the scene's intensity
+    uint32_t bloomSlots[2] = {0, 0};
+    bool bloomSlotBusy[2] = {false, false};   // a retired chain still owns it
     VkSampler bloomSampler = VK_NULL_HANDLE;   // linear, clamped to the edges
     VkDescriptorSetLayout bloomSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool bloomPool = VK_NULL_HANDLE;
     VkPipelineLayout bloomLayout = VK_NULL_HANDLE;
     VkPipeline bloomPipeline = VK_NULL_HANDLE;
-    uint32_t bloomSlot = 0;
 
     void createBloomPipeline();
     void destroyBloomPipeline();
-    // With the scene's render targets, at their size.
-    void createBloomTargets();
-    void destroyBloomTargets();
+    // A chain for bloomQuality at the scene's size, in a free slot; false when both slots
+    // are still owned by chains in flight (try again next frame).
+    bool createBloomTargets();
+    void destroyBloomChain(BloomChain& chain);   // the GPU must be done with it
+    void destroyBloomTargets();   // now, with the GPU idle
+    // At a frame boundary: a chain matching bloomQuality, the old one retired.
+    void updateBloomTargets();
     float bloomIntensity() const;   // this frame's; 0 when off or in a debug view
     void recordBloom(VkCommandBuffer cmd);
+
+    // ---- Anti-aliasing (RendererAntiAliasing.cpp) -------------------------------------
+    // FXAA after tone mapping and before game UI: the tonemap pass writes aaInput instead
+    // of the display image, and FXAA writes the display image from it.
+
+    struct AaTarget {
+        vk::Image image;   // kDisplayFormat at output size; tonemap writes it as sRGB
+        VkImageView encodedView = VK_NULL_HANDLE;   // the same bytes as UNORM: FXAA reads encoded values
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+    };
+    AaTarget aaTarget;   // no image while anti-aliasing is none
+    vk::ImageState aaState;
+    AntiAliasing antiAliasing = AntiAliasing::None;   // asked for
+    VkSampler aaSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout aaSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout fxaaLayout = VK_NULL_HANDLE;
+    VkPipeline fxaaPipeline = VK_NULL_HANDLE;
+
+    void createAntiAliasingPipeline();
+    void destroyAntiAliasingPipeline();
+    void createAaTarget();
+    void destroyAaTarget(AaTarget& target);   // the GPU must be done with it
+    void updateAaTarget();   // at a frame boundary: retire or make aaTarget to match antiAliasing
+    bool fxaaActive() const;   // this frame runs FXAA
+    void recordFxaa(VkCommandBuffer cmd);
+
+    // ---- Retiring resources -----------------------------------------------------------
+    // Freed once every frame submitted so far has finished, checked at each frame start.
+    // Turning an effect off releases its images this way, without waiting for the GPU.
+    struct Retired {
+        uint64_t afterFrame;   // frameTimeline value that means the GPU is done with it
+        std::function<void()> destroy;
+    };
+    std::vector<Retired> retired;
+    void retire(std::function<void()> destroy);
+    void collectRetired(bool all);   // all: the GPU is idle (shutdown, resize)
 
     // ---- Screenshots ------------------------------------------------------------------
 

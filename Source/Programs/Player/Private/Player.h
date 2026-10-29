@@ -155,6 +155,9 @@ int netEncode(const fs::path& json, const fs::path& output);
 // when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
 int imageStats(const fs::path& image, const fs::path& json);
 int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
+// --graphics-info --json: the settings this run would use, the matching preset, and every
+// setting's description (key, label, values, how it applies), for tools and menus.
+std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile);
 // A packaged Steam game launched outside Steam: asks Steam to relaunch it (and the player
 // exits). False for everything else: tools, the editor, development builds.
 bool relaunchThroughSteam(const shockwave::Project& project);

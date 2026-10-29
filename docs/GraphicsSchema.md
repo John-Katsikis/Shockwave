@@ -7,11 +7,19 @@ Unknown keys, duplicate keys, non-finite numbers and unsupported versions are er
 Omitted keys inherit the preceding layer: project manifest, Config/Graphics.swgraphics,
 user preferences, then command-line overrides. See [Graphics](Graphics.md).
 
-| Key | Values | Built-in default | Meaning |
-|---|---|---|---|
-| render_scale | 0.25..2 | 1 | Scene resolution multiplier; game UI stays at output resolution. |
-| shadow_quality | off, low, medium, high, ultra | high | Shadow map quality. |
-| lod_error_pixels | 0..100 | 1 | Mesh LOD error in rendered pixels; 0 forces full detail. Needs imported LODs. |
-| vsync | true, false | true | Synchronize presentation with the display. |
-| frame_limit | 0 or 10..1000 | 0 | FPS cap; 0 means uncapped except for VSync. |
-| low_latency | true, false | false | Wait for presentation before polling the next frame's input. |
+Presets (low, medium, high, ultra) set the keys marked *preset* and keep the others.
+*Applies* says how a change reaches the screen: `uniform` next frame; `targets` once new
+images are made, the old ones freed after the frames using them finish. No setting needs a
+restart, and none waits for the GPU to go idle except where noted in Graphics.md.
+
+| Key | Values | Built-in default | Preset | Applies | Meaning |
+|---|---|---|---|---|---|
+| render_scale | 0.25..2 | 1 | preset | targets | Scene resolution as a multiple of the output. Below 1 is faster and softer; above 1 supersamples. Game UI always draws at output resolution. |
+| shadow_quality | off, low, medium, high, ultra | high | preset | targets | Shadow map size and filtering. Off keeps direct lighting but draws no shadow maps. |
+| anti_aliasing | none, fxaa | none | preset | targets | Smooths jagged edges. FXAA is a fast pass after tone mapping; it never touches game UI. TAA comes later (batch G10). |
+| bloom_quality | off, low, medium, high | high | preset | targets | How finely bloom is filtered: low starts at quarter resolution with 4 levels, medium at half with 5, high at half with 6. Off skips bloom and frees its memory. The scene's bloom intensity stays as authored. |
+| bloom_scale | 0..1 | 1 |  | uniform | Your multiplier on each scene's bloom intensity: 1 is as the artist set it, 0 turns bloom off. |
+| lod_error_pixels | 0..100 | 1 | preset | uniform | How far, in rendered pixels, a simpler mesh level may differ from the full one. 0 always draws full detail. Needs imported levels of detail. |
+| vsync | true, false | true |  | targets | Synchronize presentation with the display, so frames never tear. |
+| frame_limit | 0 or 10..1000 | 0 |  | uniform | Frames per second at most; 0 means uncapped apart from VSync. |
+| low_latency | true, false | false |  | uniform | Wait for each frame to reach the screen before reading input for the next, so input feels more immediate. Costs some frame rate when the GPU is the bottleneck. |

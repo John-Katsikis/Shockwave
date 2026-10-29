@@ -116,6 +116,12 @@ RendererCapabilities VulkanRenderer::Impl::capabilities() const {
 std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
     std::vector<EffectiveSetting> settings;
     char requested[32], effective[32];
+    auto imageBytes = [&](const vk::Image& image) -> uint64_t {
+        if (!image.allocation) return 0;
+        VmaAllocationInfo info{};
+        vmaGetAllocationInfo(context->allocator(), image.allocation, &info);
+        return info.size;
+    };
 
     // Render scale: the scene target is whole pixels, so the effective scale is what they
     // came to.
@@ -128,9 +134,74 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         why = sceneColor.extent.width ? "rounded to " + std::to_string(sceneColor.extent.width) + "x" +
                                             std::to_string(sceneColor.extent.height) + " pixels"
                                       : "no frame drawn yet";
-    settings.push_back({"render_scale", requested, effective, why});
+    settings.push_back({"render_scale", requested, effective, why, ""});
 
-    settings.push_back({"shadow_quality", shadowName(shadowQuality), shadowName(shadowQuality), ""});
+    // Shadows: what the tier comes to (RendererShadows.cpp shadowConfig) and costs.
+    {
+        const bool pending = needsShadowRebuild;
+        std::string detail;
+        if (shadowQuality != ShadowQuality::Off && !pending) {
+            char text[256];
+            std::snprintf(
+                text, sizeof(text),
+                "sun: 2x2 atlas of %u px cascades, %u drawn last frame; lights: %u px atlas of %u px tiles, %u "
+                "shadowed, %u didn't fit; %u filter taps; %.1f MiB",
+                shadowSettings.cascadeSize, shadowStats.cascades, shadowSettings.localAtlasSize,
+                shadowSettings.tileSize, shadowStats.shadowedLights, shadowStats.skippedLights, shadowSettings.taps,
+                static_cast<double>(imageBytes(cascadeAtlas) + imageBytes(localAtlas)) / (1024.0 * 1024.0));
+            detail = text;
+        }
+        settings.push_back(
+            {"shadow_quality", shadowName(shadowQuality),
+             pending ? shadowName(builtShadowQuality) : shadowName(shadowQuality),
+             pending ? "pending: the new shadow maps are made once the old ones are out of use" : "", detail});
+    }
+
+    // Anti-aliasing: FXAA needs its input image, made at the next frame boundary.
+    {
+        const bool wanted = antiAliasing == AntiAliasing::Fxaa;
+        const bool have = aaTarget.image.image != VK_NULL_HANDLE;
+        std::string why = wanted && !have ? "pending: its image is made at the next frame" : "";
+        if (wanted && have && !fxaaActive()) why = "off in debug views, which show raw values";
+        char detail[128] = "";
+        if (have)
+            std::snprintf(
+                detail, sizeof(detail), "after tone mapping, before game UI; input %ux%u, %.1f MiB",
+                aaTarget.image.extent.width, aaTarget.image.extent.height,
+                static_cast<double>(imageBytes(aaTarget.image)) / (1024.0 * 1024.0));
+        settings.push_back(
+            {"anti_aliasing", antiAliasingName(antiAliasing),
+             antiAliasingName(have && fxaaActive() ? AntiAliasing::Fxaa : AntiAliasing::None), why, detail});
+    }
+
+    // Bloom: the chain in use, which lags the request by a frame (or two, when both slots
+    // are still in flight).
+    {
+        const BloomQuality have = bloom.image.image ? bloom.quality : BloomQuality::Off;
+        std::string detail;
+        if (bloom.image.image) {
+            char text[160];
+            std::snprintf(
+                text, sizeof(text), "%zu levels from %ux%u; %.1f MiB", bloom.extents.size(), bloom.extents[0].width,
+                bloom.extents[0].height, static_cast<double>(imageBytes(bloom.image)) / (1024.0 * 1024.0));
+            detail = text;
+        }
+        settings.push_back(
+            {"bloom_quality", bloomQualityName(bloomQuality), bloomQualityName(have),
+             have == bloomQuality ? "" : "pending: the new bloom chain is made at the next frame", detail});
+        char requested[32];
+        std::snprintf(requested, sizeof(requested), "%g", static_cast<double>(bloomScale));
+        const float authored = std::clamp(lighting.bloomIntensity, 0.0f, 1.0f);
+        // Not a fallback when bloom is off: the scale just has nothing to scale.
+        char detail2[128];
+        if (bloom.image.image)
+            std::snprintf(
+                detail2, sizeof(detail2), "scene intensity %g x %g = %g", static_cast<double>(authored),
+                static_cast<double>(bloomScale), static_cast<double>(bloomIntensity()));
+        else
+            std::snprintf(detail2, sizeof(detail2), "unused while bloom_quality is off");
+        settings.push_back({"bloom_scale", requested, requested, "", detail2});
+    }
 
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
@@ -140,7 +211,8 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         {"vsync", onOff(swapchain->vsync()), onOff(synced),
          synced == swapchain->vsync() ? ""
          : synced                     ? "the display has no present mode without vsync, so FIFO it is"
-                                      : "the driver chose a present mode without vsync"});
+                                      : "the driver chose a present mode without vsync",
+         ""});
     const bool latestReady = mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
     const bool lowLatency = swapchain->lowLatency();
     std::string latency = onOff(lowLatency);
@@ -148,10 +220,11 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         latency += std::string(" (") + context->presentTimingName() + (latestReady ? ", latest ready)" : ")");
     settings.push_back(
         {"low_latency", onOff(lowLatency), latency,
-         lowLatency && synced && !latestReady ? "no FIFO latest ready: waits for the GPU before input instead" : ""});
+         lowLatency && synced && !latestReady ? "no FIFO latest ready: waits for the GPU before input instead" : "",
+         ""});
     settings.push_back(
         {"gpu_timing", "on", onOff(context->timestampPeriod() > 0.0f),
-         context->timestampPeriod() > 0.0f ? "" : "the graphics queue has no timestamps"});
+         context->timestampPeriod() > 0.0f ? "" : "the graphics queue has no timestamps", ""});
     return settings;
 }
 
@@ -184,7 +257,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (const CubeMap* cube : {&environmentCube, &specularCube, &irradianceCube})
         add(GpuMemoryCategory::Environment, cube->allocation);
     add(GpuMemoryCategory::Environment, brdfTable.allocation);
-    add(GpuMemoryCategory::Bloom, bloomChain.allocation);
+    add(GpuMemoryCategory::Bloom, bloom.image.allocation);
+    add(GpuMemoryCategory::AntiAliasing, aaTarget.image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     for (const Frame& f : frames) {
         for (const vk::Buffer* b : {&f.drawBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
