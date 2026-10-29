@@ -97,13 +97,18 @@ public:
     void setClearColor(const Color& color);
     // view: a standard right-handed, Y-up view matrix (glm::lookAt).
     // projection: reverse-Z (see perspectiveReverseZ in Camera.h).
-    void setCamera(const glm::mat4& view, const glm::mat4& projection);
+    // id: the view this camera draws for (RenderViewId::create, once per view), so temporal
+    // effects keep separate history per view; leave it out for a view without history.
+    void setCamera(const glm::mat4& view, const glm::mat4& projection, RenderViewId id = {});
+    RenderViewId currentView() const;   // the id passed with the last setCamera
     // The camera set last, for systems that build geometry for it (particle effects).
     const glm::mat4& cameraView() const;
     const glm::mat4& cameraProjection() const;
+    // key: which object this is, stable across frames (RenderTypes.h). Draws without one
+    // still render, but temporal effects treat them as new every frame.
     void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture = {},
-        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
+        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {}, RenderInstanceKey key = {});
     // A skinned mesh in a pose. joints: one matrix per joint the mesh's VertexSkins name,
     // taking a vertex from the mesh as modelled to its posed place in the mesh's space
     // (the joint's current matrix times its inverse bind matrix). The renderer skins the
@@ -111,7 +116,7 @@ public:
     // threads as drawMesh; joints is copied before it returns.
     void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture = {},
-        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {});
+        const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {}, RenderInstanceKey key = {});
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
     // Particle geometry for this frame (Renderer/Particles.h), drawn into the HDR scene
@@ -188,6 +193,16 @@ public:
     uint32_t drawCount() const;   // draws submitted last frame
     uint32_t culledDraws() const;   // of those, outside the camera's view, so not drawn in the scene
     ParticleStats particleStats() const;   // last frame's particle upload (Renderer/Particles.h)
+    uint32_t unkeyedDraws() const;   // of drawCount, draws without a RenderInstanceKey
+
+    // ---- Capabilities, effective settings and memory (RenderTypes.h) ----
+    // What the GPU supports that effects depend on: formats, indirect drawing, limits.
+    RendererCapabilities capabilities() const;
+    // Each graphics setting as requested and as actually running, with the reason when they
+    // differ (vsync falling back to another present mode, say). Settles after a frame.
+    std::vector<EffectiveSetting> effectiveSettings() const;
+    // GPU memory by category, plus the CPU copies a swappable renderer keeps.
+    RendererMemoryReport memoryReport() const;
 
     // Called by the engine. beginFrame returns false when there is nothing to
     // draw into (minimized window, swapchain being rebuilt).

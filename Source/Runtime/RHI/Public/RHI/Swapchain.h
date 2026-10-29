@@ -27,6 +27,7 @@ public:
     // With vsync, show the newest finished frame at each refresh instead of queueing them
     // (FIFO latest ready), where supported. Takes effect at the next recreate.
     void setLowLatency(bool lowLatency) { m_lowLatency = lowLatency; }
+    bool lowLatency() const { return m_lowLatency; }
     VkPresentModeKHR presentMode() const { return m_swapchain.present_mode; }
 
     VkSwapchainKHR handle() const { return m_swapchain.swapchain; }

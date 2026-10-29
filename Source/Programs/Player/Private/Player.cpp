@@ -9,6 +9,7 @@
 #include <Circuits/Circuit.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
+#include <Engine/EntityRef.h>
 #include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
@@ -123,6 +124,12 @@ void Player::onStart() {
     if (!shockwave::loadScene(m_world, engine().assets(), m_project.startupScene.string(), error, hooks, &warnings))
         throw std::runtime_error(error);
     if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
+    if (!m_tool.camera.empty()) {
+        const shockwave::EntityRef camera = shockwave::findEntity(m_world, m_tool.camera);
+        if (!camera || !m_world.has<shockwave::Camera>(camera.entity()))
+            throw player::UsageError("--camera: the scene has no Camera entity named \"" + m_tool.camera + "\"");
+        m_toolCamera = camera.entity();
+    }
     // A navigation mesh saved next to the scene saves baking it when Play starts.
     if (shockwave::loadSceneNavMesh(m_project.startupScene, error); !error.empty())
         SW_LOG(shockwave::LogNavigation, Warning, "{}; baking instead", error);
@@ -212,6 +219,10 @@ void Player::onFrame(double dt) {
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
     if (!m_tool.save.empty() && ++m_saveFrames == m_tool.saveFrame) saveAndQuit();
+    if (m_tool.graphicsReportFrame > 0 && ++m_reportFrames == m_tool.graphicsReportFrame) {
+        graphicsReport();
+        engine().quit();
+    }
 }
 
 void Player::saveAndQuit() {
@@ -338,6 +349,7 @@ void Player::reportBenchmark() {
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"
          << "  \"draws\": " << renderer.drawCount() << ",\n"
          << "  \"culled_draws\": " << renderer.culledDraws() << ",\n"
+         << "  \"gpu_memory_bytes\": " << renderer.memoryReport().gpuBytes() << ",\n"
          << "  \"ui_update_ms\": " << m_uiUpdateMs / frames << ",\n"
          << "  \"ui_layout_ms\": " << m_uiLayoutMs / frames << ",\n"
          << "  \"effects_update_ms\": " << m_effectsUpdateMs / frames << ",\n"
@@ -359,13 +371,19 @@ void Player::reportBenchmark() {
 }
 
 void Player::onRender(shockwave::Renderer& renderer, double alpha) {
-    // The game looks through its primary Camera, wherever gameplay has moved it.
+    // The game looks through its primary Camera, wherever gameplay has moved it (or the
+    // one --camera names).
     glm::mat4 view, projection;
-    if (shockwave::cameraMatrices(
-            m_world, shockwave::primaryCamera(m_world), renderer.aspectRatio(), view, projection)) {
-        renderer.setCamera(view, projection);
+    const shockwave::Entity camera = m_world.alive(m_toolCamera) ? m_toolCamera : shockwave::primaryCamera(m_world);
+    // A different camera is a different view: nothing carries over from the last one.
+    if (!m_view.valid() || camera != m_viewCamera) {
+        m_view = shockwave::RenderViewId::create();
+        m_viewCamera = camera;
+    }
+    if (shockwave::cameraMatrices(m_world, camera, renderer.aspectRatio(), view, projection)) {
+        renderer.setCamera(view, projection, m_view);
     } else {
-        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()));
+        renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()), m_view);
     }
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
     m_effects->render(renderer);

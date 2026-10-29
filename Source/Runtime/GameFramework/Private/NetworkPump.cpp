@@ -38,8 +38,11 @@ void pumpNetworkFrame(
     frame.simulationOverrun = online && engine.simulationStep().overrun;
     frame.match = match;
     pumpNetworkFrame(services, session, frame, counters);
-    // From the next frame on; a session that just started or stopped switches here.
-    engine.setSimulationTime(session && session->online() ? SimulationTime::Monotonic : SimulationTime::Smoothed);
+    // From the next frame on; a session that just started or stopped switches here. Fixed
+    // stepping (player --fixed-step) stays fixed offline.
+    const bool isOnline = session && session->online();
+    if (isOnline || engine.simulationTime() != SimulationTime::Fixed)
+        engine.setSimulationTime(isOnline ? SimulationTime::Monotonic : SimulationTime::Smoothed);
 }
 
 }   // namespace shockwave

@@ -4,10 +4,12 @@
 
 #include <Engine/Engine.h>
 #include <Renderer/GpuSelection.h>
+#include <Renderer/Renderer.h>
 #include <UI/Gui.h>
 
 #include <imgui.h>
 
+#include <cinttypes>
 #include <string>
 
 namespace gui = shockwave::gui;
@@ -73,6 +75,71 @@ bool drawGpuPreference(shockwave::Engine& engine, Preferences& prefs) {
     ImGui::SetItemTooltip("The GPU the editor renders on; switching restarts the renderer.\n"
                           "The player takes --gpu NAME, or the SHOCKWAVE_GPU environment variable");
     return changed;
+}
+
+void drawGraphicsReport(const shockwave::Renderer& renderer) {
+    const ImVec4 warning = gui::semanticColor(gui::currentTheme().warning);
+    // Settings first, open while any of them fell back: that's what someone needs to see.
+    const auto settings = renderer.effectiveSettings();
+    bool fallback = false;
+    for (const auto& s : settings) fallback = fallback || !s.reason.empty();
+    if (fallback) ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+    if (ImGui::TreeNode("Graphics settings")) {
+        if (gui::beginPropertyGrid("effective settings")) {
+            for (const auto& s : settings) {
+                gui::propertyLabel(s.name.c_str());
+                if (s.reason.empty()) {
+                    ImGui::TextUnformatted(s.effective.c_str());
+                } else {
+                    ImGui::TextColored(warning, "%s (asked for %s)", s.effective.c_str(), s.requested.c_str());
+                    ImGui::SetItemTooltip("%s", s.reason.c_str());
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("GPU capabilities")) {
+        const shockwave::RendererCapabilities caps = renderer.capabilities();
+        if (!caps.api.empty()) ImGui::TextDisabled("%s, %s", caps.api.c_str(), caps.driver.c_str());
+        for (const auto& f : caps.features) {
+            if (f.supported)
+                ImGui::BulletText("%s", f.name.c_str());
+            else
+                ImGui::TextColored(warning, "  missing: %s", f.name.c_str());
+            if (!f.detail.empty()) ImGui::SetItemTooltip("%s", f.detail.c_str());
+        }
+        if (!caps.limits.empty() && ImGui::TreeNode("Limits")) {
+            for (const auto& l : caps.limits) ImGui::Text("%-28s %" PRIu64, l.name.c_str(), l.value);
+            ImGui::TreePop();
+        }
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("GPU memory")) {
+        // Walks every allocation, so only while this is open.
+        const shockwave::RendererMemoryReport memory = renderer.memoryReport();
+        auto mib = [](uint64_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); };
+        if (gui::beginPropertyGrid("gpu memory")) {
+            for (size_t i = 0; i < memory.gpu.size(); ++i) {
+                if (!memory.gpu[i].allocations) continue;
+                gui::propertyLabel(shockwave::gpuMemoryCategoryName(shockwave::GpuMemoryCategory(i)));
+                ImGui::Text("%.2f MiB", mib(memory.gpu[i].bytes));
+                ImGui::SetItemTooltip("%u allocations", memory.gpu[i].allocations);
+            }
+            gui::propertyLabel("Total");
+            ImGui::Text("%.2f MiB", mib(memory.gpuBytes()));
+            if (memory.deviceBudget) {
+                gui::propertyLabel("Device (driver)");
+                ImGui::Text("%.0f of %.0f MiB", mib(memory.deviceUsage), mib(memory.deviceBudget));
+                ImGui::SetItemTooltip("Everything this process has on device-local heaps, as the driver counts it");
+            }
+            gui::propertyLabel("CPU copies");
+            ImGui::Text("%.2f MiB", mib(memory.cpuCopyBytes));
+            ImGui::SetItemTooltip("Meshes and textures kept on the CPU so the renderer can be swapped");
+            ImGui::EndTable();
+        }
+        ImGui::TreePop();
+    }
 }
 
 }   // namespace editor

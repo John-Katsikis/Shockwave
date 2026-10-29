@@ -1,0 +1,66 @@
+# A plain wall and a door swinging on its hinge: the receivers for projected decals
+# (G08, A03). Decals land here once they exist; until then this is their baseline.
+# Camera: "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+end
+
+entity "Sun"
+  Transform
+    rotation -40 -20 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Floor"
+  Transform
+    scale 30 1 30
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.6 0.6 0.6 1
+end
+
+entity "Wall"
+  Transform
+    position 0 1.5 -1
+    scale 6 3 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.78 0.76 0.72 1
+end
+
+entity "Door hinge"
+  Transform
+    position 2 0 0.5
+  Circuit
+    circuit "Circuits/Swing.swcircuit"
+end
+
+entity "Door"
+  Transform
+    position -0.5 1.05 0
+    scale 1 2.1 0.08
+  Parent
+    entity "Door hinge"
+  MeshRenderer
+    mesh cube
+    tint 0.45 0.3 0.2 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0.5 1.6 5
+    rotation -6 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end

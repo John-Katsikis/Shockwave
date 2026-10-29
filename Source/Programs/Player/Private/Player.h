@@ -64,6 +64,8 @@ struct Tool {
     bool optimise = false;   // --optimise: compress every texture now, report (with --json), quit
     bool lodColors = false;   // --lod-colors: tint each level of detail its own colour
     int screenshotFrame = 30;   // --frames with --screenshot
+    std::string camera;   // --camera: look through this named Camera entity instead of the primary one
+    bool fixedStep = false;   // --fixed-step: every frame advances exactly one tick (reproducible motion)
     shockwave::DebugView view = shockwave::DebugView::Lit;   // --view
     bool showNavMesh = false;   // --view navmesh: the lit scene with the navigation mesh and agents' paths
     shockwave::GraphicsSettings graphics, graphicsDefaults;
@@ -72,6 +74,7 @@ struct Tool {
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
     fs::path benchmarkJson;   // --json with --benchmark
+    int graphicsReportFrame = 0;   // --graphics-report: report after this many frames, then quit
     bool uiPreview = false;   // --ui-preview: unset {{values}} show UIDocument preview values
     std::vector<shockwave::UINav> uiNav;   // --ui-nav: menu steps, one a frame from frame 5
     fs::path audioMix;   // --audio-mix: render the scene's sound offline to this .wav
@@ -146,6 +149,12 @@ int netTest(const shockwave::Project& project, const NetTestCommand& command, co
 // the reverse, refusing redacted payloads. Neither needs a project.
 int netDump(const fs::path& capture, const fs::path& json);
 int netEncode(const fs::path& json, const fs::path& output);
+// --image-stats file.png [--json out]: size and mean colour. --image-diff reference.png
+// candidate.png [--tolerance rmse] [--json out]: how far apart two screenshots are (RMSE in
+// 0..255 steps, PSNR, largest channel difference, share of visibly changed pixels). Exit 1
+// when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
+int imageStats(const fs::path& image, const fs::path& json);
+int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
 // A packaged Steam game launched outside Steam: asks Steam to relaunch it (and the player
 // exits). False for everything else: tools, the editor, development builds.
 bool relaunchThroughSteam(const shockwave::Project& project);
@@ -175,6 +184,8 @@ private:
     void reportBenchmark();
     // --save: saves to the slot, waits for the file, reports and quits.
     void saveAndQuit();
+    // --graphics-report: capabilities, requested and effective settings, memory by category.
+    void graphicsReport();
     fs::path saveFolder() const { return m_project.statePath() / "SaveGames"; }
 
     // Loads each scene the way the game would and reports every problem as file:line.
@@ -246,6 +257,7 @@ private:
     bool m_screenshotRequested = false;
     double m_benchmarkTime = 0;
     int m_saveFrames = 0;   // frames played, for --save
+    int m_reportFrames = 0;   // frames played, for --graphics-report
     bool m_benchmarkMeasuring = false;
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;
@@ -257,6 +269,9 @@ private:
     } m_particles;
     shockwave::World m_world;
     shockwave::FlyCamera m_camera;
+    shockwave::Entity m_toolCamera;   // --camera: the Camera entity to look through
+    shockwave::RenderViewId m_view;   // what the renderer keeps history for
+    shockwave::Entity m_viewCamera;   // the camera m_view looks through
     std::unique_ptr<shockwave::AssetFolder> m_assets;
     std::unique_ptr<shockwave::GameInstance> m_instance;
     // Online services, pumped every frame; they outlive the session. Unavailable ones

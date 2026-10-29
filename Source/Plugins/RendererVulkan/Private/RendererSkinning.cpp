@@ -66,8 +66,8 @@ void VulkanRenderer::Impl::setMeshSkin(MeshHandle handle, std::span<const Vertex
 
 void VulkanRenderer::Impl::drawSkinnedMesh(
     MeshHandle handle, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-    const glm::vec4& tint, const DrawMaterial& material) {
-    drawMesh(handle, transform, texture, tint, material, joints);
+    const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) {
+    drawMesh(handle, transform, texture, tint, material, key, joints);
 }
 
 glm::vec4 VulkanRenderer::Impl::skinnedBounds(const Mesh& mesh, std::span<const glm::mat4> joints) {
@@ -87,7 +87,8 @@ glm::vec4 VulkanRenderer::Impl::skinnedBounds(const Mesh& mesh, std::span<const 
         const float scale = std::sqrt(std::max(
             {glm::dot(glm::vec3(joint[0]), glm::vec3(joint[0])), glm::dot(glm::vec3(joint[1]), glm::vec3(joint[1])),
              glm::dot(glm::vec3(joint[2]), glm::vec3(joint[2]))}));
-        radius = std::max(radius, glm::length(glm::vec3(joint * glm::vec4(center, 1.0f)) - middle) + scale * mesh.bounds.w);
+        radius =
+            std::max(radius, glm::length(glm::vec3(joint * glm::vec4(center, 1.0f)) - middle) + scale * mesh.bounds.w);
     }
     if (!std::isfinite(radius)) return mesh.bounds;
     return glm::vec4(middle, radius);
@@ -136,7 +137,8 @@ void VulkanRenderer::Impl::prepareSkinning(Frame& f) {
         if (f.jointBuffer.buffer) vmaDestroyBuffer(allocator, f.jointBuffer.buffer, f.jointBuffer.allocation);
         VmaAllocationInfo info{};
         f.jointBuffer = createBuffer(
-            capacity * sizeof(glm::mat4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            capacity * sizeof(glm::mat4),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
         f.joints = static_cast<glm::mat4*>(info.pMappedData);
         f.jointAddress = bufferAddress(f.jointBuffer.buffer);
@@ -147,9 +149,11 @@ void VulkanRenderer::Impl::prepareSkinning(Frame& f) {
         while (capacity < vertices) capacity *= 2;
         if (f.skinnedBuffer.buffer) vmaDestroyBuffer(allocator, f.skinnedBuffer.buffer, f.skinnedBuffer.allocation);
         f.skinnedBuffer = createBuffer(
-            capacity * sizeof(Vertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 0);
+            capacity * sizeof(Vertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            0);
         f.skinnedAddress = bufferAddress(f.skinnedBuffer.buffer);
         f.skinnedCapacity = capacity;
+        f.skinnedState = {};
     }
 
     for (uint32_t i = 0; i < listCount; ++i) {
@@ -183,22 +187,10 @@ void VulkanRenderer::Impl::prepareSkinning(Frame& f) {
 void VulkanRenderer::Impl::recordSkinning(VkCommandBuffer cmd) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, skinningPipeline);
     for (const SkinDispatch& dispatch : skinDispatches) {
-        vkCmdPushConstants(
-            cmd, skinningLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dispatch.push), &dispatch.push);
+        vkCmdPushConstants(cmd, skinningLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dispatch.push), &dispatch.push);
         vkCmdDispatch(cmd, (dispatch.push.vertexCount + 63) / 64, 1, 1);
     }
-    // The scene and shadow passes read the skinned vertices in their vertex shaders.
-    VkMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.memoryBarrierCount = 1;
-    dependency.pMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd, &dependency);
+    // The render graph orders the scene and shadow passes' vertex reads after this.
 }
 
 }   // namespace shockwave

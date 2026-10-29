@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <string>
 
 namespace shockwave {
 namespace {
@@ -28,13 +29,17 @@ public:
 
     void setClearColor(const Color&) override {}
     void setCamera(const glm::mat4&, const glm::mat4&) override {}
-    void drawMesh(MeshHandle, const glm::mat4&, TextureHandle, const glm::vec4&, const DrawMaterial&) override {
+    void drawMesh(
+        MeshHandle, const glm::mat4&, TextureHandle, const glm::vec4&, const DrawMaterial&,
+        const RenderInstanceKey& key) override {
         m_draws.fetch_add(1, std::memory_order_relaxed);
+        if (!key.valid()) m_unkeyed.fetch_add(1, std::memory_order_relaxed);
     }
     void drawSkinnedMesh(
-        MeshHandle, const glm::mat4&, std::span<const glm::mat4>, TextureHandle, const glm::vec4&,
-        const DrawMaterial&) override {
+        MeshHandle, const glm::mat4&, std::span<const glm::mat4>, TextureHandle, const glm::vec4&, const DrawMaterial&,
+        const RenderInstanceKey& key) override {
         m_draws.fetch_add(1, std::memory_order_relaxed);
+        if (!key.valid()) m_unkeyed.fetch_add(1, std::memory_order_relaxed);
     }
     void addLight(const LightDesc&) override { m_lights.fetch_add(1, std::memory_order_relaxed); }
     void drawParticles(const ParticleDrawList&) override {}
@@ -42,14 +47,14 @@ public:
     void setGrid(const GridSettings&) override {}
     void setLighting(const LightingDesc&) override {}
     void setDebugView(DebugView) override {}
-    void setShadowQuality(ShadowQuality) override {}
+    void setShadowQuality(ShadowQuality quality) override { m_shadows = quality; }
     void setRenderScale(float scale) override { m_scale = scale; }
     void setViewport(uint32_t width, uint32_t height) override {
         m_viewportWidth = width;
         m_viewportHeight = height;
     }
-    void setVsync(bool) override {}
-    void setLowLatency(bool) override {}
+    void setVsync(bool vsync) override { m_vsync = vsync; }
+    void setLowLatency(bool lowLatency) override { m_lowLatency = lowLatency; }
 
     uint32_t lightCount() const override { return std::min(m_lastLights, kMaxLights); }
     uint32_t droppedLights() const override { return m_lastLights > kMaxLights ? m_lastLights - kMaxLights : 0; }
@@ -67,6 +72,24 @@ public:
     }
     const char* gpuName() const override { return "none (null renderer)"; }
     uint32_t drawCount() const override { return m_lastDraws; }
+    uint32_t unkeyedDraws() const override { return m_lastUnkeyed; }
+
+    RendererCapabilities capabilities() const override {
+        RendererCapabilities caps;
+        caps.backend = "null";
+        caps.features.push_back({"presentation", false, "headless: nothing is drawn or shown"});
+        return caps;
+    }
+    std::vector<EffectiveSetting> effectiveSettings() const override {
+        const char* why = "the null renderer draws nothing";
+        auto onOff = [](bool on) { return std::string(on ? "on" : "off"); };
+        return {
+            {"render_scale", std::to_string(m_scale), std::to_string(m_scale), ""},
+            {"shadow_quality", shadowName(m_shadows), "off", m_shadows == ShadowQuality::Off ? "" : why},
+            {"vsync", onOff(m_vsync), "off", m_vsync ? why : ""},
+            {"low_latency", onOff(m_lowLatency), "off", m_lowLatency ? why : ""},
+        };
+    }
 
     void requestScreenshot(const std::string&) override {
         m_screenshotResult = "the null renderer draws nothing, so there's no picture to save; use --renderer vulkan";
@@ -81,6 +104,7 @@ public:
     bool beginFrame() override { return true; }
     void endFrame() override {
         m_lastDraws = m_draws.exchange(0);
+        m_lastUnkeyed = m_unkeyed.exchange(0);
         m_lastLights = m_lights.exchange(0);
     }
     void onResize() override {}
@@ -99,9 +123,16 @@ private:
     uint32_t outputWidth() const { return m_viewportWidth ? m_viewportWidth : m_window.pixelWidth(); }
     uint32_t outputHeight() const { return m_viewportHeight ? m_viewportHeight : m_window.pixelHeight(); }
 
+    static const char* shadowName(ShadowQuality quality) {
+        constexpr const char* names[] = {"off", "low", "medium", "high", "ultra"};
+        return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 4)];
+    }
+
     Window& m_window;
-    std::atomic<uint32_t> m_draws{0}, m_lights{0};
-    uint32_t m_lastDraws = 0, m_lastLights = 0;
+    std::atomic<uint32_t> m_draws{0}, m_lights{0}, m_unkeyed{0};
+    uint32_t m_lastDraws = 0, m_lastLights = 0, m_lastUnkeyed = 0;
+    ShadowQuality m_shadows = ShadowQuality::High;
+    bool m_vsync = true, m_lowLatency = false;
     float m_scale = 1.0f;
     uint32_t m_viewportWidth = 0, m_viewportHeight = 0;
     std::vector<PassTiming> m_timings;

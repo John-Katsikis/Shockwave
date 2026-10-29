@@ -1,12 +1,13 @@
 #include "RendererImpl.h"
 
+#include <Core/Log.h>
 #include <Core/Profile.h>
 
 namespace shockwave {
 
 void VulkanRenderer::Impl::drawMesh(
     MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-    const DrawMaterial& material, std::span<const glm::mat4> joints) {
+    const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints) {
     if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
     const float determinant = glm::determinant(transform);
     if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) return;
@@ -40,6 +41,7 @@ void VulkanRenderer::Impl::drawMesh(
     command.indexBuffer = mesh.indices.buffer;
     command.indexCount = mesh.indexCount;
     command.castShadows = material.castShadows && !material.blend;
+    command.key = key;
     const float scale = std::sqrt(std::max(
         {glm::dot(glm::vec3(transform[0]), glm::vec3(transform[0])),
          glm::dot(glm::vec3(transform[1]), glm::vec3(transform[1])),
@@ -86,6 +88,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     createRenderFinishedSemaphores();
     needsResize = false;
     needsSceneResize = false;
+    logSettingFallbacks();   // the present mode may have changed
 }
 
 bool VulkanRenderer::Impl::beginFrame() {
@@ -227,6 +230,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     auto& draws = gatheredDraws;
     draws.clear();
     lastCulledDraws = 0;
+    lastUnkeyedDraws = 0;
     uint32_t total = 0;
     for (const DrawList& list : drawLists) total += static_cast<uint32_t>(list.commands.size());
     {
@@ -243,6 +247,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     // What levels of detail saved.
     for (const DrawCommand& draw : draws) {
         lastCulledDraws += !draw.visible;
+        lastUnkeyedDraws += !draw.key.valid();
         lastLodStats.triangles += draw.indexCount / 3;
         lastLodStats.fullTriangles += (draw.fullIndexCount ? draw.fullIndexCount : draw.indexCount) / 3;
         lastLodStats.reducedDraws += draw.fullIndexCount != 0;
@@ -321,11 +326,24 @@ void VulkanRenderer::Impl::endFrame() {
     graph.setTimestampPool(f.timestamps);
     graph.execute(cmd);
     f.timedPasses = graph.timedPasses();
-    frameGraphText = graph.description();
+    frameGraphText = "view " + std::to_string(currentView.value) + (currentView.valid() ? "" : " (none: no history)") +
+                     ", " + std::to_string(lastUnkeyedDraws) + " of " + std::to_string(lastDrawCount) +
+                     " draws without an instance key\n" + graph.description();
+    // Logged when it starts and stops, not every frame.
+    if ((graph.untimedPasses() > 0) != (untimedPasses > 0)) {
+        if (graph.untimedPasses())
+            SW_LOG(
+                LogRender, Warning, "{} render passes are past the GPU timer's {} and go untimed",
+                graph.untimedPasses(), vk::RenderGraph::kMaxTimedPasses);
+        else
+            SW_LOG(LogRender, Info, "every render pass is timed again");
+    }
+    untimedPasses = graph.untimedPasses();
 
     vk::check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
 
     ++frameNumber;
+    if (frameNumber == 1) logSettingFallbacks();
     VkSemaphore finished = renderFinished[imageIndex];
 
     VkSemaphoreSubmitInfo waitInfo{};
@@ -456,26 +474,33 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
     // and only when the environment changed.
     if (environmentChanged())
         graph.addPass("environment lighting", {}, [this](VkCommandBuffer cmd) { recordEnvironment(cmd); });
-    if (!skinDispatches.empty())
-        graph.addPass("skinning", {}, [this](VkCommandBuffer cmd) { recordSkinning(cmd); });
+    // Skinned vertices: written by compute, then pulled by the shadow and scene vertex shaders.
+    std::vector<vk::RenderGraph::BufferAccess> vertexReads;
+    if (!skinDispatches.empty()) {
+        const auto skinned = graph.importBuffer("skinned vertices", f.skinnedBuffer.buffer, f.skinnedState);
+        graph.addPass(
+            "skinning", {}, [this](VkCommandBuffer cmd) { recordSkinning(cmd); },
+            {{skinned, vk::BufferUse::ComputeWrite}});
+        vertexReads.push_back({skinned, vk::BufferUse::VertexShaderRead});
+    }
     std::vector<vk::RenderGraph::Use> sceneUses = {
         {color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}};
     if (!cascadePasses.empty()) {
         const auto atlas =
             graph.import("sun shadows", cascadeAtlas.image, VK_IMAGE_ASPECT_DEPTH_BIT, cascadeState, true);
-        graph.addPass("shadows (sun)", {{atlas, ImageUse::DepthAttachment}}, [this, &f](VkCommandBuffer cmd) {
-            recordShadows(cmd, f, cascadePasses, cascadeAtlas);
-        });
+        graph.addPass(
+            "shadows (sun)", {{atlas, ImageUse::DepthAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordShadows(cmd, f, cascadePasses, cascadeAtlas); }, vertexReads);
         sceneUses.push_back({atlas, ImageUse::Sampled});
     }
     if (!localPasses.empty()) {
         const auto atlas = graph.import("light shadows", localAtlas.image, VK_IMAGE_ASPECT_DEPTH_BIT, localState, true);
-        graph.addPass("shadows (lights)", {{atlas, ImageUse::DepthAttachment}}, [this, &f](VkCommandBuffer cmd) {
-            recordShadows(cmd, f, localPasses, localAtlas);
-        });
+        graph.addPass(
+            "shadows (lights)", {{atlas, ImageUse::DepthAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordShadows(cmd, f, localPasses, localAtlas); }, vertexReads);
         sceneUses.push_back({atlas, ImageUse::Sampled});
     }
-    graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); });
+    graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, vertexReads);
     if (!particleDraws.empty()) {
         graph.addPass(
             "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},

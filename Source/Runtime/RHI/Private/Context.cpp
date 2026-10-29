@@ -131,6 +131,19 @@ Context::Context(SDL_Window* window) {
     VkPhysicalDeviceFeatures compression{};
     compression.textureCompressionBC = VK_TRUE;   // optional: textures fall back to RGBA8 without it
     m_textureCompressionBC = physical.enable_features_if_present(compression);
+    // Optional, for later GPU-driven drawing; reported by the renderer's capabilities.
+    VkPhysicalDeviceFeatures multiDraw{};
+    multiDraw.multiDrawIndirect = VK_TRUE;
+    m_multiDrawIndirect = physical.enable_features_if_present(multiDraw);
+    VkPhysicalDeviceFeatures firstInstance{};
+    firstInstance.drawIndirectFirstInstance = VK_TRUE;
+    m_drawIndirectFirstInstance = physical.enable_features_if_present(firstInstance);
+    VkPhysicalDeviceVulkan12Features indirectCount{};
+    indirectCount.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    indirectCount.drawIndirectCount = VK_TRUE;
+    m_drawIndirectCount = physical.enable_extension_features_if_present(indirectCount);
+    // The driver's own memory budget, rather than VMA's estimate.
+    m_memoryBudget = physical.enable_extension_if_present(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
 
     auto deviceResult = vkb::DeviceBuilder(physical).build();
     if (!deviceResult) {
@@ -171,6 +184,7 @@ Context::Context(SDL_Window* window) {
 
     VmaAllocatorCreateInfo allocatorInfo{};
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    if (m_memoryBudget) allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
     allocatorInfo.instance = m_instance.instance;
     allocatorInfo.physicalDevice = physicalDevice();
     allocatorInfo.device = m_device.device;

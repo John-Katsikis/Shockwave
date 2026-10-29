@@ -35,14 +35,15 @@ public:
 
     void setClearColor(const Color& color) override;
     void setCamera(const glm::mat4& view, const glm::mat4& projection) override;
+    void setView(RenderViewId id) override;
     void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-        const DrawMaterial& material) override;
+        const DrawMaterial& material, const RenderInstanceKey& key) override;
     void addLight(const LightDesc& light) override;
     void drawParticles(const ParticleDrawList& particles) override;
     void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-        const glm::vec4& tint, const DrawMaterial& material) override;
+        const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) override;
 
     void setGrid(const GridSettings& grid) override;
     void setLighting(const LightingDesc& lighting) override;
@@ -68,6 +69,11 @@ public:
     uint32_t drawCount() const override;
     uint32_t culledDraws() const override;
     ParticleStats particleStats() const override;
+    uint32_t unkeyedDraws() const override;
+
+    RendererCapabilities capabilities() const override;
+    std::vector<EffectiveSetting> effectiveSettings() const override;
+    RendererMemoryReport memoryReport() const override;
 
     void requestScreenshot(const std::string& path) override;
     bool screenshotPending() const override;

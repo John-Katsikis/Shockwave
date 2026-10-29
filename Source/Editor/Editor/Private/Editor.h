@@ -444,6 +444,10 @@ private:
     std::filesystem::path m_screenshotPath;   // waiting for the renderer to write it
 
     shockwave::FlyCamera m_camera;
+    // The fly camera and a scene camera are separate views, so switching doesn't smear
+    // one's history into the other.
+    shockwave::RenderViewId m_editorView = shockwave::RenderViewId::create();
+    shockwave::RenderViewId m_sceneView = shockwave::RenderViewId::create();
     bool m_looking = false;
 
     // Undo history: whole-world snapshots. Scenes are small, and snapshots can't get

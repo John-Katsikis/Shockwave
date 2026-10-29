@@ -543,6 +543,7 @@ void Editor::drawStatsWindow() {
                 shadowStats.skippedLights);
         }
     }
+    drawGraphicsReport(renderer);
     if (ImGui::TreeNode("Render graph")) {
         // The passes the renderer ran last frame and the barriers it placed between them.
         ImGui::TextUnformatted(renderer.frameGraph().c_str());

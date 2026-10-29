@@ -1,0 +1,17 @@
+shockwave_circuit 1
+# Turns a door around its hinge at 30 degrees a second.
+# Deterministic under player --fixed-step: frame N is always the same angle.
+
+var speed Float 30
+
+node tick Event.FixedTick
+
+node spin Transform.RotateByRate
+  exec tick.then
+  in speed = speed
+  in dt = tick.dt
+
+editor
+  tick -400 0
+  spin 0 0
+end

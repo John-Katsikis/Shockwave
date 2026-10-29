@@ -49,6 +49,7 @@ void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projectio
     m_impl->projection = projection;
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
 }
+void VulkanRenderer::setView(RenderViewId id) { m_impl->setView(id); }
 void VulkanRenderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
 void VulkanRenderer::drawParticles(const ParticleDrawList& particles) { m_impl->drawParticles(particles); }
 
@@ -76,14 +77,14 @@ const std::string& VulkanRenderer::screenshotResult() const { return m_impl->scr
 std::string VulkanRenderer::frameGraph() const { return m_impl->frameGraphText; }
 void VulkanRenderer::drawMesh(
     MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-    const DrawMaterial& material) {
-    m_impl->drawMesh(mesh, transform, texture, tint, material);
+    const DrawMaterial& material, const RenderInstanceKey& key) {
+    m_impl->drawMesh(mesh, transform, texture, tint, material, key);
 }
 void VulkanRenderer::setMeshSkin(MeshHandle id, std::span<const VertexSkin> skin) { m_impl->setMeshSkin(id, skin); }
 void VulkanRenderer::drawSkinnedMesh(
     MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-    const glm::vec4& tint, const DrawMaterial& material) {
-    m_impl->drawSkinnedMesh(mesh, transform, joints, texture, tint, material);
+    const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) {
+    m_impl->drawSkinnedMesh(mesh, transform, joints, texture, tint, material, key);
 }
 void VulkanRenderer::setRenderScale(float scale) {
     if (scale != m_impl->renderScale) {
@@ -135,6 +136,10 @@ const GpuChoice* VulkanRenderer::gpuChoice() const { return &m_impl->context->gp
 uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
 ParticleStats VulkanRenderer::particleStats() const { return m_impl->lastParticleStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
+uint32_t VulkanRenderer::unkeyedDraws() const { return m_impl->lastUnkeyedDraws; }
+RendererCapabilities VulkanRenderer::capabilities() const { return m_impl->capabilities(); }
+std::vector<EffectiveSetting> VulkanRenderer::effectiveSettings() const { return m_impl->effectiveSettings(); }
+RendererMemoryReport VulkanRenderer::memoryReport() const { return m_impl->memoryReport(); }
 bool VulkanRenderer::beginFrame() { return m_impl->beginFrame(); }
 void VulkanRenderer::endFrame() { m_impl->endFrame(); }
 void VulkanRenderer::onResize() { m_impl->needsResize = true; }

@@ -18,5 +18,9 @@ void drawGpuStats(const shockwave::Renderer& renderer);
 // The GPU combo in Preferences. Picking one restarts the renderer on it straight away.
 // Returns true when the preferences changed.
 bool drawGpuPreference(shockwave::Engine& engine, Preferences& prefs);
+// In Stats: each graphics setting as asked for and as running (a fallback, and why, in the
+// warning colour), what the GPU supports, and GPU memory by category. Like
+// player --graphics-report.
+void drawGraphicsReport(const shockwave::Renderer& renderer);
 
 }   // namespace editor

@@ -34,6 +34,11 @@ public:
     uint32_t maxBindlessTextures() const { return m_maxBindlessTextures; }
     // BC1-BC7 compressed textures (every desktop GPU); see docs/Optimisation.md.
     bool textureCompressionBC() const { return m_textureCompressionBC; }
+    // Optional features, switched on when the GPU has them.
+    bool multiDrawIndirect() const { return m_multiDrawIndirect; }
+    bool drawIndirectFirstInstance() const { return m_drawIndirectFirstInstance; }
+    bool drawIndirectCount() const { return m_drawIndirectCount; }
+    bool memoryBudget() const { return m_memoryBudget; }   // VK_EXT_memory_budget: real numbers from the driver
 
     // Frame pacing support, all optional (see enablePresentTiming).
     enum class PresentWait { None, Version1, Version2 };
@@ -64,6 +69,8 @@ private:
     mutable PresentWait m_presentWait = PresentWait::None;
     bool m_fifoLatestReady = false;
     bool m_textureCompressionBC = false;
+    bool m_multiDrawIndirect = false, m_drawIndirectFirstInstance = false, m_drawIndirectCount = false;
+    bool m_memoryBudget = false;
     float m_timestampPeriod = 0.0f;
 };
 

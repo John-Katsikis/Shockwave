@@ -1,0 +1,205 @@
+# Spheres from smooth (left) to rough (right), dielectric (bottom) to metal (top), under
+# one sun and the sky. The material fixture (G02, G07 reflections). Camera: "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+    show_environment 1
+end
+
+entity "Sun"
+  Transform
+    rotation -35 -30 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Floor"
+  Transform
+    position 0 0 0
+    scale 30 1 30
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.4 0.4 0.4 1
+end
+
+entity "Sphere m0 r0"
+  Transform
+    position -3 0.6 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.8 0.8 0.8 1
+    roughness 0
+    metallic 0
+end
+
+entity "Sphere m0 r0.25"
+  Transform
+    position -1.5 0.6 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.8 0.8 0.8 1
+    roughness 0.25
+    metallic 0
+end
+
+entity "Sphere m0 r0.5"
+  Transform
+    position 0 0.6 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.8 0.8 0.8 1
+    roughness 0.5
+    metallic 0
+end
+
+entity "Sphere m0 r0.75"
+  Transform
+    position 1.5 0.6 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.8 0.8 0.8 1
+    roughness 0.75
+    metallic 0
+end
+
+entity "Sphere m0 r1"
+  Transform
+    position 3 0.6 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.8 0.8 0.8 1
+    roughness 1
+    metallic 0
+end
+
+entity "Sphere m0.5 r0"
+  Transform
+    position -3 1.9 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0
+    metallic 0.5
+end
+
+entity "Sphere m0.5 r0.25"
+  Transform
+    position -1.5 1.9 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.25
+    metallic 0.5
+end
+
+entity "Sphere m0.5 r0.5"
+  Transform
+    position 0 1.9 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.5
+    metallic 0.5
+end
+
+entity "Sphere m0.5 r0.75"
+  Transform
+    position 1.5 1.9 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.75
+    metallic 0.5
+end
+
+entity "Sphere m0.5 r1"
+  Transform
+    position 3 1.9 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 1
+    metallic 0.5
+end
+
+entity "Sphere m1 r0"
+  Transform
+    position -3 3.2 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0
+    metallic 1
+end
+
+entity "Sphere m1 r0.25"
+  Transform
+    position -1.5 3.2 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.25
+    metallic 1
+end
+
+entity "Sphere m1 r0.5"
+  Transform
+    position 0 3.2 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.5
+    metallic 1
+end
+
+entity "Sphere m1 r0.75"
+  Transform
+    position 1.5 3.2 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 0.75
+    metallic 1
+end
+
+entity "Sphere m1 r1"
+  Transform
+    position 3 3.2 -2
+    scale 1.1 1.1 1.1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.64 0.38 1
+    roughness 1
+    metallic 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 2 5
+    rotation -6 0 0
+  Camera
+    fov 55
+    near_plane 0.05
+    primary 1
+end

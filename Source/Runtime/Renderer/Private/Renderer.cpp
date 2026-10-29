@@ -5,6 +5,7 @@
 #include <Renderer/RenderBackend.h>
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -13,6 +14,37 @@
 #include <utility>
 
 namespace shockwave {
+
+RenderViewId RenderViewId::create() {
+    static std::atomic<uint64_t> next{1};
+    return {next.fetch_add(1, std::memory_order_relaxed)};
+}
+
+const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
+    switch (category) {
+    case GpuMemoryCategory::RenderTargets: return "render targets";
+    case GpuMemoryCategory::ShadowMaps: return "shadow maps";
+    case GpuMemoryCategory::Environment: return "environment lighting";
+    case GpuMemoryCategory::Bloom: return "bloom";
+    case GpuMemoryCategory::Meshes: return "meshes";
+    case GpuMemoryCategory::Textures: return "textures";
+    case GpuMemoryCategory::FrameData: return "frame data";
+    case GpuMemoryCategory::Particles: return "particles";
+    case GpuMemoryCategory::GameUi: return "game ui";
+    case GpuMemoryCategory::Readback: return "readback";
+    case GpuMemoryCategory::Staging: return "staging";
+    case GpuMemoryCategory::SurfaceBuffers: return "surface buffers";
+    case GpuMemoryCategory::AmbientOcclusion: return "ambient occlusion";
+    case GpuMemoryCategory::TemporalHistory: return "temporal history";
+    case GpuMemoryCategory::Lightmaps: return "lightmaps";
+    case GpuMemoryCategory::DiffuseProbes: return "diffuse probes";
+    case GpuMemoryCategory::ReflectionProbes: return "reflection probes";
+    case GpuMemoryCategory::Clusters: return "light clusters";
+    case GpuMemoryCategory::Hzb: return "depth pyramid";
+    case GpuMemoryCategory::Count: break;
+    }
+    return "?";
+}
 
 struct Renderer::State {
     Window& window;
@@ -26,6 +58,7 @@ struct Renderer::State {
     // Settings, replayed into a new backend after a swap.
     Color clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     glm::mat4 view{1.0f}, projection{1.0f};
+    RenderViewId viewId;
     GridSettings grid;
     LightingDesc lighting;
     DebugView debugView = DebugView::Lit;
@@ -45,6 +78,14 @@ struct Renderer::State {
     std::mutex idMutex;
     std::vector<uint32_t> freeMeshes, freeTextures;
     uint32_t nextMesh = 0, nextTexture = 1;   // texture 0 is the backend's white texture
+    // How many times each mesh slot has been freed, for RenderInstanceKey::meshGeneration.
+    // Fixed size: drawMesh reads it from any thread while createMesh may run.
+    static constexpr uint32_t kTrackedMeshes = 1u << 16;
+    std::unique_ptr<std::atomic<uint32_t>[]> meshGenerations =
+        std::make_unique<std::atomic<uint32_t>[]>(kTrackedMeshes);
+    uint32_t meshGeneration(MeshHandle mesh) const {
+        return mesh.id < kTrackedMeshes ? meshGenerations[mesh.id].load(std::memory_order_relaxed) : 0;
+    }
 
     // CPU copies for replaying into a new backend (swappable only), ordered by id.
     struct TextureData {
@@ -84,6 +125,7 @@ struct Renderer::State {
         if (nextMesh > backend->maxMeshes() || nextTexture > backend->maxTextures())
             throw std::runtime_error(std::string(from.desc().name) + " can't hold this many meshes and textures");
         backend->setClearColor(clearColor);
+        backend->setView(viewId);
         backend->setCamera(view, projection);
         backend->setGrid(grid);
         backend->setLighting(lighting);
@@ -117,8 +159,9 @@ struct Renderer::State {
             backend->createTextureData(id, texture);
             return;
         }
-        SW_LOG(LogRender, Warning, "texture {} is {}, which this renderer can't use; showing white", id.id,
-               textureFormatName(texture.format));
+        SW_LOG(
+            LogRender, Warning, "texture {} is {}, which this renderer can't use; showing white", id.id,
+            textureFormatName(texture.format));
         const uint8_t white[4] = {255, 255, 255, 255};
         backend->createTexture(id, 1, 1, white, texture.srgb);
     }
@@ -190,6 +233,7 @@ void Renderer::destroyMesh(MeshHandle mesh) {
         m->meshes.erase(mesh.id);
         m->skins.erase(mesh.id);
     }
+    if (mesh.id < State::kTrackedMeshes) m->meshGenerations[mesh.id].fetch_add(1, std::memory_order_relaxed);
     m->release(m->freeMeshes, mesh.id);
 }
 
@@ -306,22 +350,27 @@ void Renderer::setClearColor(const Color& color) {
     m->clearColor = color;
     m->backend->setClearColor(color);
 }
-void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection) {
+void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection, RenderViewId id) {
     m->view = view;
     m->projection = projection;
+    m->viewId = id;
+    m->backend->setView(id);
     m->backend->setCamera(view, projection);
 }
+RenderViewId Renderer::currentView() const { return m->viewId; }
 const glm::mat4& Renderer::cameraView() const { return m->view; }
 const glm::mat4& Renderer::cameraProjection() const { return m->projection; }
 void Renderer::drawMesh(
     MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-    const DrawMaterial& material) {
-    m->backend->drawMesh(mesh, transform, texture, tint, material);
+    const DrawMaterial& material, RenderInstanceKey key) {
+    if (key.valid()) key.meshGeneration = m->meshGeneration(mesh);
+    m->backend->drawMesh(mesh, transform, texture, tint, material, key);
 }
 void Renderer::drawSkinnedMesh(
     MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
-    const glm::vec4& tint, const DrawMaterial& material) {
-    m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material);
+    const glm::vec4& tint, const DrawMaterial& material, RenderInstanceKey key) {
+    if (key.valid()) key.meshGeneration = m->meshGeneration(mesh);
+    m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material, key);
 }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
 void Renderer::drawParticles(const ParticleDrawList& particles) {
@@ -385,6 +434,25 @@ const GpuChoice* Renderer::gpuChoice() const { return m->backend->gpuChoice(); }
 uint32_t Renderer::drawCount() const { return m->backend->drawCount(); }
 uint32_t Renderer::culledDraws() const { return m->backend->culledDraws(); }
 ParticleStats Renderer::particleStats() const { return m->backend->particleStats(); }
+uint32_t Renderer::unkeyedDraws() const { return m->backend->unkeyedDraws(); }
+
+RendererCapabilities Renderer::capabilities() const {
+    auto caps = m->backend->capabilities();
+    if (caps.backend.empty()) caps.backend = m->backendName;
+    return caps;
+}
+std::vector<EffectiveSetting> Renderer::effectiveSettings() const { return m->backend->effectiveSettings(); }
+RendererMemoryReport Renderer::memoryReport() const {
+    RendererMemoryReport report = m->backend->memoryReport();
+    std::lock_guard lock(m->journalMutex);
+    for (const auto& [id, mesh] : m->meshes)
+        report.cpuCopyBytes += mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(uint32_t);
+    for (const auto& [id, lods] : m->meshLods) report.cpuCopyBytes += lods.second.size() * sizeof(uint32_t);
+    for (const auto& [id, skin] : m->skins) report.cpuCopyBytes += skin.size() * sizeof(VertexSkin);
+    for (const auto& [id, texture] : m->textures) report.cpuCopyBytes += texture.rgba.size();
+    for (const auto& [id, texture] : m->packedTextures) report.cpuCopyBytes += texture.bytes.size();
+    return report;
+}
 void Renderer::requestScreenshot(const std::string& path) { m->backend->requestScreenshot(path); }
 bool Renderer::screenshotPending() const { return m->backend->screenshotPending(); }
 const std::string& Renderer::screenshotResult() const { return m->backend->screenshotResult(); }
