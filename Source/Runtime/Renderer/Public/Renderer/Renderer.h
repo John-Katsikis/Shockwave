@@ -3,6 +3,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/TextureData.h>
@@ -123,6 +124,18 @@ public:
     // From the next frame's draws on. Main thread.
     void setBakedLighting(bool enabled);
     bool bakedLighting() const;
+
+    // ---- Projected decals (G08, Renderer/Decals.h) ----
+    // This frame's decals, added to any already given; same thread as setCamera, cleared
+    // after each frame. Invalid ones (no size, opacity outside 0..1) are skipped, and past
+    // kMaxSubmittedDecals the rest are dropped.
+    void drawDecals(std::span<const DecalDesc> decals);
+    // The decals_quality setting: the most decals a frame draws (decalBudget). Off has no
+    // decal pass, buffers or prepass for them; changing it frees or makes them at a frame
+    // boundary without waiting for the GPU.
+    void setDecalQuality(DecalQuality quality);
+    DecalQuality decalQuality() const;
+    DecalStats decalStats() const;   // the last frame's
 
     // ---- Local reflection probes (G07, Renderer/ReflectionProbes.h) ----
     // Whether the backend can make TextureShape::Cube textures (createTexture refuses them

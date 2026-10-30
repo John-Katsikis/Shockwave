@@ -240,6 +240,9 @@ struct DrawMaterial {
     // Baked diffuse light in place of the environment's (G05, G06); null: the environment.
     // Read during the draw call only, like layers.
     const IndirectLighting* indirect = nullptr;
+    // Decal receiver layers (G08, Renderer/Decals.h): the bits decals' receiverMask must
+    // share to land on this surface. 0 takes no decals; blended surfaces never take them.
+    uint32_t decalLayers = 1;
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of
@@ -302,7 +305,10 @@ enum class DebugView : uint32_t {
     IndirectDiffuse,
     // G07: which local reflection probes each pixel reads, one colour per probe weighted by
     // its share, dark grey where only the global environment is left.
-    Reflections
+    Reflections,
+    // G08: decal coverage: red for the colour buffer's, green for roughness and metallic's,
+    // over the unlit surface darkened.
+    Decals
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device

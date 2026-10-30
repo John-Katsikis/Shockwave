@@ -110,7 +110,7 @@ struct DrawData {
     // Local reflection probes (G07, reflection.glsl): index + 1 of the first in the low 16
     // bits and of the second in the high 16; 0: the global environment only.
     uint reflections;
-    uint pad;
+    uint decalLayers;   // G08: decal receiver layer bits (Renderer/Decals.h); 0 for blended draws
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

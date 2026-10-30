@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Engine/Subsystem.h>
+#include <Renderer/Decals.h>
 #include <Renderer/RenderTypes.h>
 
 #include <filesystem>
@@ -34,6 +35,8 @@ struct GraphicsSettings {
     bool bakedLighting = true;
     // Local reflection probes (G07); off reflects the global environment everywhere.
     bool reflectionProbes = true;
+    // Projected decals (G08): how many a frame draws, nearest first; off draws none.
+    DecalQuality decals = DecalQuality::High;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

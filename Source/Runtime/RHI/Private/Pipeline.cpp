@@ -91,8 +91,11 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED;
-    blend.attachmentCount = hasColor ? 1 : 0;
-    blend.pAttachments = &blendAttachment;
+    const uint32_t colorCount = hasColor ? (desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2u : 1u) : 0u;
+    const VkPipelineColorBlendAttachmentState blendAttachments[2] = {blendAttachment, blendAttachment};
+    const VkFormat colorFormats[2] = {desc.colorFormat, desc.secondColorFormat};
+    blend.attachmentCount = colorCount;
+    blend.pAttachments = blendAttachments;
 
     const VkDynamicState dynamicStates[] = {
         VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS};
@@ -103,8 +106,8 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
 
     VkPipelineRenderingCreateInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = hasColor ? 1 : 0;
-    rendering.pColorAttachmentFormats = &desc.colorFormat;
+    rendering.colorAttachmentCount = colorCount;
+    rendering.pColorAttachmentFormats = colorFormats;
     rendering.depthAttachmentFormat = desc.depthFormat;
 
     VkGraphicsPipelineCreateInfo info{};

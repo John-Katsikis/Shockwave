@@ -3,6 +3,7 @@
 #include <Assets/Assets.h>
 #include <Engine/BakedLighting.h>
 #include <Engine/Camera.h>
+#include <Engine/Decals.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/Pose.h>
 #include <Renderer/Renderer.h>
@@ -38,6 +39,10 @@ void addBuiltinSystems(Schedule& schedule) {
         t.position.y += offset - bob.offset;
         bob.offset = offset;
     });
+    // Impact marks fade and go (Engine/Decals.h). Destroys entities, so it runs alone.
+    Schedule::Access lifetimes;
+    lifetimes.exclusive = true;
+    schedule.add("DecalLifetime", lifetimes, [](const SystemContext& ctx) { updateDecalLifetimes(ctx.world, ctx.dt); });
 }
 
 void storePreviousTransforms(World& world, JobSystem& jobs) {
@@ -116,6 +121,13 @@ void renderWorld(
             return false;   // a receiver without a valid lightmap keeps the environment
         return baked->probeLighting(point, out);
     };
+    // Decal receiver layers (G08): layer 1 for anything without a DecalReceiver.
+    const Pool<DecalReceiver>* receivers = world.pool<DecalReceiver>();
+    if (receivers && receivers->size() == 0) receivers = nullptr;
+    auto decalLayers = [&](Entity e) {
+        const DecalReceiver* r = receivers ? receivers->find(e.index) : nullptr;
+        return r ? static_cast<uint32_t>(r->layers) & kDecalLayerMask : 1u;
+    };
     // drawMesh is thread-safe, so draw submission splits across cores like any system.
     // Each entity works out its own world matrix by walking up its parents: nothing is
     // written, so there's no ordering to get right, and hierarchies are shallow.
@@ -146,6 +158,7 @@ void renderWorld(
                 material.uvScale = m.tiling;
                 material.castShadows = m.castShadows;
                 material.indirect = indirect;
+                material.decalLayers = decalLayers(e);
                 renderer.drawMesh(
                     mesh, model, asset->baseColorTexture, asset->baseColor * m.tint, material, instanceKey(world, e));
                 return;
@@ -157,6 +170,7 @@ void renderWorld(
             material.emissive = glm::vec3(m.emissive) * m.emissiveIntensity;
             material.castShadows = m.castShadows;
             material.indirect = indirect;
+            material.decalLayers = decalLayers(e);
             renderer.drawMesh(mesh, model, m.texture, m.tint, material, instanceKey(world, e));
         },
         256);
@@ -184,6 +198,7 @@ void renderWorld(
                 // Parts drawn with a material asset instead of their own (A02), by source material.
                 thread_local std::vector<std::shared_ptr<const MaterialAsset>> overrides;
                 overrides.assign(asset->data.materials.size(), nullptr);
+                const uint32_t layers = decalLayers(e);
                 IndirectLighting probe;
                 const bool probeLitModel = probeLit(
                     e, glm::vec3(model * glm::vec4((asset->data.bounds.min + asset->data.bounds.max) * 0.5f, 1.0f)),
@@ -201,12 +216,14 @@ void renderWorld(
                         DrawMaterial options = replaced ? replaced->draw : modelDrawMaterial(*asset, mesh.material);
                         options.castShadows = instance.castShadows;
                         options.indirect = probeLitModel ? &probe : nullptr;
+                        options.decalLayers = layers;
                         const int baseMap = material.baseColorTexture;
-                        const TextureHandle texture =
-                            replaced ? replaced->baseColorTexture
-                            : baseMap < 0 || size_t(baseMap) >= asset->textures.size() ? TextureHandle{}
-                                                                                       : asset->textures[size_t(baseMap)];
-                        const glm::vec4 baseColor = (replaced ? replaced->baseColor : material.baseColor) * instance.tint;
+                        const TextureHandle texture = replaced ? replaced->baseColorTexture
+                                                      : baseMap < 0 || size_t(baseMap) >= asset->textures.size()
+                                                          ? TextureHandle{}
+                                                          : asset->textures[size_t(baseMap)];
+                        const glm::vec4 baseColor =
+                            (replaced ? replaced->baseColor : material.baseColor) * instance.tint;
                         // Node and slot within it: the same part of the model every frame.
                         const auto slot = static_cast<uint32_t>(&index - node.meshes.data());
                         const RenderInstanceKey key = instanceKey(world, e, modelPartKey(uint32_t(n), slot));
@@ -215,7 +232,8 @@ void renderWorld(
                             if (!pose && rest.empty())
                                 for (const auto& each : asset->data.nodes) rest.push_back(each.world);
                             skinMatrices(mesh, pose ? std::span<const glm::mat4>(pose->nodes) : rest, joints);
-                            renderer.drawSkinnedMesh(asset->meshes[index], model, joints, texture, baseColor, options, key);
+                            renderer.drawSkinnedMesh(
+                                asset->meshes[index], model, joints, texture, baseColor, options, key);
                             continue;
                         }
                         MeshHandle drawn = asset->meshes[index];
@@ -229,6 +247,34 @@ void renderWorld(
                 }
             },
             64);
+
+    // Decals (G08): every enabled one, with its box where the hierarchy puts it this frame.
+    // The renderer picks which to draw within the player's decals_quality budget.
+    if (world.count<Decal>() > 0) {
+        const Pool<DecalLifetime>* lifetimes = world.pool<DecalLifetime>();
+        thread_local std::vector<DecalDesc> decals;
+        decals.clear();
+        world.each<const Transform, const Decal>([&](Entity e, const Transform& t, const Decal& decal) {
+            if (!decal.enabled || (include && !include(world, e))) return;
+            const DecalLifetime* lifetime = lifetimes ? lifetimes->find(e.index) : nullptr;
+            // Stuck to something that's gone: it's removed next tick; don't show it adrift.
+            if (lifetime && lifetime->receiver.valid() && !world.alive(lifetime->receiver)) return;
+            const float fade = lifetime ? decalLifetimeFade(*lifetime) : 1.0f;
+            if (!(fade > 0.0f) || !(decal.opacity > 0.0f)) return;
+            glm::mat4 model = local(e, t);
+            if (hasParents) {
+                Entity parent = parentOf(world, e);
+                for (int depth = 0; parent.valid() && depth < kMaxHierarchyDepth; ++depth) {
+                    if (const Transform* pt = transforms->find(parent.index)) model = local(parent, *pt) * model;
+                    parent = parentOf(world, parent);
+                }
+            }
+            const std::shared_ptr<const MaterialAsset> material =
+                decal.material.valid() && assets ? assets->material(decal.material) : nullptr;
+            decals.push_back(decalDesc(decal, model, material.get(), decalOrder(e, lifetime), fade));
+        });
+        renderer.drawDecals(decals);
+    }
 
     // Lights shine along their entity's forward axis (-Z), wherever the hierarchy puts it.
     world.each<const Transform, const Light>([&](Entity e, const Transform&, const Light& light) {

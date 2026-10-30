@@ -72,12 +72,18 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   their boxes. False reflects the sky and environment everywhere, pixel for pixel as if
   the scene had no probes, and applies on the next frame; the captures stay loaded.
   Scenes without probes look the same either way. Presets leave it alone.
+- `decals_quality`: `off`, `low`, `medium` or `high` (the default): how many projected
+  decals (docs/Decals.md) a frame draws at most, 64, 256 or 1024, nearest the camera
+  first, with decals marked `essential` kept before decoration. Off draws none: no
+  decal pass, no decal buffers, and no surface prepass for them, pixel for pixel the
+  scene without decals. `player --view decals` and the editor's *Decals* shading view
+  show where they land.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
 sets bloom quality low, medium or high, texture quality to its own name, anisotropy to
-4, 8, 16 and 16, material quality low for Low and high for the rest, and ambient
-occlusion off, low, medium and high.
+4, 8, 16 and 16, material quality low for Low and high for the rest, ambient
+occlusion off, low, medium and high, and decals low, medium, high and high.
 `matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
 Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

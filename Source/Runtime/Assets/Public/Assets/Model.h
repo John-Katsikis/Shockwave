@@ -145,5 +145,5 @@ bool loadModel(
 // the hit mesh's material index, if wanted.
 bool intersectModel(
     const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance,
-    uint32_t* material = nullptr);
+    uint32_t* material = nullptr, glm::vec3* normal = nullptr);   // normal: the face's, in the model's space
 }   // namespace shockwave

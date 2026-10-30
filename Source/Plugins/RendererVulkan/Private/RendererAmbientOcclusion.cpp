@@ -57,7 +57,8 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
     VkDescriptorSetLayoutBinding bindings[4]{};
     for (uint32_t i = 0; i < 4; ++i) {
         bindings[i].binding = i;
-        bindings[i].descriptorType = i < 2 ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[i].descriptorType =
+            i < 2 ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         bindings[i].pImmutableSamplers = i < 2 ? &aoSampler : nullptr;
@@ -115,6 +116,9 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
         desc.fragmentSpecialization = &prepassSpec;
         shade.fragmentSpecialization = &shadeSpec;
         prepassPipelines[i] = vk::createGraphicsPipeline(device, desc);
+        vk::GraphicsPipelineDesc withLayers = desc;   // decals on (G08): receiver layers too
+        withLayers.secondColorFormat = VK_FORMAT_R8_UINT;
+        prepassDecalPipelines[i] = vk::createGraphicsPipeline(device, withLayers);
         depthEqualPipelines[i] = vk::createGraphicsPipeline(device, shade);
     }
 }
@@ -122,6 +126,7 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
 void VulkanRenderer::Impl::destroyAmbientOcclusionPipeline() {
     VkDevice device = context->device();
     for (VkPipeline pipeline : prepassPipelines) vkDestroyPipeline(device, pipeline, nullptr);
+    for (VkPipeline pipeline : prepassDecalPipelines) vkDestroyPipeline(device, pipeline, nullptr);
     for (VkPipeline pipeline : depthEqualPipelines) vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipeline(device, aoPipeline, nullptr);
     vkDestroyPipelineLayout(device, aoLayout, nullptr);
@@ -227,7 +232,8 @@ void VulkanRenderer::Impl::destroyAoTargets(AoTargets& targets) {
 }
 
 void VulkanRenderer::Impl::updateAoTargets() {
-    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off;
+    // The prepass runs for ambient occlusion and for decals (G08), which read its depth and normals.
+    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off || decalsWanted();
     if (want == prepassActive()) return;
     if (!want) {
         const int slot = aoTargets.slot == aoSlots[0] ? 0 : 1;
@@ -259,15 +265,24 @@ void VulkanRenderer::Impl::recordPrepass(VkCommandBuffer cmd, Frame& f) {
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;   // the scene tests against it
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
+    // With decals (G08), each surface's receiver layers beside its normal; 0 (none) elsewhere.
+    VkRenderingAttachmentInfo colorAttachments[2] = {normalAttachment, normalAttachment};
+    const bool decals = decalsActive();
+    if (decals) {
+        colorAttachments[1].imageView = decalTargets.layers.view;
+        colorAttachments[1].clearValue.color = {};
+    }
+
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea = {{0, 0}, sceneColor.extent};
     rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &normalAttachment;
+    rendering.colorAttachmentCount = decals ? 2 : 1;
+    rendering.pColorAttachments = colorAttachments;
     rendering.pDepthAttachment = &depthAttachment;
     vkCmdBeginRendering(cmd, &rendering);
     setSceneViewport(cmd);
+    const auto& pipelines = decals ? prepassDecalPipelines : prepassPipelines;
     if (!gatheredDraws.empty()) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
         DrawPushConstants push{f.drawAddress, f.frameAddress};
@@ -277,7 +292,7 @@ void VulkanRenderer::Impl::recordPrepass(VkCommandBuffer cmd, Frame& f) {
         VkPipeline boundPipeline = VK_NULL_HANDLE;
         for (const DrawCommand& draw : gatheredDraws) {
             if (!draw.visible || draw.blend) continue;   // blended surfaces aren't in it
-            const VkPipeline pipeline = prepassPipelines[prepassIndex(draw)];
+            const VkPipeline pipeline = pipelines[prepassIndex(draw)];
             if (pipeline != boundPipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 boundPipeline = pipeline;
@@ -310,8 +325,7 @@ void VulkanRenderer::Impl::recordAmbientOcclusion(VkCommandBuffer cmd, Frame& f)
     const VkExtent2D full = sceneColor.extent, half = halfExtent(full);
     const int targets[3] = {0, 1, 0};
     for (uint32_t mode = 0; mode < 3; ++mode) {
-        vkCmdBindDescriptorSets(
-            cmd, VK_PIPELINE_BIND_POINT_COMPUTE, aoLayout, 0, 1, &aoTargets.sets[mode], 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, aoLayout, 0, 1, &aoTargets.sets[mode], 0, nullptr);
         const AoPushConstants push{
             f.frameAddress, mode, ambientOcclusionSamples(effectiveAmbientOcclusion()),
             glm::uvec2(full.width, full.height), glm::uvec2(half.width, half.height)};

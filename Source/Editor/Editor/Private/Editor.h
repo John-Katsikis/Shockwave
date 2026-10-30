@@ -191,12 +191,21 @@ private:
     void drawGizmo(const ImVec2& pos, const ImVec2& size);
     void drawOutline(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     void drawReflectionProbe(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
+    void drawDecalBox(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
+    // A Decal on the surface at point, facing out along normal (G08, A03): a material or a
+    // texture, by Content path. Undoable; selects it.
+    shockwave::Entity
+    placeDecal(const std::string& asset, bool material, const glm::vec3& point, const glm::vec3& normal);
     void drawCameraIcons(const ImVec2& pos, const ImVec2& size);
     shockwave::Entity cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) const;
     void drawLightIcons(const ImVec2& pos, const ImVec2& size);
     void saveViewportScreenshot();
     void updateCamera(bool hovered);
-    shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part = nullptr);
+    // hit and normal, if given, get the world point under the cursor and the surface's
+    // normal there, facing the camera.
+    shockwave::Entity pick(
+        const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part = nullptr,
+        glm::vec3* hit = nullptr, glm::vec3* normal = nullptr);
     void mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const;
     bool worldToScreen(const glm::vec3& p, const ImVec2& pos, const ImVec2& size, ImVec2& out) const;
     void acceptViewportDrop(const ImVec2& pos, const ImVec2& size);

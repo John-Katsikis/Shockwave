@@ -57,7 +57,9 @@ void VulkanRenderer::Impl::drawMesh(
     const bool detail = layers && layers->detail && materialDetail.load(std::memory_order_relaxed);
     if (layers && (detail || layers->layer)) {
         auto slot = [&](TextureHandle t) { return t.id ? textureSlot(t.id) : 0u; };
-        auto binding = [&](MaterialSlot s) -> const TextureBinding& { return layers->bindings[size_t(s) - kMaterialSlots]; };
+        auto binding = [&](MaterialSlot s) -> const TextureBinding& {
+            return layers->bindings[size_t(s) - kMaterialSlots];
+        };
         if (detail) {
             layer.flags |= kLayerDetail;
             layer.detailColor = textureSlot(layers->detailColorTexture.id);
@@ -134,7 +136,7 @@ void VulkanRenderer::Impl::drawMesh(
     command.visible = viewFrustum.intersects(command.bounds);
     // Local reflection probes (G07): up to two whose boxes these bounds touch.
     command.data.reflections = pickReflections(command.bounds);
-    command.data.pad = 0;
+    command.data.decalLayers = material.blend ? 0u : material.decalLayers & kDecalLayerMask;   // G08
 
     const uint32_t thread = JobSystem::threadIndex();
     auto add = [&](DrawList& list, uint32_t index) {
@@ -180,6 +182,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyRenderFinishedSemaphores();
     destroyBloomTargets();
     destroyAaTarget(aaTarget);
+    destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
@@ -200,6 +203,10 @@ bool VulkanRenderer::Impl::beginFrame() {
     {
         std::lock_guard lock(lightMutex);
         lights.clear();
+    }
+    {
+        std::lock_guard lock(decalMutex);
+        submittedDecals.clear();
     }
     if (window.isMinimized()) return false;
     if (needsResize) {
@@ -231,6 +238,7 @@ bool VulkanRenderer::Impl::beginFrame() {
     updateBloomTargets();
     updateAaTarget();
     updateAoTargets();
+    updateDecalTargets();
 
     SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
@@ -454,6 +462,7 @@ void VulkanRenderer::Impl::endFrame() {
 
     prepareDraws(f);
     prepareParticles();
+    prepareDecals();
     writeFrameData(f);
     buildGraph(cmd, f, image);
     graph.setTimestampPool(f.timestamps);
@@ -549,7 +558,8 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     header.debugView = static_cast<uint32_t>(debugView);
     header.brdfTable = brdfSlot;
     header.specularLevels = static_cast<float>(specularCube.levels);
-    header.aoTexture = prepassActive() ? aoTargets.slot : 0u;
+    // The prepass may run for decals alone (G08): occlusion only when it's on.
+    header.aoTexture = prepassActive() && effectiveAmbientOcclusion() != AmbientOcclusion::Off ? aoTargets.slot : 0u;
     header.view = view;
     header.projection = projection;
     header.inverseProjection = glm::inverse(projection);
@@ -560,6 +570,10 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     if (captureRequested) header.debugView = static_cast<uint32_t>(DebugView::Lit);
     header.reflectionProbes = f.frameAddress + kReflectionProbesOffset;
     header.reflectionProbeCount = writeReflectionProbes(f);
+    writeDecals(f);
+    const bool decals = decalsActive() && !frameDecals.empty();
+    header.decalAlbedo = decals ? decalSlots[decalTargets.pair][0] : 0u;
+    header.decalMaterial = decals ? decalSlots[decalTargets.pair][1] : 0u;
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -647,16 +661,46 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
     }
     if (prepassActive()) {
         // Surface prepass, then ambient occlusion from it; the scene tests its depth without writing.
-        const auto normals = graph.import(
-            "surface normals", aoTargets.normal.image, VK_IMAGE_ASPECT_COLOR_BIT, aoNormalState, true);
-        graph.addPass(
-            "surface prepass", {{depth, ImageUse::DepthAttachment}, {normals, ImageUse::ColorAttachment}},
-            [this, &f](VkCommandBuffer cmd) { recordPrepass(cmd, f); }, vertexReads);
+        const auto normals =
+            graph.import("surface normals", aoTargets.normal.image, VK_IMAGE_ASPECT_COLOR_BIT, aoNormalState, true);
+        std::vector<vk::RenderGraph::Use> prepassUses = {
+            {depth, ImageUse::DepthAttachment}, {normals, ImageUse::ColorAttachment}};
+        if (decalsActive()) {
+            const auto layers = graph.import(
+                "decal layers", decalTargets.layers.image, VK_IMAGE_ASPECT_COLOR_BIT, decalLayerState, true);
+            prepassUses.push_back({layers, ImageUse::ColorAttachment});
+            graph.addPass(
+                "surface prepass", prepassUses, [this, &f](VkCommandBuffer cmd) { recordPrepass(cmd, f); },
+                vertexReads);
+            if (!frameDecals.empty()) {
+                // Decals (G08): into their two buffers, which the scene's opaque shading reads.
+                const auto albedo = graph.import(
+                    "decal colour", decalTargets.albedo.image, VK_IMAGE_ASPECT_COLOR_BIT, decalAlbedoState, true);
+                const auto material = graph.import(
+                    "decal roughness and metallic", decalTargets.material.image, VK_IMAGE_ASPECT_COLOR_BIT,
+                    decalMaterialState, true);
+                graph.addPass(
+                    "decals",
+                    {{depth, ImageUse::DepthSampled},
+                     {normals, ImageUse::Sampled},
+                     {layers, ImageUse::Sampled},
+                     {albedo, ImageUse::ColorAttachment},
+                     {material, ImageUse::ColorAttachment}},
+                    [this, &f](VkCommandBuffer cmd) { recordDecals(cmd, f); });
+                sceneUses.push_back({albedo, ImageUse::Sampled});
+                sceneUses.push_back({material, ImageUse::Sampled});
+            }
+        } else {
+            graph.addPass(
+                "surface prepass", prepassUses, [this, &f](VkCommandBuffer cmd) { recordPrepass(cmd, f); },
+                vertexReads);
+        }
         // The occlusion images keep their own barriers, like bloom's: only this pass writes
         // them and only the scene reads them.
-        graph.addPass(
-            "ambient occlusion", {{depth, ImageUse::ComputeSampled}, {normals, ImageUse::ComputeSampled}},
-            [this, &f](VkCommandBuffer cmd) { recordAmbientOcclusion(cmd, f); });
+        if (effectiveAmbientOcclusion() != AmbientOcclusion::Off)
+            graph.addPass(
+                "ambient occlusion", {{depth, ImageUse::ComputeSampled}, {normals, ImageUse::ComputeSampled}},
+                [this, &f](VkCommandBuffer cmd) { recordAmbientOcclusion(cmd, f); });
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, vertexReads);

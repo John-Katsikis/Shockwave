@@ -51,6 +51,7 @@ const std::vector<const char*> kTextureQualityChoices = {"low", "medium", "high"
 const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
 const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
 const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium", "high"};
+const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -168,6 +169,18 @@ std::vector<GraphicsSettingInfo> makeInfo() {
          [](const S& s) { return std::string(s.reflectionProbes ? "true" : "false"); },
          [](S& s, const std::string& v, std::string& error) {
              return boolean(v, s.reflectionProbes, "reflection_probes", error);
+         }});
+    info.push_back(
+        {"decals_quality", "Decals", "Quality",
+         "Marks projected onto surfaces: bullet holes, signs, grime. Low draws up to 64 a frame, medium 256, "
+         "high 1024, the nearest first (gameplay markers before decoration). Off draws none and frees their "
+         "memory; scenes without decals look the same either way.",
+         "off, low, medium, high", kDecalChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(decalQualityName(s.decals)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kDecalChoices, v, s.decals)) return true;
+             error = "decals_quality must be " + list(kDecalChoices);
+             return false;
          }});
     info.push_back(
         {"lod_error_pixels",
@@ -310,6 +323,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.anisotropy = 4;
         base.materialQuality = MaterialQuality::Low;
         base.ambientOcclusion = AmbientOcclusion::Off;
+        base.decals = DecalQuality::Low;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -320,6 +334,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.anisotropy = 8;
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::Low;
+        base.decals = DecalQuality::Medium;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -330,6 +345,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.anisotropy = 16;
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::Medium;
+        base.decals = DecalQuality::High;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -340,6 +356,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.anisotropy = 16;
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::High;
+        base.decals = DecalQuality::High;
         break;
     }
     return base;
@@ -502,6 +519,7 @@ GraphicsSettings Graphics::current() const {
     s.ambientOcclusion = r.ambientOcclusion();
     s.bakedLighting = r.bakedLighting();
     s.reflectionProbes = r.localReflections();
+    s.decals = r.decalQuality();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -557,6 +575,7 @@ void Graphics::commit() {
     if (s.ambientOcclusion != previous.ambientOcclusion) r.setAmbientOcclusion(s.ambientOcclusion);
     if (s.bakedLighting != previous.bakedLighting) r.setBakedLighting(s.bakedLighting);
     if (s.reflectionProbes != previous.reflectionProbes) r.setLocalReflections(s.reflectionProbes);
+    if (s.decals != previous.decals) r.setDecalQuality(s.decals);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

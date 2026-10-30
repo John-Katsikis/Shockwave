@@ -254,6 +254,34 @@ void registerBuiltins() {
             field("binding_id", &ReflectionProbe::bindingId),
         },
         "Lighting");
+    registerComponent<Decal>(
+        "Decal",
+        {
+            field("material", &Decal::material),
+            field("texture", &Decal::texture),
+            field("size", &Decal::size, 0.01f, 0.001f, 1000.0f),
+            field("opacity", &Decal::opacity, 0.01f, 0.0f, 1.0f),
+            field("tint", &Decal::tint),
+            field("albedo", &Decal::albedo),
+            field("roughness_metallic", &Decal::roughnessMetallic),
+            field("roughness", &Decal::roughness, 0.01f, 0.0f, 1.0f),
+            field("metallic", &Decal::metallic, 0.01f, 0.0f, 1.0f),
+            field("sort_order", &Decal::sortOrder, 1.0f, -1000.0f, 1000.0f),
+            field("receiver_mask", &Decal::receiverMask, 1.0f, 0.0f, 255.0f),
+            field("angle_fade", &Decal::angleFade, 0.5f, 0.0f, 89.0f),
+            field("essential", &Decal::essential),
+            field("enabled", &Decal::enabled),
+        },
+        "Rendering");
+    registerComponent<DecalReceiver>(
+        "DecalReceiver", {field("layers", &DecalReceiver::layers, 1.0f, 0.0f, 255.0f)}, "Rendering");
+    registerComponent<DecalLifetime>(
+        "DecalLifetime",
+        {
+            field("seconds", &DecalLifetime::seconds, 0.1f, 0.0f, 100000.0f),
+            field("fade", &DecalLifetime::fade, 0.05f, 0.0f, 1000.0f),
+        },
+        "Rendering");
     registerComponent<Spin>(
         "Spin",
         {

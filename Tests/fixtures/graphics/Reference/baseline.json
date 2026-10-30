@@ -692,15 +692,15 @@
    "size": "1280x720",
    "render_scale": 1.0,
    "frame": 30,
-   "sha256": "088d4af0830f99acc8463f21628485e9b7145c01844c8b6b58aabedb2ea747e5",
+   "sha256": "e6711921e1a78db08a5424efba852c9f81183bd473b6e9e2e648dd4173026b44",
    "width": 1280,
    "height": 720,
    "mean_rgb": [
-    146.461,
-    149.492,
-    154.712
+    156.37,
+    152.722,
+    152.481
    ],
-   "mean_luma": 149.224
+   "mean_luma": 153.481
   },
   {
    "file": "decal-wall--main-camera--1280x720--0.5.png",
@@ -709,15 +709,15 @@
    "size": "1280x720",
    "render_scale": 0.5,
    "frame": 30,
-   "sha256": "a3f147da70200878641e45e3a445b95202fe812f6851874c0896375bed4e00a4",
+   "sha256": "4249060dea2259126a4c729cee3f0b4c439bfd26acdc3635a6a985e77e95683d",
    "width": 1280,
    "height": 720,
    "mean_rgb": [
-    144.417,
-    147.53,
-    152.744
+    154.181,
+    150.634,
+    150.492
    ],
-   "mean_luma": 147.245
+   "mean_luma": 151.378
   },
   {
    "file": "decal-wall--main-camera--1920x1080--1.png",
@@ -726,15 +726,15 @@
    "size": "1920x1080",
    "render_scale": 1.0,
    "frame": 30,
-   "sha256": "7d297065b77c037ff8701bac0b5f3f81faa2db0bced6fd52e5a314727182fddc",
+   "sha256": "cb40c9fb2c01f59c6b1b1fc9c7585224856264fc8f81910506f72a2f999d2bf8",
    "width": 1920,
    "height": 1080,
    "mean_rgb": [
-    145.919,
-    149.005,
-    154.285
+    155.848,
+    152.246,
+    152.066
    ],
-   "mean_luma": 148.73
+   "mean_luma": 152.999
   },
   {
    "file": "decal-wall--main-camera--1920x1080--0.5.png",
@@ -743,15 +743,15 @@
    "size": "1920x1080",
    "render_scale": 0.5,
    "frame": 30,
-   "sha256": "d79832be19319563c1da52dfb5dfcc55c41a39db39816e23174cb004d7694af4",
+   "sha256": "e27503f9e5075ca4b2a77915c60bceb260f9d9169c59a040e1d52c64def231c0",
    "width": 1920,
    "height": 1080,
    "mean_rgb": [
-    147.059,
-    150.033,
-    155.169
+    156.885,
+    153.188,
+    152.921
    ],
-   "mean_luma": 149.772
+   "mean_luma": 153.955
   },
   {
    "file": "dense-occluder--main-camera--1280x720--1.png",
@@ -1155,14 +1155,14 @@
    "gpu": "llvmpipe (LLVM 20.1.2, 256 bits)",
    "present_mode": "mailbox (uncapped, no tearing)",
    "frame_limit": 0,
-   "frames": 26,
-   "average_fps": 8.5292,
-   "average_ms": 117.244,
-   "low_1_percent_fps": 7.21363,
-   "worst_ms": 138.626,
-   "jitter_ms": 8.82674,
-   "cpu_ms": 116.875,
-   "gpu_ms": 115.496,
+   "frames": 29,
+   "average_fps": 9.66744,
+   "average_ms": 103.44,
+   "low_1_percent_fps": 8.77082,
+   "worst_ms": 114.014,
+   "jitter_ms": 4.79908,
+   "cpu_ms": 103.582,
+   "gpu_ms": 101.566,
    "draws": 3,
    "scene": "decal-wall",
    "paced": false
@@ -1172,13 +1172,13 @@
    "present_mode": "mailbox (uncapped, no tearing)",
    "frame_limit": 60,
    "frames": 29,
-   "average_fps": 9.47103,
-   "average_ms": 105.585,
-   "low_1_percent_fps": 8.55095,
-   "worst_ms": 116.946,
-   "jitter_ms": 4.8636,
-   "cpu_ms": 105.47,
-   "gpu_ms": 103.576,
+   "average_fps": 9.67051,
+   "average_ms": 103.407,
+   "low_1_percent_fps": 8.4803,
+   "worst_ms": 117.92,
+   "jitter_ms": 5.49175,
+   "cpu_ms": 103.234,
+   "gpu_ms": 101.522,
    "draws": 3,
    "scene": "decal-wall",
    "paced": true

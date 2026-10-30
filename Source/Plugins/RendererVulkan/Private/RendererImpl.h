@@ -38,7 +38,7 @@ constexpr uint32_t kMaxMeshes = 65536;
 // Scene color, BRDF table, two for bloom: a new bloom chain takes the
 // slot the old one isn't using, so it can be made while frames still read the old one.
 // Shadow atlases likewise have two pairs of slots, and ambient occlusion two slots.
-constexpr uint32_t kInternalTextureSlots = 10;
+constexpr uint32_t kInternalTextureSlots = 14;
 // Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
 // goes into a spare while frames in flight still read the old slot, which becomes a spare
 // once they finish. Below the internal slots.
@@ -97,7 +97,7 @@ struct DrawData {
     // Local reflection probes (G07): index + 1 in the frame's table of the first (low 16
     // bits) and second (high 16); 0: the global environment only.
     uint32_t reflections;
-    uint32_t pad;
+    uint32_t decalLayers;   // G08: receiver layer bits; 0 for blended draws
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
@@ -196,11 +196,14 @@ struct FrameData {
     float aoIntensity;
     VkDeviceAddress reflectionProbes;   // the frame's ReflectionProbeData table (G07)
     uint32_t reflectionProbeCount;
-    uint32_t pad;
+    uint32_t decalAlbedo;   // G08: bindless slots of the decal buffers; 0: no decals this frame
+    uint32_t decalMaterial;
+    uint32_t pad[3];
 };
 static_assert(
-    sizeof(FrameData) == 336 && offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
-        offsetof(FrameData, renderSize) == 304 && offsetof(FrameData, reflectionProbes) == 320,
+    sizeof(FrameData) == 352 && offsetof(FrameData, decalAlbedo) == 332 && offsetof(FrameData, shadowViews) == 96 &&
+        offsetof(FrameData, view) == 112 && offsetof(FrameData, renderSize) == 304 &&
+        offsetof(FrameData, reflectionProbes) == 320,
     "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
 // A local reflection probe as the shaders read it (G07). Must match ReflectionProbeData in
 // shaders/reflection.glsl.
@@ -220,7 +223,25 @@ constexpr uint32_t kNoCube = 0xFFFFFFFFu;
 constexpr uint32_t kReflectionCubeSlots = 2 * kMaxReflectionProbes;
 constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * kMaxLights;
 constexpr VkDeviceSize kReflectionProbesOffset = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
-constexpr VkDeviceSize kFrameDataSize = kReflectionProbesOffset + sizeof(ReflectionProbeData) * kMaxReflectionProbes;
+// A decal as the decal pass reads it (G08). Must match DecalData in shaders/decal.glsl.
+struct DecalData {
+    glm::mat4 boxToWorld;
+    glm::mat4 worldToBox;
+    glm::vec4 color;
+    glm::vec3 facing;
+    float fadeStartCos;
+    uint32_t texture;
+    uint32_t channels;
+    uint32_t receiverMask;
+    float roughness;
+    float metallic;
+    float pad[3];
+};
+static_assert(sizeof(DecalData) == 192, "DecalData must match the shader's scalar layout");
+// The most decals a frame draws: decals_quality high's budget.
+constexpr uint32_t kMaxDrawnDecals = 1024;
+constexpr VkDeviceSize kDecalsOffset = kReflectionProbesOffset + sizeof(ReflectionProbeData) * kMaxReflectionProbes;
+constexpr VkDeviceSize kFrameDataSize = kDecalsOffset + sizeof(DecalData) * kMaxDrawnDecals;
 
 // Must match the push constants in shaders/shadow.vert and shadow.frag.
 struct ShadowPushConstants {
@@ -1069,6 +1090,48 @@ struct VulkanRenderer::Impl {
     bool prepassActive() const { return aoTargets.normal.image != VK_NULL_HANDLE; }
     void recordPrepass(VkCommandBuffer cmd, Frame& f);
     void recordAmbientOcclusion(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Projected decals (RendererDecals.cpp) ------------------------------------------
+    // While decals_quality is on and the scene has decals, the surface prepass also writes
+    // each surface's receiver layers, and a decal pass between it and the scene draws every
+    // selected decal's box into two buffers (colour; roughness and metallic), which opaque
+    // shading reads once (shaders/decal.frag, mesh.frag). Off, none of it exists.
+    struct DecalTargets {
+        vk::Image layers;   // R8_UINT: each pixel's receiver layer bits, from the prepass
+        vk::Image albedo;   // RGBA8: premultiplied linear colour, coverage
+        vk::Image material;   // RGBA8: premultiplied roughness, metallic, -, coverage
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;   // depth, normals, layers for decal.frag
+        int pair = 0;   // which decalSlots pair holds albedo and material
+    };
+    DecalTargets decalTargets;   // no images while there are none to draw
+    vk::ImageState decalLayerState, decalAlbedoState, decalMaterialState;
+    DecalQuality decalQuality = DecalQuality::High;
+    std::mutex decalMutex;
+    std::vector<DecalDesc> submittedDecals;   // this frame's, from drawDecals
+    std::vector<DecalData> frameDecals;   // what this frame draws, in order
+    uint32_t lastSubmittedDecals = 0;   // last frame's, for whether the next needs targets
+    uint32_t droppedDecals = 0;   // this frame's past kMaxSubmittedDecals
+    VkImageView decalNormalView = VK_NULL_HANDLE;   // the prepass normals decalTargets.set reads
+    DecalStats lastDecalStats;
+    uint32_t decalSlots[2][2] = {};   // [pair][albedo, material]
+    bool decalSlotBusy[2] = {false, false};
+    VkDescriptorSetLayout decalSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout decalLayout = VK_NULL_HANDLE;
+    VkPipeline decalPipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 8> prepassDecalPipelines{};   // the prepass with the layer target
+
+    void createDecalPipeline();
+    void destroyDecalPipeline();
+    bool decalsWanted() const;   // decals on and some submitted last frame
+    bool createDecalTargets();   // false while both slot pairs are in flight
+    void destroyDecalTargets(DecalTargets& targets);
+    void updateDecalTargets();   // at a frame boundary, after updateAoTargets
+    bool decalsActive() const { return decalTargets.albedo.image != VK_NULL_HANDLE; }
+    void drawDecals(std::span<const DecalDesc> decals);
+    void prepareDecals();   // selects this frame's decals into frameDecals
+    void writeDecals(Frame& f);
+    void recordDecals(VkCommandBuffer cmd, Frame& f);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.

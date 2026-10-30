@@ -42,6 +42,10 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     bloomSlots[1] = bindlessSlots() - 6;
     aoSlots[0] = bindlessSlots() - 9;
     aoSlots[1] = bindlessSlots() - 10;
+    decalSlots[0][0] = bindlessSlots() - 11;
+    decalSlots[0][1] = bindlessSlots() - 12;
+    decalSlots[1][0] = bindlessSlots() - 13;
+    decalSlots[1][1] = bindlessSlots() - 14;
     createRenderTargets();
     createShadowMaps();
     createEnvironment();
@@ -70,7 +74,9 @@ VulkanRenderer::Impl::~Impl() {
     destroyBloomPipeline();
     destroyAaTarget(aaTarget);
     destroyAntiAliasingPipeline();
+    destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
+    destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
@@ -216,6 +222,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     collectRetired(true);
     destroyBloomTargets();
     destroyAaTarget(aaTarget);
+    destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);

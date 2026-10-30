@@ -85,7 +85,7 @@ Bounds computeBounds(const MeshData& mesh) {
     return b;
 }
 
-bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t) {
+bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t, glm::vec3* normal) {
     // Moller-Trumbore, two-sided, keeping the nearest hit in front of the origin.
     bool hit = false;
     float best = std::numeric_limits<float>::max();
@@ -108,6 +108,7 @@ bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& dir
         if (d > 0.0f && d < best) {
             best = d;
             hit = true;
+            if (normal) *normal = glm::cross(e1, e2);
         }
     }
     if (hit) t = best;

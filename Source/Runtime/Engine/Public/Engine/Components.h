@@ -210,6 +210,48 @@ struct ReflectionProbe {
 };
 uint32_t reflectionProbeSize(ReflectionProbe::Resolution resolution);   // 64, 128, 256 or 512
 
+// ---- Decals (G08, A03; docs/Decals.md) ----
+
+// A projected decal: a box, placed and turned by the entity's Transform (its scale stretches
+// it too) and sized by size, that paints onto the opaque surfaces inside it. It projects
+// along the entity's -Z, so it lands on surfaces facing its +Z; texture u runs along +X and
+// v down -Y. Blended surfaces never take decals. Draws when the player's decals_quality
+// setting allows, nearest first.
+struct Decal {
+    // A .swmaterial: its base colour texture and colour (alpha is coverage), and with
+    // roughness_metallic its roughness and metallic. Without one, texture, tint and the
+    // values below do it. Normal and emissive maps aren't decal channels and are ignored.
+    MaterialHandle material{};
+    TextureHandle texture{};
+    glm::vec3 size{1.0f, 1.0f, 0.2f};   // metres: width, height, projection depth
+    float opacity = 1.0f;   // 0..1
+    glm::vec4 tint{1.0f};   // multiplies the colour (linear)
+    bool albedo = true;   // changes base colour
+    bool roughnessMetallic = false;   // changes roughness and metallic, together
+    float roughness = 0.5f, metallic = 0.0f;   // without a material
+    int sortOrder = 0;   // higher draws over lower; ties go to the one made later
+    int receiverMask = 0xFF;   // lands on surfaces whose DecalReceiver layers share a bit
+    float angleFade = 60.0f;   // degrees turned away before it starts fading; gone side-on
+    bool essential = false;   // a gameplay marker: kept first on low decal budgets
+    bool enabled = true;
+};
+// Which decal layers a mesh or model is on (eight bits). Without one, layer 1; layers 0
+// takes no decals. A decal on a door can then land on the door alone.
+struct DecalReceiver {
+    int layers = 1;
+};
+// A decal that goes away by itself (impact marks): fades out over the last fade seconds
+// of its lifetime and is then destroyed. It's also destroyed when the entity it was stuck
+// to is, so a reused entity never inherits another's marks. 0 seconds lasts until removed.
+struct DecalLifetime {
+    float seconds = 30.0f;
+    float fade = 2.0f;
+    // Runtime, not saved:
+    float age = 0.0f;
+    Entity receiver{};   // what it was stuck to, if anything
+    uint64_t spawn = 0;   // counts up per impact decal, for drawing order and eviction
+};
+
 // Turns around an axis (world space) at a steady rate.
 struct Spin {
     glm::vec3 axis{0.0f, 1.0f, 0.0f};

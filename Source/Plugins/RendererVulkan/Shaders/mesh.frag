@@ -394,6 +394,24 @@ void main() {
             }
         }
     }
+    // Decals (G08): what the decal pass composed at this pixel, applied once to the surface
+    // before lighting: base (1 - coverage) + premultiplied. Only opaque surfaces shaded over
+    // the prepass (kReceivesAo) are in the decal buffers; blended ones never take decals.
+    vec4 decalColor = vec4(0.0), decalMaterial = vec4(0.0);
+    if (kReceivesAo && frame.decalAlbedo != 0u) {
+        ivec2 pixel = ivec2(gl_FragCoord.xy);
+        decalColor = texelFetch(sampler2D(textures[frame.decalAlbedo], linearSampler), pixel, 0);
+        decalMaterial = texelFetch(sampler2D(textures[frame.decalMaterial], linearSampler), pixel, 0);
+        albedo.rgb = albedo.rgb * (1.0 - decalColor.a) + decalColor.rgb;
+        roughnessMetallic = roughnessMetallic * (1.0 - decalMaterial.a) + decalMaterial.rg;
+    }
+    if (frame.debugView == 8u) {
+        // Decal coverage: red for colour, green for roughness and metallic, over the darkened surface.
+        if (!kReceivesAo && kAlphaTest && albedo.a < 0.5) discard;
+        outColor = vec4(albedo.rgb * 0.25 * (1.0 - max(decalColor.a, decalMaterial.a)) +
+                        vec3(decalColor.a, decalMaterial.a, 0.0), 1.0);
+        return;
+    }
     n = gl_FrontFacing ? n : -n;
     bool receivesAo = kReceivesAo && frame.aoTexture != 0u;
     float ssao = 1.0;

@@ -20,7 +20,7 @@ frame 30 is the same moment on every run.
 | transparency | Main Camera, Side | blended and alpha-tested panels over a checker floor |
 | lights-overlap | Main Camera | many overlapping point and spot lights (clustered lighting) |
 | motion | Orbit camera, Fixed | a moving camera, spinning, orbiting and skinned objects (motion vectors, TAA) |
-| decal-wall | Main Camera | a wall and floor for projected decals |
+| decal-wall | Main Camera | projected decals on a wall, a swinging door (receiver mask) and the floor (camera inside the box) |
 | dense-occluder | Main Camera, Overhead | 1215 entities behind a wall (instancing, HZB culling) |
 | materials | Main Camera | nine quads, each reading its maps through one material binding (G02) |
 | materials-expected | Main Camera | the same quads with every binding baked into plain UV0: must match `materials` |
@@ -419,6 +419,59 @@ all 56 baseline images identical (9 by `--image-diff`, RMSE 0; 47 by mean colour
 baseline stands. `reflection-rooms` isn't in the capture: its probes are captured by the
 test.
 
+## G08 + A03: projected decals and decal authoring
+
+- **Contract.** `Renderer/Decals.h` holds the CPU side of every rule and
+  `Shaders/decal.glsl`/`decal.frag`/`mesh.frag` the same in GLSL: the unit box projected
+  along local -Z, u along +X and v down -Y, the grazing fade (full to `angle_fade`, linear
+  in cosine to nothing side-on, nothing facing away), premultiplied "over" in drawing order
+  and one application before lighting (`albedo = base (1 - A) + C`, in linear colour),
+  receiver layers, culling against the view (camera inside a box included), and the budget
+  (essential, then nearest, then order; drawn by sort order, then order). `decals` checks
+  all of it without a GPU against hand-worked values, plus the Decal component's
+  translation, validation, impact marks (orientation, the seed, sticking to a moving
+  receiver, lifetime and fade, a destroyed or reused receiver, eviction of the oldest past
+  the cap), registration and the `decals_quality` setting and presets.
+- **Renderer.** A *decals* pass after the surface prepass draws each decal's box (far
+  faces only, no depth test, one instanced draw) into two RGBA8 buffers (colour, and
+  roughness/metallic with shared coverage); opaque surfaces read them in `mesh.frag`. The
+  prepass also writes each draw's receiver layers (R8, blended draws 0). The prepass runs
+  for decals even with ambient occlusion off (the AO compute pass doesn't). Decal buffers
+  count under *surface buffers*; `--graphics-report` gives submitted, visible, drawn and
+  over-budget counts. With `decals_quality off`, or no decals submitted, there's no decal
+  pass, no buffers and (AO off) no prepass: the frame is the old one.
+- **Engine and tools.** `Decal`, `DecalReceiver` and `DecalLifetime` components;
+  `renderWorld` submits decals with their presented (interpolated) hierarchy transform;
+  `spawnImpactDecal` and the *DecalLifetime* system (Engine/Decals.h); `player --view
+  decals`, `--check` for decals; the editor's *Decals* shading view, the selected decal's
+  box and projection arrow, and Alt-drop of a material or texture to place an aligned,
+  undoable decal on the surface under the cursor. docs/Decals.md is the user guide.
+- **Plugin ABI** is now 10 (`DrawMaterial::decalLayers`, `drawDecals`, `setDecalQuality`).
+
+`decal-wall` now has decals (an intended baseline change, re-recorded): a blue poster under
+a partly transparent yellow stripe (sort order 1), a stone patch from a material changing
+roughness and metallic, a red sign parented to the swinging door's hinge whose box also
+covers the wall beside the door but whose mask matches only the door's receiver layer, and
+grime on the floor in a box the camera is inside. `graphics_fixtures_render` checks that
+`decals_quality off` matches the scene with every decal disabled exactly (RMSE 0), that
+low draws the same as high (five decals fit every budget), that the decals change the
+image (RMSE over 2), the poster is blue and the stripe is on top where they overlap, the
+sign reddens the door (+40 or more) but not the wall inside its box beside it (2 or
+less; with `receiver_mask 255` the same region gains +94, so the region is inside the
+box), the floor grime is there with the camera inside its box, `--view decals` shows its
+coverage, decals off has no *decals* or *surface prepass* pass and 0 bytes of surface
+buffers, and `--check` passes the scene and fails a copy with a zero-height decal.
+
+**Measured** on llvmpipe at 640x360: decals against off, RMSE 16.0 with 28% of pixels
+changed (mostly the floor grime); five decals, all visible and drawn; decal buffers
+2.0 MiB at that size (two RGBA8 targets plus the R8 layer target).
+
+Result: `capture.py --compare` found the 52 images of every other scene identical (RMSE 0
+or mean colour off by 0.000) and the 4 decal-wall images changed (RMSE 16.1, 28% of
+pixels at 1280x720), as intended. With `decals_quality off`, decal-wall at 1280x720 matches
+the old committed reference exactly (RMSE 0). decal-wall's reference image and its
+baseline.json entries were then re-recorded from that capture; nothing else was.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
@@ -434,6 +487,11 @@ test.
   file in canonical order and drops comments.
 - Circuits can't set or read materials yet.
 - Shading families other than standard (clearcoat, skin, hair) are refused until A07-A09.
+- Decals change base colour and roughness/metallic only: no normal or emissive decals, no
+  marks that follow skinned characters, and no dedicated decal asset type (a prefab with a
+  Decal is the reusable form). `decals_quality off` draws essential decals neither.
+- The first frame a scene has decals draws them a frame late: the decal buffers are made
+  at the start of a frame from the previous frame's submissions.
 - Texture quality is whole-level only: no streaming by distance or visibility yet, and
   every material texture keeps a CPU copy while it's loaded (shown in the report and the
   Optimisation window).
