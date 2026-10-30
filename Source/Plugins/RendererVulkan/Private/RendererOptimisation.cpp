@@ -96,8 +96,8 @@ bool VulkanRenderer::Impl::supportsTextureFormat(TextureFormat format) const {
 void VulkanRenderer::Impl::createTextureData(TextureHandle handle, const TextureData& data) {
     const uint32_t id = handle.id;
     if (id >= textureCapacity() || textures[id].image) throw std::runtime_error("createTexture: texture id is taken");
-    textures[id] = uploadTextureData(data);
-    writeTextureDescriptor(id);
+    vk::Image image = uploadTextureData(data);
+    publishTexture(id, image);
 }
 
 void VulkanRenderer::Impl::updateTextureData(TextureHandle handle, const TextureData& data) {

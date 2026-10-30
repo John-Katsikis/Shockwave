@@ -21,17 +21,33 @@ void VulkanRenderer::Impl::drawMesh(
     command.data.roughness = material.roughness;
     command.data.metallic = material.metallic;
     command.data.emissive = material.emissive;
-    command.data.normalTexture = material.normalTexture.id;
-    command.data.metallicRoughnessTexture = material.metallicRoughnessTexture.id;
-    command.data.emissiveTexture = material.emissiveTexture.id;
-    command.data.occlusionTexture = material.occlusionTexture.id;
+    // Texture ids become the bindless slots their images are in now (applyTextureSwaps).
+    command.data.normalTexture = material.normalTexture.id ? textureSlot(material.normalTexture.id) : 0;
+    command.data.metallicRoughnessTexture = textureSlot(material.metallicRoughnessTexture.id);
+    command.data.emissiveTexture = textureSlot(material.emissiveTexture.id);
+    command.data.occlusionTexture = material.occlusionTexture.id ? textureSlot(material.occlusionTexture.id) : 0;
     command.data.normalScale = material.normalScale;
     command.data.occlusionStrength = material.occlusionStrength;
-    command.data.pad = 0;
     command.data.tint = tint;
     command.data.uvScale = material.uvScale;
     command.data.vertexBuffer = mesh.vertexAddress;
-    command.data.textureIndex = texture.id;
+    command.data.uv1Buffer = mesh.uv1Address;
+    command.data.textureIndex = textureSlot(texture.id);
+    for (size_t i = 0; i < kMaterialSlots; ++i) {
+        const TextureBinding& binding = material.bindings[i];
+        SlotBinding& slot = command.data.slots[i];
+        slot.offset = binding.transform.offset;
+        slot.scale = binding.transform.scale;
+        slot.rotation = binding.transform.rotation;
+        slot.samplerAndSet = samplerSlot(binding.sampler) | (binding.uvSet == 1 ? kSlotUvSet1 : 0u);
+    }
+    // The vertex tangents follow UV0 as modelled. A normal map read through UV1, rotated or
+    // mirrored UVs needs a tangent frame of its own UVs (shaders/mesh.frag).
+    const TextureBinding& normal = material.bindings[size_t(MaterialSlot::Normal)];
+    const bool vertexTangents = normal.uvSet == 0 && normal.transform.rotation == 0.0f &&
+                                normal.transform.scale.x > 0.0f && normal.transform.scale.y > 0.0f &&
+                                material.uvScale.x > 0.0f && material.uvScale.y > 0.0f;
+    command.data.flags = material.normalTexture.id && !vertexTangents ? kDrawDerivativeTangents : 0u;
     command.data.alphaCutoff = material.alphaCutoff;
     command.doubleSided = material.doubleSided;
     command.blend = material.blend;
@@ -124,6 +140,7 @@ bool VulkanRenderer::Impl::beginFrame() {
     }
     readTimestamps(f);   // the GPU is done with this slot's last frame
     applyTextureSwaps();
+    rebuildSamplers();
     // Settings that change images: the new ones made, the old ones retired, no GPU wait.
     collectRetired(false);
     if (needsShadowRebuild && rebuildShadowMaps()) needsShadowRebuild = false;

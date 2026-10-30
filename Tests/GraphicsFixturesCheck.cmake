@@ -136,4 +136,67 @@ foreach(tier low medium high)
         message(FATAL_ERROR "bloom ${tier} with FXAA is missing a pass or its memory:\n${graph}")
     endif()
 endforeach()
+
+# Material bindings (G02): materials.swscene reads its quads through KHR_texture_transform,
+# TEXCOORD_1 and sampler modes; materials-expected.swscene has the same quads with all of
+# it baked into plain UV0. Albedo (unlit), normal maps (normals) and the lit image with
+# its alpha-tested shadows must match. Nearest sampling may round a texel edge a pixel
+# either way (about 1.5% of the image, all in the clamp/mirror quad), hence the
+# tolerance; one wrong quad changes over 3% of the image by far more.
+foreach(view unlit normals lit)
+    foreach(scene materials materials-expected)
+        execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+            --scene "${FIXTURE}/Scenes/${scene}.swscene" --size 640x360 --fixed-step --frames 10 --view ${view}
+            --screenshot "${TEMP}/${scene}-${view}.png" RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+        if(NOT result EQUAL 0)
+            message(FATAL_ERROR "${scene} (${view}) didn't render: ${out}\n${err}")
+        endif()
+    endforeach()
+    image_diff(materials-expected-${view} materials-${view} json)
+    string(JSON rmse GET "${json}" rmse)
+    string(JSON changed GET "${json}" changed_percent)
+    if(rmse GREATER 1.5 OR changed GREATER 2.5)
+        message(FATAL_ERROR "material bindings (${view} view) don't match the baked UVs: rmse ${rmse}, ${changed}% changed")
+    endif()
+endforeach()
+
+# Texture quality (A01): low keeps a fraction of each large material texture on the GPU,
+# the image changes (softer: the fine floor checker averages to grey up close), and the
+# report says so. That the averaging is in linear light is TextureQualityTest's job.
+foreach(quality ultra low)
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/transparency.swscene" --size 320x180 --graphics-set texture_quality=${quality}
+        --graphics-report --json "${TEMP}/quality-${quality}.json"
+        RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "--graphics-report at texture_quality ${quality} failed: ${out}\n${err}")
+    endif()
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/transparency.swscene" --size 640x360 --fixed-step --frames 10
+        --graphics-set texture_quality=${quality} --screenshot "${TEMP}/quality-${quality}.png"
+        RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "transparency at texture_quality ${quality} didn't render: ${out}\n${err}")
+    endif()
+endforeach()
+file(READ "${TEMP}/quality-ultra.json" ultra)
+file(READ "${TEMP}/quality-low.json" low)
+string(JSON ultra_textures GET "${ultra}" memory categories textures bytes)
+string(JSON low_textures GET "${low}" memory categories textures bytes)
+string(JSON reduced GET "${low}" texture_residency reduced)
+string(JSON pending GET "${low}" texture_residency pending)
+string(JSON resident GET "${low}" texture_residency resident_bytes)
+string(JSON full GET "${low}" texture_residency full_bytes)
+string(JSON ultra_reduced GET "${ultra}" texture_residency reduced)
+math(EXPR quarter "${full} / 4")
+if(reduced EQUAL 0 OR NOT pending EQUAL 0 OR NOT resident LESS quarter OR NOT low_textures LESS ultra_textures
+   OR NOT ultra_reduced EQUAL 0)
+    message(FATAL_ERROR "texture_quality low didn't shrink material textures: ${reduced} reduced, ${pending} pending, "
+                        "${resident} of ${full} bytes; textures ${low_textures} vs ${ultra_textures} at ultra")
+endif()
+image_diff(quality-ultra quality-low json)
+string(JSON rmse GET "${json}" rmse)
+if(rmse EQUAL 0)
+    message(FATAL_ERROR "texture_quality low rendered exactly like ultra: the smaller images weren't used")
+endif()
 file(REMOVE_RECURSE "${TEMP}")

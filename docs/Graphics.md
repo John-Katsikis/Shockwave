@@ -2,8 +2,8 @@
 
 Game code and menus use `game.graphics()` (include `<Shockwave/Game.h>`). The shared
 service wraps the engine's graphics controls: render scale, shadow quality,
-anti-aliasing (FXAA), bloom quality and strength, mesh LOD error, VSync, frame limit and
-low latency. It doesn't change scene lighting,
+anti-aliasing (FXAA), bloom quality and strength, texture quality, anisotropic filtering,
+mesh LOD error, VSync, frame limit and low latency. It doesn't change scene lighting,
 materials, cameras, asset import quality, or the renderer backend.
 
 ```cpp
@@ -37,10 +37,23 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `bloom_quality`: `off`, `low` (quarter resolution, 4 levels), `medium` (half, 5) or
   `high` (half, 6, the default).
 - `bloom_scale` (0..1): the player's multiplier on the scene's authored bloom intensity.
+- `texture_quality`: `ultra` (the default) keeps every material texture whole; `high`,
+  `medium` and `low` drop its largest 1, 2 or 3 mip levels, so each step takes about a
+  quarter of the memory of the one before. Textures never shrink below 32 pixels on
+  their longer side, and UI textures (`category ui` in their `.swimport`, HDR environment
+  maps, game UI images) never shrink. Changes rebuild textures on worker threads, a few
+  per frame, and swap each in at a frame boundary: nothing waits for the GPU, and
+  `status()` reads pending until they're all done. The engine keeps a CPU copy of each
+  material texture so it can do this without reading files again; `--graphics-report`
+  and **Window > Optimisation** show how much.
+- `anisotropy`: `1`, `2`, `4`, `8` or `16` (the default). The most anisotropic filtering
+  any texture gets; the GPU's limit caps it too. Textures that asked for nearest
+  filtering (pixel art) never get it.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
-sets bloom quality low, medium or high. `matchingGraphicsPreset` names the preset the
+sets bloom quality low, medium or high, texture quality to its own name and anisotropy to
+4, 8, 16 and 16. `matchingGraphicsPreset` names the preset the
 quality settings match, or none ("Custom"). Medium, High and Ultra are also available. These
 are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

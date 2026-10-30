@@ -100,6 +100,8 @@ RendererCapabilities VulkanRenderer::Impl::capabilities() const {
     caps.limits = {
         {"max image size", limits.maxImageDimension2D},
         {"bindless textures", textureCapacity()},
+        {"spare texture slots", spareTextureSlots()},
+        {"material samplers", kMaxSamplers},
         {"max storage buffer range", limits.maxStorageBufferRange},
         {"max push constants", limits.maxPushConstantsSize},
         {"max compute shared memory", limits.maxComputeSharedMemorySize},
@@ -222,6 +224,21 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         {"low_latency", onOff(lowLatency), latency,
          lowLatency && synced && !latestReady ? "no FIFO latest ready: waits for the GPU before input instead" : "",
          ""});
+    // Anisotropy: what the setting asks for, capped by the device. A texture asking for less,
+    // or for nearest filtering, gets that (RendererMaterials.cpp).
+    {
+        const float device = context->maxAnisotropy();
+        const float effectiveValue = std::min(float(anisotropy), std::max(device, 1.0f));
+        std::snprintf(requested, sizeof(requested), "%u", anisotropy);
+        std::snprintf(effective, sizeof(effective), "%g", static_cast<double>(effectiveValue));
+        char detail[96];
+        std::snprintf(
+            detail, sizeof(detail), "%zu material samplers; device limit %gx", samplerDescs.size(),
+            static_cast<double>(device));
+        settings.push_back(
+            {"anisotropy", requested, effective, effectiveValue < float(anisotropy) ? "the GPU's limit is lower" : "",
+             detail});
+    }
     settings.push_back(
         {"gpu_timing", "on", onOff(context->timestampPeriod() > 0.0f),
          context->timestampPeriod() > 0.0f ? "" : "the graphics queue has no timestamps", ""});
@@ -272,7 +289,7 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (uint32_t id = 0; id < kMaxMeshes; ++id) {
         if (!meshReady[id].load(std::memory_order_acquire)) continue;
         const Mesh& mesh = meshes[id];
-        for (const vk::Buffer* b : {&mesh.vertices, &mesh.indices, &mesh.lodIndices, &mesh.skin})
+        for (const vk::Buffer* b : {&mesh.vertices, &mesh.indices, &mesh.lodIndices, &mesh.skin, &mesh.uv1})
             add(GpuMemoryCategory::Meshes, b->allocation);
     }
     {

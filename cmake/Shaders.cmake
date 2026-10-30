@@ -35,6 +35,8 @@ set(SHOCKWAVE_SHADER_OUTPUT_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
 # Compiles each shader to <name>.spv in build/bin/shaders and makes <target> depend on them.
 function(shockwave_compile_shaders target)
     set(outputs)
+    # Shared code the shaders #include (GL_GOOGLE_include_directive): any change recompiles all.
+    file(GLOB includes ${CMAKE_CURRENT_SOURCE_DIR}/Shaders/*.glsl)
     foreach(source ${ARGN})
         get_filename_component(name ${source} NAME)
         set(output ${SHOCKWAVE_SHADER_OUTPUT_DIR}/${name}.spv)
@@ -42,7 +44,7 @@ function(shockwave_compile_shaders target)
             OUTPUT ${output}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${SHOCKWAVE_SHADER_OUTPUT_DIR}
             COMMAND ${SHOCKWAVE_GLSLANG_COMMAND} -V --target-env vulkan1.3 -o ${output} ${CMAKE_CURRENT_SOURCE_DIR}/${source}
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source} ${SHOCKWAVE_GLSLANG_DEPENDS}
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source} ${includes} ${SHOCKWAVE_GLSLANG_DEPENDS}
             COMMENT "Compiling shader ${name}"
             VERBATIM
         )

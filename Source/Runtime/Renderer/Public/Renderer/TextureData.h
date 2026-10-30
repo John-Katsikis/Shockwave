@@ -39,4 +39,25 @@ struct TextureData {
 // The bytes one level of a format takes.
 size_t textureLevelBytes(TextureFormat format, uint32_t width, uint32_t height);
 
+// ---- Mip arithmetic for texture quality (A01, docs/Graphics/07-MathematicalContracts.md) ----
+// Levels in a full chain down to 1 x 1.
+uint32_t textureMipCount(uint32_t width, uint32_t height);
+// Exact payload of levels firstMip.. to 1 x 1 (each max(1, size >> level)), block-rounded
+// for BC7. A 4096-square BC7 chain is 22,369,648 bytes; from 512 down, 349,552.
+uint64_t textureChainBytes(TextureFormat format, uint32_t width, uint32_t height, uint32_t firstMip = 0);
+// The first level to keep for a wanted floor (textureQualityFirstMip): no further than the
+// last of levels, and never below kMinResidentSize on the longer side unless the texture
+// already is.
+uint32_t residentFirstMip(uint32_t wantedFirstMip, uint32_t width, uint32_t height, uint32_t levels);
+// An explicit level of detail in the source's terms, as the resident image numbers it:
+// its level 0 is the source's level firstMip.
+inline float residentLod(float sourceLod, uint32_t firstMip) {
+    return sourceLod > float(firstMip) ? sourceLod - float(firstMip) : 0.0f;
+}
+// The texture from level firstMip down: those levels of a texture that has them, or for a
+// lone RGBA8 level, that level made on the CPU by averaging 2 x 2 blocks (in linear light
+// when srgb, so colour mips keep their brightness), its smaller levels left to the GPU as
+// before. firstMip 0 returns the texture as it is. RGBA16F single levels aren't shrunk.
+TextureData textureTail(const TextureData& source, uint32_t firstMip);
+
 }   // namespace shockwave

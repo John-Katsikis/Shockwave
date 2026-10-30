@@ -7,6 +7,11 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     swapchain = std::make_unique<vk::Swapchain>(*context, window.pixelWidth(), window.pixelHeight(), vsync);
     drawLists.resize(jobs.threadCount());
     textures = std::make_unique<vk::Image[]>(context->maxBindlessTextures());
+    // Each texture id starts in its own slot; the spares wait for replacements.
+    textureSlots = std::make_unique<std::atomic<uint32_t>[]>(textureCapacity());
+    for (uint32_t id = 0; id < textureCapacity(); ++id) textureSlots[id].store(id, std::memory_order_relaxed);
+    for (uint32_t slot = textureCapacity() + spareTextureSlots(); slot-- > textureCapacity();)
+        freeTextureSlots.push_back(slot);
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -47,6 +52,7 @@ VulkanRenderer::Impl::~Impl() {
         vmaDestroyBuffer(allocator, meshes[i].vertices.buffer, meshes[i].vertices.allocation);
         vmaDestroyBuffer(allocator, meshes[i].indices.buffer, meshes[i].indices.allocation);
         vmaDestroyBuffer(allocator, meshes[i].lodIndices.buffer, meshes[i].lodIndices.allocation);   // null is fine
+        vmaDestroyBuffer(allocator, meshes[i].uv1.buffer, meshes[i].uv1.allocation);
     }
     for (uint32_t i = 0; i < textureCapacity(); ++i) destroyImage(textures[i]);
     for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);
@@ -82,6 +88,7 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroyPipeline(device, gridPipeline, nullptr);
     vkDestroyPipelineLayout(device, gridLayout, nullptr);
     vkDestroySampler(device, linearSampler, nullptr);
+    destroySamplers();
     vkDestroyDescriptorPool(device, bindlessPool, nullptr);
     vkDestroyDescriptorSetLayout(device, bindlessLayout, nullptr);
     destroyRenderFinishedSemaphores();

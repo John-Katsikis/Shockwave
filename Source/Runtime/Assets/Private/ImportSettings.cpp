@@ -27,6 +27,20 @@ bool parseTextureCompression(std::string_view name, TextureCompression& mode) {
     return false;
 }
 
+const char* textureCategoryName(TextureCategory category) {
+    return category == TextureCategory::Ui ? "ui" : "material";
+}
+
+bool parseTextureCategory(std::string_view name, TextureCategory& category) {
+    for (auto candidate : {TextureCategory::Material, TextureCategory::Ui}) {
+        if (name == textureCategoryName(candidate)) {
+            category = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 fs::path importSettingsPath(const fs::path& asset) { return fs::path(asset.string() + ".swimport"); }
 bool isImportSettingsFile(const fs::path& path) { return path.extension() == ".swimport"; }
 
@@ -67,8 +81,12 @@ bool loadImportSettings(const fs::path& file, ImportSettings& settings, std::str
             int value = -1;
             if (!(row >> value) || value < 0 || value > 7) return fail("lods must be a whole number from 0 to 7");
             result.lods = static_cast<uint32_t>(value);
+        } else if (key == "category") {
+            std::string value;
+            row >> value;
+            if (!parseTextureCategory(value, result.category)) return fail("category must be material or ui");
         } else {
-            return fail("unknown key '" + key + "' (compression, lods)");
+            return fail("unknown key '" + key + "' (compression, lods, category)");
         }
         row >> std::ws;
         if (row.peek() != EOF && row.peek() != '#') return fail("unexpected text after the value");
@@ -97,6 +115,7 @@ bool saveImportSettings(
     if (settings.compression != defaults.compression)
         out << "compression " << textureCompressionName(settings.compression) << "\n";
     if (settings.lods != defaults.lods) out << "lods " << settings.lods << "\n";
+    if (settings.category != defaults.category) out << "category " << textureCategoryName(settings.category) << "\n";
     // Through a hidden temporary file, so the asset folder never reads half of one.
     const fs::path temp = file.parent_path() / ("." + file.filename().string() + ".tmp");
     {

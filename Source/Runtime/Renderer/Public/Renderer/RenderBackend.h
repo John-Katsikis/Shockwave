@@ -74,6 +74,14 @@ public:
         updateTexture(id, level.width, level.height, {data.bytes.data() + level.offset, level.size}, data.srgb);
     }
     virtual void setLodSettings(const LodSettings&) {}
+
+    // ---- Material bindings (G02); the defaults suit a backend that ignores them ----
+    // Right after createMesh: the mesh's second UV set, one per vertex. Ignoring it reads
+    // UV0 wherever a material asks for UV1.
+    virtual void setMeshUv1(MeshHandle, std::span<const glm::vec2> /*uv1*/) {}
+    // Once per distinct SamplerDesc; id 0 (the default) is never sent. Any thread.
+    virtual void createSampler(SamplerHandle, const SamplerDesc&) {}
+    virtual void setAnisotropy(uint32_t /*1..16*/) {}
     virtual LodStats lodStats() const { return {}; }
 
     // ---- Per frame ----

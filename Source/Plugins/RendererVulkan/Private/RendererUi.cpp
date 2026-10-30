@@ -167,7 +167,7 @@ void VulkanRenderer::Impl::recordUi(VkCommandBuffer cmd, Frame& f) {
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             boundScissor = scissor;
         }
-        const uint32_t texture = isTexture(command.texture.id) ? command.texture.id : 0;
+        const uint32_t texture = isTexture(command.texture.id) ? textureSlot(command.texture.id) : 0;
         if (command.transform != boundTransform || texture != push.texture || boundTransform == kNoUiTransform - 1) {
             push.transform = command.transform < uiTransforms.size() ? ortho * uiTransforms[command.transform] : ortho;
             push.texture = texture;

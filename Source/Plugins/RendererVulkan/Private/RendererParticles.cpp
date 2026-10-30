@@ -187,9 +187,9 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
         data.tint = batch.tint;
         data.edgeColor = batch.edgeColor;
         data.lightDirection = lightDirection;
-        data.texture = isTexture(batch.texture.id) ? batch.texture.id : 0;
+        data.texture = isTexture(batch.texture.id) ? textureSlot(batch.texture.id) : 0;
         data.lightColor = list.lightColor;
-        data.alphaTexture = isTexture(batch.alphaTexture.id) ? batch.alphaTexture.id : 0;
+        data.alphaTexture = isTexture(batch.alphaTexture.id) ? textureSlot(batch.alphaTexture.id) : 0;
         data.ambient = list.ambient;
         data.flags = batch.flags;
         data.emissive = batch.emissive;

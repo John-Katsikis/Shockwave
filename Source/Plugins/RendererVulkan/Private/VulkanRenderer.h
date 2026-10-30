@@ -29,6 +29,9 @@ public:
     void setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) override;
     bool supportsTextureFormat(TextureFormat format) const override;
     void createTextureData(TextureHandle id, const TextureData& data) override;
+    void setMeshUv1(MeshHandle id, std::span<const glm::vec2> uv1) override;
+    void createSampler(SamplerHandle id, const SamplerDesc& desc) override;
+    void setAnisotropy(uint32_t anisotropy) override;
     void updateTextureData(TextureHandle id, const TextureData& data) override;
     void setLodSettings(const LodSettings& settings) override;
     LodStats lodStats() const override;

@@ -278,14 +278,25 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
                 if (material.emissive != glm::vec3(0.0f))
                     ImGui::TextDisabled(
                         "Emissive %.2f %.2f %.2f", material.emissive.r, material.emissive.g, material.emissive.b);
-                const std::pair<const char*, int> maps[] = {
-                    {"Base color", material.baseColorTexture},
-                    {"Normal", material.normalTexture},
-                    {"Metallic-roughness", material.metallicRoughnessTexture},
-                    {"Occlusion", material.occlusionTexture},
-                    {"Emissive", material.emissiveTexture}};
-                for (const auto& [label, index] : maps)
-                    if (index >= 0) ImGui::TextWrapped("%s map: %s", label, asset->data.textures[index].source.c_str());
+                // In MaterialSlot order, with how each map is read (G02).
+                const char* labels[shockwave::kMaterialSlots] = {
+                    "Base color", "Normal", "Metallic-roughness", "Emissive", "Occlusion"};
+                const auto maps = shockwave::materialTextures(material);
+                for (size_t slot = 0; slot < shockwave::kMaterialSlots; ++slot) {
+                    if (maps[slot] < 0) continue;
+                    const auto& binding = material.bindings[slot];
+                    ImGui::TextWrapped("%s map: %s", labels[slot], asset->data.textures[maps[slot]].source.c_str());
+                    const auto& t = binding.transform;
+                    const auto& sampler = binding.sampler;
+                    ImGui::TextDisabled(
+                        "  UV%u, %s/%s, %s%s", binding.uvSet, shockwave::textureWrapName(sampler.wrapU),
+                        shockwave::textureWrapName(sampler.wrapV), shockwave::textureFilterName(sampler.magFilter),
+                        sampler.mipmaps ? "" : ", no mipmaps");
+                    if (!t.identity())
+                        ImGui::TextDisabled(
+                            "  offset %.3g %.3g, scale %.3g %.3g, rotation %.1f deg", t.offset.x, t.offset.y, t.scale.x,
+                            t.scale.y, glm::degrees(t.rotation));
+                }
                 using Alpha = shockwave::ModelMaterial::Alpha;
                 ImGui::TextDisabled(
                     "%s, %s",

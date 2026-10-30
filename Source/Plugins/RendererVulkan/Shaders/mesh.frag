@@ -3,9 +3,12 @@
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
 
-// Bindless: every texture in the engine lives in this one array.
-layout(set = 0, binding = 0) uniform texture2D textures[];
+// Bindless: every texture in the engine lives in one array (textures, in draw.glsl), and
+// materials pick their samplers from another.
+#define DRAW_SAMPLING
+#include "draw.glsl"
 layout(set = 0, binding = 1) uniform sampler linearSampler;
 // Depth comparison for shadow maps (reverse-Z: lit when the surface is at least as close).
 layout(set = 0, binding = 2) uniform samplerShadow shadowSampler;
@@ -63,11 +66,12 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
 };
 
 layout(push_constant, scalar) uniform PushConstants {
-    layout(offset = 8) FrameBuffer frame;
+    DrawBuffer drawBuffer;
+    FrameBuffer frame;
 } pc;
 
 layout(location = 0) in vec3 vNormal;
-layout(location = 1) in vec2 vUv;
+layout(location = 1) in vec4 vUvs;   // UV0 (xy) and UV1 (zw), tiled
 layout(location = 2) in vec4 vColor;
 layout(location = 3) flat in uint vTexture;
 layout(location = 4) flat in float vAlphaCutoff;
@@ -77,6 +81,7 @@ layout(location = 7) flat in vec3 vEmissive;
 layout(location = 8) in vec4 vTangent;
 layout(location = 9) flat in uvec4 vMaps;   // normal, metallic-roughness, emissive, occlusion; 0: none
 layout(location = 10) flat in vec2 vMapScales;   // normal scale, occlusion strength
+layout(location = 11) flat in uint vDraw;
 
 layout(location = 0) out vec4 outColor;
 
@@ -195,8 +200,31 @@ float lightShadow(FrameBuffer frame, LightData l, vec3 worldPos, vec3 n, vec3 to
     return mix(1.0, result, fade);
 }
 
-vec4 sampleMap(uint map) {
-    return texture(sampler2D(textures[nonuniformEXT(map)], linearSampler), vUv);
+// A material map through its slot's UV set, transform and sampler.
+vec4 sampleMap(uint map, uint slot) {
+    SlotBinding binding = pc.drawBuffer.draws[vDraw].slots[slot];
+    return sampleSlot(map, binding, slotUv(binding, vUvs));
+}
+
+// The tangent frame of the normal map's UVs from screen-space derivatives, for maps whose
+// UVs the vertex tangents don't describe (another UV set, rotated, mirrored). t follows +u;
+// b points up the texture (-v, glTF's convention), whichever way the UVs are mirrored.
+// False where the UVs or the surface are degenerate on screen: the map is left out there.
+bool derivativeTangents(vec3 n, vec2 uv, out vec3 t, out vec3 b) {
+    vec3 dpdx = dFdx(vWorldPosition), dpdy = dFdy(vWorldPosition);
+    vec2 duvdx = dFdx(uv), duvdy = dFdy(uv);
+    float det = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+    if (abs(det) < 1e-12) return false;
+    // Solve dp = dP/du du + dP/dv dv for dP/du and dP/dv.
+    vec3 dpdu = (dpdx * duvdy.y - dpdy * duvdx.y) / det;
+    vec3 dpdv = (dpdy * duvdx.x - dpdx * duvdy.x) / det;
+    t = dpdu - n * dot(n, dpdu);
+    float t2 = dot(t, t);
+    if (t2 < 1e-20) return false;
+    t *= inversesqrt(t2);
+    b = cross(n, t);
+    if (dot(b, dpdv) > 0.0) b = -b;   // up the texture is -v
+    return true;
 }
 
 // The surface normal, tilted by the normal map (tangent space, glTF's convention: green
@@ -204,12 +232,23 @@ vec4 sampleMap(uint map) {
 vec3 surfaceNormal() {
     vec3 n = normalize(vNormal);
     if (vMaps.x != 0u) {
-        vec3 t = vTangent.xyz - n * dot(n, vTangent.xyz);
-        float t2 = dot(t, t);
-        if (t2 > 1e-12) {
-            t *= inversesqrt(t2);
-            vec3 b = cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0);
-            vec3 m = sampleMap(vMaps.x).xyz * 2.0 - 1.0;
+        SlotBinding binding = pc.drawBuffer.draws[vDraw].slots[kNormal];
+        vec2 uv = slotUv(binding, vUvs);
+        vec3 t, b;
+        bool hasFrame;
+        if ((pc.drawBuffer.draws[vDraw].flags & kDerivativeTangents) != 0u) {
+            hasFrame = derivativeTangents(n, uv, t, b);
+        } else {
+            t = vTangent.xyz - n * dot(n, vTangent.xyz);
+            float t2 = dot(t, t);
+            hasFrame = t2 > 1e-12;
+            if (hasFrame) {
+                t *= inversesqrt(t2);
+                b = cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0);
+            }
+        }
+        if (hasFrame) {
+            vec3 m = sampleSlot(vMaps.x, binding, uv).xyz * 2.0 - 1.0;
             m.xy *= vMapScales.x;
             n = normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
         }
@@ -218,13 +257,14 @@ vec3 surfaceNormal() {
 }
 
 void main() {
-    vec4 albedo = texture(sampler2D(textures[nonuniformEXT(vTexture)], linearSampler), vUv) * vColor;
+    SlotBinding baseBinding = pc.drawBuffer.draws[vDraw].slots[kBaseColor];
+    vec4 albedo = sampleSlot(vTexture, baseBinding, slotUv(baseBinding, vUvs)) * vColor;
     if (kAlphaTest && vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
 
     FrameBuffer frame = pc.frame;
     vec3 n = surfaceNormal();
     vec3 emissive = vEmissive;
-    if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z).rgb;
+    if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
     if (frame.debugView >= 3u) albedo.rgb = vec3(0.8);
@@ -236,7 +276,7 @@ void main() {
     }
 
     vec2 roughnessMetallic = vRoughnessMetallic;
-    if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y).gb;   // glTF: green roughness, blue metallic
+    if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
     float roughness = clamp(roughnessMetallic.x, 0.03, 1.0);
     float metallic = clamp(roughnessMetallic.y, 0.0, 1.0);
     float a = roughness * roughness;
@@ -284,7 +324,7 @@ void main() {
     // the ground below), reflected by the split-sum approximation, with the multiple
     // scattering energy compensation of Fdez-Aguera 2019 so rough metals don't lose light.
     // The occlusion map only darkens this: direct light has shadows of its own.
-    float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w).r - 1.0) : 1.0;
+    float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w, kOcclusion).r - 1.0) : 1.0;
     const float tableTexel = 1.0 / 128.0;   // kBrdfTableSize; clamped so lookups never wrap
     vec2 brdf = textureLod(
         sampler2D(textures[frame.brdfTable], linearSampler),

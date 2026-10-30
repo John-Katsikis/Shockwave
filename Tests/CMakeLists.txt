@@ -197,6 +197,16 @@ shockwave_warnings(graphics_test)
 shockwave_link_plugins(graphics_test)
 add_test(NAME graphics COMMAND graphics_test)
 set_tests_properties(graphics PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+# Texture quality and material samplers (A01, G02): headless, then on Vulkan (gpu).
+add_executable(texture_quality_test TextureQualityTest.cpp)
+target_link_libraries(texture_quality_test PRIVATE Shockwave::Engine)
+shockwave_warnings(texture_quality_test)
+shockwave_link_plugins(texture_quality_test)
+add_test(NAME texture_quality COMMAND texture_quality_test null)
+set_tests_properties(texture_quality PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+add_test(NAME texture_quality_vulkan COMMAND texture_quality_test vulkan)
+set_tests_properties(texture_quality_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 60 LABELS gpu)
 if(TARGET game_arena)
     add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
@@ -213,6 +223,13 @@ if(TARGET game_sample)
         --check)
     set_tests_properties(graphics_fixtures PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                          TIMEOUT 120)
+    add_test(NAME graphics_materials_info COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/MaterialInfo
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/MaterialInfoCheck.cmake)
+    set_tests_properties(graphics_materials_info PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
     add_test(NAME graphics_fixtures_render COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics

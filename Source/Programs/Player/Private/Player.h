@@ -155,6 +155,10 @@ int netEncode(const fs::path& json, const fs::path& output);
 // when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
 int imageStats(const fs::path& image, const fs::path& json);
 int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
+// --material-info, --texture-info: an asset's material slots (UV sets, transforms,
+// samplers) or its textures' levels and size at each texture_quality, as JSON. No GPU.
+int materialInfo(const fs::path& asset, const fs::path& json);
+int textureInfo(const fs::path& asset, const fs::path& json);
 // --graphics-info --json: the settings this run would use, the matching preset, and every
 // setting's description (key, label, values, how it applies), for tools and menus.
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile);

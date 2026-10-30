@@ -111,7 +111,7 @@ void VulkanRenderer::Impl::createBindless() {
     shadowInfo.maxLod = 0.0f;
     vk::check(vkCreateSampler(device, &shadowInfo, nullptr, &shadowSampler), "vkCreateSampler");
 
-    VkDescriptorSetLayoutBinding bindings[6]{};
+    VkDescriptorSetLayoutBinding bindings[7]{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     bindings[0].descriptorCount = bindlessSlots();
@@ -135,10 +135,15 @@ void VulkanRenderer::Impl::createBindless() {
         bindings[i].stageFlags = VK_SHADER_STAGE_ALL;
     }
     static_assert(kEnvironmentCubes == 3, "one binding per cube");
+    // Material samplers (G02, RendererMaterials.cpp), two banks.
+    bindings[6].binding = 6;
+    bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    bindings[6].descriptorCount = kMaxSamplers * kSamplerBanks;
+    bindings[6].stageFlags = VK_SHADER_STAGE_ALL;
 
     // Partially bound: unused slots may be empty. Update-after-bind + unused-while-pending:
     // new textures can be added while frames using the table are still in flight.
-    const VkDescriptorBindingFlags bindingFlags[6] = {
+    const VkDescriptorBindingFlags bindingFlags[7] = {
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
         0,
@@ -146,24 +151,26 @@ void VulkanRenderer::Impl::createBindless() {
         0,
         0,
         0,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+            VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT,
     };
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-    flagsInfo.bindingCount = 6;
+    flagsInfo.bindingCount = 7;
     flagsInfo.pBindingFlags = bindingFlags;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.pNext = &flagsInfo;
     layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    layoutInfo.bindingCount = 6;
+    layoutInfo.bindingCount = 7;
     layoutInfo.pBindings = bindings;
     vk::check(
         vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &bindlessLayout), "vkCreateDescriptorSetLayout");
 
     const VkDescriptorPoolSize sizes[2] = {
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, capacity},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 2},
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 2 + kMaxSamplers * kSamplerBanks},
     };
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -179,6 +186,10 @@ void VulkanRenderer::Impl::createBindless() {
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &bindlessLayout;
     vk::check(vkAllocateDescriptorSets(device, &allocInfo, &bindlessSet), "vkAllocateDescriptorSets");
+
+    // The default material sampler, SamplerHandle 0: the same as linearSampler.
+    samplerObjects[0][0] = makeSampler(SamplerDesc{});
+    writeSamplerDescriptor(0, samplerObjects[0][0]);
 }
 
 void VulkanRenderer::Impl::createPipelines() {

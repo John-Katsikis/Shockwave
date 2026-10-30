@@ -5,3 +5,4 @@ shockwave_module(Assets
     PRIVATE_DEPS assimp::assimp meshoptimizer basisu
     NO_WARNINGS ${CMAKE_CURRENT_SOURCE_DIR}/Private/Image.cpp ${CMAKE_CURRENT_SOURCE_DIR}/Private/Vorbis.cpp)
 target_include_directories(ShockwaveAssets SYSTEM PRIVATE ${stb_image_SOURCE_DIR} ${stb_vorbis_SOURCE_DIR})
+target_include_directories(ShockwaveAssets SYSTEM PRIVATE ${assimp_SOURCE_DIR}/contrib/rapidjson/include)   # glTF JSON the importer does not pass on

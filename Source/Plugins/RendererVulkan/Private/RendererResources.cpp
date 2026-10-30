@@ -1,5 +1,7 @@
 #include "RendererImpl.h"
 
+#include <Core/Log.h>
+
 namespace shockwave {
 
 vk::Buffer VulkanRenderer::Impl::createBuffer(
@@ -129,26 +131,51 @@ void VulkanRenderer::Impl::destroyMesh(MeshHandle handle) {
     vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
     vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
     if (mesh.skin.buffer) vmaDestroyBuffer(context->allocator(), mesh.skin.buffer, mesh.skin.allocation);
+    if (mesh.uv1.buffer) vmaDestroyBuffer(context->allocator(), mesh.uv1.buffer, mesh.uv1.allocation);
     mesh = {};
 }
 
+void VulkanRenderer::Impl::setMeshUv1(MeshHandle handle, std::span<const glm::vec2> uv1) {
+    if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire))
+        throw std::runtime_error("setMeshUv1: there's no such mesh");
+    Mesh& mesh = meshes[handle.id];
+    if (mesh.uv1.buffer || uv1.empty()) return;
+    mesh.uv1 = uploadBuffer(
+        uv1.data(), uv1.size_bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    mesh.uv1Address = bufferAddress(mesh.uv1.buffer);
+}
+
+uint32_t VulkanRenderer::Impl::takeTextureSlot() {
+    std::lock_guard lock(textureSlotMutex);
+    if (freeTextureSlots.empty()) return kNoSlot;
+    const uint32_t slot = freeTextureSlots.back();
+    freeTextureSlots.pop_back();
+    return slot;
+}
+
+// Main thread, between frames. The image and its slot are freed once the frames that may
+// still draw with them have finished; the slot then serves a later texture.
 void VulkanRenderer::Impl::destroyTexture(TextureHandle handle) {
     if (!handle.id || !isTexture(handle.id)) return;
-    vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
-    if (auto it = guiTextures.find(handle.id); it != guiTextures.end()) {
-        ImGui_ImplVulkan_RemoveTexture(it->second);
-        guiTextures.erase(it);
-    }
     {
         std::lock_guard lock(textureSwapMutex);
         for (auto& swap : textureSwaps)
             if (swap.id == handle.id) destroyImage(swap.image);
         std::erase_if(textureSwaps, [&](const auto& swap) { return swap.id == handle.id; });
     }
-    destroyImage(textures[handle.id]);
-    // Fill the descriptor with white before recycling; don't own the white image.
-    textures[handle.id] = textures[0];
-    writeTextureDescriptor(handle.id);
+    VkDescriptorSet gui = VK_NULL_HANDLE;
+    if (auto it = guiTextures.find(handle.id); it != guiTextures.end()) {
+        gui = it->second;
+        guiTextures.erase(it);
+    }
+    const uint32_t slot = textureSlots[handle.id].exchange(kNoSlot, std::memory_order_acq_rel);
+    retire([this, image = textures[handle.id], slot, gui]() mutable {
+        if (gui) ImGui_ImplVulkan_RemoveTexture(gui);
+        destroyImage(image);
+        if (slot == kNoSlot) return;
+        std::lock_guard lock(textureSlotMutex);
+        freeTextureSlots.push_back(slot);
+    });
     textures[handle.id] = {};
 }
 
@@ -158,8 +185,22 @@ void VulkanRenderer::Impl::createTexture(
         throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
     const uint32_t id = handle.id;
     if (id >= textureCapacity() || textures[id].image) throw std::runtime_error("createTexture: texture id is taken");
-    textures[id] = uploadTexture(width, height, rgba, srgb);
-    writeTextureDescriptor(id);
+    vk::Image image = uploadTexture(width, height, rgba, srgb);
+    publishTexture(id, image);
+}
+
+// A new texture's image into its slot: its own, or after a destroy, any free one. The slot
+// is written before draws can name it.
+void VulkanRenderer::Impl::publishTexture(uint32_t id, vk::Image& image) {
+    uint32_t slot = textureSlots[id].load(std::memory_order_acquire);
+    if (slot == kNoSlot) slot = takeTextureSlot();
+    if (slot == kNoSlot) {
+        destroyImage(image);
+        throw std::runtime_error("createTexture: every bindless slot is in use");
+    }
+    textures[id] = image;
+    writeTextureDescriptor(slot, image.view);
+    textureSlots[id].store(slot, std::memory_order_release);
 }
 
 void VulkanRenderer::Impl::updateTexture(
@@ -181,24 +222,37 @@ void VulkanRenderer::Impl::applyTextureSwaps() {
         std::lock_guard lock(textureSwapMutex);
         swaps.swap(textureSwaps);
     }
-    if (swaps.empty()) return;
-    if (frameNumber > 0) {
-        VkSemaphoreWaitInfo waitInfo{};
-        waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-        waitInfo.semaphoreCount = 1;
-        waitInfo.pSemaphores = &frameTimeline;
-        waitInfo.pValues = &frameNumber;
-        vk::check(vkWaitSemaphores(context->device(), &waitInfo, UINT64_MAX), "vkWaitSemaphores");
-    }
     for (TextureSwap& swap : swaps) {
-        destroyImage(textures[swap.id]);
-        textures[swap.id] = swap.image;
-        writeTextureDescriptor(swap.id);
+        if (!textures[swap.id].image) {   // destroyed since
+            destroyImage(swap.image);
+            continue;
+        }
+        uint32_t slot = takeTextureSlot();
+        if (slot == kNoSlot) {
+            // Every spare is still in flight: wait for those frames, and their slots come back.
+            SW_LOG(LogRender, Verbose, "every spare texture slot is in use; waiting for the GPU");
+            vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
+            collectRetired(true);
+            slot = takeTextureSlot();
+            if (slot == kNoSlot) slot = textureSlots[swap.id].load();   // nothing reads it now
+        }
+        const uint32_t old = textureSlots[swap.id].load();
+        writeTextureDescriptor(slot, swap.image.view);
+        textureSlots[swap.id].store(slot, std::memory_order_release);
         // The GUI's copy points at the old view: make a new one next time it's asked for.
+        VkDescriptorSet gui = VK_NULL_HANDLE;
         if (auto it = guiTextures.find(swap.id); it != guiTextures.end()) {
-            ImGui_ImplVulkan_RemoveTexture(it->second);
+            gui = it->second;
             guiTextures.erase(it);
         }
+        retire([this, image = textures[swap.id], old, slot, gui]() mutable {
+            if (gui) ImGui_ImplVulkan_RemoveTexture(gui);
+            destroyImage(image);
+            if (old == slot || old == kNoSlot) return;
+            std::lock_guard lock(textureSlotMutex);
+            freeTextureSlots.push_back(old);
+        });
+        textures[swap.id] = swap.image;
     }
 }
 
@@ -214,16 +268,16 @@ uint64_t VulkanRenderer::Impl::guiTexture(TextureHandle texture) {
     return reinterpret_cast<uint64_t>(set);
 }
 
-void VulkanRenderer::Impl::writeTextureDescriptor(uint32_t id) {
+void VulkanRenderer::Impl::writeTextureDescriptor(uint32_t slot, VkImageView view) {
     std::lock_guard lock(descriptorMutex);
     VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = textures[id].view;
+    imageInfo.imageView = view;
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = bindlessSet;
     write.dstBinding = 0;
-    write.dstArrayElement = id;
+    write.dstArrayElement = slot;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &imageInfo;

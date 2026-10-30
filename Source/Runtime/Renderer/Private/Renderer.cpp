@@ -1,5 +1,6 @@
 #include <Renderer/Renderer.h>
 
+#include <Core/Jobs.h>
 #include <Core/Log.h>
 #include <Core/Plugin.h>
 #include <Renderer/RenderBackend.h>
@@ -7,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 #include <atomic>
+#include <cstdio>
+#include <deque>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -26,6 +29,29 @@ const char* antiAliasingName(AntiAliasing aa) { return aa == AntiAliasing::Fxaa 
 const char* bloomQualityName(BloomQuality quality) {
     constexpr const char* names[] = {"off", "low", "medium", "high"};
     return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
+}
+
+const char* textureWrapName(TextureWrap wrap) {
+    constexpr const char* names[] = {"repeat", "clamp", "mirror"};
+    return names[std::min<uint32_t>(static_cast<uint32_t>(wrap), 2)];
+}
+const char* textureFilterName(TextureFilter filter) { return filter == TextureFilter::Nearest ? "nearest" : "linear"; }
+const char* materialSlotName(MaterialSlot slot) {
+    constexpr const char* names[] = {"base_color", "normal", "metallic_roughness", "emissive", "occlusion"};
+    return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kMaterialSlots - 1)];
+}
+glm::vec2 UvTransform::apply(glm::vec2 uv) const {
+    const glm::vec2 s = scale * uv;
+    if (rotation == 0.0f) return offset + s;
+    const float c = std::cos(rotation), n = std::sin(rotation);
+    return offset + glm::vec2(c * s.x + n * s.y, -n * s.x + c * s.y);
+}
+const char* textureQualityName(TextureQuality quality) {
+    constexpr const char* names[] = {"low", "medium", "high", "ultra"};
+    return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
+}
+uint32_t textureQualityFirstMip(TextureQuality quality) {
+    return 3 - std::min<uint32_t>(static_cast<uint32_t>(quality), 3);
 }
 
 const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
@@ -76,6 +102,7 @@ struct Renderer::State {
     BloomQuality bloomQuality = BloomQuality::High;
     float bloomScale = 1.0f;
     LodSettings lodSettings;
+    uint32_t anisotropy = 16;
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
@@ -100,19 +127,148 @@ struct Renderer::State {
     }
 
     // CPU copies for replaying into a new backend (swappable only), ordered by id.
-    struct TextureData {
-        uint32_t width = 0, height = 0;
-        std::vector<uint8_t> rgba;
-        bool srgb = true;
-    };
     std::mutex journalMutex;
-    std::map<uint32_t, shockwave::TextureData> packedTextures;   // made from TextureData
     std::map<uint32_t, std::pair<std::vector<MeshLod>, std::vector<uint32_t>>> meshLods;
     std::map<uint32_t, MeshData> meshes;
     std::map<uint32_t, std::vector<VertexSkin>> skins;   // skinned meshes' weights
-    std::map<uint32_t, TextureData> textures;
+
+    // ---- Samplers (G02): one per distinct desc; 0 is SamplerDesc{} ----
+    mutable std::mutex samplerMutex;
+    std::vector<SamplerDesc> samplers{SamplerDesc{}};
+    bool samplersFull = false;
+
+    // ---- Textures and their resident levels (A01) ----
+    // Every texture has a record. Its source (all its pixels, as given) is kept for material
+    // textures, whose levels texture_quality changes, and for every texture when swappable.
+    // Lock order: swapMutex (shared), then a record's mutex, then residencyMutex.
+    struct TextureRecord {
+        std::mutex mutex;   // one change of its levels at a time
+        std::shared_ptr<const TextureData> source;
+        TextureUsage usage = TextureUsage::Fixed;
+        TextureFormat format = TextureFormat::RGBA8;
+        uint32_t width = 0, height = 0, levels = 1;   // the source's
+        uint32_t resident = 0;   // the source level the GPU's level 0 is
+        uint64_t residentBytes = 0;
+        bool alive = true;
+        // Under residencyMutex:
+        bool queued = false, busy = false;
+        uint32_t failed = UINT32_MAX;   // a level that couldn't be made; not retried
+    };
+    mutable std::mutex residencyMutex;
+    std::map<uint32_t, std::shared_ptr<TextureRecord>> records;
+    std::deque<uint32_t> residencyQueue;
+    std::atomic<uint32_t> textureQuality{uint32_t(TextureQuality::Ultra)};
+    JobCounter residencyJobs;
+    // Changes started per frame, and the most at once: each holds a source-sized tail.
+    static constexpr uint32_t kResidencyStartsPerFrame = 8, kResidencyInFlight = 16;
+    uint32_t residencyBusy = 0;
 
     State(Window& w, JobSystem& j) : window(w), jobs(j) {}
+
+    // The level a record should start at, at the current quality.
+    uint32_t wantedFirstMip(const TextureRecord& r) const {
+        if (r.usage != TextureUsage::Material || !r.source ||
+            (r.format == TextureFormat::RGBA16F && r.source->levels.size() == 1))
+            return 0;
+        const auto quality = static_cast<TextureQuality>(textureQuality.load(std::memory_order_relaxed));
+        return residentFirstMip(textureQualityFirstMip(quality), r.width, r.height, r.levels);
+    }
+    std::shared_ptr<TextureRecord> record(uint32_t id) const {
+        std::lock_guard lock(residencyMutex);
+        const auto it = records.find(id);
+        return it == records.end() ? nullptr : it->second;
+    }
+    // Queues a record whose levels don't match the quality. Holds residencyMutex.
+    void requeueLocked(uint32_t id, TextureRecord& r) {
+        const uint32_t wanted = wantedFirstMip(r);
+        if (r.alive && !r.queued && !r.busy && wanted != r.resident && wanted != r.failed) {
+            r.queued = true;
+            residencyQueue.push_back(id);
+        }
+    }
+
+    // Sends a texture's levels from first down to the backend, as a new texture or in
+    // place of the old. A lone RGBA8 level goes the way it always has (its mipmaps made on
+    // the GPU); a format the backend can't sample shows white, with a warning.
+    void uploadTexture(TextureHandle id, const TextureData& source, uint32_t first, bool create, uint64_t& bytes) {
+        const TextureData tail = textureTail(source, first);
+        bytes = tail.gpuBytes();
+        if (tail.format == TextureFormat::RGBA8 && tail.levels.size() == 1) {
+            const std::span<const uint8_t> rgba(tail.bytes.data() + tail.levels[0].offset, tail.levels[0].size);
+            if (create)
+                backend->createTexture(id, tail.width, tail.height, rgba, tail.srgb);
+            else
+                backend->updateTexture(id, tail.width, tail.height, rgba, tail.srgb);
+            return;
+        }
+        if (backend->supportsTextureFormat(tail.format)) {
+            if (create)
+                backend->createTextureData(id, tail);
+            else
+                backend->updateTextureData(id, tail);
+            return;
+        }
+        SW_LOG(
+            LogRender, Warning, "texture {} is {}, which this renderer can't use; showing white", id.id,
+            textureFormatName(tail.format));
+        const uint8_t white[4] = {255, 255, 255, 255};
+        if (create)
+            backend->createTexture(id, 1, 1, white, tail.srgb);
+        else
+            backend->updateTexture(id, 1, 1, white, tail.srgb);
+        bytes = 4;
+    }
+
+    // Main thread, each frame: starts a few level changes on workers. Each makes its tail,
+    // checks it's still wanted, and hands it to the backend, which swaps it in at a frame
+    // boundary and frees the old image once no frame uses it.
+    void pumpResidency() {
+        std::vector<std::pair<uint32_t, std::shared_ptr<TextureRecord>>> start;
+        {
+            std::lock_guard lock(residencyMutex);
+            while (!residencyQueue.empty() && start.size() < kResidencyStartsPerFrame &&
+                   residencyBusy < kResidencyInFlight) {
+                const uint32_t id = residencyQueue.front();
+                residencyQueue.pop_front();
+                const auto it = records.find(id);
+                if (it == records.end()) continue;
+                TextureRecord& r = *it->second;
+                r.queued = false;
+                if (!r.alive || r.busy || wantedFirstMip(r) == r.resident) continue;
+                r.busy = true;
+                ++residencyBusy;
+                start.emplace_back(id, it->second);
+            }
+        }
+        for (auto& [id, r] : start) jobs.run([this, id = id, r = r] { changeLevels(id, *r); }, &residencyJobs);
+    }
+    void changeLevels(uint32_t id, TextureRecord& r) {
+        {
+            std::shared_lock swap(swapMutex);
+            std::lock_guard levels(r.mutex);
+            const uint32_t wanted = wantedFirstMip(r);
+            if (r.alive && r.source && wanted != r.resident) {
+                try {
+                    uint64_t bytes = 0;
+                    // Made from this source, at this level: if either changed meanwhile (an
+                    // update, the quality again) it's dropped before it reaches the GPU.
+                    uploadTexture({id}, *r.source, wanted, false, bytes);
+                    std::lock_guard lock(residencyMutex);
+                    r.resident = wanted;
+                    r.residentBytes = bytes;
+                } catch (const std::exception& e) {
+                    // The old image stays; this level isn't tried again until the quality changes.
+                    SW_LOG(LogRender, Warning, "texture {} couldn't change to level {}: {}", id, wanted, e.what());
+                    std::lock_guard lock(residencyMutex);
+                    r.failed = wanted;
+                }
+            }
+        }
+        std::lock_guard lock(residencyMutex);
+        r.busy = false;
+        --residencyBusy;
+        requeueLocked(id, r);
+    }
 
     uint32_t allocate(std::vector<uint32_t>& free, uint32_t& next, uint32_t maximum, const char* what) {
         std::lock_guard lock(idMutex);
@@ -149,12 +305,27 @@ struct Renderer::State {
         backend->setViewport(viewportWidth, viewportHeight);
         backend->setLowLatency(lowLatency);
         backend->setLodSettings(lodSettings);
+        backend->setAnisotropy(anisotropy);
+        {
+            std::lock_guard lock(samplerMutex);
+            for (uint32_t id = 1; id < samplers.size(); ++id) backend->createSampler({id}, samplers[id]);
+        }
+        {
+            // swapMutex is held exclusively: no level change is part way through.
+            std::lock_guard lock(residencyMutex);
+            for (const auto& [id, r] : records) {
+                if (!r->source) continue;
+                uint64_t bytes = 0;
+                uploadTexture({id}, *r->source, r->resident, true, bytes);
+                r->residentBytes = bytes;
+            }
+        }
         {
             std::lock_guard lock(journalMutex);
-            for (const auto& [id, texture] : packedTextures) replayTexture({id}, texture);
-            for (const auto& [id, texture] : textures)
-                backend->createTexture({id}, texture.width, texture.height, texture.rgba, texture.srgb);
-            for (const auto& [id, mesh] : meshes) backend->createMesh({id}, mesh.vertices, mesh.indices);
+            for (const auto& [id, mesh] : meshes) {
+                backend->createMesh({id}, mesh.vertices, mesh.indices);
+                if (!mesh.uv1.empty()) backend->setMeshUv1({id}, mesh.uv1);
+            }
             for (const auto& [id, skin] : skins) backend->setMeshSkin({id}, skin);
         }
         {
@@ -165,19 +336,6 @@ struct Renderer::State {
             if (restartGuiPlatform) restartGuiPlatform();
             backend->initGui();
         }
-    }
-
-    // A new backend that can't sample a compressed texture's format shows it white.
-    void replayTexture(TextureHandle id, const shockwave::TextureData& texture) {
-        if (backend->supportsTextureFormat(texture.format)) {
-            backend->createTextureData(id, texture);
-            return;
-        }
-        SW_LOG(
-            LogRender, Warning, "texture {} is {}, which this renderer can't use; showing white", id.id,
-            textureFormatName(texture.format));
-        const uint8_t white[4] = {255, 255, 255, 255};
-        backend->createTexture(id, 1, 1, white, texture.srgb);
     }
 
     void stop() {
@@ -200,6 +358,7 @@ Renderer::Renderer(Window& window, JobSystem& jobs, const RendererOptions& optio
 }
 
 Renderer::~Renderer() {
+    m->jobs.wait(m->residencyJobs);   // level changes use the backend
     m->stop();   // before the plugin's code is unloaded
 }
 
@@ -220,6 +379,22 @@ MeshHandle Renderer::createMesh(std::span<const Vertex> vertices, std::span<cons
         m->meshes[id] = MeshData{{vertices.begin(), vertices.end()}, {indices.begin(), indices.end()}};
     }
     return {id};
+}
+
+MeshHandle Renderer::createMesh(const MeshData& mesh) {
+    const MeshHandle handle = createMesh(mesh.vertices, mesh.indices);
+    if (handle.valid() && !mesh.uv1.empty()) setMeshUv1(handle, mesh.uv1);
+    return handle;
+}
+
+void Renderer::setMeshUv1(MeshHandle mesh, std::span<const glm::vec2> uv1) {
+    if (!mesh.valid() || uv1.empty()) return;
+    std::shared_lock swap(m->swapMutex);
+    m->backend->setMeshUv1(mesh, uv1);
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        if (auto it = m->meshes.find(mesh.id); it != m->meshes.end()) it->second.uv1.assign(uv1.begin(), uv1.end());
+    }
 }
 
 MeshHandle Renderer::createSkinnedMesh(
@@ -251,45 +426,109 @@ void Renderer::destroyMesh(MeshHandle mesh) {
     m->release(m->freeMeshes, mesh.id);
 }
 
-TextureHandle Renderer::createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+namespace {
+// One RGBA8 level as TextureData, which is how the renderer keeps every source.
+std::shared_ptr<const TextureData>
+rgbaSource(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+    auto data = std::make_shared<TextureData>();
+    data->format = TextureFormat::RGBA8;
+    data->srgb = srgb;
+    data->width = width;
+    data->height = height;
+    data->bytes.assign(rgba.begin(), rgba.begin() + ptrdiff_t(size_t(width) * height * 4));
+    data->levels = {{width, height, 0, data->bytes.size()}};
+    return data;
+}
+}   // namespace
+
+// Makes or replaces a texture from source, at the level texture_quality wants for it.
+// make(first) sends it to the backend; source is only kept when it will be needed again.
+TextureHandle
+Renderer::createTexture(uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb, TextureUsage usage) {
     if (!width || !height || rgba.size() < size_t(width) * height * 4)
         throw std::runtime_error("createTexture: pixel data is smaller than width x height x 4");
     std::shared_lock swap(m->swapMutex);
     const uint32_t id = m->allocate(m->freeTextures, m->nextTexture, m->backend->maxTextures(), "texture");
+    auto r = std::make_shared<State::TextureRecord>();
+    r->usage = usage;
+    r->format = TextureFormat::RGBA8;
+    r->width = width;
+    r->height = height;
+    r->levels = textureMipCount(width, height);
+    if (usage == TextureUsage::Material || m->swappable) r->source = rgbaSource(width, height, rgba, srgb);
     try {
-        m->backend->createTexture({id}, width, height, rgba, srgb);
+        const uint32_t first = m->wantedFirstMip(*r);
+        if (first == 0) {
+            m->backend->createTexture({id}, width, height, rgba, srgb);
+            r->residentBytes = textureChainBytes(TextureFormat::RGBA8, width, height);
+        } else {
+            m->uploadTexture({id}, *r->source, first, true, r->residentBytes);
+        }
+        r->resident = first;
     } catch (...) {
         m->release(m->freeTextures, id);
         throw;
     }
-    if (m->swappable) {
-        std::lock_guard lock(m->journalMutex);
-        m->textures[id] = {width, height, {rgba.begin(), rgba.begin() + size_t(width) * height * 4}, srgb};
-    }
+    std::lock_guard lock(m->residencyMutex);
+    m->records[id] = r;
+    m->requeueLocked(id, *r);   // the quality changed while it was being made
     return {id};
 }
 
 void Renderer::updateTexture(
-    TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) {
+    TextureHandle texture, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb,
+    std::optional<TextureUsage> usage) {
     if (!width || !height || rgba.size() < size_t(width) * height * 4)
         throw std::runtime_error("updateTexture: pixel data is smaller than width x height x 4");
     std::shared_lock swap(m->swapMutex);
-    m->backend->updateTexture(texture, width, height, rgba, srgb);
-    if (m->swappable) {
-        std::lock_guard lock(m->journalMutex);
-        m->textures[texture.id] = {width, height, {rgba.begin(), rgba.begin() + size_t(width) * height * 4}, srgb};
-        m->packedTextures.erase(texture.id);
+    const auto r = m->record(texture.id);
+    if (!r) {
+        m->backend->updateTexture(texture, width, height, rgba, srgb);
+        return;
     }
+    // r->mutex keeps level changes out until this is done; residencyMutex guards the
+    // fields that stats and the queue read.
+    std::lock_guard levels(r->mutex);
+    const auto kept = usage.value_or(r->usage);
+    auto source = kept == TextureUsage::Material || m->swappable ? rgbaSource(width, height, rgba, srgb) : nullptr;
+    uint32_t first = 0;
+    {
+        std::lock_guard lock(m->residencyMutex);
+        r->usage = kept;
+        r->format = TextureFormat::RGBA8;
+        r->width = width;
+        r->height = height;
+        r->levels = textureMipCount(width, height);
+        r->source = std::move(source);
+        first = m->wantedFirstMip(*r);
+    }
+    uint64_t bytes = 0;
+    if (first == 0) {
+        m->backend->updateTexture(texture, width, height, rgba, srgb);
+        bytes = textureChainBytes(TextureFormat::RGBA8, width, height);
+    } else {
+        m->uploadTexture(texture, *r->source, first, false, bytes);
+    }
+    std::lock_guard lock(m->residencyMutex);
+    r->resident = first;
+    r->residentBytes = bytes;
+    r->failed = UINT32_MAX;
+    m->requeueLocked(texture.id, *r);
 }
 
 void Renderer::destroyTexture(TextureHandle texture) {
     if (texture.id == 0) return;
     std::shared_lock swap(m->swapMutex);
+    if (const auto r = m->record(texture.id)) {
+        std::lock_guard levels(r->mutex);   // after any level change part way through
+        std::lock_guard lock(m->residencyMutex);
+        r->alive = false;
+        r->source.reset();
+    }
     m->backend->destroyTexture(texture);
-    if (m->swappable) {
-        std::lock_guard lock(m->journalMutex);
-        m->textures.erase(texture.id);
-        m->packedTextures.erase(texture.id);
+    {
+        std::lock_guard lock(m->residencyMutex);
+        m->records.erase(texture.id);
     }
     m->release(m->freeTextures, texture.id);
 }
@@ -314,36 +553,137 @@ void Renderer::setMeshLods(MeshHandle mesh, std::span<const MeshLod> lods, std::
     }
 }
 
-TextureHandle Renderer::createTexture(const TextureData& texture) {
+TextureHandle Renderer::createTexture(const TextureData& texture, TextureUsage usage) {
     if (!texture.valid()) throw std::runtime_error("createTexture: the texture data is incomplete");
     std::shared_lock swap(m->swapMutex);
     if (!m->backend->supportsTextureFormat(texture.format))
         throw std::runtime_error(std::string("createTexture: this GPU can't use ") + textureFormatName(texture.format));
     const uint32_t id = m->allocate(m->freeTextures, m->nextTexture, m->backend->maxTextures(), "texture");
+    auto r = std::make_shared<State::TextureRecord>();
+    r->usage = usage;
+    r->format = texture.format;
+    r->width = texture.width;
+    r->height = texture.height;
+    r->levels =
+        texture.levels.size() > 1 ? uint32_t(texture.levels.size()) : textureMipCount(texture.width, texture.height);
+    auto source = std::make_shared<const TextureData>(texture);
+    if (usage == TextureUsage::Material || m->swappable) r->source = source;
     try {
-        m->backend->createTextureData({id}, texture);
+        const uint32_t first = m->wantedFirstMip(*r);
+        m->uploadTexture({id}, *source, first, true, r->residentBytes);
+        r->resident = first;
     } catch (...) {
         m->release(m->freeTextures, id);
         throw;
     }
-    if (m->swappable) {
-        std::lock_guard lock(m->journalMutex);
-        m->packedTextures[id] = texture;
-    }
+    std::lock_guard lock(m->residencyMutex);
+    m->records[id] = r;
+    m->requeueLocked(id, *r);
     return {id};
 }
 
-void Renderer::updateTexture(TextureHandle texture, const TextureData& data) {
+void Renderer::updateTexture(TextureHandle texture, const TextureData& data, std::optional<TextureUsage> usage) {
     if (!data.valid()) throw std::runtime_error("updateTexture: the texture data is incomplete");
     std::shared_lock swap(m->swapMutex);
     if (!m->backend->supportsTextureFormat(data.format))
         throw std::runtime_error(std::string("updateTexture: this GPU can't use ") + textureFormatName(data.format));
-    m->backend->updateTextureData(texture, data);
-    if (m->swappable) {
-        std::lock_guard lock(m->journalMutex);
-        m->packedTextures[texture.id] = data;
-        m->textures.erase(texture.id);
+    const auto r = m->record(texture.id);
+    if (!r) {
+        m->backend->updateTextureData(texture, data);
+        return;
     }
+    std::lock_guard levels(r->mutex);
+    auto source = std::make_shared<const TextureData>(data);
+    uint32_t first = 0;
+    {
+        std::lock_guard lock(m->residencyMutex);
+        if (usage) r->usage = *usage;
+        r->format = data.format;
+        r->width = data.width;
+        r->height = data.height;
+        r->levels = data.levels.size() > 1 ? uint32_t(data.levels.size()) : textureMipCount(data.width, data.height);
+        r->source = r->usage == TextureUsage::Material || m->swappable ? source : nullptr;
+        first = r->source ? m->wantedFirstMip(*r) : 0;
+    }
+    uint64_t bytes = 0;
+    m->uploadTexture(texture, *source, first, false, bytes);
+    std::lock_guard lock(m->residencyMutex);
+    r->resident = first;
+    r->residentBytes = bytes;
+    r->failed = UINT32_MAX;
+    m->requeueLocked(texture.id, *r);
+}
+
+// ---- Material bindings (G02) ----
+
+SamplerHandle Renderer::sampler(const SamplerDesc& wanted) {
+    SamplerDesc desc = wanted;
+    desc.maxAnisotropy = std::clamp<uint8_t>(desc.maxAnisotropy, 1, 16);
+    if (!desc.mipmaps) desc.mipFilter = TextureFilter::Linear;   // unused, so one desc either way
+    std::shared_lock swap(m->swapMutex);
+    std::lock_guard lock(m->samplerMutex);
+    for (uint32_t id = 0; id < m->samplers.size(); ++id)
+        if (m->samplers[id] == desc) return {id};
+    if (m->samplers.size() >= kMaxSamplers) {
+        if (!m->samplersFull)
+            SW_LOG(LogRender, Warning, "more than {} different samplers; the rest use the default", kMaxSamplers);
+        m->samplersFull = true;
+        return {};
+    }
+    const SamplerHandle handle{uint32_t(m->samplers.size())};
+    m->backend->createSampler(handle, desc);
+    m->samplers.push_back(desc);
+    return handle;
+}
+SamplerDesc Renderer::samplerDesc(SamplerHandle sampler) const {
+    std::lock_guard lock(m->samplerMutex);
+    return sampler.id < m->samplers.size() ? m->samplers[sampler.id] : SamplerDesc{};
+}
+void Renderer::setAnisotropy(uint32_t anisotropy) {
+    m->anisotropy = std::clamp(anisotropy, 1u, 16u);
+    m->backend->setAnisotropy(m->anisotropy);
+}
+uint32_t Renderer::anisotropy() const { return m->anisotropy; }
+
+// ---- Texture quality (A01) ----
+
+void Renderer::setTextureQuality(TextureQuality quality) {
+    std::lock_guard lock(m->residencyMutex);
+    if (m->textureQuality.exchange(uint32_t(quality)) == uint32_t(quality)) return;
+    for (auto& [id, r] : m->records) {
+        r->failed = UINT32_MAX;
+        m->requeueLocked(id, *r);
+    }
+}
+TextureQuality Renderer::textureQuality() const {
+    return static_cast<TextureQuality>(m->textureQuality.load(std::memory_order_relaxed));
+}
+TextureResidencyStats Renderer::textureResidency() const {
+    TextureResidencyStats stats;
+    std::lock_guard lock(m->residencyMutex);
+    for (const auto& [id, r] : m->records) {
+        if (r->usage != TextureUsage::Material) continue;
+        ++stats.textures;
+        stats.reduced += r->resident > 0;
+        stats.pending +=
+            r->queued || r->busy || (m->wantedFirstMip(*r) != r->resident && m->wantedFirstMip(*r) != r->failed);
+        stats.residentBytes += r->residentBytes;
+        if (r->source) {
+            stats.fullBytes += r->source->levels.size() > 1 ? r->source->gpuBytes()
+                                                            : textureChainBytes(r->format, r->width, r->height);
+            stats.retainedBytes += r->source->bytes.size();
+        }
+    }
+    return stats;
+}
+bool Renderer::textureResidency(TextureHandle texture, uint32_t& width, uint32_t& height, uint32_t& firstMip) const {
+    const auto r = m->record(texture.id);
+    if (!r) return false;
+    std::lock_guard lock(m->residencyMutex);
+    width = r->width;
+    height = r->height;
+    firstMip = r->resident;
+    return true;
 }
 
 bool Renderer::supportsTextureFormat(TextureFormat format) const {
@@ -467,7 +807,25 @@ RendererCapabilities Renderer::capabilities() const {
     if (caps.backend.empty()) caps.backend = m->backendName;
     return caps;
 }
-std::vector<EffectiveSetting> Renderer::effectiveSettings() const { return m->backend->effectiveSettings(); }
+std::vector<EffectiveSetting> Renderer::effectiveSettings() const {
+    std::vector<EffectiveSetting> settings = m->backend->effectiveSettings();
+    // Texture levels are the Renderer's own work, whatever the backend.
+    const TextureResidencyStats stats = textureResidency();
+    EffectiveSetting quality;
+    quality.name = "texture_quality";
+    quality.requested = quality.effective = textureQualityName(textureQuality());
+    if (stats.pending) quality.reason = "pending: " + std::to_string(stats.pending) + " textures changing levels";
+    const auto mib = [](uint64_t bytes) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%.1f", double(bytes) / (1024.0 * 1024.0));
+        return std::string(text);
+    };
+    quality.detail = std::to_string(stats.reduced) + " of " + std::to_string(stats.textures) +
+                     " material textures reduced; " + mib(stats.residentBytes) + " MiB on the GPU (" +
+                     mib(stats.fullBytes) + " MiB at ultra); " + mib(stats.retainedBytes) + " MiB CPU copies";
+    settings.push_back(std::move(quality));
+    return settings;
+}
 RendererMemoryReport Renderer::memoryReport() const {
     RendererMemoryReport report = m->backend->memoryReport();
     std::lock_guard lock(m->journalMutex);
@@ -475,8 +833,10 @@ RendererMemoryReport Renderer::memoryReport() const {
         report.cpuCopyBytes += mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(uint32_t);
     for (const auto& [id, lods] : m->meshLods) report.cpuCopyBytes += lods.second.size() * sizeof(uint32_t);
     for (const auto& [id, skin] : m->skins) report.cpuCopyBytes += skin.size() * sizeof(VertexSkin);
-    for (const auto& [id, texture] : m->textures) report.cpuCopyBytes += texture.rgba.size();
-    for (const auto& [id, texture] : m->packedTextures) report.cpuCopyBytes += texture.bytes.size();
+    for (const auto& [id, mesh] : m->meshes) report.cpuCopyBytes += mesh.uv1.size() * sizeof(glm::vec2);
+    std::lock_guard records(m->residencyMutex);
+    for (const auto& [id, r] : m->records)
+        if (r->source) report.cpuCopyBytes += r->source->bytes.size();
     return report;
 }
 void Renderer::requestScreenshot(const std::string& path) { m->backend->requestScreenshot(path); }
@@ -488,7 +848,10 @@ const char* Renderer::presentModeName() const { return m->backend->presentModeNa
 
 // ---- Engine calls ----
 
-bool Renderer::beginFrame() { return m->backend->beginFrame(); }
+bool Renderer::beginFrame() {
+    m->pumpResidency();
+    return m->backend->beginFrame();
+}
 void Renderer::endFrame() { m->backend->endFrame(); }
 void Renderer::onResize() { m->backend->onResize(); }
 void Renderer::waitIdle() { m->backend->waitIdle(); }
