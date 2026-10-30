@@ -43,11 +43,58 @@ void VulkanRenderer::Impl::drawMesh(
     }
     // The vertex tangents follow UV0 as modelled. A normal map read through UV1, rotated or
     // mirrored UVs needs a tangent frame of its own UVs (shaders/mesh.frag).
-    const TextureBinding& normal = material.bindings[size_t(MaterialSlot::Normal)];
-    const bool vertexTangents = normal.uvSet == 0 && normal.transform.rotation == 0.0f &&
-                                normal.transform.scale.x > 0.0f && normal.transform.scale.y > 0.0f &&
-                                material.uvScale.x > 0.0f && material.uvScale.y > 0.0f;
-    command.data.flags = material.normalTexture.id && !vertexTangents ? kDrawDerivativeTangents : 0u;
+    auto vertexTangents = [&](const TextureBinding& normal) {
+        return normal.uvSet == 0 && normal.transform.rotation == 0.0f && normal.transform.scale.x > 0.0f &&
+               normal.transform.scale.y > 0.0f && material.uvScale.x > 0.0f && material.uvScale.y > 0.0f;
+    };
+    command.data.flags = material.normalTexture.id && !vertexTangents(material.bindings[size_t(MaterialSlot::Normal)])
+                             ? kDrawDerivativeTangents
+                             : 0u;
+    command.data.layers = 0;
+    // Detail and second layers (A02); material_quality low leaves the detail out.
+    LayerData layer{};
+    const MaterialLayers* layers = material.layers;
+    const bool detail = layers && layers->detail && materialDetail.load(std::memory_order_relaxed);
+    if (layers && (detail || layers->layer)) {
+        auto slot = [&](TextureHandle t) { return t.id ? textureSlot(t.id) : 0u; };
+        auto binding = [&](MaterialSlot s) -> const TextureBinding& { return layers->bindings[size_t(s) - kMaterialSlots]; };
+        if (detail) {
+            layer.flags |= kLayerDetail;
+            layer.detailColor = textureSlot(layers->detailColorTexture.id);
+            layer.detailNormal = slot(layers->detailNormalTexture);
+            layer.detailMask = textureSlot(layers->detailMaskTexture.id);
+            layer.detailMaskChannel = std::min(layers->detailMaskChannel, 3u);
+            layer.detailStrength = layers->detailStrength;
+            layer.detailNormalScale = layers->detailNormalScale;
+            layer.detailRoughness = layers->detailRoughness;
+            layer.detailRoughnessStrength = layers->detailRoughnessStrength;
+            layer.detailFade = layers->detailFade;
+            if (layer.detailNormal && !vertexTangents(binding(MaterialSlot::DetailNormal)))
+                layer.flags |= kLayerDetailDerivativeTangents;
+        }
+        if (layers->layer) {
+            layer.flags |= kLayerSecond;
+            layer.layerMask = textureSlot(layers->layerMaskTexture.id);
+            layer.layerMaskSource = std::min(layers->layerMask, 6u);
+            layer.layerBaseColor = textureSlot(layers->layerBaseColorTexture.id);
+            layer.layerNormal = slot(layers->layerNormalTexture);
+            layer.layerMetallicRoughness = textureSlot(layers->layerMetallicRoughnessTexture.id);
+            layer.layerBaseColorFactor = layers->layerBaseColor;
+            layer.layerMetallic = layers->layerMetallic;
+            layer.layerRoughness = layers->layerRoughness;
+            layer.layerNormalScale = layers->layerNormalScale;
+            if (layer.layerNormal && !vertexTangents(binding(MaterialSlot::LayerNormal)))
+                layer.flags |= kLayerSecondDerivativeTangents;
+        }
+        for (size_t i = 0; i < kLayerSlots; ++i) {
+            const TextureBinding& b = layers->bindings[i];
+            SlotBinding& out = layer.slots[i];
+            out.offset = b.transform.offset;
+            out.scale = b.transform.scale;
+            out.rotation = b.transform.rotation;
+            out.samplerAndSet = samplerSlot(b.sampler) | (b.uvSet == 1 ? kSlotUvSet1 : 0u);
+        }
+    }
     command.data.alphaCutoff = material.alphaCutoff;
     command.doubleSided = material.doubleSided;
     command.blend = material.blend;
@@ -70,11 +117,19 @@ void VulkanRenderer::Impl::drawMesh(
     command.visible = viewFrustum.intersects(command.bounds);
 
     const uint32_t thread = JobSystem::threadIndex();
+    auto add = [&](DrawList& list, uint32_t index) {
+        command.skinList = index;   // the list it's in, for its layers too
+        if (layer.flags) {
+            command.layers = static_cast<uint32_t>(list.layers.size());
+            list.layers.push_back(layer);
+        }
+        addDraw(list, index, command, handle.id, joints);
+    };
     if (thread < drawLists.size()) {
-        addDraw(drawLists[thread], thread, command, handle.id, joints);
+        add(drawLists[thread], thread);
     } else {
         std::lock_guard lock(foreignDrawMutex);
-        addDraw(foreignDraws, static_cast<uint32_t>(drawLists.size()), command, handle.id, joints);
+        add(foreignDraws, static_cast<uint32_t>(drawLists.size()));
     }
 }
 
@@ -83,11 +138,13 @@ void VulkanRenderer::Impl::clearDrawLists() {
         list.commands.clear();
         list.skins.clear();
         list.joints.clear();
+        list.layers.clear();
     }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
     foreignDraws.skins.clear();
     foreignDraws.joints.clear();
+    foreignDraws.layers.clear();
     skinDispatches.clear();
 }
 
@@ -283,14 +340,29 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     // transparency path; intersecting transparent surfaces need a later solution.
     std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
     prepareSkinning(f);
-    // One draw table serves the scene and every shadow map.
+    // One draw table serves the scene and every shadow map; draws with detail or second
+    // layers point at their entries in the layer table.
+    uint32_t layerCount = 0;
+    for (const DrawCommand& draw : draws) layerCount += draw.layers != kNoLayers;
+    if (layerCount) ensureLayerCapacity(f, layerCount);
+    uint32_t nextLayer = 0;
+    std::lock_guard lock(foreignDrawMutex);
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
         f.drawData[i] = draws[i].data;
+        if (draws[i].layers == kNoLayers) continue;
+        const DrawList& list = draws[i].skinList < drawLists.size() ? drawLists[draws[i].skinList] : foreignDraws;
+        f.layerData[nextLayer] = list.layers[draws[i].layers];
+        f.drawData[i].layers = f.layerAddress + VkDeviceAddress(nextLayer) * sizeof(LayerData);
+        ++nextLayer;
     }
     vk::check(
         vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0, sizeof(DrawData) * draws.size()),
         "vmaFlushAllocation");
+    if (layerCount)
+        vk::check(
+            vmaFlushAllocation(context->allocator(), f.layerBuffer.allocation, 0, sizeof(LayerData) * layerCount),
+            "vmaFlushAllocation");
 }
 
 VkPipeline VulkanRenderer::Impl::meshPipelineFor(const DrawCommand& draw) const {

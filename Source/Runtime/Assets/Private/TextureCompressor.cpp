@@ -34,7 +34,8 @@ void TextureCompressor::add(std::shared_ptr<Task> task) {
         std::lock_guard lock(m_state->mutex);
         // An older version still waiting is no longer wanted.
         std::erase_if(m_state->tasks, [&](const std::shared_ptr<Task>& t) {
-            return t->asset == task->asset && t->modelTexture == task->modelTexture && !t->started.load();
+            return t->asset == task->asset && t->modelTexture == task->modelTexture && t->variant == task->variant &&
+                   !t->started.load();
         });
         m_state->tasks.push_back(std::move(task));
         if (!m_thread.joinable()) m_thread = std::thread([state = m_state] { loop(*state); });
@@ -99,7 +100,7 @@ void TextureCompressor::waitUntilIdle(std::unique_lock<std::mutex>& lock) {
 
 void TextureCompressor::run(Task& task) {
     std::vector<uint8_t> ktx2;
-    if (encodeKtx2(task.image, task.mode, task.srgb, ktx2, task.error)) {
+    if (encodeKtx2(task.image, task.mode, task.srgb, ktx2, task.error, task.coverageCutoff)) {
         task.compressedBytes = ktx2.size();
         std::string cacheError;
         if (!task.cacheFile.empty() && !storeCachedTexture(task.cacheFile, ktx2, cacheError))

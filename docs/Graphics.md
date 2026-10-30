@@ -49,13 +49,16 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `anisotropy`: `1`, `2`, `4`, `8` or `16` (the default). The most anisotropic filtering
   any texture gets; the GPU's limit caps it too. Textures that asked for nearest
   filtering (pixel art) never get it.
+- `material_quality`: `high` (the default) or `low`. Low skips materials' detail layers,
+  the close-up micro texture a `.swmaterial` can add (docs/Graphics/02-MaterialsAndDecals.md);
+  base materials and second layers draw the same. It applies on the next frame.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
-sets bloom quality low, medium or high, texture quality to its own name and anisotropy to
-4, 8, 16 and 16. `matchingGraphicsPreset` names the preset the
-quality settings match, or none ("Custom"). Medium, High and Ultra are also available. These
-are starting points, not hardware detection or a performance guarantee. LOD quality only
+sets bloom quality low, medium or high, texture quality to its own name, anisotropy to
+4, 8, 16 and 16, and material quality low for Low and high for the rest.
+`matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
+Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in
 memory and uses the same validation.
 

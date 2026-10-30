@@ -168,6 +168,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
 
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
+        checkMaterialOverrides(world, scene.string(), problems);
         checkAnimators(world, scene.string(), problems);
         checkCircuits(world, scene.string(), problems, usedCircuits);
         checkNetworkScene(world, shown, problems);
@@ -248,6 +249,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
     }
     if (m_tool.scenes.empty()) checkUnusedEffects(checkedEffects, problems);
+    if (m_tool.scenes.empty()) checkMaterialFiles();
     // Input bindings: optional, but a broken file means broken controls.
     const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
     if (fs::exists(inputFile)) {

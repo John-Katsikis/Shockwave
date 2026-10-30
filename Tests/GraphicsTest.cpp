@@ -135,6 +135,20 @@ int main() {
             check(
                 !setGraphicsSetting(textures, "anisotropy", bad, error) && textures.anisotropy == 2,
                 "anisotropy values");
+        check(
+            graphicsPreset(GraphicsPreset::Low).materialQuality == MaterialQuality::Low &&
+                graphicsPreset(GraphicsPreset::Medium).materialQuality == MaterialQuality::High &&
+                GraphicsSettings{}.materialQuality == MaterialQuality::High,
+            "only the low preset drops material detail layers");
+        check(
+            setGraphicsSetting(textures, "material_quality", "low", error) &&
+                textures.materialQuality == MaterialQuality::Low,
+            "set material_quality");
+        for (const char* bad : {"medium", "ultra", "0", ""})
+            check(
+                !setGraphicsSetting(textures, "material_quality", bad, error) &&
+                    textures.materialQuality == MaterialQuality::Low,
+                "material_quality values");
         auto custom = graphicsPreset(GraphicsPreset::High);
         custom.antiAliasing = AntiAliasing::None;
         check(!matchingGraphicsPreset(custom), "hand-tuned settings are Custom");

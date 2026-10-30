@@ -110,6 +110,10 @@ public:
     // once no frame uses them. Main thread.
     void setAnisotropy(uint32_t anisotropy);
     uint32_t anisotropy() const;
+    // Whether draws use their materials' detail layers (MaterialLayers). From the next
+    // frame's draws on. Main thread.
+    void setMaterialQuality(MaterialQuality quality);
+    MaterialQuality materialQuality() const;
 
     // ---- Texture quality (A01) ----
     // Main thread. Material textures (TextureUsage::Material) are rebuilt with their

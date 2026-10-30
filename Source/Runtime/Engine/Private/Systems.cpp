@@ -114,6 +114,15 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                     parent = parentOf(world, parent);
                 }
             }
+            // A material asset decides the surface; the component's own values otherwise.
+            if (const auto asset = m.material.valid() && assets ? assets->material(m.material) : nullptr) {
+                DrawMaterial material = asset->draw;
+                material.uvScale = m.tiling;
+                material.castShadows = m.castShadows;
+                renderer.drawMesh(
+                    m.mesh, model, asset->baseColorTexture, asset->baseColor * m.tint, material, instanceKey(world, e));
+                return;
+            }
             DrawMaterial material;
             material.uvScale = m.tiling;
             material.roughness = m.roughness;
@@ -144,33 +153,27 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                 if (pose && (pose->model != asset || pose->nodes.size() != asset->data.nodes.size())) pose = nullptr;
                 std::vector<glm::mat4> rest;   // the nodes as modelled, for skinned meshes without a pose
                 thread_local std::vector<glm::mat4> joints;
+                // Parts drawn with a material asset instead of their own (A02), by source material.
+                thread_local std::vector<std::shared_ptr<const MaterialAsset>> overrides;
+                overrides.assign(asset->data.materials.size(), nullptr);
+                for (const MaterialOverride& o : instance.materials)
+                    for (size_t i = 0; i < asset->data.materials.size(); ++i)
+                        if (asset->data.materials[i].name == o.part) overrides[i] = assets->material(o.material);
                 for (size_t n = 0; n < asset->data.nodes.size(); ++n) {
                     const auto& node = asset->data.nodes[n];
                     for (const auto& index : node.meshes) {
                         const auto& mesh = asset->data.meshes[index];
+                        if (mesh.material >= asset->data.materials.size()) continue;
                         const auto& material = asset->data.materials[mesh.material];
-                        auto map = [&](int index) {
-                            return index < 0 || size_t(index) >= asset->textures.size() ? TextureHandle{}
-                                                                                        : asset->textures[index];
-                        };
-                        const auto texture = map(material.baseColorTexture);
-                        DrawMaterial options;
-                        options.alphaCutoff =
-                            material.alpha == ModelMaterial::Alpha::Mask ? material.alphaCutoff : -1.0f;
-                        options.doubleSided = material.doubleSided;
-                        options.blend = material.alpha == ModelMaterial::Alpha::Blend;
-                        options.roughness = material.roughness;
-                        options.metallic = material.metallic;
-                        options.emissive = material.emissive;
-                        options.normalTexture = map(material.normalTexture);
-                        options.metallicRoughnessTexture = map(material.metallicRoughnessTexture);
-                        options.emissiveTexture = map(material.emissiveTexture);
-                        options.occlusionTexture = map(material.occlusionTexture);
-                        options.normalScale = material.normalScale;
-                        options.occlusionStrength = material.occlusionStrength;
-                        for (size_t slot = 0; slot < kMaterialSlots; ++slot)
-                            options.bindings[slot] = drawBinding(*asset, mesh.material, MaterialSlot(slot));
+                        const MaterialAsset* replaced = overrides[mesh.material].get();
+                        DrawMaterial options = replaced ? replaced->draw : modelDrawMaterial(*asset, mesh.material);
                         options.castShadows = instance.castShadows;
+                        const int baseMap = material.baseColorTexture;
+                        const TextureHandle texture =
+                            replaced ? replaced->baseColorTexture
+                            : baseMap < 0 || size_t(baseMap) >= asset->textures.size() ? TextureHandle{}
+                                                                                       : asset->textures[size_t(baseMap)];
+                        const glm::vec4 baseColor = (replaced ? replaced->baseColor : material.baseColor) * instance.tint;
                         // Node and slot within it: the same part of the model every frame.
                         const auto slot = static_cast<uint32_t>(&index - node.meshes.data());
                         const RenderInstanceKey key = instanceKey(world, e, modelPartKey(uint32_t(n), slot));
@@ -179,14 +182,12 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                             if (!pose && rest.empty())
                                 for (const auto& each : asset->data.nodes) rest.push_back(each.world);
                             skinMatrices(mesh, pose ? std::span<const glm::mat4>(pose->nodes) : rest, joints);
-                            renderer.drawSkinnedMesh(
-                                asset->meshes[index], model, joints, texture, material.baseColor * instance.tint,
-                                options, key);
+                            renderer.drawSkinnedMesh(asset->meshes[index], model, joints, texture, baseColor, options, key);
                             continue;
                         }
                         renderer.drawMesh(
-                            asset->meshes[index], model * (pose ? pose->nodes[n] : node.world), texture,
-                            material.baseColor * instance.tint, options, key);
+                            asset->meshes[index], model * (pose ? pose->nodes[n] : node.world), texture, baseColor,
+                            options, key);
                     }
                 }
             },

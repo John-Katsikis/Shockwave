@@ -82,6 +82,7 @@ layout(location = 8) in vec4 vTangent;
 layout(location = 9) flat in uvec4 vMaps;   // normal, metallic-roughness, emissive, occlusion; 0: none
 layout(location = 10) flat in vec2 vMapScales;   // normal scale, occlusion strength
 layout(location = 11) flat in uint vDraw;
+layout(location = 12) in float vLayerMask;
 
 layout(location = 0) out vec4 outColor;
 
@@ -227,33 +228,74 @@ bool derivativeTangents(vec3 n, vec2 uv, out vec3 t, out vec3 b) {
     return true;
 }
 
+// A normal map's tangent frame at this pixel: the vertex tangents', or (derivative) one built
+// from the screen derivatives of its UVs. False where there's none to be had.
+bool tangentFrame(vec3 n, vec2 uv, bool derivative, out vec3 t, out vec3 b) {
+    if (derivative) return derivativeTangents(n, uv, t, b);
+    t = vTangent.xyz - n * dot(n, vTangent.xyz);
+    float t2 = dot(t, t);
+    if (t2 <= 1e-12) return false;
+    t *= inversesqrt(t2);
+    b = cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0);
+    return true;
+}
+
+// How far into the mip chain a map is read, 0..1: specular anti-aliasing (Toksvig) only
+// trusts a shortened normal where the GPU has averaged several texels into it, not where
+// 8-bit or BC7 rounding shortens it by a hair at full size.
+float filteredShare(uint map, SlotBinding binding, vec2 uv) {
+    return clamp(textureQueryLod(
+        sampler2D(textures[nonuniformEXT(map)], materialSamplers[nonuniformEXT(slotSampler(binding))]), uv).y, 0.0, 1.0);
+}
+
+// Reoriented normal mapping (Barre-Brisebois and Hill 2012): detail d on base b, both unit
+// tangent-space normals. Where b points straight back, d is turned half a turn about x.
+// Must match composeNormals in Assets/Material.cpp.
+vec3 composeNormals(vec3 b, vec3 d) {
+    vec3 t = b + vec3(0.0, 0.0, 1.0);
+    if (t.z <= 1e-4) return vec3(d.x, -d.y, -d.z);
+    vec3 u = d * vec3(-1.0, -1.0, 1.0);
+    return normalize(t * (dot(t, u) / t.z) - u);
+}
+
+// Toksvig 2005 through the Blinn-Phong exponent equivalent to GGX alpha: a shortened mean
+// normal widens the highlight. Must match toksvigAlpha in Assets/Material.cpp.
+float toksvigAlpha(float alpha, float len) {
+    if (!(len < 1.0)) return alpha;
+    if (len <= 0.0) return 1.0;
+    float a2 = max(alpha * alpha, 1e-7);
+    float s = 2.0 / a2 - 2.0;
+    float ft = len / (len + s * (1.0 - len));
+    return sqrt(2.0 / (ft * s + 2.0));
+}
+
+// One normal map's tilt of n, in world space. len: the decoded normal's length, where the
+// GPU has filtered it (1 elsewhere), for Toksvig.
+vec3 mappedNormal(vec3 n, uint map, SlotBinding binding, bool derivative, float scale, out float len) {
+    len = 1.0;
+    vec2 uv = slotUv(binding, vUvs);
+    vec3 t, b;
+    if (!tangentFrame(n, uv, derivative, t, b)) return n;
+    vec3 m = sampleSlot(map, binding, uv).xyz * 2.0 - 1.0;
+    len = mix(1.0, min(length(m) / 0.996, 1.0), filteredShare(map, binding, uv));
+    m.xy *= scale;
+    return normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
+}
+
 // The surface normal, tilted by the normal map (tangent space, glTF's convention: green
-// points up the texture), and turned around on back faces.
-vec3 surfaceNormal() {
+// points up the texture), not yet turned around for back faces. len as mappedNormal.
+vec3 surfaceNormal(out float len) {
     vec3 n = normalize(vNormal);
+    len = 1.0;
     if (vMaps.x != 0u) {
-        SlotBinding binding = pc.drawBuffer.draws[vDraw].slots[kNormal];
-        vec2 uv = slotUv(binding, vUvs);
-        vec3 t, b;
-        bool hasFrame;
-        if ((pc.drawBuffer.draws[vDraw].flags & kDerivativeTangents) != 0u) {
-            hasFrame = derivativeTangents(n, uv, t, b);
-        } else {
-            t = vTangent.xyz - n * dot(n, vTangent.xyz);
-            float t2 = dot(t, t);
-            hasFrame = t2 > 1e-12;
-            if (hasFrame) {
-                t *= inversesqrt(t2);
-                b = cross(n, t) * (vTangent.w < 0.0 ? -1.0 : 1.0);
-            }
-        }
-        if (hasFrame) {
-            vec3 m = sampleSlot(vMaps.x, binding, uv).xyz * 2.0 - 1.0;
-            m.xy *= vMapScales.x;
-            n = normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
-        }
+        bool derivative = (pc.drawBuffer.draws[vDraw].flags & kDerivativeTangents) != 0u;
+        n = mappedNormal(n, vMaps.x, pc.drawBuffer.draws[vDraw].slots[kNormal], derivative, vMapScales.x, len);
     }
-    return gl_FrontFacing ? n : -n;
+    return n;
+}
+
+float maskChannel(vec4 v, uint channel) {
+    return channel == 0u ? v.r : channel == 1u ? v.g : channel == 2u ? v.b : v.a;
 }
 
 void main() {
@@ -262,7 +304,79 @@ void main() {
     if (kAlphaTest && vAlphaCutoff >= 0.0 && albedo.a < vAlphaCutoff) discard;
 
     FrameBuffer frame = pc.frame;
-    vec3 n = surfaceNormal();
+    float normalLength;
+    vec3 n = surfaceNormal(normalLength);
+    vec2 roughnessMetallic = vRoughnessMetallic;
+    if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
+
+    // Detail and second layers (A02): mixed into the surface before a single evaluation of
+    // the lighting. Alpha, emission and occlusion stay the first layer's.
+    uvec2 layerAddress = pc.drawBuffer.draws[vDraw].layers;
+    if (layerAddress != uvec2(0u)) {
+        LayerBuffer layers = LayerBuffer(layerAddress);
+        uint flags = layers.layer.flags;
+        vec3 geometric = normalize(vNormal);
+        if ((flags & kLayerSecond) != 0u) {
+            uint source = layers.layer.layerMaskSource;
+            float mask = vLayerMask;
+            if (source < 4u) mask = maskChannel(sampleSlot(layers.layer.layerMask, layers.layer.slots[kLayerMaskSlot],
+                slotUv(layers.layer.slots[kLayerMaskSlot], vUvs)), source);
+            mask = clamp(mask, 0.0, 1.0);
+            SlotBinding colorBinding = layers.layer.slots[kLayerBaseColor];
+            vec3 layerColor = sampleSlot(layers.layer.layerBaseColor, colorBinding, slotUv(colorBinding, vUvs)).rgb *
+                              layers.layer.layerBaseColorFactor.rgb;
+            albedo.rgb = mix(albedo.rgb, layerColor, mask);
+            vec2 layerRm = vec2(layers.layer.layerRoughness, layers.layer.layerMetallic);
+            SlotBinding rmBinding = layers.layer.slots[kLayerMetallicRoughness];
+            layerRm *= sampleSlot(layers.layer.layerMetallicRoughness, rmBinding, slotUv(rmBinding, vUvs)).gb;
+            roughnessMetallic = mix(roughnessMetallic, layerRm, mask);
+            vec3 layerNormal = geometric;
+            float layerLength = 1.0;
+            if (layers.layer.layerNormal != 0u)
+                layerNormal = mappedNormal(geometric, layers.layer.layerNormal, layers.layer.slots[kLayerNormal],
+                    (flags & kLayerSecondDerivativeTangents) != 0u, layers.layer.layerNormalScale, layerLength);
+            vec3 mixed = mix(n, layerNormal, mask);
+            float mixedLength = length(mixed);
+            n = mixedLength > 1e-6 ? mixed / mixedLength : geometric;
+            normalLength = mix(normalLength, layerLength, mask);
+        }
+        if ((flags & kLayerDetail) != 0u) {
+            float weight = layers.layer.detailStrength;
+            SlotBinding maskBinding = layers.layer.slots[kDetailMask];
+            weight *= maskChannel(sampleSlot(layers.layer.detailMask, maskBinding, slotUv(maskBinding, vUvs)),
+                layers.layer.detailMaskChannel);
+            vec2 fade = layers.layer.detailFade;
+            if (fade.y > 0.0) {
+                float distance = length(frame.cameraPosition - vWorldPosition);
+                weight *= 1.0 - (fade.y > fade.x ? smoothstep(fade.x, fade.y, distance) : step(fade.y, distance));
+            }
+            weight = clamp(weight, 0.0, 1.0);
+            // Colour multiplies around neutral white.
+            SlotBinding colorBinding = layers.layer.slots[kDetailColor];
+            vec3 detailColor = sampleSlot(layers.layer.detailColor, colorBinding, slotUv(colorBinding, vUvs)).rgb;
+            albedo.rgb *= mix(vec3(1.0), detailColor, weight);
+            roughnessMetallic.x = mix(roughnessMetallic.x, layers.layer.detailRoughness,
+                weight * layers.layer.detailRoughnessStrength);
+            uint detailMap = layers.layer.detailNormal;
+            SlotBinding normalBinding = layers.layer.slots[kDetailNormal];
+            vec2 uv = slotUv(normalBinding, vUvs);
+            vec3 t, b;
+            if (detailMap != 0u && weight > 0.0 &&
+                tangentFrame(geometric, uv, (flags & kLayerDetailDerivativeTangents) != 0u, t, b)) {
+                vec3 d = sampleSlot(detailMap, normalBinding, uv).xyz * 2.0 - 1.0;
+                float detailLength = mix(1.0, min(length(d) / 0.996, 1.0), filteredShare(detailMap, normalBinding, uv));
+                // Strength scales the slopes; the composition works on unit normals.
+                d.xy *= layers.layer.detailNormalScale * weight;
+                d.z = max(d.z, 1e-3);
+                d = normalize(d);
+                vec3 based = vec3(dot(n, t), dot(n, b), dot(n, geometric));   // the surface so far, in the detail's frame
+                vec3 r = composeNormals(based, d);
+                n = normalize(t * r.x + b * r.y + geometric * r.z);
+                normalLength *= mix(1.0, detailLength, weight);
+            }
+        }
+    }
+    n = gl_FrontFacing ? n : -n;
     vec3 emissive = vEmissive;
     if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
@@ -275,11 +389,14 @@ void main() {
         if (depth < frame.shadowDistance) cascade = c;
     }
 
-    vec2 roughnessMetallic = vRoughnessMetallic;
-    if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
     float roughness = clamp(roughnessMetallic.x, 0.03, 1.0);
     float metallic = clamp(roughnessMetallic.y, 0.0, 1.0);
     float a = roughness * roughness;
+    if (normalLength < 1.0) {
+        // Normal map mips that average disagreeing normals widen the highlight to match.
+        a = toksvigAlpha(a, normalLength);
+        roughness = sqrt(a);
+    }
     vec3 v = normalize(frame.cameraPosition - vWorldPosition);
     float nDotV = max(dot(n, v), 1e-4);
     vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Assets/Material.h>
 #include <Assets/Model.h>
 #include <Engine/PhysicsComponents.h>
 #include <Engine/World.h>
@@ -54,16 +55,33 @@ struct MeshRenderer {
     glm::vec4 emissive{0, 0, 0, 1};   // light the surface gives off itself (rgb)
     float emissiveIntensity = 1.0f;   // multiplies emissive; above 1 for bright glows
     bool castShadows = true;
+    // A material asset (.swmaterial, A02). When set it decides the surface: texture,
+    // roughness, metallic and emissive above are ignored, tint multiplies its base color
+    // and tiling its UVs.
+    MaterialHandle material{};
 };
 
 // A reusable imported model. Its internal nodes/materials stay in the asset;
 // this entity's transform places the complete model, and tint multiplies colors.
+// A material asset in place of one of a model's own materials (A02): part is the source
+// material's name, as the model file has it. Names, not positions, so reordering the
+// materials in the modelling tool keeps every override.
+struct MaterialOverride {
+    std::string part;
+    MaterialHandle material;
+    bool operator==(const MaterialOverride&) const = default;
+};
+using MaterialOverrides = std::vector<MaterialOverride>;
+
 struct ModelRenderer {
     ModelHandle model;
     glm::vec4 tint{1.0f};
     bool visible = true;
     bool castShadows = true;
+    MaterialOverrides materials{};   // parts drawn with a material asset instead of their own
 };
+// The override for a model's source material, or null.
+const MaterialOverride* findMaterialOverride(const MaterialOverrides& overrides, std::string_view part);
 
 // What the player sees: a game renders the scene from the primary Camera's world
 // transform, looking down its -Z axis (see primaryCamera in Systems.h). The editor's
@@ -178,7 +196,9 @@ enum class FieldType {
     Texture,
     Model,
     Entity,
-    UIDocument   // a std::string: an .rml document path inside Content (GameUI)
+    UIDocument,   // a std::string: an .rml document path inside Content (GameUI)
+    Material,   // a MaterialHandle: a .swmaterial in Content (A02)
+    MaterialOverrides   // ModelRenderer's per-part materials
 };
 
 struct Field {
@@ -218,6 +238,10 @@ constexpr FieldType fieldTypeOf() {
         return FieldType::Texture;
     else if constexpr (std::is_same_v<T, ModelHandle>)
         return FieldType::Model;
+    else if constexpr (std::is_same_v<T, MaterialHandle>)
+        return FieldType::Material;
+    else if constexpr (std::is_same_v<T, MaterialOverrides>)
+        return FieldType::MaterialOverrides;
     else if constexpr (std::is_same_v<T, Entity>)
         return FieldType::Entity;
     else

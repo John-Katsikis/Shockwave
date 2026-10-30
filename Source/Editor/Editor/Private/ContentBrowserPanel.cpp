@@ -26,7 +26,7 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Circuit, Other };
+enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Circuit, Material, Other };
 
 struct Tile {
     TileKind kind;
@@ -121,6 +121,15 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
         draw->AddBezierCubic(
             ImVec2(c.x - r + 2 * s, c.y - r + 0.7f * s), ImVec2(c.x + r * 0.2f, c.y - r + 0.7f * s),
             ImVec2(c.x - r * 0.2f, c.y + r - 0.7f * s), ImVec2(c.x + r - 2 * s, c.y + r - 0.7f * s), color, 2.0f);
+        return;
+    }
+    if (kind == TileKind::Material) {
+        // A shaded ball: a material on its preview sphere.
+        draw->AddCircle(c, r, color, 0, 2.0f);
+        draw->AddCircleFilled(ImVec2(c.x - r * 0.35f, c.y - r * 0.35f), r * 0.2f, color);
+        draw->AddBezierQuadratic(
+            ImVec2(c.x - r * 0.7f, c.y + r * 0.45f), ImVec2(c.x, c.y + r * 0.9f), ImVec2(c.x + r * 0.7f, c.y + r * 0.45f),
+            color, 1.2f);
         return;
     }
     if (kind == TileKind::Mesh && name == "sphere") {
@@ -335,6 +344,7 @@ void Editor::drawContentItems() {
             const TileKind kind = f.kind == AssetFolder::Kind::Texture ? TileKind::Texture
                                   : f.kind == AssetFolder::Kind::Audio ? TileKind::Audio
                                   : f.kind == AssetFolder::Kind::Model ? TileKind::Model
+                                  : f.kind == AssetFolder::Kind::Material ? TileKind::Material
                                   : f.path.extension() == ".rml"       ? TileKind::UIDocument
                                   : f.path.extension() == ".swprefab"  ? TileKind::Prefab
                                   : f.path.extension() == ".swcircuit" ? TileKind::Circuit
@@ -394,7 +404,7 @@ void Editor::drawContentItems() {
         const Tile& tile = tiles[i];
         const bool failed = tile.file && !tile.file->error.empty();
         const bool usable = tile.kind == TileKind::UIDocument || tile.kind == TileKind::Prefab ||
-                            tile.kind == TileKind::Circuit ||
+                            tile.kind == TileKind::Circuit || tile.kind == TileKind::Material ||
                             (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
         if (i % columns != 0) ImGui::SameLine();
 
@@ -489,6 +499,13 @@ void Editor::drawContentItems() {
             case TileKind::Circuit:
                 ImGui::TextDisabled("Circuit. Drag onto an object to run it there, or double-click to edit it");
                 break;
+            case TileKind::Material:
+                if (tile.file)
+                    if (const auto material = engine().assets().material(tile.file->material);
+                        material && material->desc.chain.size() > 1)
+                        ImGui::TextDisabled("Inherits from %s", material->desc.chain[1].c_str());
+                ImGui::TextDisabled("Material. Drag onto an object or a model's part, or double-click to edit it");
+                break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -502,6 +519,7 @@ void Editor::drawContentItems() {
                                   : tile.kind == TileKind::UIDocument ? kUIDocumentPayload
                                   : tile.kind == TileKind::Prefab     ? kPrefabPayload
                                   : tile.kind == TileKind::Circuit    ? kCircuitPayload
+                                  : tile.kind == TileKind::Material   ? kMaterialPayload
                                                                       : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
@@ -545,6 +563,7 @@ void Editor::drawContentItems() {
             case TileKind::UIDocument: createUIDocument(tile.name); break;
             case TileKind::Prefab: editPrefab(tile.name); break;
             case TileKind::Circuit: openCircuit(tile.name); break;
+            case TileKind::Material: openMaterial(tile.name); break;
             case TileKind::Other: break;
             }
         }
@@ -606,6 +625,16 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("Open in text editor"))
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;
+            case TileKind::Material:
+                if (ImGui::MenuItem("Edit")) openMaterial(tile.name);
+                if (ImGui::MenuItem("Use on the selection", nullptr, false, !selection().empty()))
+                    for (Entity e : selection()) applyMaterial(e, tile.name, {});
+                if (ImGui::MenuItem("New material instance"))
+                    newMaterial(parentOf(tile.name), leafName(fs::path(tile.name).stem().string()) + " instance",
+                                tile.name, {});
+                if (ImGui::MenuItem("Open in text editor"))
+                    SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
+                break;
             case TileKind::Other: break;
             }
             if (failed && ImGui::MenuItem("Retry imports")) m_retryAssetImports = true;
@@ -638,6 +667,8 @@ void Editor::drawContentItems() {
             "background", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
         if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("Import...")) showImportDialog(folderPath);
         if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("New circuit")) newCircuit(m_contentFolder);
+        if (m_contentRoot == ContentRoot::Assets && ImGui::MenuItem("New material"))
+            newMaterial(m_contentFolder, "Material", {}, {});
         if (ImGui::MenuItem("Show in file manager")) openInFileManager(folderPath);
         ImGui::EndPopup();
     }

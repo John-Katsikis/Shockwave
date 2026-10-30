@@ -278,7 +278,7 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::AntiAliasing, aaTarget.image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     for (const Frame& f : frames) {
-        for (const vk::Buffer* b : {&f.drawBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
+        for (const vk::Buffer* b : {&f.drawBuffer, &f.layerBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
             add(GpuMemoryCategory::FrameData, b->allocation);
         add(GpuMemoryCategory::GameUi, f.uiVertexBuffer.allocation);
         add(GpuMemoryCategory::GameUi, f.uiIndexBuffer.allocation);

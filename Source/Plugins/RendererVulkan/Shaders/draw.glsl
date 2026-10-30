@@ -33,6 +33,40 @@ const uint kBaseColor = 0u, kNormal = 1u, kMetallicRoughness = 2u, kEmissive = 3
 // DrawData::flags
 const uint kDerivativeTangents = 1u;   // the normal map's UVs don't follow the vertex tangents
 
+// A draw's detail layer and second layer (A02). Must match LayerData in RendererImpl.h.
+struct LayerData {
+    uint detailColor;   // bindless slots; 0: the white texture (detailNormal: none)
+    uint detailNormal;
+    uint detailMask;
+    uint detailMaskChannel;
+    float detailStrength;
+    float detailNormalScale;
+    float detailRoughness;
+    float detailRoughnessStrength;
+    vec2 detailFade;   // metres from the camera: starts, finishes; finishes 0: never fades
+    uint layerMask;
+    uint layerBaseColor;
+    uint layerNormal;
+    uint layerMetallicRoughness;
+    uint layerMaskSource;   // 0..3 the mask texture's channel, 4..6 the vertex colour's
+    uint flags;
+    vec4 layerBaseColorFactor;
+    float layerMetallic;
+    float layerRoughness;
+    float layerNormalScale;
+    float pad;
+    SlotBinding slots[7];   // MaterialSlot::DetailColor onwards
+};
+layout(buffer_reference, scalar) readonly buffer LayerBuffer {
+    LayerData layer;
+};
+// LayerData::flags
+const uint kLayerDetail = 1u, kLayerSecond = 2u;
+const uint kLayerDetailDerivativeTangents = 4u, kLayerSecondDerivativeTangents = 8u;
+// LayerData::slots
+const uint kDetailColor = 0u, kDetailNormal = 1u, kDetailMask = 2u, kLayerMaskSlot = 3u;
+const uint kLayerBaseColor = 4u, kLayerNormal = 5u, kLayerMetallicRoughness = 6u;
+
 // One entry per draw in the frame's draw table. Must match DrawData in RendererImpl.h.
 struct DrawData {
     mat4 mvp;
@@ -55,6 +89,7 @@ struct DrawData {
     uint flags;
     uvec2 uv1Buffer;   // a Uv1Buffer; 0: the mesh has no second UV set, UV0 stands in
     SlotBinding slots[5];
+    uvec2 layers;   // a LayerBuffer; 0: no detail or second layer
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

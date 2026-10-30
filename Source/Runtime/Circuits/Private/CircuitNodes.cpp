@@ -854,6 +854,8 @@ bool pinTypeForField(FieldType type, PinType& pin) {
     case FieldType::Texture: pin = PinType::Texture; return true;
     case FieldType::Model: pin = PinType::Model; return true;
     case FieldType::Entity: pin = PinType::Entity; return true;
+    case FieldType::Material:
+    case FieldType::MaterialOverrides: return false;   // no material pins yet: set them in the editor
     }
     return false;
 }
@@ -888,6 +890,8 @@ Value readField(const void* component, const Field& field) {
         v.i = static_cast<int32_t>(reinterpret_cast<const ModelHandle*>(p)->id);
         return v;
     }
+    case FieldType::Material:
+    case FieldType::MaterialOverrides: break;   // not exposed (pinTypeForField)
     }
     return {};
 }
@@ -941,6 +945,8 @@ void writeField(void* component, const Field& field, const CircuitCall& call, si
         *reinterpret_cast<ModelHandle*>(p) = handle;
         break;
     }
+    case FieldType::Material:
+    case FieldType::MaterialOverrides: break;   // not exposed (pinTypeForField)
     }
 }
 

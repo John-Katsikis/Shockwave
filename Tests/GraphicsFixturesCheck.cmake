@@ -160,6 +160,41 @@ foreach(view unlit normals lit)
     endif()
 endforeach()
 
+# Material instances (A02): material-instances.swscene draws every materials.glb part
+# through a .swmaterial that only names its source material. Resolved through the same
+# path as the model's own materials, it must match bit for bit in every view.
+foreach(view unlit normals lit)
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/material-instances.swscene" --size 640x360 --fixed-step --frames 10 --view ${view}
+        --screenshot "${TEMP}/material-instances-${view}.png" RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "material-instances (${view}) didn't render: ${out}\n${err}")
+    endif()
+    image_diff(materials-${view} material-instances-${view} json)
+    string(JSON rmse GET "${json}" rmse)
+    if(NOT rmse EQUAL 0)
+        message(FATAL_ERROR "material instances (${view} view) don't draw exactly like their source: rmse ${rmse}")
+    endif()
+endforeach()
+
+# Material quality (A02): low leaves out the detail layer, so the detailed cube changes,
+# and only a little of the image does.
+foreach(quality high low)
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/material-layers.swscene" --size 640x360 --fixed-step --frames 10
+        --graphics-set material_quality=${quality} --screenshot "${TEMP}/layers-${quality}.png"
+        RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "material-layers at material_quality ${quality} didn't render: ${out}\n${err}")
+    endif()
+endforeach()
+image_diff(layers-high layers-low json)
+string(JSON rmse GET "${json}" rmse)
+string(JSON changed GET "${json}" changed_percent)
+if(rmse EQUAL 0 OR changed GREATER 10)
+    message(FATAL_ERROR "material_quality low should drop only the detail layer: rmse ${rmse}, ${changed}% changed")
+endif()
+
 # Texture quality (A01): low keeps a fraction of each large material texture on the GPU,
 # the image changes (softer: the fine floor checker averages to grey up close), and the
 # report says so. That the averaging is in linear light is TextureQualityTest's job.

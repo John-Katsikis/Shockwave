@@ -32,6 +32,7 @@ public:
     void setMeshUv1(MeshHandle id, std::span<const glm::vec2> uv1) override;
     void createSampler(SamplerHandle id, const SamplerDesc& desc) override;
     void setAnisotropy(uint32_t anisotropy) override;
+    void setMaterialQuality(MaterialQuality quality) override;
     void updateTextureData(TextureHandle id, const TextureData& data) override;
     void setLodSettings(const LodSettings& settings) override;
     LodStats lodStats() const override;

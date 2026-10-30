@@ -218,6 +218,7 @@ void Editor::onGui() {
     if (m_showSaveGames) drawSaveGamesWindow();
     if (m_showCircuits) drawCircuitsWindow();
     if (m_showNetwork) drawNetworkWindow();
+    if (m_showMaterial) drawMaterialWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);

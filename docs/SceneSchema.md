@@ -319,6 +319,7 @@ No fields; the component's presence is what matters.
 | Field | Value | Default |
 |---|---|---|
 | `mesh` | mesh name, or none | `none` |
+| `material` | quoted .swmaterial path inside Content, or none | `none` |
 | `texture` | texture name (white when unset) | `white` |
 | `tint` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
 | `tiling` | x y; range 0.001 to 10000 | `1 1` |
@@ -337,6 +338,7 @@ No fields; the component's presence is what matters.
 | `tint` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
 | `visible` | 1 or 0 (true/false also accepted) | `1` |
 | `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
+| `materials` | pairs of quoted names: the model's material, then the .swmaterial drawn in its place | none |
 
 #### Camera
 
@@ -420,6 +422,10 @@ Names a scene can use, built-in and from this project's asset folder.
 - `models/Fox.glb`
 - `models/material-demo.glb`
 - `models/pbr-maps.glb`
+
+### Materials (MeshRenderer.material, ModelRenderer.materials)
+
+None.
 
 ### Audio clips (AudioSource.clip)
 

@@ -2,6 +2,7 @@
 
 #include <Assets/Assets.h>
 #include <Assets/ImportSettings.h>
+#include <Assets/Material.h>
 #include <Assets/MeshOptimise.h>
 #include <Core/Jobs.h>
 
@@ -25,10 +26,27 @@ class TextureCompressor;
 // transforms. Imports decode in parallel on the job system. Meshes are optimised and given
 // levels of detail, and textures compressed, as docs/Optimisation.md describes.
 //
+// Material files (.swmaterial, A02) are resolved after every refresh that changed anything,
+// so a material follows its parents, models and textures as they're saved. One that stops
+// parsing keeps its last good version (and says why); one whose parent, model or texture
+// has gone is drawn magenta until it's back.
+//
 // Main thread only.
 class AssetFolder {
 public:
-    enum class Kind { Texture, Model, Audio, Other };
+    enum class Kind { Texture, Model, Audio, Material, Other };
+    // A texture file decoded another way for a material slot: as linear data (a normal map
+    // or mask kept as a plain image), or with mipmaps that keep a masked material's alpha
+    // coverage. The file's own texture stays as it is for everything else.
+    struct TextureVariant {
+        std::string key;   // "linear", or "coverage 0.5"
+        bool srgb = true;
+        float coverageCutoff = -1.0f;
+        TextureHandle texture;
+        std::filesystem::file_time_type modified{};   // the version of the file it was made from
+        uintmax_t bytes = 0;
+        uint64_t gpuBytes = 0;
+    };
     struct Dependency {
         std::filesystem::path path;
         bool exists = false;
@@ -47,6 +65,14 @@ public:
         TextureHandle texture;   // Kind::Texture, once imported
         uint32_t width = 0, height = 0;
         ModelHandle model;
+        // Kind::Material: the last version that parsed, and the resolved material's handle.
+        std::shared_ptr<const MaterialFile> materialFile;
+        bool materialParseFailed = false;
+        MaterialHandle material;
+        // Kind::Texture: how the file's own texture is decoded, and its other decodings.
+        bool srgb = true;
+        bool ownLevels = false;   // a .ktx2 with its own mipmaps (or an HDR image): no variants of those
+        std::vector<TextureVariant> variants;
         std::vector<Dependency> dependencies;
         std::vector<std::string> warnings;
 
@@ -119,6 +145,7 @@ private:
     // Optimisation
     File* findFile(std::string_view name);
     void publishCompressed(std::vector<Change>& changes);
+    void resolveMaterials(std::vector<Change>& changes);
     ImportSettings m_defaults;
     bool m_reimportAll = false;
     bool m_backgroundCompression = true;

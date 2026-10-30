@@ -21,6 +21,7 @@ restart, and none waits for the GPU to go idle except where noted in Graphics.md
 | bloom_scale | 0..1 | 1 |  | uniform | Your multiplier on each scene's bloom intensity: 1 is as the artist set it, 0 turns bloom off. |
 | lod_error_pixels | 0..100 | 1 | preset | uniform | How far, in rendered pixels, a simpler mesh level may differ from the full one. 0 always draws full detail. Needs imported levels of detail. |
 | texture_quality | low, medium, high, ultra | ultra | preset | targets | How much of each material texture stays on the GPU: ultra keeps full size, high drops the largest mip level (a quarter of the memory), medium two, low three. UI textures always keep full size. |
+| material_quality | low, high | high | preset | uniform | High draws every material layer. Low skips detail layers (the close-up micro texture some materials add) to save texture reads; base materials and second layers are unchanged. |
 | anisotropy | 1, 2, 4, 8, 16 | 16 | preset | pipeline | Anisotropic filtering: the most samples a texture seen at a grazing angle may take. Higher keeps floors and roads sharp into the distance. Nearest-filtered (pixel art) textures are unaffected. |
 | vsync | true, false | true |  | targets | Synchronize presentation with the display, so frames never tear. |
 | frame_limit | 0 or 10..1000 | 0 |  | uniform | Frames per second at most; 0 means uncapped apart from VSync. |

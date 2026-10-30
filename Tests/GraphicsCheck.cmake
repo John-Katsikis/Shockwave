@@ -12,7 +12,7 @@ if(NOT result EQUAL 0 OR NOT out MATCHES "render_scale 0.75" OR NOT out MATCHES 
 endif()
 foreach(value "render_scale nan" "shadow_quality invalid" "frame_limit 9" "lod_error_pixels -1" "vsync wrong" "low_latency 1"
         "anti_aliasing taa" "anti_aliasing smaa" "bloom_quality ultra" "bloom_scale 2" "bloom_scale nan"
-        "texture_quality extreme" "texture_quality 0" "anisotropy 3" "anisotropy 32" "anisotropy 0")
+        "texture_quality extreme" "texture_quality 0" "anisotropy 3" "anisotropy 32" "anisotropy 0" "material_quality medium")
     file(WRITE "${TEMP}/bad.swgraphics" "swgraphics 1\n${value}\n")
     execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/bad.swgraphics" --check
         RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
