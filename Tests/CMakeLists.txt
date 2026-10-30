@@ -244,6 +244,12 @@ add_executable(decal_test DecalTest.cpp)
 target_link_libraries(decal_test PRIVATE Shockwave::Engine)
 shockwave_warnings(decal_test)
 add_test(NAME decals COMMAND decal_test)
+# Motion vectors and TAA (G09, G10): jitter, reprojection, history resets and the resolve's
+# maths. No GPU.
+add_executable(temporal_test TemporalTest.cpp)
+target_link_libraries(temporal_test PRIVATE Shockwave::Engine)
+shockwave_warnings(temporal_test)
+add_test(NAME temporal COMMAND temporal_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
