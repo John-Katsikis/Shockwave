@@ -124,6 +124,7 @@ void Editor::onShutdown() {
     m_gameUI.reset();
     m_navOverlay.release(engine().renderer());
     m_bakedLighting.release();
+    m_reflections.release();
     m_effects.reset();
     m_animation.reset();
     if (m_hasProject) {
@@ -224,7 +225,7 @@ void Editor::onGui() {
     if (m_showCircuits) drawCircuitsWindow();
     if (m_showNetwork) drawNetworkWindow();
     if (m_showMaterial) drawMaterialWindow();
-    if (m_showLighting || m_lightingBake) drawLightingWindow();
+    if (m_showLighting || m_lightingBake || m_reflectionCapture) drawLightingWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
@@ -284,8 +285,14 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     renderer.setGrid(grid);
     // While editing (or paused) nothing moves on its own, so draw exactly what's there.
     const double now = engine().frameStartSeconds();
+    m_reflections.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
     m_bakedLighting.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
     m_bakedLightingTime = now;
+    if (m_reflectionCapture) {
+        if (m_reflectionCapture->render(m_world, renderer, engine().jobs(), engine().assets(), &m_bakedLighting))
+            return;   // this frame is one of a probe's faces
+        finishReflectionCapture();
+    }
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets(),
         &m_bakedLighting);

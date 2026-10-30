@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -51,5 +51,8 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec2 renderSize;   // the scene targets' size in pixels
     float aoRadius;   // metres
     float aoIntensity;
+    uvec2 reflectionProbes;   // a ReflectionProbes (reflection.glsl, G07)
+    uint reflectionProbeCount;
+    uint pad;
     LightData lights[];
 };

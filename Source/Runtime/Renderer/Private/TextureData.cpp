@@ -17,6 +17,8 @@ const char* textureFormatName(TextureFormat format) {
     return "unknown";
 }
 
+const char* textureShapeName(TextureShape shape) { return shape == TextureShape::Cube ? "cube" : "2d"; }
+
 size_t textureLevelBytes(TextureFormat format, uint32_t width, uint32_t height) {
     switch (format) {
     case TextureFormat::RGBA8: return size_t(width) * height * 4;
@@ -27,19 +29,22 @@ size_t textureLevelBytes(TextureFormat format, uint32_t width, uint32_t height) 
 }
 
 size_t TextureData::gpuBytes() const {
-    // A lone uncompressed level gets the rest of its chain made on the GPU.
-    if (format != TextureFormat::BC7 && levels.size() == 1) return textureChainBytes(format, width, height);
+    // A lone uncompressed 2D level gets the rest of its chain made on the GPU.
+    if (shape == TextureShape::Texture2D && format != TextureFormat::BC7 && levels.size() == 1)
+        return textureChainBytes(format, width, height);
     size_t total = 0;
-    for (const Level& level : levels) total += textureLevelBytes(format, level.width, level.height);
+    for (const Level& level : levels) total += textureLevelBytes(format, level.width, level.height) * faces();
     return total;
 }
 
 bool TextureData::valid() const {
     if (!width || !height || levels.empty() || levels[0].width != width || levels[0].height != height) return false;
+    if (shape == TextureShape::Cube && (width != height || levels.size() > textureMipCount(width, height)))
+        return false;
     for (size_t i = 0; i < levels.size(); ++i) {
         const Level& level = levels[i];
         const uint32_t w = std::max(1u, width >> i), h = std::max(1u, height >> i);
-        if (level.width != w || level.height != h || level.size != textureLevelBytes(format, w, h) ||
+        if (level.width != w || level.height != h || level.size != textureLevelBytes(format, w, h) * faces() ||
             level.offset > bytes.size() || level.size > bytes.size() - level.offset)
             return false;
     }
@@ -130,7 +135,9 @@ float alphaCoverage(const uint8_t* rgba, uint32_t width, uint32_t height, float 
 }
 
 TextureData textureMipChain(const TextureData& source, float coverageCutoff) {
-    if (source.format != TextureFormat::RGBA8 || source.levels.size() != 1 || !source.valid()) return source;
+    if (source.format != TextureFormat::RGBA8 || source.shape != TextureShape::Texture2D || source.levels.size() != 1 ||
+        !source.valid())
+        return source;
     TextureData chain;
     chain.format = source.format;
     chain.srgb = source.srgb;
@@ -164,7 +171,8 @@ TextureData textureMipChain(const TextureData& source, float coverageCutoff) {
 }
 
 TextureData textureTail(const TextureData& source, uint32_t firstMip) {
-    if (firstMip == 0 || source.levels.empty()) return source;
+    // Cubes (G07) keep every level: their levels are roughness steps, not detail.
+    if (firstMip == 0 || source.levels.empty() || source.shape != TextureShape::Texture2D) return source;
     TextureData tail;
     tail.format = source.format;
     tail.srgb = source.srgb;

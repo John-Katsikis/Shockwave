@@ -232,6 +232,12 @@ add_executable(diffuse_probe_test DiffuseProbeTest.cpp)
 target_link_libraries(diffuse_probe_test PRIVATE Shockwave::Assets)
 shockwave_warnings(diffuse_probe_test)
 add_test(NAME diffuse_probes COMMAND diffuse_probe_test)
+# Reflection probes (G07): cube faces, box projection, selection, blending, the cube file,
+# capture resampling, the prefilter and the manifest. No GPU.
+add_executable(reflection_probe_test ReflectionProbeTest.cpp)
+target_link_libraries(reflection_probe_test PRIVATE Shockwave::Assets)
+shockwave_warnings(reflection_probe_test)
+add_test(NAME reflection_probes COMMAND reflection_probe_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -269,7 +275,7 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFixtures
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS gpu)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
     # The same report without a GPU: the null renderer says what it can't do, and why.
     # It plays a few frames, so like the other headless play tests it needs Xvfb.
     find_program(SHOCKWAVE_XVFB_RUN xvfb-run)

@@ -190,8 +190,103 @@ image receives it.
   colours, but not emissive textures, so a glowing texture lights nothing in the bake.
   Blended (see-through) materials are left out, with a warning.
 - Every receiver gets its own space in the lightmap, even copies of the same mesh.
-- Baked lighting replaces only diffuse light from the surroundings; reflections still
-  come from the environment (local reflection probes are G07).
+- Baked lighting replaces only diffuse light from the surroundings; shiny reflections
+  come from the environment, or from reflection probes (below) where a scene has them.
+
+## Reflection probes
+
+Without them, every shiny surface reflects the sky, even deep inside a windowless room:
+a metal ball in a red corridor shows blue sky and clouds. A reflection probe is a box
+around a room with a cube map captured from a point inside it, a picture of the room in
+every direction, which surfaces inside the box reflect instead of the sky. Rough
+surfaces get blurrier levels of the same cube, filtered exactly the way the sky's are, so
+a probe changes what is reflected, never how glossy anything looks.
+
+### Setting one up
+
+1. Add a **ReflectionProbe** (Lighting category) to an entity in the middle of the room.
+   Its box (`half_extents`, metres, on the entity's Transform, rotation and scale
+   included) should reach `blend_distance` past the walls, floor and ceiling, so the
+   surfaces themselves get the probe in full; the reflection fades to the sky's over
+   `blend_distance` inside the box's faces.
+2. The cube is captured from the box's centre, or `capture_offset` from it (still inside
+   the box): somewhere about head height with a clear view of the room.
+3. Capture: **Window > Lighting > Capture reflections** in the editor, or
+   `player --capture-reflections --scene Scenes/Arena.swscene`. This needs a GPU (unlike
+   a lighting bake): each probe takes six frames, one per cube face, then a CPU filter.
+   The editor's first capture points the scene's **BakedLighting** at the result
+   (`reflections "Lighting/<scene>.swreflection"`), which is what makes it draw them.
+
+```
+entity "Hall probe"
+  Transform
+    position -4 1.5 0
+  ReflectionProbe
+    half_extents 4.3 1.8 4.3
+    blend_distance 0.3
+    resolution 128px
+    binding_id "5e0a1c3b7d2f4a6b8c9d0e1f2a3b4c5d"
+end
+```
+
+| Field | Default | What it does |
+|---|---|---|
+| `half_extents` | 4 2 4 | The box, in metres along the entity's axes, times its scale |
+| `capture_offset` | 0 0 0 | Where the cube is captured from, relative to the box's centre; must be inside the box |
+| `blend_distance` | 0.5 | How far inside the box's faces the reflection fades to the sky's |
+| `priority` | 0 | Where boxes overlap, the higher wins; equal ones share |
+| `resolution` | `128px` | Per face: `64px`, `128px` (about 1 MiB on the GPU), `256px` (4 MiB), `512px` (16 MiB) |
+| `near`, `far` | 0.05, 500 | The capture's clipping distances |
+| `enabled` | 1 | 0 leaves the probe out without deleting it |
+| `binding_id` | made for you | The probe's identity in the capture, like a bake participant's |
+
+Each object uses up to two probes: of the boxes its bounds touch, the highest priority
+first, then the smaller box (a closet inside a hall wins over the hall), then the lower
+binding id. Each pixel then blends them by how deep it is inside each box: equal
+priorities share, a higher one goes over the lower, and whatever neither covers reflects
+the sky. A big object crossing more than two boxes keeps only two; split it, or give the
+important boxes a higher priority.
+
+### What a capture sees
+
+Static things, lit as they are: walls, floors and props with their lightmaps, lights and
+shadows, and the sky beyond the windows. Left out: anything that moves (BakeGeometry
+`mobility dynamic`, physics bodies that aren't static, characters, animated models, Spin
+and Bob, and anything parented under those), particles, UI, the editor's grid, and other
+probes' reflections (so two facing probes can't feed each other). A capture is a
+picture taken once: it doesn't show players walking past, or a wall destroyed after.
+
+Moving or editing a probe makes only its own capture out of date: it's left out (that
+box reflects the sky) until captured again. Changing anything static, a light, the
+Environment or the lighting bake keeps every capture in use but marks it *stale*.
+Window > Lighting, `player --lighting-info` (its `reflections` section) and `player
+--check` say which and why; `--check` warns about stale or missing captures and fails on
+damaged files. Captures are written to `Content/Lighting/`: `<scene>.swreflection` (a
+readable manifest, docs/LightingSchema.md) and a `<scene>_reflections/` folder with a
+`Probe_<id>.ktx2` cube per probe; `player --lighting-export` and `--lighting-import` turn a
+cube into JSON (with each face's mean colour, for a quick look) and back. A cancelled or
+failed capture leaves the last one in use, and a new one is loaded completely before it
+replaces the old.
+
+### Turning it off, and looking at it
+
+The `reflection_probes` graphics setting (on by default) switches all of it off at once:
+off, everything reflects the sky exactly as if the scene had no probes, pixel for pixel.
+A single probe can be switched off with `enabled 0`. `player --view reflections` and the
+editor's *Reflection probes* shading view colour each surface by the probes it uses
+(one colour per probe, mixed where they blend) and dark grey where it reflects the sky.
+Selecting a probe in the editor shows its box and capture point.
+
+### Limits
+
+- A box is the shape the reflection assumes: in a box-shaped room, reflections line up
+  with the walls; in a round or L-shaped one, they're approximately right. Use several
+  boxes for irregular spaces.
+- Capturing needs a GPU: the null renderer (and `--check`) can inspect captures but not
+  make them.
+- No probe sees transparent (blended) surfaces' own reflections or refractions, and
+  surfaces outside every box reflect the sky.
+
 
 ## How it works
 
@@ -220,3 +315,15 @@ harmonics per channel and keep an 8 x 8 octahedral map of distances, so a probe 
 far side of a wall isn't used (Chebyshev visibility, as in DDGI). `mesh.frag` reads the
 lightmap or the object's probe sample in place of the irradiance cube, in the same B = E /
 pi units, so everything else about shading is unchanged.
+
+A reflection capture (`Source/Runtime/Engine/Private/ReflectionProbes.cpp`) draws the
+static scene six times through 90 degree cameras into the ordinary HDR scene target and
+reads it back before exposure and bloom; each cube texel is resampled from the face's
+image along its own direction, so the window's size and shape don't matter. Level 0 is
+the mirror image; levels 1 to 5 (roughness 0.2 to 1) are filtered on the CPU with the
+same 96-sample GGX estimator, source-level choice and face layout as the sky's cube
+(`environment_filter.comp`). In `mesh.frag`, each of the draw's probes follows the
+reflected ray to where it leaves the box and reads the cube in the direction from the
+capture point to there (box projection), at the same roughness level as the sky's cube;
+the result replaces the sky's prefiltered colour before the BRDF table is applied, so
+the Fresnel and energy terms are unchanged.

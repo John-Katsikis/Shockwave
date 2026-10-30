@@ -12,6 +12,9 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     for (uint32_t id = 0; id < textureCapacity(); ++id) textureSlots[id].store(id, std::memory_order_relaxed);
     for (uint32_t slot = textureCapacity() + spareTextureSlots(); slot-- > textureCapacity();)
         freeTextureSlots.push_back(slot);
+    cubeSlots = std::make_unique<std::atomic<uint32_t>[]>(textureCapacity());
+    for (uint32_t id = 0; id < textureCapacity(); ++id) cubeSlots[id].store(kNoSlot, std::memory_order_relaxed);
+    for (uint32_t slot = kReflectionCubeSlots; slot-- > 0;) freeCubeSlots.push_back(slot);
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;

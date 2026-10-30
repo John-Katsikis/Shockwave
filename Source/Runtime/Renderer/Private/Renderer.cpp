@@ -120,6 +120,8 @@ struct Renderer::State {
     uint32_t anisotropy = 16;
     MaterialQuality materialQuality = MaterialQuality::High;
     std::atomic<bool> bakedLighting{true};
+    bool localReflections = true;
+    std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
@@ -210,7 +212,21 @@ struct Renderer::State {
     void uploadTexture(TextureHandle id, const TextureData& source, uint32_t first, bool create, uint64_t& bytes) {
         const TextureData tail = textureTail(source, first);
         bytes = tail.gpuBytes();
-        if (tail.format == TextureFormat::RGBA8 && tail.levels.size() == 1) {
+        if (tail.shape != TextureShape::Texture2D && !backend->supportsTextureShape(tail.shape)) {
+            // A swap to a backend without cube maps: a placeholder keeps the id, and that
+            // backend draws no local reflections anyway.
+            SW_LOG(
+                LogRender, Warning, "texture {} is a {} map, which this renderer can't use", id.id,
+                textureShapeName(tail.shape));
+            const uint8_t white[4] = {255, 255, 255, 255};
+            if (create)
+                backend->createTexture(id, 1, 1, white, false);
+            else
+                backend->updateTexture(id, 1, 1, white, false);
+            bytes = 4;
+            return;
+        }
+        if (tail.shape == TextureShape::Texture2D && tail.format == TextureFormat::RGBA8 && tail.levels.size() == 1) {
             const std::span<const uint8_t> rgba(tail.bytes.data() + tail.levels[0].offset, tail.levels[0].size);
             if (create)
                 backend->createTexture(id, tail.width, tail.height, rgba, tail.srgb);
@@ -352,6 +368,8 @@ struct Renderer::State {
             std::lock_guard lock(journalMutex);
             for (const auto& [id, lods] : meshLods) backend->setMeshLods({id}, lods.first, lods.second);
         }
+        backend->setLocalReflections(localReflections);
+        backend->setReflectionProbes(reflectionProbes);
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
             backend->initGui();
@@ -590,6 +608,10 @@ TextureHandle Renderer::createTexture(const TextureData& texture, TextureUsage u
     std::shared_lock swap(m->swapMutex);
     if (!m->backend->supportsTextureFormat(texture.format))
         throw std::runtime_error(std::string("createTexture: this GPU can't use ") + textureFormatName(texture.format));
+    if (!m->backend->supportsTextureShape(texture.shape))
+        throw std::runtime_error(
+            std::string("createTexture: this renderer can't use ") + textureShapeName(texture.shape) + " textures");
+    if (texture.shape != TextureShape::Texture2D) usage = TextureUsage::Fixed;   // every level is needed
     const uint32_t id = m->allocate(m->freeTextures, m->nextTexture, m->backend->maxTextures(), "texture");
     auto r = std::make_shared<State::TextureRecord>();
     r->usage = usage;
@@ -619,6 +641,8 @@ void Renderer::updateTexture(TextureHandle texture, const TextureData& data, std
     std::shared_lock swap(m->swapMutex);
     if (!m->backend->supportsTextureFormat(data.format))
         throw std::runtime_error(std::string("updateTexture: this GPU can't use ") + textureFormatName(data.format));
+    if (data.shape != TextureShape::Texture2D)
+        throw std::runtime_error("updateTexture: cube textures are replaced by making a new one, not updated");
     const auto r = m->record(texture.id);
     if (!r) {
         m->backend->updateTextureData(texture, data);
@@ -896,6 +920,27 @@ RendererMemoryReport Renderer::memoryReport() const {
         if (r->source) report.cpuCopyBytes += r->source->bytes.size();
     return report;
 }
+bool Renderer::supportsTextureShape(TextureShape shape) const {
+    std::shared_lock swap(m->swapMutex);
+    return m->backend->supportsTextureShape(shape);
+}
+void Renderer::setReflectionProbes(std::span<const ReflectionProbeDesc> probes) {
+    if (probes.size() > kMaxReflectionProbes && m->reflectionProbes.size() != kMaxReflectionProbes)
+        SW_LOG(
+            LogRender, Warning, "{} reflection probes; only the first {} are used", probes.size(),
+            kMaxReflectionProbes);
+    m->reflectionProbes.assign(probes.begin(), probes.begin() + std::min<size_t>(probes.size(), kMaxReflectionProbes));
+    m->backend->setReflectionProbes(m->reflectionProbes);
+}
+void Renderer::setLocalReflections(bool enabled) {
+    m->localReflections = enabled;
+    m->backend->setLocalReflections(enabled);
+}
+bool Renderer::localReflections() const { return m->localReflections; }
+bool Renderer::requestSceneCapture(std::string& error) { return m->backend->requestSceneCapture(error); }
+bool Renderer::sceneCapturePending() const { return m->backend->sceneCapturePending(); }
+SceneCapture Renderer::takeSceneCapture() { return m->backend->takeSceneCapture(); }
+
 void Renderer::requestScreenshot(const std::string& path) { m->backend->requestScreenshot(path); }
 bool Renderer::screenshotPending() const { return m->backend->screenshotPending(); }
 const std::string& Renderer::screenshotResult() const { return m->backend->screenshotResult(); }

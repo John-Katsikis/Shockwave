@@ -23,6 +23,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/TextureData.h>
 
@@ -74,6 +75,9 @@ public:
         updateTexture(id, level.width, level.height, {data.bytes.data() + level.offset, level.size}, data.srgb);
     }
     virtual void setLodSettings(const LodSettings&) {}
+    // Cube textures (G07) come through createTextureData with TextureShape::Cube; a backend
+    // without a cube table refuses them here and Renderer says so.
+    virtual bool supportsTextureShape(TextureShape shape) const { return shape == TextureShape::Texture2D; }
 
     // ---- Material bindings (G02); the defaults suit a backend that ignores them ----
     // Right after createMesh: the mesh's second UV set, one per vertex. Ignoring it reads
@@ -147,6 +151,21 @@ public:
     virtual std::vector<EffectiveSetting> effectiveSettings() const { return {}; }
     // GPU memory by category; Renderer adds its own CPU copies.
     virtual RendererMemoryReport memoryReport() const { return {}; }
+
+    // ---- Local reflection probes (G07, Renderer/ReflectionProbes.h) ----
+    // Kept until changed; each later draw picks up to two by its bounds. A backend without
+    // them draws every reflection from the global environment.
+    virtual void setReflectionProbes(std::span<const ReflectionProbeDesc>) {}
+    virtual void setLocalReflections(bool) {}
+    // The next frame's HDR scene colour, read back once it's finished; that frame draws
+    // without local reflections and with the lit view. False (and why) without a GPU.
+    virtual bool requestSceneCapture(std::string& error) {
+        error = "this renderer can't capture the scene (reflection capture needs a GPU renderer)";
+        return false;
+    }
+    virtual bool sceneCapturePending() const { return false; }
+    // The last capture, once it isn't pending; moved out by the call.
+    virtual SceneCapture takeSceneCapture() { return {0, 0, {}, "nothing was captured"}; }
 
     // ---- Screenshots ----
     virtual void requestScreenshot(const std::string& path) = 0;

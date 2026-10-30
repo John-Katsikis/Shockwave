@@ -181,12 +181,13 @@ void VulkanRenderer::Impl::destroyTexture(TextureHandle handle) {
         guiTextures.erase(it);
     }
     const uint32_t slot = textureSlots[handle.id].exchange(kNoSlot, std::memory_order_acq_rel);
-    retire([this, image = textures[handle.id], slot, gui]() mutable {
+    const uint32_t cube = cubeSlots[handle.id].exchange(kNoSlot, std::memory_order_acq_rel);
+    retire([this, image = textures[handle.id], slot, cube, gui]() mutable {
         if (gui) ImGui_ImplVulkan_RemoveTexture(gui);
         destroyImage(image);
-        if (slot == kNoSlot) return;
         std::lock_guard lock(textureSlotMutex);
-        freeTextureSlots.push_back(slot);
+        if (cube != kNoSlot) freeCubeSlots.push_back(cube);
+        if (slot != kNoSlot) freeTextureSlots.push_back(slot);
     });
     textures[handle.id] = {};
 }
@@ -270,6 +271,7 @@ void VulkanRenderer::Impl::applyTextureSwaps() {
 
 uint64_t VulkanRenderer::Impl::guiTexture(TextureHandle texture) {
     if (!guiEnabled || texture.id >= textureCapacity()) return 0;
+    if (cubeSlot(texture.id) != kNoSlot) return 0;   // a cube (G07): the GUI shows 2D images only
     if (auto it = guiTextures.find(texture.id); it != guiTextures.end()) {
         return reinterpret_cast<uint64_t>(it->second);
     }

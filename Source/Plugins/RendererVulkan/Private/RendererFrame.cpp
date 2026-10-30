@@ -132,6 +132,9 @@ void VulkanRenderer::Impl::drawMesh(
 
     if (mesh.lodCount > 0) pickLod(mesh, scale, command.bounds, command);   // levels of detail
     command.visible = viewFrustum.intersects(command.bounds);
+    // Local reflection probes (G07): up to two whose boxes these bounds touch.
+    command.data.reflections = pickReflections(command.bounds);
+    command.data.pad = 0;
 
     const uint32_t thread = JobSystem::threadIndex();
     auto add = [&](DrawList& list, uint32_t index) {
@@ -534,6 +537,7 @@ void VulkanRenderer::Impl::endFrame() {
     }
 
     if (screenshotRequested) finishScreenshot();
+    if (captureRequested) finishCapture();
     frameIndex = (frameIndex + 1) % kFramesInFlight;
 }
 
@@ -552,6 +556,10 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     header.renderSize = glm::vec2(sceneColor.extent.width, sceneColor.extent.height);
     header.aoRadius = std::isfinite(lighting.aoRadius) ? std::clamp(lighting.aoRadius, 0.01f, 10.0f) : 0.3f;
     header.aoIntensity = std::isfinite(lighting.aoIntensity) ? std::clamp(lighting.aoIntensity, 0.0f, 4.0f) : 1.0f;
+    // A capture frame is always the lit view: a probe is never built from a debug view.
+    if (captureRequested) header.debugView = static_cast<uint32_t>(DebugView::Lit);
+    header.reflectionProbes = f.frameAddress + kReflectionProbesOffset;
+    header.reflectionProbeCount = writeReflectionProbes(f);
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -652,6 +660,12 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, vertexReads);
+    if (captureRequested) {
+        // Reflection capture (G07): the HDR scene as drawn, before particles, exposure and the rest.
+        graph.addPass("reflection capture readback", {{color, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
+            recordCaptureCopy(cmd);
+        });
+    }
     if (!particleDraws.empty()) {
         graph.addPass(
             "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
@@ -739,7 +753,7 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     setSceneViewport(cmd);
     if (showsSky() && debugView != DebugView::AmbientOcclusion) recordSky(cmd);
     recordDraws(cmd, f);
-    recordGrid(cmd);
+    if (!captureRequested) recordGrid(cmd);   // the editor grid never goes into a reflection
     vkCmdEndRendering(cmd);
 }
 

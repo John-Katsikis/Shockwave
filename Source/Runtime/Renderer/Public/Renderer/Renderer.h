@@ -3,6 +3,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/TextureData.h>
 
@@ -122,6 +123,27 @@ public:
     // From the next frame's draws on. Main thread.
     void setBakedLighting(bool enabled);
     bool bakedLighting() const;
+
+    // ---- Local reflection probes (G07, Renderer/ReflectionProbes.h) ----
+    // Whether the backend can make TextureShape::Cube textures (createTexture refuses them
+    // otherwise).
+    bool supportsTextureShape(TextureShape shape) const;
+    // The scene's probes, kept until changed (at most kMaxReflectionProbes; the rest are
+    // dropped with a warning). Each draw then reads up to two whose boxes its bounds touch.
+    // Main thread, before the frame's draws.
+    void setReflectionProbes(std::span<const ReflectionProbeDesc> probes);
+    // The reflection_probes setting: off draws every reflection from the global environment,
+    // exactly as with no probes at all. From the next frame's draws on. Main thread.
+    void setLocalReflections(bool enabled);
+    bool localReflections() const;
+    // Reflection capture: the next frame's HDR scene colour (SceneCapture), linear, before
+    // exposure, bloom and anti-aliasing, drawn without local reflections and in the lit
+    // view. Call before the frame's draws; once sceneCapturePending() turns false,
+    // takeSceneCapture() hands it over. False, with the reason, when the backend can't
+    // (the null renderer). Main thread.
+    bool requestSceneCapture(std::string& error);
+    bool sceneCapturePending() const;
+    SceneCapture takeSceneCapture();
 
     // ---- Texture quality (A01) ----
     // Main thread. Material textures (TextureUsage::Material) are rebuilt with their

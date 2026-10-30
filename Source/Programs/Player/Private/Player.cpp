@@ -142,6 +142,11 @@ void Player::onStart() {
         if (source.spatial && !m_world.has<shockwave::Transform>(entity))
             throw std::runtime_error("Spatial AudioSource requires Transform");
     });
+    if (m_tool.captureReflections) {
+        // The scene as loaded, no game session: nothing has moved and nothing plays.
+        startReflectionCapture();
+        return;
+    }
     shockwave::FlyCamera::bindDefaultControls(engine().input());
     if (const auto bindings = shockwave::inputBindingsPath(m_project.root); std::filesystem::exists(bindings)) {
         if (!engine().input().loadBindingsFile(bindings, error)) throw std::runtime_error(error);
@@ -389,8 +394,10 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
         renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()), m_view);
     }
     const double now = engine().frameStartSeconds();
+    m_reflections.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
     m_bakedLighting.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
     m_bakedLightingTime = now;
+    if (m_reflectionCapture && driveReflectionCapture(renderer)) return;
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets(), &m_bakedLighting);
     m_effects->render(renderer);
     if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
@@ -404,6 +411,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
 void Player::onShutdown() {
     m_navOverlay.release(engine().renderer());
     m_bakedLighting.release();
+    m_reflections.release();
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
     if (m_session) {
         SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());

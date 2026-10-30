@@ -94,13 +94,17 @@ struct DrawData {
     uint32_t lightmapTexture;   // bindless slot, with kIndirectLightmap
     uint32_t indirectSource;   // kIndirectEnvironment, kIndirectLightmap or kIndirectProbes
     VkDeviceAddress probes;   // this draw's ProbeData, with kIndirectProbes
+    // Local reflection probes (G07): index + 1 in the frame's table of the first (low 16
+    // bits) and second (high 16); 0: the global environment only.
+    uint32_t reflections;
+    uint32_t pad;
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
         offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
         offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && offsetof(DrawData, layers) == 408 &&
         offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
-        offsetof(DrawData, probes) == 432 && sizeof(DrawData) == 440,
+        offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 && sizeof(DrawData) == 448,
     "DrawData must match the shader's scalar layout");
 constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
                    kIndirectProbes = 2u;   // DrawData::indirectSource
@@ -190,13 +194,33 @@ struct FrameData {
     glm::vec2 renderSize;   // the scene targets' size in pixels
     float aoRadius;   // metres
     float aoIntensity;
+    VkDeviceAddress reflectionProbes;   // the frame's ReflectionProbeData table (G07)
+    uint32_t reflectionProbeCount;
+    uint32_t pad;
 };
 static_assert(
-    sizeof(FrameData) == 320 && offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
-        offsetof(FrameData, renderSize) == 304,
+    sizeof(FrameData) == 336 && offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
+        offsetof(FrameData, renderSize) == 304 && offsetof(FrameData, reflectionProbes) == 320,
     "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
+// A local reflection probe as the shaders read it (G07). Must match ReflectionProbeData in
+// shaders/reflection.glsl.
+struct ReflectionProbeData {
+    glm::mat4 worldToBox;   // rigid
+    glm::vec3 halfExtents;   // metres
+    float blendDistance;
+    glm::vec3 capturePosition;
+    uint32_t cube;   // slot in the cube table (binding 7); kNoCube: not loaded
+    int32_t priority;
+    uint32_t pad[3];
+};
+static_assert(sizeof(ReflectionProbeData) == 112, "ReflectionProbeData must match the shader's scalar layout");
+constexpr uint32_t kNoCube = 0xFFFFFFFFu;
+// Cube texture slots: room for every probe twice, so a new capture loads completely beside
+// the one it replaces.
+constexpr uint32_t kReflectionCubeSlots = 2 * kMaxReflectionProbes;
 constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * kMaxLights;
-constexpr VkDeviceSize kFrameDataSize = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
+constexpr VkDeviceSize kReflectionProbesOffset = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
+constexpr VkDeviceSize kFrameDataSize = kReflectionProbesOffset + sizeof(ReflectionProbeData) * kMaxReflectionProbes;
 
 // Must match the push constants in shaders/shadow.vert and shadow.frag.
 struct ShadowPushConstants {
@@ -240,6 +264,8 @@ static_assert(sizeof(UiPushConstants) == 80, "UiPushConstants must match the UI 
 // The game UI is blended in sRGB like a browser, so it draws through a UNORM view of the
 // sRGB display image.
 constexpr VkFormat kUiTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
+// The Vulkan format a portable texture format uploads as (RendererOptimisation.cpp).
+VkFormat vulkanFormat(TextureFormat format, bool srgb);
 
 struct DrawCommand {
     DrawData data;
@@ -533,7 +559,7 @@ struct VulkanRenderer::Impl {
     std::unique_ptr<vk::Image[]> textures;
     // Slots in the bindless texture array: the renderer's own are the last kInternalTextureSlots,
     // with kSpareTextureSlots below them.
-    uint32_t bindlessSlots() const { return context->maxBindlessTextures() - kEnvironmentCubes; }
+    uint32_t bindlessSlots() const { return context->maxBindlessTextures() - kEnvironmentCubes - kReflectionCubeSlots; }
     uint32_t spareTextureSlots() const { return std::min(kSpareTextureSlots, bindlessSlots() / 8); }
     uint32_t textureCapacity() const { return bindlessSlots() - kInternalTextureSlots - spareTextureSlots(); }
     // Which bindless slot each texture id's current image is in: its own id until it's
@@ -548,6 +574,35 @@ struct VulkanRenderer::Impl {
     }
     uint32_t takeTextureSlot();   // kNoSlot when none is free
     void publishTexture(uint32_t id, vk::Image& image);
+
+    // ---- Local reflection probes (G07, RendererReflections.cpp) ----
+    // Cube textures (TextureShape::Cube) live in a table of their own, binding 7: the slot of
+    // each texture id that is one, kNoSlot for the rest. textures[id] holds the image.
+    std::unique_ptr<std::atomic<uint32_t>[]> cubeSlots;
+    std::vector<uint32_t> freeCubeSlots;   // under textureSlotMutex
+    uint32_t cubeSlot(uint32_t id) const {
+        return id < textureCapacity() ? cubeSlots[id].load(std::memory_order_acquire) : kNoSlot;
+    }
+    vk::Image uploadCube(const TextureData& data);
+    void publishCube(uint32_t id, vk::Image& image);
+    void writeCubeDescriptor(uint32_t slot, VkImageView view);
+    // The scene's probes (setReflectionProbes): replaced whole on the main thread, read by
+    // drawMesh on any thread.
+    std::shared_ptr<const std::vector<ReflectionProbeDesc>> reflectionProbes =
+        std::make_shared<const std::vector<ReflectionProbeDesc>>();
+    std::atomic<bool> localReflections{true};   // the reflection_probes setting
+    void setReflectionProbes(std::span<const ReflectionProbeDesc> probes);
+    // The probes a draw with these bounds reads, packed for DrawData::reflections.
+    uint32_t pickReflections(const glm::vec4& bounds) const;
+    uint32_t writeReflectionProbes(Frame& f);   // into the frame buffer; how many
+    // Reflection capture (Renderer::requestSceneCapture): the next frame's HDR scene colour,
+    // copied after the scene pass and read back once the frame is done.
+    std::atomic<bool> captureRequested{false};
+    SceneCapture capture;
+    vk::Buffer captureBuffer;
+    VkExtent2D captureExtent{};
+    void recordCaptureCopy(VkCommandBuffer cmd);
+    void finishCapture();
 
     // ---- Material samplers (G02) ----
     // Indexed by SamplerHandle; slot id + bank * kMaxSamplers in binding 6.
