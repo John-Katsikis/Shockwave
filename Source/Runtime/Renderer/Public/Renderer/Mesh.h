@@ -61,7 +61,9 @@ Bounds computeBounds(const MeshData& mesh);
 
 // Nearest hit of a ray (origin, direction, both in the mesh's own space) with the mesh's
 // triangles, from either side. t is the distance along direction (in its units).
-bool raycast(const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t);
+// normal, if given, gets the hit triangle's face normal (not unit length, either side).
+bool raycast(
+    const MeshData& mesh, const glm::vec3& origin, const glm::vec3& direction, float& t, glm::vec3* normal = nullptr);
 
 // A simpler version of a mesh, drawn instead of it when it's far enough away that nobody
 // can tell. Every level uses the mesh's vertices; only the triangles differ.

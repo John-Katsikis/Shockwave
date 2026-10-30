@@ -238,6 +238,12 @@ add_executable(reflection_probe_test ReflectionProbeTest.cpp)
 target_link_libraries(reflection_probe_test PRIVATE Shockwave::Assets)
 shockwave_warnings(reflection_probe_test)
 add_test(NAME reflection_probes COMMAND reflection_probe_test)
+# Decals (G08, A03): box projection, fades, composition, budget pruning, the component,
+# impact marks and their lifetimes, and the decals_quality setting. No GPU.
+add_executable(decal_test DecalTest.cpp)
+target_link_libraries(decal_test PRIVATE Shockwave::Engine)
+shockwave_warnings(decal_test)
+add_test(NAME decals COMMAND decal_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)

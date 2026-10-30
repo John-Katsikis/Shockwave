@@ -23,6 +23,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/TextureData.h>
@@ -166,6 +167,13 @@ public:
     virtual bool sceneCapturePending() const { return false; }
     // The last capture, once it isn't pending; moved out by the call.
     virtual SceneCapture takeSceneCapture() { return {0, 0, {}, "nothing was captured"}; }
+
+    // ---- Projected decals (G08, Renderer/Decals.h) ----
+    // This frame's decals; same thread as setCamera, cleared after each frame. A backend
+    // without them draws none (and reports decals_quality off).
+    virtual void drawDecals(std::span<const DecalDesc>) {}
+    virtual void setDecalQuality(DecalQuality) {}
+    virtual DecalStats decalStats() const { return {}; }
 
     // ---- Screenshots ----
     virtual void requestScreenshot(const std::string& path) = 0;

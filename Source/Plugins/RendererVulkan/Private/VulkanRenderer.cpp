@@ -40,6 +40,9 @@ void VulkanRenderer::setReflectionProbes(std::span<const ReflectionProbeDesc> pr
 void VulkanRenderer::setLocalReflections(bool enabled) {
     m_impl->localReflections.store(enabled, std::memory_order_relaxed);
 }
+void VulkanRenderer::drawDecals(std::span<const DecalDesc> decals) { m_impl->drawDecals(decals); }
+void VulkanRenderer::setDecalQuality(DecalQuality quality) { m_impl->decalQuality = quality; }
+DecalStats VulkanRenderer::decalStats() const { return m_impl->lastDecalStats; }
 bool VulkanRenderer::requestSceneCapture(std::string&) {
     m_impl->captureRequested = true;
     return true;

@@ -6,7 +6,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 // The surface prepass (G03): depth, and the surface's geometric normal in view space, for
-// the screen-space passes after it (ambient occlusion now). Drawn with mesh.vert, so the
+// the screen-space passes after it (ambient occlusion, decals). Drawn with mesh.vert, so the
 // opaque shading after it lands on exactly the same depths and tests them for EQUAL. The
 // cut of an alpha-tested surface is baseAlpha, the same as the scene's and the shadows'.
 // Normal maps aren't applied: occlusion follows the geometry, not its painted detail.
@@ -27,6 +27,9 @@ layout(location = 4) flat in float vAlphaCutoff;
 layout(location = 11) flat in uint vDraw;
 
 layout(location = 0) out vec2 outNormal;   // octahedral, view space
+// The draw's decal receiver layers (G08): only written while decals are on, when the
+// prepass has this second target; without it the write goes nowhere.
+layout(location = 1) out uint outDecalLayers;
 
 // As in mesh.frag: false for solid surfaces, so the GPU tests depth before shading.
 layout(constant_id = 0) const bool kAlphaTest = true;
@@ -36,4 +39,5 @@ void main() {
     vec3 n = normalize(vNormal);
     n = gl_FrontFacing ? n : -n;
     outNormal = octEncode(normalize(mat3(pc.frame.view) * n));
+    outDecalLayers = pc.drawBuffer.draws[vDraw].decalLayers;
 }

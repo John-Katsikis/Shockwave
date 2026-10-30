@@ -210,8 +210,10 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         const AmbientOcclusion effective = effectiveAmbientOcclusion();
         const bool have = prepassActive();
         std::string why;
-        if (effective != AmbientOcclusion::Off && !have) why = "pending: its images are made at the next frame";
-        else if (effective != ambientOcclusion) why = "the ambient occlusion debug view computes it at medium";
+        if (effective != AmbientOcclusion::Off && !have)
+            why = "pending: its images are made at the next frame";
+        else if (effective != ambientOcclusion)
+            why = "the ambient occlusion debug view computes it at medium";
         char detail[200] = "";
         if (have) {
             const VkExtent2D half = aoTargets.ao[0].image ? aoTargets.ao[0].extent : VkExtent2D{0, 0};
@@ -230,6 +232,27 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         settings.push_back(
             {"ambient_occlusion", ambientOcclusionName(ambientOcclusion),
              ambientOcclusionName(have ? effective : AmbientOcclusion::Off), why, detail});
+    }
+
+    // Decals (G08): their buffers and the prepass's layer target, while there are any.
+    {
+        const bool have = decalsActive();
+        std::string why;
+        if (decalQuality != DecalQuality::Off && !have)
+            why = lastSubmittedDecals ? "pending: its images are made at the next frame"
+                                      : "no decals in the scene: no decal pass or buffers";
+        char detail[200] = "";
+        const DecalStats& s = lastDecalStats;
+        const uint64_t bytes =
+            imageBytes(decalTargets.layers) + imageBytes(decalTargets.albedo) + imageBytes(decalTargets.material);
+        std::snprintf(
+            detail, sizeof(detail),
+            "budget %u; last frame %u submitted, %u visible, %u drawn, %u over budget; %.1f MiB",
+            decalBudget(decalQuality), s.submitted, s.visible, s.drawn, s.overBudget,
+            static_cast<double>(bytes) / (1024.0 * 1024.0));
+        settings.push_back(
+            {"decals_quality", decalQualityName(decalQuality),
+             decalQualityName(have ? decalQuality : DecalQuality::Off), why, detail});
     }
 
     // Vsync and low latency come down to the present mode the surface allowed.
@@ -304,6 +327,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::Bloom, bloom.image.allocation);
     add(GpuMemoryCategory::AntiAliasing, aaTarget.image.allocation);
     add(GpuMemoryCategory::SurfaceBuffers, aoTargets.normal.allocation);
+    for (const vk::Image* image : {&decalTargets.layers, &decalTargets.albedo, &decalTargets.material})
+        add(GpuMemoryCategory::SurfaceBuffers, image->allocation);
     for (const vk::Image& image : aoTargets.ao) add(GpuMemoryCategory::AmbientOcclusion, image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);

@@ -31,6 +31,9 @@ public:
     bool supportsTextureShape(TextureShape shape) const override;
     void setReflectionProbes(std::span<const ReflectionProbeDesc> probes) override;
     void setLocalReflections(bool enabled) override;
+    void drawDecals(std::span<const DecalDesc> decals) override;
+    void setDecalQuality(DecalQuality quality) override;
+    DecalStats decalStats() const override;
     bool requestSceneCapture(std::string& error) override;
     bool sceneCapturePending() const override;
     SceneCapture takeSceneCapture() override;

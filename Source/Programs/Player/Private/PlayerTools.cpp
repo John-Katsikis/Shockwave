@@ -5,6 +5,7 @@
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
+#include <Engine/Decals.h>
 #include <Engine/Engine.h>
 #include <Engine/Prefab.h>
 #include <Engine/SceneFile.h>
@@ -169,6 +170,15 @@ int Player::check(const std::vector<std::string>& importProblems) {
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
         checkMaterialOverrides(world, scene.string(), problems);
+        // Decals (G08): a box that can't land, or a material that won't resolve.
+        world.each<const shockwave::Decal>([&](shockwave::Entity e, const shockwave::Decal& decal) {
+            const std::string where = shown + ": entity '" + entityName(e) + "': Decal ";
+            if (!world.has<shockwave::Transform>(e)) problems.push_back(where + "needs a Transform to be placed");
+            if (const std::string problem = shockwave::decalProblem(decal, &engine().assets()); !problem.empty())
+                problems.push_back(where + problem);
+            else if (decal.receiverMask == 0)
+                std::printf("warning %sreceiver_mask 0 lands on nothing\n", where.c_str());
+        });
         checkLighting(world, shown, problems);
         checkAnimators(world, scene.string(), problems);
         checkCircuits(world, scene.string(), problems, usedCircuits);

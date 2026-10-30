@@ -1,5 +1,8 @@
-# A plain wall and a door swinging on its hinge: the receivers for projected decals
-# (G08, A03). Decals land here once they exist; until then this is their baseline.
+# A plain wall and a door swinging on its hinge, with projected decals (G08, A03): a blue
+# poster with a yellow stripe over it (sort order 1 over 0, partly transparent), a stone
+# patch from a material, a red sign stuck to the door whose box is wider and deeper than
+# the door but lands only on it (receiver layer 2), and grime on the floor in a box the
+# camera is inside. GraphicsFixturesCheck.cmake checks each.
 # Camera: "Main Camera".
 shockwave_scene 2
 
@@ -53,6 +56,56 @@ entity "Door"
   MeshRenderer
     mesh cube
     tint 0.45 0.3 0.2 1
+  DecalReceiver
+    layers 2
+end
+
+entity "Poster"
+  Transform
+    position -1.2 1.7 -0.9
+  Decal
+    size 1.2 1.2 0.4
+    tint 0.1 0.2 0.9 1
+end
+
+entity "Stripe"
+  Transform
+    position -0.8 1.4 -0.9
+  Decal
+    size 1 0.4 0.4
+    opacity 0.75
+    tint 0.95 0.8 0.1 1
+    sort_order 1
+end
+
+entity "Stone patch"
+  Transform
+    position -2.3 0.6 -0.9
+  Decal
+    material "materials/stone.swmaterial"
+    size 0.8 0.8 0.4
+    roughness_metallic 1
+end
+
+entity "Door sign"
+  Transform
+    position -0.5 1.2 0.04
+  Parent
+    entity "Door hinge"
+  Decal
+    size 2 1 4.4
+    tint 0.9 0.1 0.1 1
+    receiver_mask 2
+end
+
+entity "Grime"
+  Transform
+    position 0.5 0 4
+    rotation -90 0 0
+  Decal
+    size 6 6 4
+    opacity 0.7
+    tint 0.15 0.1 0.05 1
 end
 
 entity "Main Camera"

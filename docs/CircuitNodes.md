@@ -1796,6 +1796,455 @@ Sets the entity's ColorPulse strength.
 - In `target` Entity, default self
 - In `strength` Float, required
 
+### Component.Decal.Add
+
+Gives the entity a Decal with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Decal.Get
+
+Every field of the entity's Decal; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `texture` Texture
+- Out `size` Vec3
+- Out `opacity` Float
+- Out `tint` Color
+- Out `albedo` Bool
+- Out `roughness_metallic` Bool
+- Out `roughness` Float
+- Out `metallic` Float
+- Out `sort_order` Int
+- Out `receiver_mask` Int
+- Out `angle_fade` Float
+- Out `essential` Bool
+- Out `enabled` Bool
+
+### Component.Decal.Get.albedo
+
+The entity's Decal albedo.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `albedo` Bool
+
+### Component.Decal.Get.angle_fade
+
+The entity's Decal angle_fade.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `angle_fade` Float
+
+### Component.Decal.Get.enabled
+
+The entity's Decal enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.Decal.Get.essential
+
+The entity's Decal essential.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `essential` Bool
+
+### Component.Decal.Get.metallic
+
+The entity's Decal metallic.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `metallic` Float
+
+### Component.Decal.Get.opacity
+
+The entity's Decal opacity.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `opacity` Float
+
+### Component.Decal.Get.receiver_mask
+
+The entity's Decal receiver_mask.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `receiver_mask` Int
+
+### Component.Decal.Get.roughness
+
+The entity's Decal roughness.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `roughness` Float
+
+### Component.Decal.Get.roughness_metallic
+
+The entity's Decal roughness_metallic.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `roughness_metallic` Bool
+
+### Component.Decal.Get.size
+
+The entity's Decal size.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `size` Vec3
+
+### Component.Decal.Get.sort_order
+
+The entity's Decal sort_order.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `sort_order` Int
+
+### Component.Decal.Get.texture
+
+The entity's Decal texture.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `texture` Texture
+
+### Component.Decal.Get.tint
+
+The entity's Decal tint.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `tint` Color
+
+### Component.Decal.Has
+
+The entity has a Decal.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.Decal.Remove
+
+Takes the Decal off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Decal.Set
+
+Sets the fields given (connected or written) of the entity's Decal; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `texture` Texture
+- In `size` Vec3
+- In `opacity` Float
+- In `tint` Color
+- In `albedo` Bool
+- In `roughness_metallic` Bool
+- In `roughness` Float
+- In `metallic` Float
+- In `sort_order` Int
+- In `receiver_mask` Int
+- In `angle_fade` Float
+- In `essential` Bool
+- In `enabled` Bool
+
+### Component.Decal.Set.albedo
+
+Sets the entity's Decal albedo.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `albedo` Bool, required
+
+### Component.Decal.Set.angle_fade
+
+Sets the entity's Decal angle_fade.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `angle_fade` Float, required
+
+### Component.Decal.Set.enabled
+
+Sets the entity's Decal enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.Decal.Set.essential
+
+Sets the entity's Decal essential.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `essential` Bool, required
+
+### Component.Decal.Set.metallic
+
+Sets the entity's Decal metallic.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `metallic` Float, required
+
+### Component.Decal.Set.opacity
+
+Sets the entity's Decal opacity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `opacity` Float, required
+
+### Component.Decal.Set.receiver_mask
+
+Sets the entity's Decal receiver_mask.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `receiver_mask` Int, required
+
+### Component.Decal.Set.roughness
+
+Sets the entity's Decal roughness.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `roughness` Float, required
+
+### Component.Decal.Set.roughness_metallic
+
+Sets the entity's Decal roughness_metallic.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `roughness_metallic` Bool, required
+
+### Component.Decal.Set.size
+
+Sets the entity's Decal size.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `size` Vec3, required
+
+### Component.Decal.Set.sort_order
+
+Sets the entity's Decal sort_order.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `sort_order` Int, required
+
+### Component.Decal.Set.texture
+
+Sets the entity's Decal texture.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `texture` Texture, required
+
+### Component.Decal.Set.tint
+
+Sets the entity's Decal tint.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `tint` Color, required
+
+### Component.DecalLifetime.Add
+
+Gives the entity a DecalLifetime with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DecalLifetime.Get
+
+Every field of the entity's DecalLifetime; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `seconds` Float
+- Out `fade` Float
+
+### Component.DecalLifetime.Get.fade
+
+The entity's DecalLifetime fade.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `fade` Float
+
+### Component.DecalLifetime.Get.seconds
+
+The entity's DecalLifetime seconds.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `seconds` Float
+
+### Component.DecalLifetime.Has
+
+The entity has a DecalLifetime.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.DecalLifetime.Remove
+
+Takes the DecalLifetime off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DecalLifetime.Set
+
+Sets the fields given (connected or written) of the entity's DecalLifetime; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `seconds` Float
+- In `fade` Float
+
+### Component.DecalLifetime.Set.fade
+
+Sets the entity's DecalLifetime fade.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `fade` Float, required
+
+### Component.DecalLifetime.Set.seconds
+
+Sets the entity's DecalLifetime seconds.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `seconds` Float, required
+
+### Component.DecalReceiver.Add
+
+Gives the entity a DecalReceiver with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DecalReceiver.Get
+
+Every field of the entity's DecalReceiver; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `layers` Int
+
+### Component.DecalReceiver.Get.layers
+
+The entity's DecalReceiver layers.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `layers` Int
+
+### Component.DecalReceiver.Has
+
+The entity has a DecalReceiver.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.DecalReceiver.Remove
+
+Takes the DecalReceiver off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DecalReceiver.Set
+
+Sets the fields given (connected or written) of the entity's DecalReceiver; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `layers` Int
+
+### Component.DecalReceiver.Set.layers
+
+Sets the entity's DecalReceiver layers.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `layers` Int, required
+
 ### Component.DiffuseProbeVolume.Add
 
 Gives the entity a DiffuseProbeVolume with default values, if it has none.

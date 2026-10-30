@@ -82,8 +82,9 @@ void sessions() {
         c.stopped == 1 && world.entityCount() == 1 && world.get<Transform>(e)->position.x == 3,
         "Stop cleans up once and restores authored state and handles");
     session.start();
+    // The built-ins (Spin, Bob, DecalLifetime) and the game's one system, once each.
     check(
-        c.created == 2 && session.ticks() == 0 && session.schedule().size() == 3,
+        c.created == 2 && session.ticks() == 0 && session.schedule().size() == 4,
         "Restart uses fresh gameplay without duplicate systems");
     session.stop();
     c.failStart = true;

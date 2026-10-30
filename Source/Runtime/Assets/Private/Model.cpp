@@ -741,7 +741,8 @@ bool rayBounds(const Bounds& bounds, const glm::vec3& o, const glm::vec3& d, flo
 }   // namespace
 
 bool intersectModel(
-    const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance, uint32_t* material) {
+    const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance, uint32_t* material,
+    glm::vec3* normal) {
     float best = std::numeric_limits<float>::max();
     if (!rayBounds(model.bounds, origin, direction, best)) return false;
     for (const auto& node : model.nodes) {
@@ -773,6 +774,9 @@ bool intersectModel(
                 if (t >= 0 && t < best) {
                     best = t;
                     if (material) *material = model.meshes[index].material;
+                    if (normal)
+                        *normal =
+                            skinned ? glm::cross(e1, e2) : glm::transpose(glm::mat3(inverse)) * glm::cross(e1, e2);
                 }
             }
         }

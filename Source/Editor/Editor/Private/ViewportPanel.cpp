@@ -130,6 +130,7 @@ void Editor::drawViewport() {
         for (Entity e : selection()) {
             drawOutline(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
             drawReflectionProbe(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
+            drawDecalBox(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
         }
         if (m_prefs.showCameraIcons) {
             drawCameraIcons(pos, size);
@@ -321,7 +322,8 @@ void Editor::drawViewportToolbar() {
             "Shadow cascades",
             "Ambient occlusion",
             "Indirect diffuse",
-            "Reflection probes"};
+            "Reflection probes",
+            "Decals"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {
@@ -501,6 +503,45 @@ void Editor::drawReflectionProbe(Entity e, const ImVec2& pos, const ImVec2& size
         draw->AddLine(ImVec2(c.x, c.y - s), ImVec2(c.x, c.y + s), color, 1.5f);
         draw->AddCircle(c, s * 0.6f, color, 0, 1.5f);
     }
+}
+
+// A selected decal (G08): its box, the face it projects from, and an arrow along the
+// projection (-Z) with a tick towards +Y, the top of its texture.
+void Editor::drawDecalBox(Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color) {
+    const auto* decal = m_world.get<shockwave::Decal>(e);
+    if (!decal || !m_world.has<Transform>(e)) return;
+    const glm::mat4 model = shockwave::worldMatrix(m_world, e);
+    const glm::vec3 h = decal->size * 0.5f;
+    auto at = [&](const glm::vec3& local, ImVec2& out) {
+        return worldToScreen(glm::vec3(model * glm::vec4(local, 1.0f)), pos, size, out);
+    };
+    ImVec2 screen[8];
+    bool visible[8];
+    for (int i = 0; i < 8; ++i)
+        visible[i] = at(glm::vec3((i & 1) ? h.x : -h.x, (i & 2) ? h.y : -h.y, (i & 4) ? h.z : -h.z), screen[i]);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 8; ++i) {
+        for (int bit = 1; bit < 8; bit <<= 1) {
+            const int j = i | bit;
+            if (j == i || !visible[i] || !visible[j]) continue;
+            // The +Z face, where the projection starts, drawn heavier.
+            draw->AddLine(screen[i], screen[j], color, (i & 4) && (j & 4) ? 2.0f : 1.0f);
+        }
+    }
+    ImVec2 from, to, top;
+    if (at({0.0f, 0.0f, h.z}, from) && at({0.0f, 0.0f, -h.z}, to)) {
+        draw->AddLine(from, to, color, 2.0f);
+        const ImVec2 d(to.x - from.x, to.y - from.y);
+        const float length = std::sqrt(d.x * d.x + d.y * d.y);
+        if (length > 1.0f) {
+            const float s = 6.0f * ImGui::GetStyle().FontScaleDpi;
+            const ImVec2 u(d.x / length, d.y / length), n(-u.y, u.x);
+            draw->AddTriangleFilled(
+                to, ImVec2(to.x - u.x * s + n.x * s * 0.6f, to.y - u.y * s + n.y * s * 0.6f),
+                ImVec2(to.x - u.x * s - n.x * s * 0.6f, to.y - u.y * s - n.y * s * 0.6f), color);
+        }
+    }
+    if (at({0.0f, h.y, h.z}, top) && at({0.0f, 0.0f, h.z}, from)) draw->AddLine(from, top, color, 1.5f);
 }
 
 // Cameras have no mesh, so they get a small clickable icon, and a frustum when selected.
@@ -720,10 +761,18 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
             kMaterialPayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
         // Onto the object under the cursor; on a model, onto the part under it.
         std::string part;
-        const Entity target = pick(mouse, pos, size, &part);
+        glm::vec3 hit, normal;
+        const Entity target = pick(mouse, pos, size, &part, &hit, &normal);
         const std::string material = static_cast<const char*>(payload->Data);
+        // With Alt held it becomes a decal on the surface instead (G08).
+        const bool decal = ImGui::GetIO().KeyAlt && m_world.alive(target);
         if (payload->IsDelivery()) {
-            applyMaterial(target, material, part);
+            if (decal)
+                placeDecal(material, true, hit, normal);
+            else
+                applyMaterial(target, material, part);
+        } else if (decal) {
+            ImGui::SetTooltip("Decal of %s on %s", material.c_str(), displayName(target).c_str());
         } else {
             drawOutline(target, pos, size, accentU32());
             if (m_world.alive(target))
@@ -734,11 +783,18 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
     }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
             kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
-        const Entity target = pick(mouse, pos, size);
+        glm::vec3 hit, normal;
+        const Entity target = pick(mouse, pos, size, nullptr, &hit, &normal);
+        const std::string texture = static_cast<const char*>(payload->Data);
+        const bool decal = ImGui::GetIO().KeyAlt && m_world.alive(target);   // as for materials
         if (payload->IsDelivery()) {
-            applyTexture(target, static_cast<const char*>(payload->Data));
+            if (decal)
+                placeDecal(texture, false, hit, normal);
+            else
+                applyTexture(target, texture);
         } else {
             drawOutline(target, pos, size, accentU32());
+            if (decal) ImGui::SetTooltip("Decal of %s on %s", texture.c_str(), displayName(target).c_str());
         }
     }
     ImGui::EndDragDropTarget();
@@ -798,12 +854,14 @@ void Editor::mouseRay(
 }
 
 // The nearest visible mesh under the mouse, tested against its actual triangles.
-Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part) {
+Entity Editor::pick(
+    const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part, glm::vec3* hit, glm::vec3* normal) {
     glm::vec3 origin, dir;
     mouseRay(mouse, pos, size, origin, dir);
 
     Entity best = kNullEntity;
     float bestDistance = std::numeric_limits<float>::max();
+    glm::vec3 bestHit(0.0f), bestNormal(0.0f, 1.0f, 0.0f);
     const shockwave::Assets& assets = engine().assets();
     m_world.each<const Transform, const MeshRenderer>([&](Entity e, const Transform&, const MeshRenderer& r) {
         if (!r.visible) return;
@@ -818,12 +876,15 @@ Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, 
         const glm::vec3 pad(1e-3f);
         float t = 0.0f;
         if (!rayBox(lo, ld, b->min - pad, b->max + pad, t)) return;
-        if (!shockwave::raycast(*data, lo, ld, t)) return;
+        glm::vec3 face(0.0f);
+        if (!shockwave::raycast(*data, lo, ld, t, &face)) return;
         const glm::vec3 worldHit = glm::vec3(model * glm::vec4(lo + ld * t, 1.0f));
         const float distance = glm::length(worldHit - origin);
         if (distance < bestDistance) {
             bestDistance = distance;
             best = e;
+            bestHit = worldHit;
+            bestNormal = glm::transpose(glm::mat3(inv)) * face;
         }
     });
     m_world.each<const Transform, const shockwave::ModelRenderer>(
@@ -838,15 +899,26 @@ Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, 
             const glm::vec3 ld = glm::vec3(inv * glm::vec4(dir, 0.0f));
             float t = 0.0f;
             uint32_t material = 0;
-            if (!shockwave::intersectModel(model->data, lo, ld, t, &material)) return;
-            const float distance = glm::length(glm::vec3(matrix * glm::vec4(lo + ld * t, 1.0f)) - origin);
+            glm::vec3 face(0.0f);
+            if (!shockwave::intersectModel(model->data, lo, ld, t, &material, &face)) return;
+            const glm::vec3 worldHit = glm::vec3(matrix * glm::vec4(lo + ld * t, 1.0f));
+            const float distance = glm::length(worldHit - origin);
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = e;
+                bestHit = worldHit;
+                bestNormal = glm::transpose(glm::mat3(inv)) * face;
                 if (part) *part = material < model->data.materials.size() ? model->data.materials[material].name : "";
             }
         });
     if (part && !m_world.has<shockwave::ModelRenderer>(best)) part->clear();
+    if (hit) *hit = bestHit;
+    if (normal) {
+        // Face normals are either side of the triangle: the one facing the camera.
+        const float length = glm::length(bestNormal);
+        *normal = length > 1e-12f ? bestNormal / length : glm::vec3(0.0f, 1.0f, 0.0f);
+        if (glm::dot(*normal, dir) > 0.0f) *normal = -*normal;
+    }
     return best;
 }
 

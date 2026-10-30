@@ -47,9 +47,10 @@ const char* textureWrapName(TextureWrap wrap) {
 }
 const char* textureFilterName(TextureFilter filter) { return filter == TextureFilter::Nearest ? "nearest" : "linear"; }
 const char* materialSlotName(MaterialSlot slot) {
-    constexpr const char* names[] = {
-        "base_color",   "normal",     "metallic_roughness", "emissive",         "occlusion",    "detail_color",
-        "detail_normal", "detail_mask", "layer_mask",        "layer_base_color", "layer_normal", "layer_metallic_roughness"};
+    constexpr const char* names[] = {"base_color",       "normal",       "metallic_roughness",
+                                     "emissive",         "occlusion",    "detail_color",
+                                     "detail_normal",    "detail_mask",  "layer_mask",
+                                     "layer_base_color", "layer_normal", "layer_metallic_roughness"};
     static_assert(std::size(names) == kAllMaterialSlots);
     return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kAllMaterialSlots - 1)];
 }
@@ -121,6 +122,7 @@ struct Renderer::State {
     MaterialQuality materialQuality = MaterialQuality::High;
     std::atomic<bool> bakedLighting{true};
     bool localReflections = true;
+    DecalQuality decalQuality = DecalQuality::High;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -369,6 +371,7 @@ struct Renderer::State {
             for (const auto& [id, lods] : meshLods) backend->setMeshLods({id}, lods.first, lods.second);
         }
         backend->setLocalReflections(localReflections);
+        backend->setDecalQuality(decalQuality);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
@@ -937,6 +940,19 @@ void Renderer::setLocalReflections(bool enabled) {
     m->backend->setLocalReflections(enabled);
 }
 bool Renderer::localReflections() const { return m->localReflections; }
+void Renderer::drawDecals(std::span<const DecalDesc> decals) {
+    thread_local std::vector<DecalDesc> valid;
+    valid.clear();
+    for (const DecalDesc& d : decals)
+        if (validDecal(d)) valid.push_back(d);
+    if (!valid.empty()) m->backend->drawDecals(valid);
+}
+void Renderer::setDecalQuality(DecalQuality quality) {
+    m->decalQuality = quality;
+    m->backend->setDecalQuality(quality);
+}
+DecalQuality Renderer::decalQuality() const { return m->decalQuality; }
+DecalStats Renderer::decalStats() const { return m->backend->decalStats(); }
 bool Renderer::requestSceneCapture(std::string& error) { return m->backend->requestSceneCapture(error); }
 bool Renderer::sceneCapturePending() const { return m->backend->sceneCapturePending(); }
 SceneCapture Renderer::takeSceneCapture() { return m->backend->takeSceneCapture(); }

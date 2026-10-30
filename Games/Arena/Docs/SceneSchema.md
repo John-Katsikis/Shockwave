@@ -448,6 +448,38 @@ No fields; the component's presence is what matters.
 | `shadow_softness` | number; range 0 to 1 | `0.3` |
 | `shadow_bias` | number; range 0 to 10 | `1` |
 
+#### Decal
+
+| Field | Value | Default |
+|---|---|---|
+| `material` | quoted .swmaterial path inside Content, or none | `none` |
+| `texture` | texture name (white when unset) | `white` |
+| `size` | x y z; range 0.001 to 1000 | `1 1 0.2` |
+| `opacity` | number; range 0 to 1 | `1` |
+| `tint` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
+| `albedo` | 1 or 0 (true/false also accepted) | `1` |
+| `roughness_metallic` | 1 or 0 (true/false also accepted) | `0` |
+| `roughness` | number; range 0 to 1 | `0.5` |
+| `metallic` | number; range 0 to 1 | `0` |
+| `sort_order` | whole number; range -1000 to 1000 | `0` |
+| `receiver_mask` | whole number; range 0 to 255 | `255` |
+| `angle_fade` | number; range 0 to 89 | `60` |
+| `essential` | 1 or 0 (true/false also accepted) | `0` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### DecalReceiver
+
+| Field | Value | Default |
+|---|---|---|
+| `layers` | whole number; range 0 to 255 | `1` |
+
+#### DecalLifetime
+
+| Field | Value | Default |
+|---|---|---|
+| `seconds` | number; range 0 to 100000 | `30` |
+| `fade` | number; range 0 to 1000 | `2` |
+
 ### UI
 
 #### UIDocument

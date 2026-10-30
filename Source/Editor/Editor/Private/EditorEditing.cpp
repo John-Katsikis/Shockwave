@@ -4,6 +4,7 @@
 
 #include <Assets/BuiltinAssets.h>
 #include <Engine/BakedLighting.h>
+#include <Engine/Decals.h>
 #include <Engine/Prefab.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
@@ -326,6 +327,35 @@ bool Editor::applyTexture(Entity e, const std::string& texture) {
     renderer->texture = *handle;
     log("Gave " + displayName(e) + " the texture " + texture);
     return true;
+}
+
+Entity Editor::placeDecal(const std::string& asset, bool material, const glm::vec3& point, const glm::vec3& normal) {
+    shockwave::Decal decal;
+    if (material) {
+        decal.material = engine().assets().findMaterial(asset);
+        if (!decal.material.valid()) {
+            warn(asset + " isn't loaded yet");
+            return kNullEntity;
+        }
+    } else {
+        const auto handle = engine().assets().findTexture(asset);
+        if (!handle) {
+            warn(asset + " isn't loaded yet");
+            return kNullEntity;
+        }
+        decal.texture = *handle;
+    }
+    // A metre square, reaching 10 cm either side of the surface: enough to cover small
+    // bumps without going through the wall to the room behind.
+    decal.size = {1.0f, 1.0f, 0.2f};
+    pushUndo(m_world);
+    const Entity e = m_world.create();
+    m_world.add<Name>(e, {uniqueName(std::filesystem::path(asset).stem().string() + " decal")});
+    m_world.add<Transform>(e, {point, shockwave::impactDecalRotation(normal, 0), glm::vec3(1.0f)});
+    m_world.add<shockwave::Decal>(e, decal);
+    select(e);
+    log("Placed a decal of " + asset);
+    return e;
 }
 
 void Editor::duplicateSelected() {

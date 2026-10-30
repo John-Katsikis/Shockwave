@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -53,6 +53,9 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     float aoIntensity;
     uvec2 reflectionProbes;   // a ReflectionProbes (reflection.glsl, G07)
     uint reflectionProbeCount;
-    uint pad;
+    // G08: bindless slots of the decal buffers (decal.frag); 0: no decals this frame.
+    uint decalAlbedo;   // premultiplied linear colour and coverage
+    uint decalMaterial;   // premultiplied roughness (r), metallic (g), coverage (a)
+    uint pad0, pad1, pad2;
     LightData lights[];
 };

@@ -16,6 +16,10 @@ struct GraphicsPipelineDesc {
     // Specialization constants for the fragment shader (variants of one shader); may be null.
     const VkSpecializationInfo* fragmentSpecialization = nullptr;
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+    // A second colour attachment (location 1), blended like the first: the surface
+    // prepass's decal layers, the decal pass's second buffer (G08). Integer formats need
+    // blending off.
+    VkFormat secondColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
