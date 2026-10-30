@@ -61,6 +61,10 @@ struct PrefabInstance {
     // Runtime, not saved: the loaded prefab the copy was made from. updatePrefabInstances
     // remakes the copy when this is out of date.
     std::shared_ptr<const PrefabAsset> source;
+    // This copy's own baked lighting identity (32 hex digits, docs/Lighting.md): objects in
+    // it are bound to a bake by this combined with their id in the prefab file. Empty until
+    // the copy takes part in a bake; saved only when set.
+    std::string bakeId;
 };
 
 // Marks an entity that a prefab copy made under its root. Not saved, and not edited on

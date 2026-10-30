@@ -146,6 +146,47 @@ struct Light {
     float shadowBias = 1.0f;   // raise if lit surfaces show dark speckles; lower if shadows detach
 };
 
+// ---- Baked lighting (G05, G06; docs/Lighting.md) ----
+// Light that bounces around a scene's walls is baked offline into lightmaps (for static
+// surfaces) and probe volumes (for things that move). Nothing is baked unless the scene
+// says so; scenes without these components light exactly as before.
+
+// Whether an object takes part in a bake. Only static objects do: they occlude and bounce
+// light in the bake, and with receive_lightmap get a lightmap of their own. Being still
+// isn't enough; a dynamic object never blocks baked light. binding_id ties the object to
+// its bake: 32 lowercase hex digits, assigned by the editor (and `player
+// --lighting-assign-ids`), unique in the scene, kept when the scene is reordered.
+struct BakeGeometry {
+    enum class Mobility : int { Static, Dynamic };
+    std::string bindingId;
+    Mobility mobility = Mobility::Dynamic;
+    bool castIndirect = true;   // blocks and bounces light in the bake
+    bool receiveLightmap = false;   // gets a lightmap (static only)
+    float texelsPerMeter = 16.0f;   // lightmap density
+};
+// On an entity with a Light: the light it gives static surfaces is bounced around in the
+// bake. Its direct light stays real-time, with shadows, either way.
+struct BakeLight {
+    bool includeIndirect = true;
+};
+// The scene's bake: asset is the .swlighting manifest inside Content ("Lighting/Arena.swlighting").
+// One per scene. enabled false keeps the bake but draws without it.
+struct BakedLighting {
+    std::string asset;
+    bool enabled = true;
+};
+// A box of light probes, for diffuse light on moving objects: placed and turned by the
+// entity's Transform, probes every spacing metres, fading out blend_distance inside its
+// faces. Where volumes overlap the higher priority wins.
+struct DiffuseProbeVolume {
+    glm::vec3 halfExtents{4.0f, 2.0f, 4.0f};
+    float spacing = 1.0f;   // metres between probes
+    float blendDistance = 0.5f;
+    int priority = 0;
+    bool enabled = true;
+    std::string bindingId;
+};
+
 // Turns around an axis (world space) at a steady rate.
 struct Spin {
     glm::vec3 axis{0.0f, 1.0f, 0.0f};

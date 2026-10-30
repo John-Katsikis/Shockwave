@@ -41,6 +41,7 @@ only use the ones above it in this table, so lower layers never depend on higher
 | **Navigation** | navmeshes, paths and crowds (Recast & Detour) | |
 | **Effects** | particle effects (Effekseer) | |
 | **Animation** | skeletal animation (ozz-animation) | |
+| **Lighting** | the lighting baker: lightmaps and diffuse probes (xatlas) | |
 | **GameFramework** | `GameModule`, `GameInstance`, `GameMode`, `PlaySession`, save games | 5, 12 |
 
 Each module has the same shape: `Public/<Module>/` holds the headers other code may
@@ -67,7 +68,7 @@ include (as `#include <Engine/World.h>`), and `Private/` holds everything else.
 `CMakeLists.txt` downloads every library during the first configure, pinned to exact
 versions, so nothing needs installing by hand: SDL3, the Vulkan headers, volk, VMA,
 vk-bootstrap, GLM, stb_image, Assimp, Jolt, Dear ImGui (docking branch) and ImGuizmo,
-RmlUi, Recast & Detour, Steam Audio, ozz-animation and Effekseer. Tracy, the profiler,
+RmlUi, Recast & Detour, Steam Audio, ozz-animation, Effekseer and xatlas. Tracy, the profiler,
 is only fetched when you turn on `SHOCKWAVE_PROFILE`.
 
 ## Glossary

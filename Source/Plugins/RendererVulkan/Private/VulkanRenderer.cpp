@@ -37,6 +37,9 @@ void VulkanRenderer::createTextureData(TextureHandle id, const TextureData& data
     m_impl->createTextureData(id, data);
 }
 void VulkanRenderer::setMeshUv1(MeshHandle id, std::span<const glm::vec2> uv1) { m_impl->setMeshUv1(id, uv1); }
+void VulkanRenderer::setMeshLightmapUv(MeshHandle id, std::span<const glm::vec2> uv) {
+    m_impl->setMeshLightmapUv(id, uv);
+}
 void VulkanRenderer::createSampler(SamplerHandle id, const SamplerDesc& desc) { m_impl->createSampler(id, desc); }
 void VulkanRenderer::setAnisotropy(uint32_t anisotropy) { m_impl->setAnisotropy(anisotropy); }
 void VulkanRenderer::setMaterialQuality(MaterialQuality quality) {

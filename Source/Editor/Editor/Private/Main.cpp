@@ -26,6 +26,7 @@
 //   --preferences          show the Preferences window on startup
 //   --graphics-guide       show the graphics implementation guide on startup
 //   --network              show the Network window on startup
+//   --lighting             show the Lighting (bake) window on startup
 //   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
@@ -75,6 +76,8 @@ int main(int argc, char** argv) {
                 options.showGraphicsGuide = true;
             else if (arg == "--network")
                 options.showNetwork = true;
+            else if (arg == "--lighting")
+                options.showLighting = true;
             else if (arg == "--graphics-guide-path") {
                 const auto path = editor::graphicsGuidePath();
                 if (path.empty()) throw std::runtime_error("Graphics guide not found; rebuild the editor target");
@@ -101,7 +104,7 @@ int main(int argc, char** argv) {
                           "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
                           "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
                           "       [--play] [--select N] [--circuit path]\n"
-                          "       [--graphics-guide] [--graphics-guide-path] [--network]\n"
+                          "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting]\n"
                           "       [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')

@@ -86,6 +86,9 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::CircuitDump       ? dumpCircuit()
                      : m_tool.mode == Tool::Mode::NetworkManifest   ? networkManifest()
                      : m_tool.mode == Tool::Mode::AssignNetworkKeys ? assignNetworkKeysTool()
+                     : m_tool.mode == Tool::Mode::LightingInfo      ? lightingInfo()
+                     : m_tool.mode == Tool::Mode::LightingAssignIds ? lightingAssignIds()
+                     : m_tool.mode == Tool::Mode::BakeLighting      ? bakeLightingTool()
                                                                     : schema();
         engine().quit();
         return;
@@ -385,7 +388,10 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     } else {
         renderer.setCamera(m_camera.view(), m_camera.projection(renderer.aspectRatio()), m_view);
     }
-    shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets());
+    const double now = engine().frameStartSeconds();
+    m_bakedLighting.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
+    m_bakedLightingTime = now;
+    shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets(), &m_bakedLighting);
     m_effects->render(renderer);
     if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
     if (m_tool.showNavMesh && m_session && m_session->navigation()) {
@@ -397,6 +403,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
 
 void Player::onShutdown() {
     m_navOverlay.release(engine().renderer());
+    m_bakedLighting.release();
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
     if (m_session) {
         SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());

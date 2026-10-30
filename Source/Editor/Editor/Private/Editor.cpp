@@ -91,6 +91,7 @@ void Editor::onStart() {
     m_showPreferences = m_options.showPreferences;
     m_showGraphicsGuide = m_options.showGraphicsGuide;
     m_showNetwork = m_options.showNetwork;
+    m_showLighting = m_options.showLighting;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -110,6 +111,7 @@ void Editor::onStart() {
 }
 
 void Editor::onShutdown() {
+    cancelLightingBake();
     stopAudioPreview();
     m_audioPreview.reset();
     if (m_build.thread.joinable()) {
@@ -121,6 +123,7 @@ void Editor::onShutdown() {
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
     m_navOverlay.release(engine().renderer());
+    m_bakedLighting.release();
     m_effects.reset();
     m_animation.reset();
     if (m_hasProject) {
@@ -221,6 +224,7 @@ void Editor::onGui() {
     if (m_showCircuits) drawCircuitsWindow();
     if (m_showNetwork) drawNetworkWindow();
     if (m_showMaterial) drawMaterialWindow();
+    if (m_showLighting || m_lightingBake) drawLightingWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
@@ -279,8 +283,12 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     grid.fadeDistance = std::clamp(m_camera.position.y * 12.0f + 60.0f, 60.0f, 600.0f);
     renderer.setGrid(grid);
     // While editing (or paused) nothing moves on its own, so draw exactly what's there.
+    const double now = engine().frameStartSeconds();
+    m_bakedLighting.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
+    m_bakedLightingTime = now;
     shockwave::renderWorld(
-        m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets());
+        m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets(),
+        &m_bakedLighting);
     renderNavigation(renderer);
     m_effects->render(renderer);
     if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too

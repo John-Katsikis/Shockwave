@@ -132,6 +132,8 @@ void VulkanRenderer::Impl::destroyMesh(MeshHandle handle) {
     vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
     if (mesh.skin.buffer) vmaDestroyBuffer(context->allocator(), mesh.skin.buffer, mesh.skin.allocation);
     if (mesh.uv1.buffer) vmaDestroyBuffer(context->allocator(), mesh.uv1.buffer, mesh.uv1.allocation);
+    if (mesh.lightmapUv.buffer)
+        vmaDestroyBuffer(context->allocator(), mesh.lightmapUv.buffer, mesh.lightmapUv.allocation);
     mesh = {};
 }
 
@@ -143,6 +145,16 @@ void VulkanRenderer::Impl::setMeshUv1(MeshHandle handle, std::span<const glm::ve
     mesh.uv1 = uploadBuffer(
         uv1.data(), uv1.size_bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
     mesh.uv1Address = bufferAddress(mesh.uv1.buffer);
+}
+
+void VulkanRenderer::Impl::setMeshLightmapUv(MeshHandle handle, std::span<const glm::vec2> uv) {
+    if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire))
+        throw std::runtime_error("setMeshLightmapUv: there's no such mesh");
+    Mesh& mesh = meshes[handle.id];
+    if (mesh.lightmapUv.buffer || uv.empty()) return;
+    mesh.lightmapUv = uploadBuffer(
+        uv.data(), uv.size_bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    mesh.lightmapUvAddress = bufferAddress(mesh.lightmapUv.buffer);
 }
 
 uint32_t VulkanRenderer::Impl::takeTextureSlot() {

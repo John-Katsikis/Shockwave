@@ -136,6 +136,7 @@ module can only see the headers of modules it depends on, directly or through th
 | Navigation | navmesh baking, paths and crowds (Recast & Detour), `NavAgent`, `game.navigation()` | Engine | NavigationSystem |
 | Effects | particle effects from `.efkefc` files (Effekseer), `ParticleEffect`, `game.effects()` | Engine | Niagara |
 | Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
+| Lighting | the lighting baker: lightmap unwrap (xatlas), CPU path tracing, diffuse probes, `bakeLighting()` (the scene side, `BakedLightingRuntime`, is in Engine) | Engine | Lightmass, GPU Lightmass |
 | Circuits | visual scripting: `.swcircuit` node graphs compiled to bytecode, the `Circuit` component, the game circuit | Engine | Blueprints (Kismet) |
 | GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Multiplayer, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
 

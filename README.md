@@ -629,6 +629,7 @@ Shockwave/
                           scene files, camera, subsystems and the engine loop
       Audio/              clips, mixing and spatial sound sources
       Animation/          skeletal animation (ozz-animation): Animator, AnimationWorld
+      Lighting/           the lighting baker: lightmaps (xatlas) and diffuse probes (docs/Lighting.md)
       Physics/            Jolt physics (PhysicsWorld)
       Navigation/         navigation meshes, paths and agents with Recast & Detour (NavigationWorld)
       GameFramework/      GameMode, GameInstance, GameModule, PlaySession

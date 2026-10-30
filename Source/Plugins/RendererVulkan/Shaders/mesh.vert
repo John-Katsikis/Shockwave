@@ -26,6 +26,7 @@ layout(location = 9) flat out uvec4 vMaps;   // normal, metallic-roughness, emis
 layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion strength
 layout(location = 11) flat out uint vDraw;   // this draw's entry, for its slot bindings
 layout(location = 12) out float vLayerMask;   // a second layer's mask from the vertex colours (A02)
+layout(location = 13) out vec2 vLightmapUv;   // in the draw's lightmap atlas (G05); 0 without one
 // The surface prepass (G03) and the shading over it run this same shader in different
 // pipelines; their depths must match exactly for the EQUAL test.
 invariant gl_Position;
@@ -50,6 +51,8 @@ void main() {
             vColor = vec4(1.0, 1.0, 1.0, v.color.a) * draw.tint;
         }
     }
+    vLightmapUv = vec2(0.0);
+    if (draw.indirectSource == kIndirectLightmap) vLightmapUv = LightmapUvBuffer(draw.lightmapUvBuffer).lightmapUv[gl_VertexIndex];
     vTexture = draw.textureIndex;
     vAlphaCutoff = draw.alphaCutoff;
     vWorldPosition = (draw.model * vec4(v.position, 1.0)).xyz;

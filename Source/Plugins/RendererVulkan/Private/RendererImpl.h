@@ -89,13 +89,27 @@ struct DrawData {
     VkDeviceAddress uv1Buffer;   // the mesh's second UV set; 0: none
     SlotBinding slots[kMaterialSlots];
     VkDeviceAddress layers;   // this draw's LayerData; 0: no detail or second layer
+    // Baked lighting (G05, G06): where the draw's diffuse light from its surroundings comes from.
+    VkDeviceAddress lightmapUvBuffer;   // the mesh's lightmap UVs; 0: none
+    uint32_t lightmapTexture;   // bindless slot, with kIndirectLightmap
+    uint32_t indirectSource;   // kIndirectEnvironment, kIndirectLightmap or kIndirectProbes
+    VkDeviceAddress probes;   // this draw's ProbeData, with kIndirectProbes
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
         offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
         offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && offsetof(DrawData, layers) == 408 &&
-        sizeof(DrawData) == 416,
+        offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
+        offsetof(DrawData, probes) == 432 && sizeof(DrawData) == 440,
     "DrawData must match the shader's scalar layout");
+constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
+                   kIndirectProbes = 2u;   // DrawData::indirectSource
+// A draw's probe sample: irradiance / pi spherical harmonics (Assets/LightingData.h order),
+// in a table of its own like LayerData. Must match ProbeData in shaders/draw.glsl.
+struct ProbeData {
+    glm::vec4 sh[9];   // rgb; w unused
+};
+static_assert(sizeof(ProbeData) == 144, "ProbeData must match the shader's scalar layout");
 
 // A draw's detail layer and second layer (A02), in a table of their own so draws without
 // them don't carry the weight. Must match LayerData in shaders/draw.glsl.
@@ -239,6 +253,8 @@ struct DrawCommand {
     uint32_t skinList = 0, skin = kNoSkin;
     // Draws with a detail or second layer: which LayerData in the same DrawList.
     uint32_t layers = kNoLayers;
+    // Draws lit by probes: which ProbeData in the same DrawList.
+    uint32_t probes = kNoLayers;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     // In the camera's view. Draws outside it stay in the draw table: they may still cast
     // shadows into the view.
@@ -304,6 +320,7 @@ struct alignas(64) DrawList {
     std::vector<SkinJob> skins;
     std::vector<glm::mat4> joints;
     std::vector<LayerData> layers;
+    std::vector<ProbeData> probes;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -334,6 +351,9 @@ struct Mesh {
     // A second UV set (setMeshUv1), one vec2 per vertex.
     vk::Buffer uv1;
     VkDeviceAddress uv1Address = 0;
+    // Baked receivers' lightmap UVs (setMeshLightmapUv), one vec2 per vertex.
+    vk::Buffer lightmapUv;
+    VkDeviceAddress lightmapUvAddress = 0;
 };
 
 // Records a layout transition with synchronization2.
@@ -384,6 +404,10 @@ struct VulkanRenderer::Impl {
         LayerData* layerData = nullptr;
         VkDeviceAddress layerAddress = 0;
         uint32_t layerCapacity = 0;
+        vk::Buffer probeBuffer;   // this frame's ProbeData, persistently mapped
+        ProbeData* probeData = nullptr;
+        VkDeviceAddress probeAddress = 0;
+        uint32_t probeCapacity = 0;
         vk::Buffer frameBuffer;   // lights and camera, persistently mapped
         uint8_t* frameData = nullptr;
         VkDeviceAddress frameAddress = 0;
@@ -546,6 +570,7 @@ struct VulkanRenderer::Impl {
         return (handle.id < kMaxSamplers ? handle.id : 0) + samplerBank * kMaxSamplers;
     }
     void setMeshUv1(MeshHandle handle, std::span<const glm::vec2> uv1);
+    void setMeshLightmapUv(MeshHandle handle, std::span<const glm::vec2> uv);
 
     std::mutex queueMutex;   // VkQueue access must be externally synchronized
     VkCommandPool uploadPool = VK_NULL_HANDLE;
@@ -634,6 +659,7 @@ struct VulkanRenderer::Impl {
     // Grows a frame's draw table. Only called when the GPU is done with that frame.
     void ensureDrawCapacity(Frame& f, uint32_t count);
     void ensureLayerCapacity(Frame& f, uint32_t count);
+    void ensureProbeCapacity(Frame& f, uint32_t count);
 
     void createRenderFinishedSemaphores();
 

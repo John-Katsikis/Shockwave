@@ -95,6 +95,7 @@ void Editor::applyProjectTheme() {
 
 void Editor::closeProject() {
     if (!m_hasProject) return;
+    cancelLightingBake();
     stop();
     rememberCamera();
     saveEditorState();

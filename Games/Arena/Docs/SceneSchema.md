@@ -149,6 +149,7 @@ No fields; the component's presence is what matters.
 | Field | Value | Default |
 |---|---|---|
 | `path` | quoted text | `""` |
+| `bake_id` | quoted text | `""` |
 
 #### Transform
 
@@ -192,6 +193,42 @@ No fields; the component's presence is what matters.
 | Field | Value | Default |
 |---|---|---|
 | `values` | quoted text | `""` |
+
+### Lighting
+
+#### BakeGeometry
+
+| Field | Value | Default |
+|---|---|---|
+| `binding_id` | quoted text | `""` |
+| `mobility` | one of: static, dynamic (or its number, counting from 0) | `dynamic` |
+| `cast_indirect` | 1 or 0 (true/false also accepted) | `1` |
+| `receive_lightmap` | 1 or 0 (true/false also accepted) | `0` |
+| `texels_per_meter` | number; range 0.25 to 256 | `16` |
+
+#### BakeLight
+
+| Field | Value | Default |
+|---|---|---|
+| `include_indirect` | 1 or 0 (true/false also accepted) | `1` |
+
+#### BakedLighting
+
+| Field | Value | Default |
+|---|---|---|
+| `asset` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### DiffuseProbeVolume
+
+| Field | Value | Default |
+|---|---|---|
+| `half_extents` | x y z; range 0.05 to 10000 | `4 2 4` |
+| `spacing` | number; range 0.1 to 100 | `1` |
+| `blend_distance` | number; range 0 to 100 | `0.5` |
+| `priority` | whole number; range -1000 to 1000 | `0` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `binding_id` | quoted text | `""` |
 
 ### Motion
 

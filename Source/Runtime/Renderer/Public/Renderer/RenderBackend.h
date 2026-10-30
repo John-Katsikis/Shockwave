@@ -79,6 +79,8 @@ public:
     // Right after createMesh: the mesh's second UV set, one per vertex. Ignoring it reads
     // UV0 wherever a material asks for UV1.
     virtual void setMeshUv1(MeshHandle, std::span<const glm::vec2> /*uv1*/) {}
+    // Lightmap UVs (G05). A backend without them draws baked receivers with the environment.
+    virtual void setMeshLightmapUv(MeshHandle, std::span<const glm::vec2> /*uv*/) {}
     // Once per distinct SamplerDesc; id 0 (the default) is never sent. Any thread.
     virtual void createSampler(SamplerHandle, const SamplerDesc&) {}
     virtual void setAnisotropy(uint32_t /*1..16*/) {}

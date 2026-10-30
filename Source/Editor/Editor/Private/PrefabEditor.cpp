@@ -68,7 +68,7 @@ void Editor::createPrefab(Entity e) {
     pushUndo(m_world);
     const std::vector<Entity> below = shockwave::subtree(m_world, e);
     for (size_t i = 1; i < below.size(); ++i) m_world.destroy(below[i]);
-    m_world.add<PrefabInstance>(e, {path, nullptr});
+    m_world.add<PrefabInstance>(e, {path, nullptr, {}});
     shockwave::updatePrefabInstances(m_world);
     select(e);
     log("Made the prefab " + m_project.relative(m_project.assetFolder / path) + "; " + displayName(e) +

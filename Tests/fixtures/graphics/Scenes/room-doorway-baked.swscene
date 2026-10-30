@@ -1,0 +1,218 @@
+# room-doorway with baked lighting (G05, G06): the room's surfaces are static receivers,
+# the sun and lamp bounce, and a probe volume fills the room for the ball, which isn't
+# baked. Tests/GraphicsFixturesCheck.cmake bakes a copy and compares it with the unbaked
+# scene and with baked_lighting false. Cameras: "Inside" (looking out), "Outside".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+  BakedLighting
+    asset "Lighting/room-doorway-baked.swlighting"
+end
+
+entity "Sun"
+  Transform
+    rotation -28 10 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 4
+  BakeLight
+    include_indirect 1
+end
+
+entity "Ground"
+  Transform
+    position 0 -0.2 0
+    scale 60 1 60
+  MeshRenderer
+    mesh floor
+    texture grid
+    tint 0.55 0.55 0.5 1
+  BakeGeometry
+    binding_id "292587c54f2e7a590460f37decc2b869"
+    mobility static
+    receive_lightmap 0
+end
+
+entity "Room floor"
+  Transform
+    position 0 -0.1 -4
+    scale 8 0.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "3312dbcf894d202f2d72858a487478fd"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Ceiling"
+  Transform
+    position 0 3.1 -4
+    scale 8 0.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "c36b7b865b1f1fc41513875e89fbeb79"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Left wall (red)"
+  Transform
+    position -4.1 1.5 -4
+    scale 0.2 3.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.75 0.12 0.1 1
+  BakeGeometry
+    binding_id "6f5b7c5198573953600aa4c9c7df28ea"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Right wall (green)"
+  Transform
+    position 4.1 1.5 -4
+    scale 0.2 3.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.12 0.6 0.15 1
+  BakeGeometry
+    binding_id "30ff3cd767bd7c2e0890108dfadcdf5c"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Back wall"
+  Transform
+    position 0 1.5 -8.1
+    scale 8.4 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "aeb51aea972cb1df43e0a9e74f4e0e53"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Front wall left"
+  Transform
+    position -2.4 1.5 0.1
+    scale 3.2 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "0e343ad2751f9cab777d1a005d5fc1ec"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Front wall right"
+  Transform
+    position 2.4 1.5 0.1
+    scale 3.2 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "2a445a703dec0dffbc468ff094397368"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Lintel"
+  Transform
+    position 0 2.65 0.1
+    scale 1.6 0.9 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.82 0.8 0.76 1
+  BakeGeometry
+    binding_id "8394e49f547cf998eb9c70dff3fc1ab7"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Box"
+  Transform
+    position -1.6 0.5 -5.5
+    rotation 0 20 0
+    scale 1 1 1
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.78 0.7 1
+  BakeGeometry
+    binding_id "f77158792bbfec603bb87f4543a6f696"
+    mobility static
+    receive_lightmap 1
+    texels_per_meter 4
+end
+
+entity "Ball"
+  Transform
+    position 1.4 0.5 -3.5
+    scale 1 1 1
+  MeshRenderer
+    mesh sphere
+    tint 0.9 0.9 0.9 1
+    roughness 0.3
+end
+
+entity "Lamp"
+  Transform
+    position 0 2.6 -5.5
+  Light
+    type Point
+    color 1 0.82 0.6 1
+    intensity 6
+    range 7
+  BakeLight
+    include_indirect 1
+end
+
+entity "Room probes"
+  Transform
+    position 0 1.5 -4
+  DiffuseProbeVolume
+    binding_id "c110461139d872af8895a83cdccf74cd"
+    half_extents 3.9 1.5 3.9
+    spacing 1
+    blend_distance 0.5
+end
+
+entity "Inside"
+  Transform
+    position 0 1.6 -7.4
+    rotation -6 180 0
+  Camera
+    fov 70
+    near_plane 0.05
+    primary 1
+end
+
+entity "Outside"
+  Transform
+    position 0 1.7 6
+    rotation -4 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 0
+end

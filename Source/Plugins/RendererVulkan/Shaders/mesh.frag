@@ -38,6 +38,7 @@ layout(location = 9) flat in uvec4 vMaps;   // normal, metallic-roughness, emiss
 layout(location = 10) flat in vec2 vMapScales;   // normal scale, occlusion strength
 layout(location = 11) flat in uint vDraw;
 layout(location = 12) in float vLayerMask;
+layout(location = 13) in vec2 vLightmapUv;
 
 layout(location = 0) out vec4 outColor;
 
@@ -74,6 +75,30 @@ float rangeFalloff(float distance, float range) {
     float ratio = distance / range;
     float window = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
     return window * window / (distance * distance + 1.0);
+}
+
+// The diffuse light this surface receives from its surroundings, as irradiance / pi (G05,
+// G06): its baked lightmap, its probe sample, or the environment's irradiance cube. All
+// three use the same convention, so whichever it is feeds the same terms below.
+vec3 surroundingsIrradiance(vec3 n) {
+    DrawData draw = pc.drawBuffer.draws[vDraw];
+    if (draw.indirectSource == kIndirectLightmap) {
+        // Level 0 only: smaller levels would blend neighbouring charts into each other. Kept
+        // half a texel inside the atlas so bilinear filtering never wraps around it.
+        vec2 size = vec2(textureSize(sampler2D(textures[nonuniformEXT(draw.lightmapTexture)], linearSampler), 0));
+        vec2 uv = clamp(vLightmapUv, 0.5 / size, 1.0 - 0.5 / size);
+        return textureLod(sampler2D(textures[nonuniformEXT(draw.lightmapTexture)], linearSampler), uv, 0.0).rgb;
+    }
+    if (draw.indirectSource == kIndirectProbes) {
+        ProbeBuffer probes = ProbeBuffer(draw.probes);
+        float y[9] = float[](
+            0.282095, 0.488603 * n.y, 0.488603 * n.z, 0.488603 * n.x, 1.092548 * n.x * n.y, 1.092548 * n.y * n.z,
+            0.315392 * (3.0 * n.z * n.z - 1.0), 1.092548 * n.x * n.z, 0.546274 * (n.x * n.x - n.y * n.y));
+        vec3 sum = vec3(0.0);
+        for (int i = 0; i < 9; ++i) sum += probes.probe.sh[i].rgb * y[i];
+        return max(sum, vec3(0.0));
+    }
+    return textureLod(samplerCube(irradianceCube, linearSampler), n, 0.0).rgb;
 }
 
 // Per-pixel noise, to rotate the filter disk so few samples look smooth rather than banded.
@@ -385,6 +410,7 @@ void main() {
     vec3 emissive = vEmissive;
     if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
+    if (frame.debugView == 6u) { outColor = vec4(surroundingsIrradiance(n), 1.0); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
     if (frame.debugView >= 3u) albedo.rgb = vec3(0.8);
     uint cascade = 99u;
@@ -453,7 +479,7 @@ void main() {
         clamp(vec2(nDotV, roughness), vec2(tableTexel * 0.5), vec2(1.0 - tableTexel * 0.5)), 0.0).rg;
     vec3 prefiltered = textureLod(
         samplerCube(specularCube, linearSampler), reflect(-v, n), roughness * (frame.specularLevels - 1.0)).rgb;
-    vec3 irradiance = textureLod(samplerCube(irradianceCube, linearSampler), n, 0.0).rgb;
+    vec3 irradiance = surroundingsIrradiance(n);
     vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);
     vec3 singleScatter = fresnel * brdf.x + brdf.y;
     float missed = 1.0 - (brdf.x + brdf.y);

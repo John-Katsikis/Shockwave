@@ -61,6 +61,7 @@ void Editor::newScene(SceneTemplate kind) {
 }
 
 bool Editor::openScene(const fs::path& path) {
+    cancelLightingBake();
     stop();
     shockwave::World loaded;
     std::string err;

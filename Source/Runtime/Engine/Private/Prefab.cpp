@@ -384,7 +384,7 @@ void expandPrefab(
     applyRoot(world, root, *prefab, map, keep, assets);
     PrefabInstance& instance = world.has<PrefabInstance>(root)
                                    ? *world.get<PrefabInstance>(root)
-                                   : world.add<PrefabInstance>(root, {prefab->path, nullptr});
+                                   : world.add<PrefabInstance>(root, {prefab->path, nullptr, {}});
     instance.source = std::move(prefab);
 }
 

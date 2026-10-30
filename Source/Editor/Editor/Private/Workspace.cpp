@@ -193,6 +193,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Circuits", nullptr, &m_showCircuits);
             ImGui::MenuItem("Network", nullptr, &m_showNetwork);
             ImGui::MenuItem("Material", nullptr, &m_showMaterial);
+            ImGui::MenuItem("Lighting", nullptr, &m_showLighting);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
             ImGui::EndMenu();

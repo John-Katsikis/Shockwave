@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
+        std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project
         double imageTolerance = 1.0;   // --tolerance
         std::array<double, 4> imageRegion{0, 0, 1, 1};   // --region
         std::filesystem::path output;   // --output: --package, --net-encode and the network tools
@@ -143,6 +144,22 @@ int main(int argc, char** argv) {
                 package.development = true;
             } else if (arg == "--check") {
                 tool.mode = Tool::Mode::Check;
+            } else if (arg == "--bake-lighting") {
+                tool.mode = Tool::Mode::BakeLighting;
+            } else if (arg == "--quality" && i + 1 < argc) {
+                tool.bakeQuality = argv[++i];
+                if (tool.bakeQuality != "preview" && tool.bakeQuality != "final")
+                    throw player::UsageError("--quality takes preview or final");
+            } else if (arg == "--lighting-info") {
+                tool.mode = Tool::Mode::LightingInfo;
+            } else if (arg == "--lighting-assign-ids") {
+                tool.mode = Tool::Mode::LightingAssignIds;
+            } else if (arg == "--lighting-schema" && i + 1 < argc) {
+                lightingSchema = argv[++i];
+            } else if (arg == "--lighting-export" && i + 1 < argc) {
+                lightingExport = argv[++i];
+            } else if (arg == "--lighting-import" && i + 1 < argc) {
+                lightingImport = argv[++i];
             } else if (arg == "--bake-navmesh") {
                 tool.mode = Tool::Mode::BakeNavMesh;
             } else if (arg == "--schema" && i + 1 < argc) {
@@ -240,10 +257,13 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::ShadowCascades;
                 else if (view == "ao")
                     tool.view = shockwave::DebugView::AmbientOcclusion;
+                else if (view == "indirect")
+                    tool.view = shockwave::DebugView::IndirectDiffuse;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
-                    throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao or navmesh");
+                    throw std::runtime_error(
+                        "--view takes lit, unlit, normals, lighting, cascades, ao, indirect or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -417,6 +437,16 @@ int main(int argc, char** argv) {
                     "                                    for a .swmaterial, also its parents, values, features,\n"
                     "                                    what material_quality low leaves out, and warnings\n"
                     "player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)\n"
+                    "player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]\n"
+                    "                                    bake lightmaps and probe volumes (docs/Lighting.md)\n"
+                    "player --lighting-info [--scene file.swscene] [--json file]\n"
+                    "                                    the scene's bake: state, why it's out of date, sizes\n"
+                    "player --lighting-assign-ids [--scene file.swscene] [--output new.swscene]\n"
+                    "                                    give bake participants missing or duplicate ids\n"
+                    "player --lighting-schema file|-     write the baked lighting reference (docs/LightingSchema.md)\n"
+                    "player --lighting-export payload --output file.json\n"
+                    "player --lighting-import file.json --output payload\n"
+                    "                                    a lightmap .ktx2, .swbake or .swprobe as JSON, and back\n"
                     "player --texture-info texture.png|model.glb [--json file]\n"
                     "                                    levels and GPU bytes at each texture_quality\n"
                     "       [--ui-preview] [--ui-nav down,down,confirm]\n"
@@ -519,7 +549,10 @@ int main(int argc, char** argv) {
                 "--run-circuit",
                 "--circuit --dump",
                 "--network-manifest",
-                "--assign-network-keys"};
+                "--assign-network-keys",
+                "--lighting-info",
+                "--lighting-assign-ids",
+                "--bake-lighting"};
             mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
@@ -533,6 +566,9 @@ int main(int argc, char** argv) {
             mode(steamStatus != 0, "--steam-status");
             mode(netTest.requested, "--net-test");
             mode(!netDump.empty(), "--net-dump");
+            mode(!lightingSchema.empty(), "--lighting-schema");
+            mode(!lightingExport.empty(), "--lighting-export");
+            mode(!lightingImport.empty(), "--lighting-import");
             mode(!netEncode.empty(), "--net-encode");
             mode(!tool.netPreview.empty(), "--net-preview");
             mode(tool.online == Tool::Online::Host || tool.online == Tool::Online::HostDirect, "--host");
@@ -566,10 +602,16 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--network-manifest needs --output file: it never rewrites the manifest");
             if (tool.mode == Tool::Mode::AssignNetworkKeys && (tool.scene.empty() || output.empty()))
                 throw player::UsageError("--assign-network-keys needs --scene file.swscene and --output new-file");
-            if (!output.empty() && !package.requested && netEncode.empty() &&
-                tool.mode != Tool::Mode::NetworkManifest && tool.mode != Tool::Mode::AssignNetworkKeys)
-                throw player::UsageError("--output goes with --package, --net-encode, --network-manifest or "
-                                         "--assign-network-keys");
+            if ((!lightingExport.empty() || !lightingImport.empty()) && output.empty())
+                throw player::UsageError("--lighting-export and --lighting-import need --output file");
+            if (tool.bakeQuality != "preview" && tool.mode != Tool::Mode::BakeLighting)
+                throw player::UsageError("--quality goes with --bake-lighting");
+            if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
+                lightingImport.empty() && tool.mode != Tool::Mode::NetworkManifest &&
+                tool.mode != Tool::Mode::AssignNetworkKeys && tool.mode != Tool::Mode::LightingAssignIds)
+                throw player::UsageError("--output goes with --package, --net-encode, --network-manifest, "
+                                         "--assign-network-keys, --lighting-assign-ids, --lighting-export or "
+                                         "--lighting-import");
             if ((package.development || package.noBuild || package.noArchive) && !package.requested)
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
             package.output = tool.output = output;
@@ -582,6 +624,9 @@ int main(int argc, char** argv) {
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
         if (!netEncode.empty()) return player::netEncode(netEncode, output);
         if (!materialSchema.empty()) return player::materialSchema(materialSchema);   // no project
+        if (!lightingSchema.empty()) return player::lightingSchema(lightingSchema);
+        if (!lightingExport.empty()) return player::lightingExport(lightingExport, output);
+        if (!lightingImport.empty()) return player::lightingImport(lightingImport, output);
         if (!graphicsSchema.empty()) {
             const auto schema = shockwave::graphicsSettingsSchema();
             if (graphicsSchema == "-")

@@ -5,6 +5,7 @@
 // agents use to verify it.
 
 #include <Assets/AssetFolder.h>
+#include <Engine/BakedLighting.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
@@ -45,7 +46,10 @@ struct Tool {
         CircuitRun,
         CircuitDump,
         NetworkManifest,
-        AssignNetworkKeys
+        AssignNetworkKeys,
+        LightingInfo,
+        LightingAssignIds,
+        BakeLighting
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
@@ -96,6 +100,10 @@ struct Tool {
     uint64_t onlineId = 0;   // the lobby, or the host's Steam ID
     uint64_t connectLobby = 0;
     fs::path netCapture;
+    // Baked lighting (PlayerLighting.cpp, docs/Lighting.md): --bake-lighting --quality
+    // preview|final [--seed N], --lighting-info and --lighting-assign-ids, for --scene or
+    // the startup scene.
+    std::string bakeQuality = "preview";
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -163,6 +171,12 @@ int materialInfo(const fs::path& asset, const fs::path& json);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);
+// Baked lighting payloads (PlayerLighting.cpp), no project needed: --lighting-schema writes
+// docs/LightingSchema.md ("-": stdout); --lighting-export turns a .ktx2 lightmap, .swbake
+// or .swprobe into JSON; --lighting-import encodes such JSON back, by --output's extension.
+int lightingSchema(const fs::path& file);
+int lightingExport(const fs::path& asset, const fs::path& output);
+int lightingImport(const fs::path& json, const fs::path& output);
 // --graphics-info --json: the settings this run would use, the matching preset, and every
 // setting's description (key, label, values, how it applies), for tools and menus.
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile);
@@ -242,6 +256,13 @@ private:
     // reported those that don't), and its warnings are printed without failing the check.
     void checkMaterialOverrides(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
     void checkMaterialFiles();
+    // Baked lighting (PlayerLighting.cpp, G05/G06): --check's id and bake rules, and the
+    // scene tools. A damaged bake fails the check; a missing or out-of-date one warns.
+    void checkLighting(const shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
+    fs::path lightingScene() const;   // --scene, else the startup scene
+    int lightingInfo();
+    int lightingAssignIds();
+    int bakeLightingTool();
 
     // --check for multiplayer (PlayerNetwork.cpp): Config/Network.swnetwork, the network
     // manifest, its prefabs and the registered types, then each scene's network objects.
@@ -313,6 +334,8 @@ private:
     std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
     std::unique_ptr<shockwave::PlaySession> m_session;
     shockwave::NavMeshOverlay m_navOverlay;
+    shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)
+    double m_bakedLightingTime = 0;
     std::unique_ptr<shockwave::net::ReplicationRegistry> m_networkRegistry;   // --check: frozen, or null
     bool m_predictedSpawns = false;   // --check: the manifest spawns a PredictedCharacter
 };

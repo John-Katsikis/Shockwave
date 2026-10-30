@@ -1,6 +1,7 @@
 #include <Engine/Systems.h>
 
 #include <Assets/Assets.h>
+#include <Engine/BakedLighting.h>
 #include <Engine/Camera.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/Pose.h>
@@ -63,7 +64,9 @@ Transform presentedTransform(const World& world, Entity e, double alpha) {
     return *t;
 }
 
-void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets) {
+void renderWorld(
+    World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets,
+    const BakedLightingRuntime* baked) {
     // The first Environment sets the sky, ambient light and tonemapping; defaults without one.
     Environment environment;
     if (const Pool<Environment>* environments = world.pool<Environment>(); environments && environments->size()) {
@@ -101,6 +104,18 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
         const PreviousTransform* p = previous ? previous->find(e.index) : nullptr;
         return p ? Transform::blend(p->value, t, a).matrix() : t.matrix();
     };
+    // Baked lighting (G05, G06): a static receiver bound to its bake draws its own mesh with
+    // lightmap UVs; anything else inside a probe volume gets a probe sample at its centre
+    // (a MeshRenderer's origin, a model's bounds centre). One sample per object: a long
+    // object spanning two rooms gets one room's light.
+    const bool probes = baked && baked->usesProbes();
+    auto probeLit = [&](Entity e, const glm::vec3& point, IndirectLighting& out) {
+        if (!probes) return false;
+        if (const BakeGeometry* g = world.get<BakeGeometry>(e);
+            g && g->mobility == BakeGeometry::Mobility::Static && g->receiveLightmap)
+            return false;   // a receiver without a valid lightmap keeps the environment
+        return baked->probeLighting(point, out);
+    };
     // drawMesh is thread-safe, so draw submission splits across cores like any system.
     // Each entity works out its own world matrix by walking up its parents: nothing is
     // written, so there's no ordering to get right, and hierarchies are shallow.
@@ -116,13 +131,23 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                     parent = parentOf(world, parent);
                 }
             }
+            MeshHandle mesh = m.mesh;
+            IndirectLighting probe;
+            const IndirectLighting* indirect = nullptr;
+            if (const BakedLightingRuntime::Receiver* r = baked ? baked->receiver(e, 0) : nullptr) {
+                mesh = r->mesh;
+                indirect = &r->lighting;
+            } else if (probeLit(e, glm::vec3(model[3]), probe)) {
+                indirect = &probe;
+            }
             // A material asset decides the surface; the component's own values otherwise.
             if (const auto asset = m.material.valid() && assets ? assets->material(m.material) : nullptr) {
                 DrawMaterial material = asset->draw;
                 material.uvScale = m.tiling;
                 material.castShadows = m.castShadows;
+                material.indirect = indirect;
                 renderer.drawMesh(
-                    m.mesh, model, asset->baseColorTexture, asset->baseColor * m.tint, material, instanceKey(world, e));
+                    mesh, model, asset->baseColorTexture, asset->baseColor * m.tint, material, instanceKey(world, e));
                 return;
             }
             DrawMaterial material;
@@ -131,7 +156,8 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
             material.metallic = m.metallic;
             material.emissive = glm::vec3(m.emissive) * m.emissiveIntensity;
             material.castShadows = m.castShadows;
-            renderer.drawMesh(m.mesh, model, m.texture, m.tint, material, instanceKey(world, e));
+            material.indirect = indirect;
+            renderer.drawMesh(mesh, model, m.texture, m.tint, material, instanceKey(world, e));
         },
         256);
     const Pool<ModelPose>* poses = world.pool<ModelPose>();
@@ -158,6 +184,10 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                 // Parts drawn with a material asset instead of their own (A02), by source material.
                 thread_local std::vector<std::shared_ptr<const MaterialAsset>> overrides;
                 overrides.assign(asset->data.materials.size(), nullptr);
+                IndirectLighting probe;
+                const bool probeLitModel = probeLit(
+                    e, glm::vec3(model * glm::vec4((asset->data.bounds.min + asset->data.bounds.max) * 0.5f, 1.0f)),
+                    probe);
                 for (const MaterialOverride& o : instance.materials)
                     for (size_t i = 0; i < asset->data.materials.size(); ++i)
                         if (asset->data.materials[i].name == o.part) overrides[i] = assets->material(o.material);
@@ -170,6 +200,7 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                         const MaterialAsset* replaced = overrides[mesh.material].get();
                         DrawMaterial options = replaced ? replaced->draw : modelDrawMaterial(*asset, mesh.material);
                         options.castShadows = instance.castShadows;
+                        options.indirect = probeLitModel ? &probe : nullptr;
                         const int baseMap = material.baseColorTexture;
                         const TextureHandle texture =
                             replaced ? replaced->baseColorTexture
@@ -187,9 +218,13 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
                             renderer.drawSkinnedMesh(asset->meshes[index], model, joints, texture, baseColor, options, key);
                             continue;
                         }
+                        MeshHandle drawn = asset->meshes[index];
+                        if (const BakedLightingRuntime::Receiver* r = baked ? baked->receiver(e, key.part) : nullptr) {
+                            drawn = r->mesh;
+                            options.indirect = &r->lighting;
+                        }
                         renderer.drawMesh(
-                            asset->meshes[index], model * (pose ? pose->nodes[n] : node.world), texture, baseColor,
-                            options, key);
+                            drawn, model * (pose ? pose->nodes[n] : node.world), texture, baseColor, options, key);
                     }
                 }
             },

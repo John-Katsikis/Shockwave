@@ -3,6 +3,7 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <Engine/BakedLighting.h>
 #include <Engine/Prefab.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
@@ -339,6 +340,8 @@ void Editor::duplicateSelected() {
     }
     // Copies of network objects are new network objects (docs/Networking.md).
     if (!isEditingPrefab()) shockwave::net::renewNetworkKeys(m_world, copies);
+    // And copies of baked objects are new bake participants, with their own lighting.
+    for (Entity copy : copies) shockwave::refreshLightingIds(m_world, copy);
     m_selection = copies;
     m_rangeAnchor = copies.back();
     log(copies.size() == 1 ? "Duplicated as " + displayName(copies[0])

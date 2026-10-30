@@ -307,7 +307,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (const vk::Image& image : aoTargets.ao) add(GpuMemoryCategory::AmbientOcclusion, image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     for (const Frame& f : frames) {
-        for (const vk::Buffer* b : {&f.drawBuffer, &f.layerBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
+        for (const vk::Buffer* b :
+             {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
             add(GpuMemoryCategory::FrameData, b->allocation);
         add(GpuMemoryCategory::GameUi, f.uiVertexBuffer.allocation);
         add(GpuMemoryCategory::GameUi, f.uiIndexBuffer.allocation);
@@ -318,7 +319,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (uint32_t id = 0; id < kMaxMeshes; ++id) {
         if (!meshReady[id].load(std::memory_order_acquire)) continue;
         const Mesh& mesh = meshes[id];
-        for (const vk::Buffer* b : {&mesh.vertices, &mesh.indices, &mesh.lodIndices, &mesh.skin, &mesh.uv1})
+        for (const vk::Buffer* b :
+             {&mesh.vertices, &mesh.indices, &mesh.lodIndices, &mesh.skin, &mesh.uv1, &mesh.lightmapUv})
             add(GpuMemoryCategory::Meshes, b->allocation);
     }
     {

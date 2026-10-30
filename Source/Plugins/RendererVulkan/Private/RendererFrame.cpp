@@ -95,6 +95,23 @@ void VulkanRenderer::Impl::drawMesh(
             out.samplerAndSet = samplerSlot(b.sampler) | (b.uvSet == 1 ? kSlotUvSet1 : 0u);
         }
     }
+    // Baked lighting (G05, G06): a lightmap needs the mesh's lightmap UVs; without them, or
+    // with the environment asked for, the draw is exactly what it was before.
+    command.data.lightmapUvBuffer = 0;
+    command.data.lightmapTexture = 0;
+    command.data.indirectSource = kIndirectEnvironment;
+    command.data.probes = 0;
+    ProbeData probe{};
+    if (const IndirectLighting* indirect = material.indirect) {
+        if (indirect->source == IndirectLighting::Source::Lightmap && mesh.lightmapUvAddress && indirect->lightmap.id) {
+            command.data.indirectSource = kIndirectLightmap;
+            command.data.lightmapUvBuffer = mesh.lightmapUvAddress;
+            command.data.lightmapTexture = textureSlot(indirect->lightmap.id);
+        } else if (indirect->source == IndirectLighting::Source::Probes) {
+            command.data.indirectSource = kIndirectProbes;
+            for (size_t i = 0; i < 9; ++i) probe.sh[i] = glm::vec4(indirect->sh[i], 0.0f);
+        }
+    }
     command.data.alphaCutoff = material.alphaCutoff;
     command.doubleSided = material.doubleSided;
     command.blend = material.blend;
@@ -123,6 +140,10 @@ void VulkanRenderer::Impl::drawMesh(
             command.layers = static_cast<uint32_t>(list.layers.size());
             list.layers.push_back(layer);
         }
+        if (command.data.indirectSource == kIndirectProbes) {
+            command.probes = static_cast<uint32_t>(list.probes.size());
+            list.probes.push_back(probe);
+        }
         addDraw(list, index, command, handle.id, joints);
     };
     if (thread < drawLists.size()) {
@@ -139,12 +160,14 @@ void VulkanRenderer::Impl::clearDrawLists() {
         list.skins.clear();
         list.joints.clear();
         list.layers.clear();
+        list.probes.clear();
     }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
     foreignDraws.skins.clear();
     foreignDraws.joints.clear();
     foreignDraws.layers.clear();
+    foreignDraws.probes.clear();
     skinDispatches.clear();
 }
 
@@ -347,13 +370,22 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     uint32_t layerCount = 0;
     for (const DrawCommand& draw : draws) layerCount += draw.layers != kNoLayers;
     if (layerCount) ensureLayerCapacity(f, layerCount);
-    uint32_t nextLayer = 0;
+    // Draws lit by probes point at their samples the same way (G06).
+    uint32_t probeCount = 0;
+    for (const DrawCommand& draw : draws) probeCount += draw.probes != kNoLayers;
+    if (probeCount) ensureProbeCapacity(f, probeCount);
+    uint32_t nextLayer = 0, nextProbe = 0;
     std::lock_guard lock(foreignDrawMutex);
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
         f.drawData[i] = draws[i].data;
-        if (draws[i].layers == kNoLayers) continue;
         const DrawList& list = draws[i].skinList < drawLists.size() ? drawLists[draws[i].skinList] : foreignDraws;
+        if (draws[i].probes != kNoLayers) {
+            f.probeData[nextProbe] = list.probes[draws[i].probes];
+            f.drawData[i].probes = f.probeAddress + VkDeviceAddress(nextProbe) * sizeof(ProbeData);
+            ++nextProbe;
+        }
+        if (draws[i].layers == kNoLayers) continue;
         f.layerData[nextLayer] = list.layers[draws[i].layers];
         f.drawData[i].layers = f.layerAddress + VkDeviceAddress(nextLayer) * sizeof(LayerData);
         ++nextLayer;
@@ -364,6 +396,10 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     if (layerCount)
         vk::check(
             vmaFlushAllocation(context->allocator(), f.layerBuffer.allocation, 0, sizeof(LayerData) * layerCount),
+            "vmaFlushAllocation");
+    if (probeCount)
+        vk::check(
+            vmaFlushAllocation(context->allocator(), f.probeBuffer.allocation, 0, sizeof(ProbeData) * probeCount),
             "vmaFlushAllocation");
 }
 

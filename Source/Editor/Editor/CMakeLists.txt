@@ -9,7 +9,7 @@ target_compile_definitions(editor PRIVATE SHOCKWAVE_SOURCE_DIR="${PROJECT_SOURCE
     SHOCKWAVE_BUILD_DIR="${CMAKE_BINARY_DIR}")
 shockwave_warnings(editor)
 shockwave_link_plugins(editor)
-target_link_libraries(editor PRIVATE Shockwave::Packaging Shockwave::SteamServices)
+target_link_libraries(editor PRIVATE Shockwave::Packaging Shockwave::SteamServices Shockwave::Lighting)
 
 # Keep relative Markdown links usable after relocating build/bin. Run on each editor
 # build so documentation-only edits are copied without requiring a relink.
