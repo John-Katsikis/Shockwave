@@ -105,6 +105,19 @@ void writeField(
         writeName(out, name.empty() ? "white" : name);
         break;
     }
+    case FieldType::Material: {
+        const std::string name = assets.materialName(*static_cast<const MaterialHandle*>(data));
+        writeName(out, name.empty() ? "none" : name);
+        break;
+    }
+    case FieldType::MaterialOverrides:
+        // Pairs: the model's material name, then the material asset.
+        for (const MaterialOverride& o : *static_cast<const MaterialOverrides*>(data)) {
+            const std::string name = assets.materialName(o.material);
+            if (name.empty()) continue;
+            out << ' ' << std::quoted(o.part) << ' ' << std::quoted(name);
+        }
+        break;
     case FieldType::Entity: {
         const Entity e = *static_cast<const Entity*>(data);
         out << ' ' << (world.alive(e) && e.index < entityRefs.size() ? entityRefs[e.index] : "none");
@@ -186,6 +199,31 @@ bool readField(std::istream& in, const Field& f, void* data, const Assets& asset
         *static_cast<TextureHandle*>(data) = texture.value_or(TextureHandle{});
         return true;
     }
+    case FieldType::Material: {
+        std::string name;
+        if (!(in >> std::quoted(name))) return false;
+        const MaterialHandle handle = assets.findMaterial(name);
+        if (!handle.valid() && name != "none") warnings.push_back("unknown material '" + name + "'");
+        *static_cast<MaterialHandle*>(data) = handle;
+        return true;
+    }
+    case FieldType::MaterialOverrides: {
+        MaterialOverrides overrides;
+        std::string part, name;
+        while (in >> std::quoted(part)) {
+            if (!(in >> std::quoted(name))) return false;
+            const MaterialHandle handle = assets.findMaterial(name);
+            if (!handle.valid()) {
+                warnings.push_back("unknown material '" + name + "' for part '" + part + "'");
+                continue;
+            }
+            if (findMaterialOverride(overrides, part)) return false;   // a part given twice
+            overrides.push_back({part, handle});
+        }
+        *static_cast<MaterialOverrides*>(data) = std::move(overrides);
+        in.clear(std::ios::eofbit);
+        return true;
+    }
     case FieldType::Entity: return false;   // needs the whole file; loadScene handles it
     }
     return false;
@@ -216,6 +254,9 @@ std::string valueSyntax(const Field& f) {
     case FieldType::Model: return "model path inside the asset folder, or none";
     case FieldType::Entity: return "quoted entity name, or none (a block number counting from 0 also works)";
     case FieldType::UIDocument: return "quoted .rml document path inside Content";
+    case FieldType::Material: return "quoted .swmaterial path inside Content, or none";
+    case FieldType::MaterialOverrides:
+        return "pairs of quoted names: the model's material, then the .swmaterial drawn in its place";
     }
     return {};
 }
@@ -261,6 +302,10 @@ void copyFieldValue(const Field& f, void* to, const void* from, const Assets* as
     case FieldType::Mesh: *static_cast<MeshHandle*>(to) = *static_cast<const MeshHandle*>(from); return;
     case FieldType::Texture: *static_cast<TextureHandle*>(to) = *static_cast<const TextureHandle*>(from); return;
     case FieldType::Model: *static_cast<ModelHandle*>(to) = *static_cast<const ModelHandle*>(from); return;
+    case FieldType::Material: *static_cast<MaterialHandle*>(to) = *static_cast<const MaterialHandle*>(from); return;
+    case FieldType::MaterialOverrides:
+        *static_cast<MaterialOverrides*>(to) = *static_cast<const MaterialOverrides*>(from);
+        return;
     case FieldType::Entity: *static_cast<Entity*>(to) = *static_cast<const Entity*>(from); return;
     default: break;
     }
@@ -326,6 +371,12 @@ void writeScene(std::ostream& out, const World& world, const Assets& assets, con
             bool header = false;
             for (const Field& f : info.fields) {
                 if (partial && !detail::differsFromPrefab(world, e, info, f, *prefab, &assets)) continue;
+                // Unset material fields are left out, so scenes without materials read as before.
+                const void* value = static_cast<const char*>(data) + f.offset;
+                const bool unset =
+                    (f.type == FieldType::Material && !static_cast<const MaterialHandle*>(value)->valid()) ||
+                    (f.type == FieldType::MaterialOverrides && static_cast<const MaterialOverrides*>(value)->empty());
+                if (!partial && unset) continue;
                 if (!header) out << "  " << info.name << '\n';
                 header = true;
                 out << "    " << f.name;
@@ -727,7 +778,9 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
                     range << std::setprecision(6) << "; range " << f.min << " to " << f.max;
                     syntax += range.str();
                 }
-                out << "| `" << f.name << "` | " << syntax << " | `" << value.str().substr(1) << "` |\n";
+                const std::string written = value.str();   // " value"; empty for an empty list
+                out << "| `" << f.name << "` | " << syntax << " | "
+                    << (written.empty() ? std::string("none") : "`" + written.substr(1) + "`") << " |\n";
             }
         }
         info->remove(scratch, probe);
@@ -751,6 +804,9 @@ void writeSceneSchema(std::ostream& out, const Assets& assets) {
     names.clear();
     for (const auto& [name, handle] : assets.models()) names.push_back(name);
     list("Models (ModelRenderer.model, Collider convex/triangle shapes)", names);
+    names.clear();
+    for (const auto& [name, handle] : assets.materials()) names.push_back(name);
+    list("Materials (MeshRenderer.material, ModelRenderer.materials)", names);
     list("Audio clips (AudioSource.clip)", assets.audioClips());
     names.clear();
     std::error_code ec;

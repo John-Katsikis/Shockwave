@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Assets/Material.h>
 #include <Assets/Model.h>
 #include <Assets/AudioClip.h>
 #include <Renderer/Mesh.h>
@@ -39,6 +40,14 @@ public:
     std::string modelName(ModelHandle handle) const;
     std::vector<std::pair<std::string, ModelHandle>> models() const;
 
+    // Materials (.swmaterial, A02) keep their slot when replaced, like models: a reload
+    // reaches every MeshRenderer and ModelRenderer using it on the next frame.
+    MaterialHandle addMaterial(std::string name, std::shared_ptr<const MaterialAsset> material);
+    MaterialHandle findMaterial(std::string_view name) const;
+    std::shared_ptr<const MaterialAsset> material(MaterialHandle handle) const;
+    std::string materialName(MaterialHandle handle) const;
+    std::vector<std::pair<std::string, MaterialHandle>> materials() const;
+
     MeshHandle findMesh(std::string_view name) const;   // invalid if unknown
     std::optional<TextureHandle> findTexture(std::string_view name) const;
     std::string meshName(MeshHandle mesh) const;   // empty if unnamed
@@ -58,6 +67,7 @@ private:
     mutable std::shared_mutex m_mutex;
     std::vector<std::pair<std::string, std::shared_ptr<const AudioClip>>> m_audio;
     std::vector<std::pair<std::string, std::shared_ptr<const ModelAsset>>> m_models;
+    std::vector<std::pair<std::string, std::shared_ptr<const MaterialAsset>>> m_materials;
     std::vector<std::pair<std::string, MeshHandle>> m_meshes;
     std::vector<std::shared_ptr<const MeshData>> m_meshData;   // parallel to m_meshes
     std::vector<std::pair<std::string, TextureHandle>> m_textures;

@@ -25,6 +25,7 @@ layout(location = 8) out vec4 vTangent;   // world space; w: bitangent handednes
 layout(location = 9) flat out uvec4 vMaps;   // normal, metallic-roughness, emissive, occlusion
 layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion strength
 layout(location = 11) flat out uint vDraw;   // this draw's entry, for its slot bindings
+layout(location = 12) out float vLayerMask;   // a second layer's mask from the vertex colours (A02)
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
@@ -36,6 +37,16 @@ void main() {
     vUvs = vertexUvs(draw, v, gl_VertexIndex);
     vDraw = gl_InstanceIndex;
     vColor = v.color * draw.tint;
+    vLayerMask = 0.0;
+    if (draw.layers != uvec2(0u)) {
+        // A second layer masked by a vertex colour channel: the colours mask, they don't tint.
+        LayerBuffer layers = LayerBuffer(draw.layers);
+        uint source = layers.layer.layerMaskSource;
+        if ((layers.layer.flags & kLayerSecond) != 0u && source >= 4u) {
+            vLayerMask = v.color[min(source - 4u, 2u)];
+            vColor = vec4(1.0, 1.0, 1.0, v.color.a) * draw.tint;
+        }
+    }
     vTexture = draw.textureIndex;
     vAlphaCutoff = draw.alphaCutoff;
     vWorldPosition = (draw.model * vec4(v.position, 1.0)).xyz;

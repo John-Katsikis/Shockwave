@@ -65,6 +65,20 @@ void VulkanRenderer::Impl::ensureDrawCapacity(Frame& f, uint32_t count) {
     f.drawCapacity = capacity;
 }
 
+void VulkanRenderer::Impl::ensureLayerCapacity(Frame& f, uint32_t count) {
+    if (count <= f.layerCapacity) return;
+    uint32_t capacity = std::max<uint32_t>(f.layerCapacity, 256);
+    while (capacity < count) capacity *= 2;
+    if (f.layerBuffer.buffer) vmaDestroyBuffer(context->allocator(), f.layerBuffer.buffer, f.layerBuffer.allocation);
+    VmaAllocationInfo info{};
+    f.layerBuffer = createBuffer(
+        capacity * sizeof(LayerData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
+    f.layerData = static_cast<LayerData*>(info.pMappedData);
+    f.layerAddress = bufferAddress(f.layerBuffer.buffer);
+    f.layerCapacity = capacity;
+}
+
 void VulkanRenderer::Impl::createRenderFinishedSemaphores() {
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;

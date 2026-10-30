@@ -88,12 +88,36 @@ struct DrawData {
     uint32_t flags;
     VkDeviceAddress uv1Buffer;   // the mesh's second UV set; 0: none
     SlotBinding slots[kMaterialSlots];
+    VkDeviceAddress layers;   // this draw's LayerData; 0: no detail or second layer
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
         offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
-        offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && sizeof(DrawData) == 408,
+        offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && offsetof(DrawData, layers) == 408 &&
+        sizeof(DrawData) == 416,
     "DrawData must match the shader's scalar layout");
+
+// A draw's detail layer and second layer (A02), in a table of their own so draws without
+// them don't carry the weight. Must match LayerData in shaders/draw.glsl.
+constexpr uint32_t kLayerDetail = 1u, kLayerSecond = 2u;   // LayerData::flags
+constexpr uint32_t kLayerDetailDerivativeTangents = 4u, kLayerSecondDerivativeTangents = 8u;
+struct LayerData {
+    uint32_t detailColor, detailNormal, detailMask;   // bindless slots; 0: white (detailNormal: none)
+    uint32_t detailMaskChannel;
+    float detailStrength, detailNormalScale, detailRoughness, detailRoughnessStrength;
+    glm::vec2 detailFade;
+    uint32_t layerMask, layerBaseColor, layerNormal, layerMetallicRoughness;
+    uint32_t layerMaskSource;   // 0..3 the mask texture's channel, 4..6 the vertex colour's
+    uint32_t flags;
+    glm::vec4 layerBaseColorFactor;
+    float layerMetallic, layerRoughness, layerNormalScale, pad;
+    SlotBinding slots[kLayerSlots];
+};
+static_assert(
+    offsetof(LayerData, detailFade) == 32 && offsetof(LayerData, layerBaseColorFactor) == 64 &&
+        offsetof(LayerData, slots) == 96 && sizeof(LayerData) == 264,
+    "LayerData must match the shader's scalar layout");
+constexpr uint32_t kNoLayers = 0xFFFFFFFFu;
 
 // Shadow maps hold reverse-Z depth, like the scene: cleared to 0, closer is greater.
 constexpr VkFormat kShadowFormat = VK_FORMAT_D32_SFLOAT;
@@ -205,6 +229,8 @@ struct DrawCommand {
     uint32_t drawIndex = 0;   // its entry in the frame's draw table, once gathered
     // Skinned draws (RendererSkinning.cpp): which DrawList, and which SkinJob in it.
     uint32_t skinList = 0, skin = kNoSkin;
+    // Draws with a detail or second layer: which LayerData in the same DrawList.
+    uint32_t layers = kNoLayers;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     // In the camera's view. Draws outside it stay in the draw table: they may still cast
     // shadows into the view.
@@ -269,6 +295,7 @@ struct alignas(64) DrawList {
     std::vector<DrawCommand> commands;
     std::vector<SkinJob> skins;
     std::vector<glm::mat4> joints;
+    std::vector<LayerData> layers;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -345,6 +372,10 @@ struct VulkanRenderer::Impl {
         DrawData* drawData = nullptr;
         VkDeviceAddress drawAddress = 0;
         uint32_t drawCapacity = 0;
+        vk::Buffer layerBuffer;   // this frame's LayerData, persistently mapped
+        LayerData* layerData = nullptr;
+        VkDeviceAddress layerAddress = 0;
+        uint32_t layerCapacity = 0;
         vk::Buffer frameBuffer;   // lights and camera, persistently mapped
         uint8_t* frameData = nullptr;
         VkDeviceAddress frameAddress = 0;
@@ -487,6 +518,7 @@ struct VulkanRenderer::Impl {
     uint32_t samplerBank = 0;
     bool samplerBankBusy[kSamplerBanks] = {false, false};
     uint32_t anisotropy = 16;   // the setting
+    std::atomic<bool> materialDetail{true};   // material_quality high (A02)
     bool needsSamplerRebuild = false;
     float effectiveAnisotropy(const SamplerDesc& desc) const;
     VkSampler makeSampler(const SamplerDesc& desc);
@@ -586,6 +618,7 @@ struct VulkanRenderer::Impl {
 
     // Grows a frame's draw table. Only called when the GPU is done with that frame.
     void ensureDrawCapacity(Frame& f, uint32_t count);
+    void ensureLayerCapacity(Frame& f, uint32_t count);
 
     void createRenderFinishedSemaphores();
 

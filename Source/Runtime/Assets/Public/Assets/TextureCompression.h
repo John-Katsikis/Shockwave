@@ -22,8 +22,11 @@ struct Image;
 // Encodes RGBA8 pixels as a .ktx2 file with its mipmaps: UASTC (High) or ETC1S (Small),
 // Zstandard-compressed. Uses only the calling thread; seconds for a big texture, so run it
 // in the background. srgb: colour (true) or data such as normals and masks (false).
+// coverageCutoff >= 0: the mipmaps are made here instead, keeping the alpha-tested
+// coverage at that cutoff (textureMipChain), for a masked material's base color.
 bool encodeKtx2(
-    const Image& image, TextureCompression mode, bool srgb, std::vector<uint8_t>& ktx2, std::string& error);
+    const Image& image, TextureCompression mode, bool srgb, std::vector<uint8_t>& ktx2, std::string& error,
+    float coverageCutoff = -1.0f);
 // Turns a .ktx2 file into GPU-ready levels: BC7 when bc7 is true (Renderer::
 // supportsTextureFormat), else RGBA8. Fast. Any thread.
 bool transcodeKtx2(std::span<const uint8_t> ktx2, bool bc7, TextureData& texture, std::string& error);
@@ -33,7 +36,8 @@ bool isKtx2File(const std::filesystem::path& path);
 // Files are named after the asset and a key made from its source bytes and how it's
 // compressed, so an edited texture or a changed setting never picks up a stale copy.
 // srgb: whether it's encoded as colour or data (encodeKtx2).
-uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode, bool srgb = true);
+uint64_t textureCacheKey(
+    std::span<const uint8_t> source, TextureCompression mode, bool srgb = true, float coverageCutoff = -1.0f);
 // <folder>/<asset name with / as _>-<key>.ktx2. Model textures pass "model.glb#2".
 std::filesystem::path textureCachePath(const std::filesystem::path& folder, std::string_view asset, uint64_t key);
 // Writes through a temporary file, then removes the asset's older copies.

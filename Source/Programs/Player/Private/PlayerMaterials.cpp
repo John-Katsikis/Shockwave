@@ -1,14 +1,19 @@
-// --material-info and --texture-info: what the importer makes of an asset's materials and
-// textures, through the same code gameplay loads them with, without a GPU
-// (docs/GraphicsVerification.md, G02 and A01).
+// --material-info, --material-schema and --texture-info: what the importer makes of an
+// asset's materials and textures, through the same code gameplay loads them with, without a
+// GPU (docs/GraphicsVerification.md, G02, A01 and A02); and --check's material rules.
 
 #include "Player.h"
 
+#include <Assets/AssetFolder.h>
 #include <Assets/Image.h>
 #include <Assets/ImportSettings.h>
+#include <Assets/Material.h>
 #include <Assets/Model.h>
 #include <Assets/TextureCompression.h>
+#include <Engine/Components.h>
+#include <Projects/Project.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <stdexcept>
@@ -104,10 +109,118 @@ std::string textureJson(
            ", \"quality\": " + qualityJson(format, width, height, levels, followsQuality) + "}";
 }
 
+std::string stringArray(const std::vector<std::string>& items) {
+    std::string out = "[";
+    for (size_t i = 0; i < items.size(); ++i) out += (i ? ", " : "") + jsonQuote(items[i]);
+    return out + "]";
+}
+std::string bindingJson(const shockwave::ModelTextureBinding& b) {
+    using namespace shockwave;
+    return "\"uv_set\": " + std::to_string(b.uvSet) + ", \"transform\": {\"offset\": [" +
+           number(b.transform.offset.x) + ", " + number(b.transform.offset.y) + "], \"scale\": [" +
+           number(b.transform.scale.x) + ", " + number(b.transform.scale.y) +
+           "], \"rotation\": " + number(b.transform.rotation) +
+           "}, \"sampler\": {\"wrap_u\": " + jsonQuote(textureWrapName(b.sampler.wrapU)) +
+           ", \"wrap_v\": " + jsonQuote(textureWrapName(b.sampler.wrapV)) +
+           ", \"mag_filter\": " + jsonQuote(textureFilterName(b.sampler.magFilter)) +
+           ", \"min_filter\": " + jsonQuote(textureFilterName(b.sampler.minFilter)) +
+           ", \"mip_filter\": " + jsonQuote(b.sampler.mipmaps ? textureFilterName(b.sampler.mipFilter) : "none") +
+           ", \"anisotropy\": " + std::to_string(b.sampler.maxAnisotropy) + "}";
+}
+// One resolved value, read through its descriptor.
+std::string paramJson(const shockwave::MaterialParams& params, const shockwave::MaterialParamInfo& info) {
+    using shockwave::MaterialValueType;
+    const auto* base = reinterpret_cast<const unsigned char*>(&params) + info.offset;
+    auto floats = [&](int n) {
+        const auto* f = reinterpret_cast<const float*>(base);
+        std::string out = "[";
+        for (int i = 0; i < n; ++i) out += (i ? ", " : "") + number(f[i]);
+        return out + "]";
+    };
+    switch (info.type) {
+    case MaterialValueType::Float: return number(*reinterpret_cast<const float*>(base));
+    case MaterialValueType::Vec2: return floats(2);
+    case MaterialValueType::Color3: return floats(3);
+    case MaterialValueType::Color4: return floats(4);
+    case MaterialValueType::Bool: return *reinterpret_cast<const bool*>(base) ? "true" : "false";
+    case MaterialValueType::Enum: {
+        const int value = *reinterpret_cast<const int*>(base);
+        return value >= 0 && size_t(value) < info.options.size() ? jsonQuote(info.options[size_t(value)])
+                                                                 : std::to_string(value);
+    }
+    }
+    return "null";
+}
+// The Content folder an asset is named from: its project's, or the folder it's in.
+fs::path contentRoot(const fs::path& asset) {
+    if (const auto manifest = shockwave::findProjectFile(asset)) {
+        shockwave::Project project;
+        std::string ignored;
+        if (shockwave::loadProject(*manifest, project, ignored)) {
+            std::error_code ec;
+            const fs::path relative = fs::relative(fs::absolute(asset), fs::absolute(project.assetFolder), ec);
+            if (!ec && !relative.empty() && *relative.begin() != "..") return project.assetFolder;
+        }
+    }
+    return asset.parent_path().empty() ? fs::path(".") : asset.parent_path();
+}
+
+// --material-info for a .swmaterial: the chain it resolves through and the result.
+int swmaterialInfo(const fs::path& asset, const fs::path& json) {
+    using namespace shockwave;
+    const fs::path root = contentRoot(asset);
+    std::error_code ec;
+    const std::string name = fs::relative(fs::absolute(asset), fs::absolute(root), ec).generic_string();
+    MaterialDesc desc;
+    std::string error;
+    const MaterialProblem problem = resolveMaterial(name, folderMaterialLookup(root), desc, error);
+    std::string out = "{\"asset\": " + jsonQuote(name) + ", \"content\": " + jsonQuote(root.generic_string()) +
+                      ",\n \"problem\": " +
+                      jsonQuote(
+                          problem == MaterialProblem::None   ? "none"
+                          : problem == MaterialProblem::File ? "file"
+                                                             : "reference") +
+                      ", \"error\": " + jsonQuote(error);
+    if (problem == MaterialProblem::None) {
+        std::vector<std::string> features;
+        for (uint32_t bit = 0; bit < kMaterialFeatureCount; ++bit)
+            if (desc.features & (1u << bit)) features.push_back(materialFeatureName(1u << bit));
+        out += ",\n \"chain\": " + stringArray(desc.chain) + ",\n \"dependencies\": " +
+               stringArray(desc.dependencies) + ",\n \"features\": " + stringArray(features) +
+               ",\n \"low_quality_omits\": " + stringArray(materialLowQualityOmissions(desc)) +
+               ",\n \"values\": {";
+        bool first = true;
+        for (const auto& info : materialParams()) {
+            out += std::string(first ? "" : ",") + "\n  " + jsonQuote(info.key) + ": " + paramJson(desc.params, info);
+            first = false;
+        }
+        out += "\n },\n \"slots\": [";
+        first = true;
+        for (size_t slot = 0; slot < kAllMaterialSlots; ++slot) {
+            const ResolvedSlot& r = desc.slots[slot];
+            if (r.texture.empty()) continue;
+            const MaterialSlotInfo& info = materialSlotInfo(MaterialSlot(slot));
+            out += std::string(first ? "" : ",") +
+                   "\n  {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
+                   ", \"texture\": " + jsonQuote(r.texture.asset) +
+                   (r.texture.modelTexture >= 0 ? ", \"model_texture\": " + std::to_string(r.texture.modelTexture) : "") +
+                   ", \"color_space\": " + jsonQuote(info.srgb ? "srgb" : "linear") + ", " + bindingJson(r.binding) +
+                   "}";
+            first = false;
+        }
+        out += first ? "]" : "\n ]";
+        out += ",\n \"warnings\": " + stringArray(desc.warnings);
+    }
+    out += "}\n";
+    write(json, out);
+    return problem == MaterialProblem::None ? 0 : 1;
+}
+
 }   // namespace
 
 int materialInfo(const fs::path& asset, const fs::path& json) {
     using namespace shockwave;
+    if (isMaterialFile(asset)) return swmaterialInfo(asset, json);
     const ModelData model = loadModelFile(asset);
     std::string out = "{\"asset\": " + jsonQuote(asset.generic_string()) + ",\n \"materials\": [";
     for (size_t m = 0; m < model.materials.size(); ++m) {
@@ -132,16 +245,7 @@ int materialInfo(const fs::path& asset, const fs::path& json) {
                 "\n    {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
                 ", \"texture\": " + jsonQuote(texture.source) +
                 ", \"color_space\": " + jsonQuote(texture.srgb ? "srgb" : "linear") +
-                ", \"uv_set\": " + std::to_string(b.uvSet) + ", \"uv_available\": " + (available ? "true" : "false") +
-                ", \"transform\": {\"offset\": [" + number(b.transform.offset.x) + ", " + number(b.transform.offset.y) +
-                "], \"scale\": [" + number(b.transform.scale.x) + ", " + number(b.transform.scale.y) +
-                "], \"rotation\": " + number(b.transform.rotation) +
-                "}, \"sampler\": {\"wrap_u\": " + jsonQuote(textureWrapName(b.sampler.wrapU)) +
-                ", \"wrap_v\": " + jsonQuote(textureWrapName(b.sampler.wrapV)) +
-                ", \"mag_filter\": " + jsonQuote(textureFilterName(b.sampler.magFilter)) +
-                ", \"min_filter\": " + jsonQuote(textureFilterName(b.sampler.minFilter)) +
-                ", \"mip_filter\": " + jsonQuote(b.sampler.mipmaps ? textureFilterName(b.sampler.mipFilter) : "none") +
-                ", \"anisotropy\": " + std::to_string(b.sampler.maxAnisotropy) + "}}";
+                ", \"uv_available\": " + (available ? "true" : "false") + ", " + bindingJson(b) + "}";
             firstSlot = false;
         }
         out += firstSlot ? "]}" : "\n  ]}";
@@ -210,6 +314,47 @@ int textureInfo(const fs::path& asset, const fs::path& json) {
     out += "\n ]}\n";
     write(json, out);
     return 0;
+}
+
+int materialSchema(const fs::path& file) {
+    const std::string schema = shockwave::materialSchemaMarkdown();
+    if (file == "-") {
+        std::fputs(schema.c_str(), stdout);
+        return 0;
+    }
+    write(file, schema);
+    return 0;
+}
+
+void Player::checkMaterialOverrides(
+    shockwave::World& world, const std::string& scene, std::vector<std::string>& problems) {
+    const std::string shownScene = m_project.relative(scene);
+    world.each<const shockwave::ModelRenderer>([&](shockwave::Entity e, const shockwave::ModelRenderer& renderer) {
+        if (renderer.materials.empty()) return;
+        const shockwave::Name* name = world.get<shockwave::Name>(e);
+        const std::string where = shownScene + ": entity '" + (name ? name->value : "?") + "': ModelRenderer";
+        const auto model = engine().assets().model(renderer.model);
+        if (!model) return;   // the scene check already reports a missing model
+        for (const auto& o : renderer.materials) {
+            const bool found = std::any_of(
+                model->data.materials.begin(), model->data.materials.end(),
+                [&](const shockwave::ModelMaterial& m) { return m.name == o.part; });
+            if (!found)
+                problems.push_back(
+                    where + " overrides part '" + o.part + "', which " + engine().assets().modelName(renderer.model) +
+                    " doesn't have (renamed in the modelling tool?)");
+        }
+    });
+}
+
+// A material that doesn't resolve was already reported, as a failed import.
+void Player::checkMaterialFiles() {
+    for (const auto& f : m_assets->files()) {
+        if (f.kind != shockwave::AssetFolder::Kind::Material) continue;
+        const std::string shown = m_project.relative(f.path);
+        for (const std::string& warning : f.warnings) std::printf("warning %s: %s\n", shown.c_str(), warning.c_str());
+        if (f.error.empty()) std::printf("ok %s\n", shown.c_str());
+    }
 }
 
 }   // namespace player

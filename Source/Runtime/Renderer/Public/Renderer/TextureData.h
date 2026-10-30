@@ -60,4 +60,14 @@ inline float residentLod(float sourceLod, uint32_t firstMip) {
 // before. firstMip 0 returns the texture as it is. RGBA16F single levels aren't shrunk.
 TextureData textureTail(const TextureData& source, uint32_t firstMip);
 
+// ---- Alpha-tested textures (A02) ----
+// The share of texels whose alpha is at least cutoff: what an alpha test keeps.
+float alphaCoverage(const uint8_t* rgba, uint32_t width, uint32_t height, float cutoff);
+// A full mip chain for one RGBA8 level, made on the CPU like textureTail's (2 x 2 boxes, in
+// linear light when srgb). With cutoff >= 0, each smaller level's alpha is scaled so the
+// same share of it passes an alpha test at cutoff as of level 0 (Castano 2010), so cut-out
+// leaves and fences don't thin away or fill in with distance. Other formats, and textures
+// that already have their levels, come back as they are.
+TextureData textureMipChain(const TextureData& source, float coverageCutoff = -1.0f);
+
 }   // namespace shockwave

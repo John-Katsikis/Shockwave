@@ -158,6 +158,8 @@ int imageDiff(const fs::path& reference, const fs::path& candidate, double toler
 // --material-info, --texture-info: an asset's material slots (UV sets, transforms,
 // samplers) or its textures' levels and size at each texture_quality, as JSON. No GPU.
 int materialInfo(const fs::path& asset, const fs::path& json);
+// --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
+int materialSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);
 // --graphics-info --json: the settings this run would use, the matching preset, and every
 // setting's description (key, label, values, how it applies), for tools and menus.
@@ -233,6 +235,11 @@ private:
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
         std::vector<std::string>& checkedEffects);
     void checkUnusedEffects(const std::vector<std::string>& checkedEffects, std::vector<std::string>& problems);
+    // --check for materials (PlayerMaterials.cpp, A02): each ModelRenderer's per-part
+    // overrides name parts the model has; every .swmaterial resolves (the import already
+    // reported those that don't), and its warnings are printed without failing the check.
+    void checkMaterialOverrides(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
+    void checkMaterialFiles();
 
     // --check for multiplayer (PlayerNetwork.cpp): Config/Network.swnetwork, the network
     // manifest, its prefabs and the registered types, then each scene's network objects.

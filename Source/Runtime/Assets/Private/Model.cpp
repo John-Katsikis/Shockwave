@@ -407,13 +407,22 @@ const ModelAnimation* findAnimation(const ModelData& model, std::string_view nam
 }
 
 TextureBinding drawBinding(const ModelAsset& model, uint32_t material, MaterialSlot slot) {
-    if (material >= model.data.materials.size()) return {};
+    if (material >= model.data.materials.size() || size_t(slot) >= kMaterialSlots) return {};
     const auto& binding = model.data.materials[material].bindings[size_t(slot)];
     TextureBinding result;
     result.uvSet = binding.uvSet;
     result.transform = binding.transform;
     if (material < model.samplers.size()) result.sampler = model.samplers[material][size_t(slot)];
     return result;
+}
+std::vector<float> modelCoverageCutoffs(const ModelData& model) {
+    std::vector<float> cutoffs(model.textures.size(), -1.0f);
+    for (const auto& material : model.materials) {
+        const int texture = material.baseColorTexture;
+        if (material.alpha != ModelMaterial::Alpha::Mask || texture < 0 || size_t(texture) >= cutoffs.size()) continue;
+        if (cutoffs[size_t(texture)] < 0.0f) cutoffs[size_t(texture)] = material.alphaCutoff;   // the first one wins
+    }
+    return cutoffs;
 }
 bool hasSkinnedMeshes(const ModelData& model) {
     for (const auto& mesh : model.meshes)
@@ -731,7 +740,8 @@ bool rayBounds(const Bounds& bounds, const glm::vec3& o, const glm::vec3& d, flo
 }
 }   // namespace
 
-bool intersectModel(const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance) {
+bool intersectModel(
+    const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance, uint32_t* material) {
     float best = std::numeric_limits<float>::max();
     if (!rayBounds(model.bounds, origin, direction, best)) return false;
     for (const auto& node : model.nodes) {
@@ -760,7 +770,10 @@ bool intersectModel(const ModelData& model, const glm::vec3& origin, const glm::
                 const float v = glm::dot(rd, q) / det;
                 if (v < 0 || u + v > 1) continue;
                 const float t = glm::dot(e2, q) / det;
-                if (t >= 0 && t < best) best = t;
+                if (t >= 0 && t < best) {
+                    best = t;
+                    if (material) *material = model.meshes[index].material;
+                }
             }
         }
     }

@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
         int vsyncOverride = -1;   // --vsync on|off
         std::string renderer;   // --renderer
         std::filesystem::path gameModuleFile;   // --game-module
-        std::filesystem::path graphicsFile, graphicsSchema;
+        std::filesystem::path graphicsFile, graphicsSchema, materialSchema;
         bool graphicsInfo = false, noUserGraphics = false;
         float renderScaleOverride = -1;
         std::vector<std::pair<std::string, std::string>> graphicsSets;   // --graphics-set key=value, --anti-aliasing
@@ -80,6 +80,8 @@ int main(int argc, char** argv) {
                 graphicsFile = argv[++i];
             else if (arg == "--graphics-schema" && i + 1 < argc)
                 graphicsSchema = argv[++i];
+            else if (arg == "--material-schema" && i + 1 < argc)
+                materialSchema = argv[++i];
             else if (arg == "--graphics-info")
                 graphicsInfo = true;
             else if (arg == "--no-user-graphics")
@@ -390,8 +392,11 @@ int main(int argc, char** argv) {
                     "player --image-stats file.png [--json file]\n"
                     "player --image-diff reference.png candidate.png [--tolerance rmse] [--json file]\n"
                     "                                    compare two screenshots; exit 1 over the tolerance\n"
-                    "player --material-info model.glb [--json file]\n"
-                    "                                    each material slot's UV set, transform and sampler\n"
+                    "player --material-info model.glb|file.swmaterial [--json file]\n"
+                    "                                    each material slot's UV set, transform and sampler;\n"
+                    "                                    for a .swmaterial, also its parents, values, features,\n"
+                    "                                    what material_quality low leaves out, and warnings\n"
+                    "player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)\n"
                     "player --texture-info texture.png|model.glb [--json file]\n"
                     "                                    levels and GPU bytes at each texture_quality\n"
                     "       [--ui-preview] [--ui-nav down,down,confirm]\n"
@@ -556,6 +561,7 @@ int main(int argc, char** argv) {
             return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson);
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
         if (!netEncode.empty()) return player::netEncode(netEncode, output);
+        if (!materialSchema.empty()) return player::materialSchema(materialSchema);   // no project
         if (!graphicsSchema.empty()) {
             const auto schema = shockwave::graphicsSettingsSchema();
             if (graphicsSchema == "-")

@@ -679,6 +679,22 @@ void Editor::acceptViewportDrop(const ImVec2& pos, const ImVec2& size) {
             drawOutline(target, pos, size, accentU32());
     }
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
+            kMaterialPayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+        // Onto the object under the cursor; on a model, onto the part under it.
+        std::string part;
+        const Entity target = pick(mouse, pos, size, &part);
+        const std::string material = static_cast<const char*>(payload->Data);
+        if (payload->IsDelivery()) {
+            applyMaterial(target, material, part);
+        } else {
+            drawOutline(target, pos, size, accentU32());
+            if (m_world.alive(target))
+                ImGui::SetTooltip(
+                    "%s on %s%s%s", material.c_str(), displayName(target).c_str(), part.empty() ? "" : ", part ",
+                    part.c_str());
+        }
+    }
+    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(
             kTexturePayload, ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
         const Entity target = pick(mouse, pos, size);
         if (payload->IsDelivery()) {
@@ -744,7 +760,7 @@ void Editor::mouseRay(
 }
 
 // The nearest visible mesh under the mouse, tested against its actual triangles.
-Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) {
+Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part) {
     glm::vec3 origin, dir;
     mouseRay(mouse, pos, size, origin, dir);
 
@@ -783,13 +799,16 @@ Entity Editor::pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) 
             const glm::vec3 lo = glm::vec3(inv * glm::vec4(origin, 1.0f));
             const glm::vec3 ld = glm::vec3(inv * glm::vec4(dir, 0.0f));
             float t = 0.0f;
-            if (!shockwave::intersectModel(model->data, lo, ld, t)) return;
+            uint32_t material = 0;
+            if (!shockwave::intersectModel(model->data, lo, ld, t, &material)) return;
             const float distance = glm::length(glm::vec3(matrix * glm::vec4(lo + ld * t, 1.0f)) - origin);
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = e;
+                if (part) *part = material < model->data.materials.size() ? model->data.materials[material].name : "";
             }
         });
+    if (part && !m_world.has<shockwave::ModelRenderer>(best)) part->clear();
     return best;
 }
 

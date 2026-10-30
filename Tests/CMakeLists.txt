@@ -207,6 +207,14 @@ set_tests_properties(texture_quality PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=of
 add_test(NAME texture_quality_vulkan COMMAND texture_quality_test vulkan)
 set_tests_properties(texture_quality_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 60 LABELS gpu)
+# Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
+# fields, and hot reload on the null renderer.
+add_executable(material_test MaterialTest.cpp)
+target_link_libraries(material_test PRIVATE Shockwave::Engine)
+shockwave_warnings(material_test)
+shockwave_link_plugins(material_test)
+add_test(NAME materials COMMAND material_test)
+set_tests_properties(materials PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
 if(TARGET game_arena)
     add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>

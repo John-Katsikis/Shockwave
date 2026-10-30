@@ -888,6 +888,74 @@
     150.744
    ],
    "mean_luma": 142.707
+  },
+  {
+   "file": "material-layers--main-camera--1280x720--1.png",
+   "scene": "material-layers",
+   "camera": "Main Camera",
+   "size": "1280x720",
+   "render_scale": 1.0,
+   "frame": 30,
+   "sha256": "dc5d6550a6616cda3cf0379da3259b0d1416ba83639bf551354e23072b466a02",
+   "width": 1280,
+   "height": 720,
+   "mean_rgb": [
+    168.62,
+    171.972,
+    170.061
+   ],
+   "mean_luma": 171.121
+  },
+  {
+   "file": "material-layers--main-camera--1280x720--0.5.png",
+   "scene": "material-layers",
+   "camera": "Main Camera",
+   "size": "1280x720",
+   "render_scale": 0.5,
+   "frame": 30,
+   "sha256": "6f44e025f5072e4c25e805a7497a6344a6c62ea928b018f44c37bdeabac5d82a",
+   "width": 1280,
+   "height": 720,
+   "mean_rgb": [
+    166.724,
+    170.282,
+    168.383
+   ],
+   "mean_luma": 169.388
+  },
+  {
+   "file": "material-layers--main-camera--1920x1080--1.png",
+   "scene": "material-layers",
+   "camera": "Main Camera",
+   "size": "1920x1080",
+   "render_scale": 1.0,
+   "frame": 30,
+   "sha256": "dc8a25fefca745d5bdfd46c12300e00a588c821f72f7e9fbfaecde228c4c04dd",
+   "width": 1920,
+   "height": 1080,
+   "mean_rgb": [
+    168.263,
+    171.628,
+    169.726
+   ],
+   "mean_luma": 170.776
+  },
+  {
+   "file": "material-layers--main-camera--1920x1080--0.5.png",
+   "scene": "material-layers",
+   "camera": "Main Camera",
+   "size": "1920x1080",
+   "render_scale": 0.5,
+   "frame": 30,
+   "sha256": "089f12667f5104f362eb3431b54f0e3c5748096bcf8629875a7903f70fe97eec",
+   "width": 1920,
+   "height": 1080,
+   "mean_rgb": [
+    168.923,
+    172.282,
+    170.383
+   ],
+   "mean_luma": 171.431
   }
  ],
  "benchmarks": [
@@ -1145,6 +1213,38 @@
    "gpu_ms": 168.02,
    "draws": 1211,
    "scene": "dense-occluder",
+   "paced": true
+  },
+  {
+   "gpu": "llvmpipe (LLVM 20.1.2, 256 bits)",
+   "present_mode": "mailbox (uncapped, no tearing)",
+   "frame_limit": 0,
+   "frames": 12,
+   "average_fps": 2.23804,
+   "average_ms": 446.82,
+   "low_1_percent_fps": 1.91104,
+   "worst_ms": 523.274,
+   "jitter_ms": 34.2695,
+   "cpu_ms": 449.195,
+   "gpu_ms": 452.604,
+   "draws": 6,
+   "scene": "material-layers",
+   "paced": false
+  },
+  {
+   "gpu": "llvmpipe (LLVM 20.1.2, 256 bits)",
+   "present_mode": "mailbox (uncapped, no tearing)",
+   "frame_limit": 60,
+   "frames": 12,
+   "average_fps": 2.31385,
+   "average_ms": 432.18,
+   "low_1_percent_fps": 1.87802,
+   "worst_ms": 532.475,
+   "jitter_ms": 39.5572,
+   "cpu_ms": 431.819,
+   "gpu_ms": 436.853,
+   "draws": 6,
+   "scene": "material-layers",
    "paced": true
   }
  ]

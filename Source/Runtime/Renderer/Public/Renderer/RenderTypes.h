@@ -103,10 +103,29 @@ struct UvTransform {
     glm::vec2 apply(glm::vec2 uv) const;   // the formula above, as the shaders do it
     bool operator==(const UvTransform&) const = default;
 };
-// The texture slots of a material, in this order everywhere (ModelMaterial, DrawMaterial).
-enum class MaterialSlot : uint8_t { BaseColor, Normal, MetallicRoughness, Emissive, Occlusion, Count };
-inline constexpr size_t kMaterialSlots = size_t(MaterialSlot::Count);
-const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ...
+// The texture slots of a material, in this order everywhere. The first kMaterialSlots are
+// glTF's, which every material has (ModelMaterial, DrawMaterial::bindings); the rest are the
+// detail layer's and the second layer's (A02, MaterialLayers::bindings), which only
+// .swmaterial files set.
+enum class MaterialSlot : uint8_t {
+    BaseColor,
+    Normal,
+    MetallicRoughness,
+    Emissive,
+    Occlusion,
+    DetailColor,
+    DetailNormal,
+    DetailMask,
+    LayerMask,
+    LayerBaseColor,
+    LayerNormal,
+    LayerMetallicRoughness,
+    Count
+};
+inline constexpr size_t kMaterialSlots = 5;   // base color .. occlusion
+inline constexpr size_t kAllMaterialSlots = size_t(MaterialSlot::Count);
+inline constexpr size_t kLayerSlots = kAllMaterialSlots - kMaterialSlots;   // detail color .. layer metallic-roughness
+const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "layer_metallic_roughness"
 // How one slot reads its texture: which UV set, transformed how, sampled how.
 struct TextureBinding {
     uint32_t uvSet = 0;   // 0: TEXCOORD_0, 1: TEXCOORD_1 (Vertex::uv, then MeshData::uv1)
@@ -142,6 +161,42 @@ struct TextureResidencyStats {
     uint64_t retainedBytes = 0;   // CPU copies kept so their levels can change without reloading
 };
 
+// A material's detail layer and second layer (A02, docs/Graphics/02-MaterialsAndDecals.md
+// 2.6 and 2.7), for DrawMaterial::layers. Textures are 0 (white) where unset: neutral for
+// the colours and masks, "no map" for the normals.
+struct MaterialLayers {
+    // Detail: fine surface texture tiled over the material, faded out with distance.
+    // Colour multiplies the base color around neutral white (1 1 1 changes nothing); the
+    // normal map is composed with the material's by reoriented normal mapping.
+    bool detail = false;
+    TextureHandle detailColorTexture;   // sRGB
+    TextureHandle detailNormalTexture;   // linear tangent space; 0: none
+    TextureHandle detailMaskTexture;   // linear; detailMaskChannel says which channel
+    float detailStrength = 1.0f;   // 0 none .. 1 full, times the mask and the fade
+    float detailNormalScale = 1.0f;   // tilts the detail normals, like normalScale
+    float detailRoughness = 0.5f;   // roughness the detail moves the surface towards...
+    float detailRoughnessStrength = 0.0f;   // ...this much (0: leaves roughness alone)
+    uint32_t detailMaskChannel = 0;   // 0 red, 1 green, 2 blue, 3 alpha
+    glm::vec2 detailFade{0.0f};   // metres from the camera where it starts and finishes fading; end 0: never
+    // Second layer: another set of base color, normals, roughness and metallic, mixed in
+    // by a mask before the lighting (a spatial mix, not a physical coat).
+    bool layer = false;
+    TextureHandle layerMaskTexture;   // linear
+    uint32_t layerMask = 0;   // 0..3: the mask texture's red..alpha; 4..7: the vertex colour's red..alpha
+    TextureHandle layerBaseColorTexture;   // sRGB
+    TextureHandle layerNormalTexture;   // 0: none
+    TextureHandle layerMetallicRoughnessTexture;   // linear: green roughness, blue metallic
+    glm::vec4 layerBaseColor{1.0f};
+    float layerMetallic = 0.0f, layerRoughness = 1.0f, layerNormalScale = 1.0f;
+    // MaterialSlot::DetailColor onwards.
+    std::array<TextureBinding, kLayerSlots> bindings{};
+};
+
+// How finely materials are drawn (A02). Low leaves out detail layers (their textures, the
+// extra normal composition); masks, second layers and alpha are kept at every quality.
+enum class MaterialQuality : uint32_t { Low, High };
+const char* materialQualityName(MaterialQuality quality);   // "low", "high"
+
 struct DrawMaterial {
     float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
@@ -162,6 +217,9 @@ struct DrawMaterial {
     // Each slot's UV set, UV transform and sampler, indexed by MaterialSlot. uvScale above
     // applies first, to every slot.
     std::array<TextureBinding, kMaterialSlots> bindings{};
+    // The detail layer and second layer, if the material has them; read during the draw
+    // call only, so the caller keeps them alive until it returns.
+    const MaterialLayers* layers = nullptr;
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of

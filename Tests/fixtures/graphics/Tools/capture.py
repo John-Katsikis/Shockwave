@@ -38,6 +38,7 @@ SCENES = {
     'motion': ['Orbit camera', 'Fixed'],
     'decal-wall': ['Main Camera'],
     'dense-occluder': ['Main Camera', 'Overhead'],
+    'material-layers': ['Main Camera'],
 }
 SIZES = ['1280x720', '1920x1080']
 SCALES = ['1', '0.5']

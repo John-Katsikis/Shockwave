@@ -8,6 +8,12 @@
 
 namespace shockwave {
 
+const MaterialOverride* findMaterialOverride(const MaterialOverrides& overrides, std::string_view part) {
+    for (const MaterialOverride& o : overrides)
+        if (o.part == part) return &o;
+    return nullptr;
+}
+
 glm::mat4 Transform::matrix() const {
     glm::mat4 m = glm::mat4_cast(rotation);
     m[0] *= scale.x;
@@ -81,6 +87,7 @@ void registerBuiltins() {
         "MeshRenderer",
         {
             field("mesh", &MeshRenderer::mesh),
+            field("material", &MeshRenderer::material),
             field("texture", &MeshRenderer::texture),
             field("tint", &MeshRenderer::tint),
             field("tiling", &MeshRenderer::tiling, 0.05f, 0.001f, 10000.0f),
@@ -99,6 +106,7 @@ void registerBuiltins() {
             field("tint", &ModelRenderer::tint),
             field("visible", &ModelRenderer::visible),
             field("cast_shadows", &ModelRenderer::castShadows),
+            field("materials", &ModelRenderer::materials),
         },
         "Rendering");
     registerComponent<Camera>(

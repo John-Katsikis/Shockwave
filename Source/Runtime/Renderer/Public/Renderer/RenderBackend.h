@@ -82,6 +82,8 @@ public:
     // Once per distinct SamplerDesc; id 0 (the default) is never sent. Any thread.
     virtual void createSampler(SamplerHandle, const SamplerDesc&) {}
     virtual void setAnisotropy(uint32_t /*1..16*/) {}
+    // A02: Low leaves DrawMaterial::layers' detail out of later draws.
+    virtual void setMaterialQuality(MaterialQuality) {}
     virtual LodStats lodStats() const { return {}; }
 
     // ---- Per frame ----

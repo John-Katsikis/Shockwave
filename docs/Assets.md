@@ -41,8 +41,9 @@ Inspector you can change the model, its visibility and its tint, and undo works 
 To swap in a different model, drop it onto the Inspector's Model field.
 
 The Inspector's imported material section shows the material settings from the source
-file. You can't edit them in Shockwave. Change them in your modeling tool and save, and
-the model reloads.
+file. Those stay as your modeling tool saved them: change them there and save, and the
+model reloads. To change a material in Shockwave instead, give that part a material file
+(see [Material files](#material-files-swmaterial) below).
 
 ## What a model keeps when imported
 
@@ -81,9 +82,9 @@ Some limits apply:
 
 - Transparent parts are sorted by depth. Transparent surfaces that cut through each
   other can still draw in the wrong order.
-- Only UV0 is used. Extra UV sets are ignored.
-- All textures use one shared sampler that repeats and filters linearly. Per-texture
-  sampler settings and texture transforms are not applied.
+- Each map can read UV0 or UV1, with glTF's `KHR_texture_transform` and its own wrap
+  and filter modes ([GraphicsVerification.md](GraphicsVerification.md), G02). Other
+  formats' UV transforms are reported and ignored.
 
 Base color and emissive maps are colour, so they load as sRGB. Normal,
 metallic-roughness and occlusion maps are data, so they load as linear, and texture
@@ -100,6 +101,66 @@ see the normal maps on their own, pick Normals in the viewport's Shading menu, o
 ```sh
 build/bin/player --scene Games/Sample/Scenes/materials.swscene --view normals --screenshot out.png
 ```
+
+## Material files (.swmaterial)
+
+A material file is a small text asset in Content that starts from a parent and changes a
+few values. It never copies pixels; it names the textures to use:
+
+```text
+swmaterial 1
+parent "models/crate.glb" "Rusty metal"
+roughness 0.32
+texture detail_normal "textures/scratches_normal.png"
+uv_transform detail_normal 0 0 8 8 0
+```
+
+The parent is another `.swmaterial`, or a material imported with a model, found by its
+name (so reordering the model's materials keeps it working). Without a parent it starts
+from plain white. [MaterialSchema.md](MaterialSchema.md) lists every value, slot and
+default; `player --material-schema docs/MaterialSchema.md` regenerates it.
+
+Beyond the glTF maps a material can have:
+
+- a **detail layer**: a colour and/or normal map tiled finely across the surface (scratches,
+  pores, weave), its own roughness, a mask, and a distance at which it fades out. The
+  normals are combined with reoriented normal mapping, so the detail follows the bumps
+  under it. `material_quality low` (in [Graphics.md](Graphics.md)) leaves it out.
+- a **second layer**: moss, dust or paint with its own colour, roughness, metallic and
+  normals, shown where a mask says: a channel of a mask texture, or of the vertex colours
+  (painted in the modeling tool).
+
+Two things happen to every material automatically. Distant normal-mapped surfaces get a
+little rougher where their normals average out, so highlights don't sparkle (Toksvig).
+And an alpha-tested material's base colour gets mipmaps that keep the same share of
+pixels past the cutoff, so foliage and fences don't thin out with distance.
+
+**In the editor.** Right-click in the Content panel and choose *New material*, or
+right-click a material and choose *New material instance*. Double-click a material to
+open the **Material** window (also under **Window**): values it sets are shown in the
+accent colour with an *Inherit* button, the rest show what they inherit, and every edit
+is saved and shown straight away. Drag a material onto an object in the viewport to use
+it; on a model, it replaces the part under the cursor. The Inspector's *Materials*
+section lists a model's parts: pick or drop a material for each, or press *Make
+instance* to start a new material from that part's own.
+
+**In scenes.** `MeshRenderer` has `material "materials/stone.swmaterial"`;
+`ModelRenderer` has `materials "Part name" "materials/x.swmaterial" ...`, pairs of the
+model's material name and the file drawn in its place. A part the model no longer has
+(renamed in the modeling tool, say) fails `player --check`.
+
+**When something is wrong.** A file that doesn't parse keeps its last good version while
+you fix it, with the line in the error. A parent, model, material or texture that isn't
+there draws the material flat magenta, with the reason in the Content panel and in
+`player --check`. Values that do nothing (detail settings without a detail texture, say)
+are listed as warnings. To see how a material resolves without opening the editor:
+
+```sh
+build/bin/player --material-info Content/materials/stone-detail.swmaterial
+```
+
+It prints the chain of parents, every value, each texture slot, the features it uses,
+what `material_quality low` drops, and warnings, as JSON.
 
 Skinned meshes and the animation clips inside a model play through the Animation
 module. See [Animation](Animation.md). Morph targets (blend shapes) are imported but not

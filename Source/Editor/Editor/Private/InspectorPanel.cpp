@@ -266,6 +266,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         const auto asset = instance ? engine().assets().model(instance->model) : nullptr;
         if (!asset) return;
         drawModelAnimationNotes(e);
+        drawModelMaterials(e);
         ImGui::SeparatorText("Imported materials");
         for (size_t i = 0; i < asset->data.materials.size(); ++i) {
             const auto& material = asset->data.materials[i];
@@ -467,6 +468,41 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
             }
             ImGui::EndDragDropTarget();
         }
+        break;
+    }
+    case FieldType::Material: {
+        auto* material = static_cast<shockwave::MaterialHandle*>(data);
+        const std::string current = engine().assets().materialName(*material);
+        if (ImGui::BeginCombo(label.c_str(), current.empty() ? "none" : current.c_str(), ImGuiComboFlags_HeightLarge)) {
+            if (ImGui::Selectable("none", !material->valid()) && material->valid()) {
+                pushUndo(m_world);
+                *material = {};
+            }
+            for (const auto& [name, handle] : engine().assets().materials())
+                if (ImGui::Selectable(name.c_str(), handle == *material) && !(handle == *material)) {
+                    pushUndo(m_world);
+                    *material = handle;
+                }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("A .swmaterial from Content; drop one here. It replaces the texture and surface values");
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kMaterialPayload)) {
+                pushUndo(m_world);
+                *material = engine().assets().findMaterial(static_cast<const char*>(payload->Data));
+            }
+            ImGui::EndDragDropTarget();
+        }
+        if (material->valid() && ImGui::SmallButton("Edit material")) openMaterial(current);
+        break;
+    }
+    case FieldType::MaterialOverrides: {
+        // Edited per part under "Materials" below.
+        const auto& overrides = *static_cast<const shockwave::MaterialOverrides*>(data);
+        if (overrides.empty())
+            ImGui::TextDisabled("each part's own");
+        else
+            ImGui::TextDisabled("%zu part%s replaced (below)", overrides.size(), overrides.size() == 1 ? "" : "s");
         break;
     }
     case FieldType::UIDocument: {

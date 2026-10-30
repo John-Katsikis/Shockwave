@@ -35,6 +35,8 @@ public:
         Image image;
         TextureCompression mode = TextureCompression::High;
         bool srgb = true;
+        float coverageCutoff = -1.0f;   // >= 0: mipmaps keep alpha-tested coverage (encodeKtx2)
+        std::string variant;   // a texture file's variant (AssetFolder::TextureVariant::key); empty: the file's own
         bool bc7 = false;   // what to transcode to afterwards
         std::filesystem::path cacheFile;   // empty: no cache
 

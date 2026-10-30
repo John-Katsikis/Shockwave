@@ -49,6 +49,7 @@ const std::vector<const char*> kAntiAliasingChoices = {"none", "fxaa"};
 const std::vector<const char*> kBloomChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kTextureQualityChoices = {"low", "medium", "high", "ultra"};
 const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
+const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -167,6 +168,17 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"material_quality", "Material detail", "Quality",
+         "High draws every material layer. Low skips detail layers (the close-up micro texture some materials "
+         "add) to save texture reads; base materials and second layers are unchanged.",
+         "low, high", kMaterialQualityChoices, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(materialQualityName(s.materialQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kMaterialQualityChoices, v, s.materialQuality)) return true;
+             error = "material_quality must be " + list(kMaterialQualityChoices);
+             return false;
+         }});
+    info.push_back(
         {"anisotropy", "Texture filtering", "Quality",
          "Anisotropic filtering: the most samples a texture seen at a grazing angle may take. Higher keeps floors "
          "and roads sharp into the distance. Nearest-filtered (pixel art) textures are unaffected.",
@@ -263,6 +275,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.bloomQuality = BloomQuality::Low;
         base.textureQuality = TextureQuality::Low;
         base.anisotropy = 4;
+        base.materialQuality = MaterialQuality::Low;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -271,6 +284,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.bloomQuality = BloomQuality::Medium;
         base.textureQuality = TextureQuality::Medium;
         base.anisotropy = 8;
+        base.materialQuality = MaterialQuality::High;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -279,6 +293,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.bloomQuality = BloomQuality::High;
         base.textureQuality = TextureQuality::High;
         base.anisotropy = 16;
+        base.materialQuality = MaterialQuality::High;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -287,6 +302,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.bloomQuality = BloomQuality::High;
         base.textureQuality = TextureQuality::Ultra;
         base.anisotropy = 16;
+        base.materialQuality = MaterialQuality::High;
         break;
     }
     return base;
@@ -445,6 +461,7 @@ GraphicsSettings Graphics::current() const {
     s.bloomScale = r.bloomScale();
     s.textureQuality = r.textureQuality();
     s.anisotropy = r.anisotropy();
+    s.materialQuality = r.materialQuality();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -496,6 +513,7 @@ void Graphics::commit() {
         r.setBloom(s.bloomQuality, s.bloomScale);
     if (s.textureQuality != previous.textureQuality) r.setTextureQuality(s.textureQuality);
     if (s.anisotropy != previous.anisotropy) r.setAnisotropy(s.anisotropy);
+    if (s.materialQuality != previous.materialQuality) r.setMaterialQuality(s.materialQuality);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

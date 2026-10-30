@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <deque>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -37,9 +38,13 @@ const char* textureWrapName(TextureWrap wrap) {
 }
 const char* textureFilterName(TextureFilter filter) { return filter == TextureFilter::Nearest ? "nearest" : "linear"; }
 const char* materialSlotName(MaterialSlot slot) {
-    constexpr const char* names[] = {"base_color", "normal", "metallic_roughness", "emissive", "occlusion"};
-    return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kMaterialSlots - 1)];
+    constexpr const char* names[] = {
+        "base_color",   "normal",     "metallic_roughness", "emissive",         "occlusion",    "detail_color",
+        "detail_normal", "detail_mask", "layer_mask",        "layer_base_color", "layer_normal", "layer_metallic_roughness"};
+    static_assert(std::size(names) == kAllMaterialSlots);
+    return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kAllMaterialSlots - 1)];
 }
+const char* materialQualityName(MaterialQuality quality) { return quality == MaterialQuality::Low ? "low" : "high"; }
 glm::vec2 UvTransform::apply(glm::vec2 uv) const {
     const glm::vec2 s = scale * uv;
     if (rotation == 0.0f) return offset + s;
@@ -103,6 +108,7 @@ struct Renderer::State {
     float bloomScale = 1.0f;
     LodSettings lodSettings;
     uint32_t anisotropy = 16;
+    MaterialQuality materialQuality = MaterialQuality::High;
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
@@ -306,6 +312,7 @@ struct Renderer::State {
         backend->setLowLatency(lowLatency);
         backend->setLodSettings(lodSettings);
         backend->setAnisotropy(anisotropy);
+        backend->setMaterialQuality(materialQuality);
         {
             std::lock_guard lock(samplerMutex);
             for (uint32_t id = 1; id < samplers.size(); ++id) backend->createSampler({id}, samplers[id]);
@@ -644,6 +651,11 @@ void Renderer::setAnisotropy(uint32_t anisotropy) {
     m->backend->setAnisotropy(m->anisotropy);
 }
 uint32_t Renderer::anisotropy() const { return m->anisotropy; }
+void Renderer::setMaterialQuality(MaterialQuality quality) {
+    m->materialQuality = quality;
+    m->backend->setMaterialQuality(quality);
+}
+MaterialQuality Renderer::materialQuality() const { return m->materialQuality; }
 
 // ---- Texture quality (A01) ----
 

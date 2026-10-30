@@ -48,6 +48,7 @@ inline constexpr const char* kTexturePayload = "SW_TEXTURE";
 inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
 inline constexpr const char* kPrefabPayload = "SW_PREFAB";   // path inside Content
 inline constexpr const char* kCircuitPayload = "SW_CIRCUIT";   // path inside Content
+inline constexpr const char* kMaterialPayload = "SW_MATERIAL";   // path inside Content
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
@@ -191,7 +192,7 @@ private:
     void drawLightIcons(const ImVec2& pos, const ImVec2& size);
     void saveViewportScreenshot();
     void updateCamera(bool hovered);
-    shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size);
+    shockwave::Entity pick(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, std::string* part = nullptr);
     void mouseRay(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size, glm::vec3& origin, glm::vec3& dir) const;
     bool worldToScreen(const glm::vec3& p, const ImVec2& pos, const ImVec2& size, ImVec2& out) const;
     void acceptViewportDrop(const ImVec2& pos, const ImVec2& size);
@@ -261,6 +262,23 @@ private:
     void saveCircuit();
     void attachCircuit(const std::string& path);   // a Circuit component on each selected entity, with undo
     bool attachCircuit(shockwave::Entity e, const std::string& path);
+    // MaterialPanel.cpp: material files (.swmaterial, A02): the Material window, new
+    // materials and putting them on things.
+    void drawMaterialWindow();
+    void openMaterial(const std::string& path);   // inside Content
+    // Writes a material named after base (the first free name) in folder, starting from
+    // parent (and parentMaterial, for a model's), and opens it. Its path, or "" on failure.
+    std::string newMaterial(
+        const std::string& folder, const std::string& base, const std::string& parent,
+        const std::string& parentMaterial);
+    // A MeshRenderer's material, or one of a ModelRenderer's parts (part: the model's
+    // material name; empty: all of them). One undo step.
+    bool applyMaterial(shockwave::Entity e, const std::string& material, const std::string& part);
+    void drawModelMaterials(shockwave::Entity e);   // the Inspector's per-part overrides
+    bool m_showMaterial = false;
+    std::string m_materialPath;   // the one the window edits
+    shockwave::MaterialFile m_materialEdit;
+    std::string m_materialLoadError;
     bool m_showCircuits = false;
     bool m_showNetwork = false;
     std::shared_ptr<struct CircuitEditorState> m_circuitEditor;   // created when the window first opens

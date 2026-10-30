@@ -42,7 +42,8 @@ bool isKtx2File(const fs::path& path) {
 }
 
 bool encodeKtx2(
-    const Image& image, TextureCompression mode, bool srgb, std::vector<uint8_t>& ktx2, std::string& error) {
+    const Image& image, TextureCompression mode, bool srgb, std::vector<uint8_t>& ktx2, std::string& error,
+    float coverageCutoff) {
     error.clear();
     if (mode == TextureCompression::Off) {
         error = "compression is off";
@@ -64,8 +65,26 @@ bool encodeKtx2(
         flags |= uint32_t(basisu::BASISU_DEFAULT_QUALITY);
     }
     size_t size = 0;
-    void* data = basisu::basis_compress(
-        format, image.rgba.data(), image.width, image.height, image.width, flags, 0.0f, &size);
+    void* data = nullptr;
+    if (coverageCutoff >= 0.0f) {
+        // Our own mipmaps, which keep alpha-tested coverage; the encoder takes them as given.
+        flags &= ~uint32_t(basisu::cFlagGenMipsWrap);
+        TextureData level0;
+        level0.srgb = srgb;
+        level0.width = image.width;
+        level0.height = image.height;
+        level0.bytes.assign(image.rgba.begin(), image.rgba.begin() + ptrdiff_t(size_t(image.width) * image.height * 4));
+        level0.levels = {{image.width, image.height, 0, level0.bytes.size()}};
+        const TextureData chain = textureMipChain(level0, coverageCutoff);
+        basisu::vector<basisu::image> levels;
+        for (const auto& level : chain.levels) {
+            basisu::image& out = levels.enlarge(1)[0];
+            out.init(chain.bytes.data() + level.offset, level.width, level.height, 4);
+        }
+        data = basisu::basis_compress(format, levels, flags, 0.0f, &size);
+    } else {
+        data = basisu::basis_compress(format, image.rgba.data(), image.width, image.height, image.width, flags, 0.0f, &size);
+    }
     if (!data) {
         error = "Basis Universal couldn't encode the texture";
         return false;
@@ -130,13 +149,17 @@ bool transcodeKtx2(std::span<const uint8_t> ktx2, bool bc7, TextureData& texture
     return true;
 }
 
-uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode, bool srgb) {
+uint64_t textureCacheKey(std::span<const uint8_t> source, TextureCompression mode, bool srgb, float coverageCutoff) {
     uint64_t hash = 0xcbf29ce484222325ull;
     hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>(kEncoderVersion.data()), kEncoderVersion.size()});
     const std::string_view name = textureCompressionName(mode);
     hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>(name.data()), name.size()});
     // Colour keeps the keys it always had, so existing caches stay valid.
     if (!srgb) hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>("linear"), 6});
+    if (coverageCutoff >= 0.0f) {
+        const std::string coverage = "coverage " + std::to_string(coverageCutoff);
+        hash = hashBytes(hash, {reinterpret_cast<const uint8_t*>(coverage.data()), coverage.size()});
+    }
     return hashBytes(hash, source);
 }
 

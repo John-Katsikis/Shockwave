@@ -122,7 +122,13 @@ struct ModelAsset {
     std::vector<TextureHandle> textures;
     // Per material, each slot's cached sampler (Renderer::sampler of its binding).
     std::vector<std::array<SamplerHandle, kMaterialSlots>> samplers;
+    // Per material, what it's drawn with (buildDrawMaterial of importedMaterial); the base
+    // color texture and factor are textures[baseColorTexture] and baseColor.
+    std::vector<DrawMaterial> drawMaterials;
 };
+// Per texture, the alpha cutoff of a masked material that uses it as base color, or -1:
+// those get mipmaps that keep their alpha-tested coverage (textureMipChain).
+std::vector<float> modelCoverageCutoffs(const ModelData& model);
 // The renderer's binding for one material slot of a loaded model.
 TextureBinding drawBinding(const ModelAsset& model, uint32_t material, MaterialSlot slot);
 
@@ -135,6 +141,9 @@ std::string modelExtensions();   // formats enabled in this build
 bool loadModel(
     const std::filesystem::path& path, ModelData& model, std::string& error,
     std::vector<std::filesystem::path>* attemptedDependencies = nullptr);
-// Ray is in model-local space. Tests real triangles, respecting node transforms.
-bool intersectModel(const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance);
+// Ray is in model-local space. Tests real triangles, respecting node transforms. material:
+// the hit mesh's material index, if wanted.
+bool intersectModel(
+    const ModelData& model, const glm::vec3& origin, const glm::vec3& direction, float& distance,
+    uint32_t* material = nullptr);
 }   // namespace shockwave

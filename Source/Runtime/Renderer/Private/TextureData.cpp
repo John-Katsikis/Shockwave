@@ -85,6 +85,84 @@ uint8_t linearToSrgb(float c) {
 }
 }   // namespace
 
+namespace {
+// One level as floats (linear light for sRGB colour; alpha is always linear), and back.
+std::vector<float> decodeLevel(const uint8_t* bytes, size_t count, bool srgb) {
+    const auto& decode = srgbToLinear();
+    std::vector<float> pixels(count);
+    for (size_t i = 0; i < count; ++i) pixels[i] = srgb && i % 4 != 3 ? decode[bytes[i]] : float(bytes[i]) / 255.0f;
+    return pixels;
+}
+void encodeLevel(const std::vector<float>& pixels, bool srgb, std::vector<uint8_t>& out) {
+    for (size_t i = 0; i < pixels.size(); ++i)
+        out.push_back(
+            srgb && i % 4 != 3 ? linearToSrgb(pixels[i])
+                               : static_cast<uint8_t>(std::lround(std::clamp(pixels[i], 0.0f, 1.0f) * 255.0f)));
+}
+// The next level down: each texel the mean of a 2 x 2 block (edge texels repeat on odd sizes).
+std::vector<float> halve(const std::vector<float>& pixels, uint32_t& w, uint32_t& h) {
+    const uint32_t nw = std::max(1u, w / 2), nh = std::max(1u, h / 2);
+    std::vector<float> next(size_t(nw) * nh * 4);
+    for (uint32_t y = 0; y < nh; ++y)
+        for (uint32_t x = 0; x < nw; ++x)
+            for (uint32_t c = 0; c < 4; ++c) {
+                const uint32_t x0 = std::min(x * 2, w - 1), x1 = std::min(x * 2 + 1, w - 1);
+                const uint32_t y0 = std::min(y * 2, h - 1), y1 = std::min(y * 2 + 1, h - 1);
+                const auto at = [&](uint32_t px, uint32_t py) { return pixels[(size_t(py) * w + px) * 4 + c]; };
+                next[(size_t(y) * nw + x) * 4 + c] = (at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1)) * 0.25f;
+            }
+    w = nw;
+    h = nh;
+    return next;
+}
+float coverage(const std::vector<float>& pixels, float scale, float cutoff) {
+    size_t kept = 0;
+    for (size_t i = 3; i < pixels.size(); i += 4) kept += std::min(pixels[i] * scale, 1.0f) >= cutoff;
+    return pixels.empty() ? 0.0f : float(kept) / float(pixels.size() / 4);
+}
+}   // namespace
+
+float alphaCoverage(const uint8_t* rgba, uint32_t width, uint32_t height, float cutoff) {
+    size_t kept = 0;
+    const size_t texels = size_t(width) * height;
+    for (size_t i = 0; i < texels; ++i) kept += float(rgba[i * 4 + 3]) / 255.0f >= cutoff;
+    return texels ? float(kept) / float(texels) : 0.0f;
+}
+
+TextureData textureMipChain(const TextureData& source, float coverageCutoff) {
+    if (source.format != TextureFormat::RGBA8 || source.levels.size() != 1 || !source.valid()) return source;
+    TextureData chain;
+    chain.format = source.format;
+    chain.srgb = source.srgb;
+    chain.width = source.width;
+    chain.height = source.height;
+    uint32_t w = source.width, h = source.height;
+    const uint8_t* level0 = source.bytes.data() + source.levels[0].offset;
+    chain.bytes.assign(level0, level0 + source.levels[0].size);
+    chain.levels.push_back({w, h, 0, source.levels[0].size});
+    std::vector<float> pixels = decodeLevel(level0, source.levels[0].size, source.srgb);
+    // Quantised like the stored level, so a cutoff of exactly 0.5 sees what the GPU sees.
+    const float target = coverageCutoff >= 0.0f ? coverage(pixels, 1.0f, coverageCutoff) : 0.0f;
+    while (w > 1 || h > 1) {
+        pixels = halve(pixels, w, h);   // always from the unscaled level above
+        std::vector<float> stored = pixels;
+        if (coverageCutoff > 0.0f) {
+            // Coverage only grows with the scale: bisect for the one that matches level 0.
+            float lo = 0.0f, hi = 1.0f / std::max(coverageCutoff, 1e-3f) * 4.0f;
+            for (int step = 0; step < 24; ++step) {
+                const float mid = 0.5f * (lo + hi);
+                (coverage(pixels, mid, coverageCutoff) < target ? lo : hi) = mid;
+            }
+            const float scale = 0.5f * (lo + hi);
+            for (size_t i = 3; i < stored.size(); i += 4) stored[i] = std::min(stored[i] * scale, 1.0f);
+        }
+        const size_t offset = chain.bytes.size();
+        encodeLevel(stored, source.srgb, chain.bytes);
+        chain.levels.push_back({w, h, offset, chain.bytes.size() - offset});
+    }
+    return chain;
+}
+
 TextureData textureTail(const TextureData& source, uint32_t firstMip) {
     if (firstMip == 0 || source.levels.empty()) return source;
     TextureData tail;
@@ -108,34 +186,12 @@ TextureData textureTail(const TextureData& source, uint32_t firstMip) {
     // One RGBA8 level: halve it firstMip times in floating point, rounding only at the end.
     uint32_t w = source.width, h = source.height;
     firstMip = std::min(firstMip, textureMipCount(w, h) - 1);
-    const auto& decode = srgbToLinear();
-    std::vector<float> pixels(size_t(w) * h * 4);
-    for (size_t i = 0; i < pixels.size(); ++i) {
-        const uint8_t byte = source.bytes[source.levels[0].offset + i];
-        pixels[i] = source.srgb && i % 4 != 3 ? decode[byte] : float(byte) / 255.0f;
-    }
-    for (uint32_t level = 0; level < firstMip; ++level) {
-        const uint32_t nw = std::max(1u, w / 2), nh = std::max(1u, h / 2);
-        std::vector<float> next(size_t(nw) * nh * 4);
-        for (uint32_t y = 0; y < nh; ++y)
-            for (uint32_t x = 0; x < nw; ++x)
-                for (uint32_t c = 0; c < 4; ++c) {
-                    const uint32_t x0 = std::min(x * 2, w - 1), x1 = std::min(x * 2 + 1, w - 1);
-                    const uint32_t y0 = std::min(y * 2, h - 1), y1 = std::min(y * 2 + 1, h - 1);
-                    const auto at = [&](uint32_t px, uint32_t py) { return pixels[(size_t(py) * w + px) * 4 + c]; };
-                    next[(size_t(y) * nw + x) * 4 + c] = (at(x0, y0) + at(x1, y0) + at(x0, y1) + at(x1, y1)) * 0.25f;
-                }
-        pixels = std::move(next);
-        w = nw;
-        h = nh;
-    }
+    std::vector<float> pixels =
+        decodeLevel(source.bytes.data() + source.levels[0].offset, size_t(w) * h * 4, source.srgb);
+    for (uint32_t level = 0; level < firstMip; ++level) pixels = halve(pixels, w, h);
     tail.width = w;
     tail.height = h;
-    tail.bytes.resize(pixels.size());
-    for (size_t i = 0; i < pixels.size(); ++i)
-        tail.bytes[i] = source.srgb && i % 4 != 3
-                            ? linearToSrgb(pixels[i])
-                            : static_cast<uint8_t>(std::lround(std::clamp(pixels[i], 0.0f, 1.0f) * 255.0f));
+    encodeLevel(pixels, source.srgb, tail.bytes);
     tail.levels = {{w, h, 0, tail.bytes.size()}};
     return tail;
 }

@@ -95,6 +95,7 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroySemaphore(device, frameTimeline, nullptr);
     for (Frame& f : frames) {
         vmaDestroyBuffer(allocator, f.drawBuffer.buffer, f.drawBuffer.allocation);
+        if (f.layerBuffer.buffer) vmaDestroyBuffer(allocator, f.layerBuffer.buffer, f.layerBuffer.allocation);
         vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
         vkDestroySemaphore(device, f.imageAcquired, nullptr);
         vkDestroyQueryPool(device, f.timestamps, nullptr);

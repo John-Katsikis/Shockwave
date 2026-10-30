@@ -24,9 +24,11 @@ frame 30 is the same moment on every run.
 | dense-occluder | Main Camera, Overhead | 1215 entities behind a wall (instancing, HZB culling) |
 | materials | Main Camera | nine quads, each reading its maps through one material binding (G02) |
 | materials-expected | Main Camera | the same quads with every binding baked into plain UV0: must match `materials` |
+| material-instances | Main Camera | the `materials` quads, each part drawn through a `.swmaterial` that only names its source: must match `materials` exactly (A02) |
+| material-layers | Main Camera | stone cubes plain, with a detail normal layer, and with moss as a second layer; masked foliage near and far (A02) |
 
-`Tools/generate.py` writes the textures, glTF models and the dense scene with only the
-Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
+`Tools/generate.py` writes the textures, glTF models, material files, and the dense,
+materials and material scenes with only the Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
 the content.
 
 ## Commands
@@ -65,10 +67,11 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 |---|---|---|
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
-| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `texture_quality low` shrinks material textures, settles, and changes the image |
-| `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; hand-tuned settings read as Custom; `status()` |
+| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `material-instances` matches `materials` exactly in all three; `material_quality low` changes `material-layers` (the detail goes) but under 10% of it; `texture_quality low` shrinks material textures, settles, and changes the image |
+| `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; only the Low preset sets `material_quality low`; hand-tuned settings read as Custom; `status()` |
 | `graphics_cli` | no | `--graphics-set`, `--anti-aliasing`, refused values with file and line, `--graphics-info --json` |
-| `graphics_materials_info` | no | `--material-info` on materials.glb: KHR_texture_transform values as authored, UV sets (including KHR's own `texCoord`), colour spaces, wrap and filter modes; a missing UV1 warns on import and fails `--check`; `--texture-info` sizes and bytes per quality |
+| `graphics_materials_info` | no | `--material-info` on materials.glb: KHR_texture_transform values as authored, UV sets (including KHR's own `texCoord`), colour spaces, wrap and filter modes; a missing UV1 warns on import and fails `--check`; `--texture-info` sizes and bytes per quality; `--material-info` on `.swmaterial` files: the parent chain, inherited and overridden values, slots, features and what low quality drops; a missing parent, a loop and a typo each fail with the right kind of problem; `--material-schema` |
+| `materials` | no | the `.swmaterial` parser: a valid file, canonical writing that reads back the same, exact float round trips, and 19 kinds of mistake each rejected with its line; inheritance order, determinism, imported parents found by name after their materials are reordered, missing references, loops, the 16-file limit; features, low-quality omissions and warnings; reoriented normal mapping's identities and unit length; Toksvig widening; coverage-keeping mipmaps against plain ones; cache keys; `material` and `materials` scene fields round-trip; hot reload (a parent edit reaches the child, a half-written file keeps the last good version, a missing parent goes magenta and recovers with the same handle) |
 | `texture_quality` | no | exact BC7 and RGBA8 chain bytes, the 32-pixel floor, explicit LOD mapping, CPU tails averaged in linear light, sliced chains, UV transform maths, the sampler cache; then low, a reload at low, three changes in one frame, a change while one is running, and back to ultra, on the null renderer |
 | `texture_quality_vulkan` | yes | the same transitions with real images swapped in while they're drawn |
 | `graphics_report_null` | no (runs under Xvfb, so Linux only, like the other headless play tests) | the report works on the null renderer |
@@ -188,16 +191,71 @@ Result: `capture.py --compare` found all 52 images identical to the G00 baseline
 `--image-diff`, RMSE 0; 44 by mean colour). The defaults (`texture_quality ultra`,
 `anisotropy 16`, identity bindings, the default sampler) reproduce the old output exactly.
 
+## A02: material instances, detail and layers
+
+- **Material files.** `.swmaterial` (format in [MaterialSchema.md](MaterialSchema.md),
+  generated from the same descriptors the parser reads) names a parent and the values it
+  changes. Imported parents are found by material name, never index; unnamed or
+  duplicate names can't be referred to, and say so. Resolving gives one immutable
+  `MaterialDesc`; every material, imported or authored, is then turned into what the
+  renderer draws by the same `buildDrawMaterial`, which is why an instance that changes
+  nothing draws bit for bit like its source.
+- **Hot reload and failure.** A parse error keeps the last good version (the error shows
+  in Content and the Material window); a missing reference draws flat magenta with the
+  reason. Editing a parent, model or texture reloads every material that depends on it.
+  Handles never change, so scenes and undo history keep pointing at the right material.
+- **Colour space per slot.** Each slot decodes its texture as its own kind of data: a PNG
+  used as colour by one material and as a mask by another is decoded (and compressed and
+  cached) once for each. The variants are made on workers, cached as `.ktx2` like other
+  textures, and freed when no material reads them.
+- **Detail layer.** Colour multiplies around neutral white; normals combine with
+  reoriented normal mapping (`composeNormals`, also in `mesh.frag`), in the detail's own
+  tangent frame, so mirrored or rotated detail UVs work. It fades by camera distance and
+  can be masked. `material_quality low` skips it in the shader, and nothing else changes.
+- **Second layer.** Its own colour, roughness, metallic and normals, mixed in by a texture
+  channel or a vertex colour channel. A vertex-colour mask stops the vertex colours tinting
+  (they're paint data then); vertex alpha still multiplies alpha.
+- **Specular anti-aliasing.** Where a normal map's filtered mip is shorter than unit
+  length, roughness widens to match (Toksvig, through the Blinn-Phong equivalence
+  `s = 2/a^2 - 2`). It only acts once the map is minified (`textureQueryLod`), and allows
+  for 8-bit quantisation, so close-up and magnified normal maps are unchanged.
+- **Coverage-keeping mipmaps.** For a masked material's base colour, each mip's alpha is
+  scaled so the same share of texels passes the cutoff as at full size (Castano's
+  bisection). Done on the CPU for uncompressed textures, and before encoding for
+  compressed ones; the cutoff is part of the cache key.
+- **Measured** on llvmpipe at 640x360: `material-instances` against `materials`, RMSE 0 in
+  the unlit, normals and lit views. `material-layers` at `material_quality low` against
+  high: RMSE 1.10, 0.66% of pixels changed, all on the detailed cube. Coverage on a
+  64-pixel random mask stays within 0.06 of the original down to 8 x 8 with the new
+  mipmaps; plain box filtering loses more than 0.15 of it.
+- **Plugin ABI** is now 6 (`DrawMaterial` gained its layers, `MeshRenderer` and
+  `ModelRenderer` their material fields).
+
+Result: `capture.py --compare` found all 52 existing images identical to the baseline (8
+by `--image-diff`, RMSE 0; 44 by mean colour). Neither Toksvig nor the coverage mipmaps
+changed any of them at these sizes, so the baseline stands. `material-layers` is new; its 1280x720 image and
+entries were added to the baseline without re-recording the others.
+
 ## Known limits
 
-- Normal-map mips are box-filtered like colour (no renormalisation or roughness
-  adjustment) and alpha-mask mips don't preserve coverage: both are A02's.
+- Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
+  the shader instead of baking it into a roughness map.
+- A `.ktx2` texture keeps its own mipmaps, so a masked material reading one gets no
+  coverage adjustment (it warns), and one stored as the wrong colour space for its slot
+  is used as stored (it warns).
+- Linear and coverage variants of a texture are decoded on the CPU from the source file
+  the first time (then cached), which costs memory and import time for every extra use.
+- No `--material-bake`, no preview sphere in the Material window, and edits in the
+  Material window aren't on the editor's undo stack (each is saved straight to the file;
+  scene changes such as which material a part uses are undoable). Saving rewrites the
+  file in canonical order and drops comments.
+- Circuits can't set or read materials yet.
+- Shading families other than standard (clearcoat, skin, hair) are refused until A07-A09.
 - Texture quality is whole-level only: no streaming by distance or visibility yet, and
   every material texture keeps a CPU copy while it's loaded (shown in the report and the
   Optimisation window).
-- MeshRenderer components still have one texture with tiling; per-slot overrides and
-  `.swmaterial` authoring come with A02. The editor shows each imported slot's UV set,
-  transform and sampler, read-only.
+- A MeshRenderer with a material ignores its own texture, roughness and metallic but still
+  applies its tint and tiling.
 - Generated lightmap UVs (a third stream) are G05's.
 - The editor grid is drawn in the scene pass, so FXAA smooths it too.
 - Images waiting to be freed after a change aren't counted in the memory report.
