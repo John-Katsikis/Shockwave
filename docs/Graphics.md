@@ -52,11 +52,21 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `material_quality`: `high` (the default) or `low`. Low skips materials' detail layers,
   the close-up micro texture a `.swmaterial` can add (docs/Graphics/02-MaterialsAndDecals.md);
   base materials and second layers draw the same. It applies on the next frame.
+- `ambient_occlusion`: `off` (the default), `low`, `medium` or `high` (8, 16 or 32
+  samples a pixel). Screen-space ambient occlusion darkens the light from the
+  surroundings in creases, corners and where objects meet, worked out at half resolution
+  from a surface prepass (depth and normals) and blurred without crossing edges. Direct
+  light, shadows, reflections and emission are never darkened. Each scene's Environment
+  sets how far it looks (`ao_radius`, 0.3 m by default) and how strongly it darkens
+  (`ao_intensity`, 1). Off, there's no prepass and no memory for it. `player --view ao`
+  and the editor's *Ambient occlusion* shading view show it alone (at medium when the
+  setting is off).
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
 sets bloom quality low, medium or high, texture quality to its own name, anisotropy to
-4, 8, 16 and 16, and material quality low for Low and high for the rest.
+4, 8, 16 and 16, material quality low for Low and high for the rest, and ambient
+occlusion off, low, medium and high.
 `matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
 Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

@@ -207,6 +207,12 @@ set_tests_properties(texture_quality PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=of
 add_test(NAME texture_quality_vulkan COMMAND texture_quality_test vulkan)
 set_tests_properties(texture_quality_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 60 LABELS gpu)
+# The screen-space coordinate contract (G03): screen UV, reconstruction from depth, and
+# octahedral normals.
+add_executable(screen_space_test ScreenSpaceTest.cpp)
+target_link_libraries(screen_space_test PRIVATE Shockwave::Engine)
+shockwave_warnings(screen_space_test)
+add_test(NAME screen_space COMMAND screen_space_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)

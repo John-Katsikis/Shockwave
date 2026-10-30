@@ -20,6 +20,7 @@
 #include <Navigation/Navigation.h>
 #include <Projects/Project.h>
 
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -153,7 +154,8 @@ int netEncode(const fs::path& json, const fs::path& output);
 // candidate.png [--tolerance rmse] [--json out]: how far apart two screenshots are (RMSE in
 // 0..255 steps, PSNR, largest channel difference, share of visibly changed pixels). Exit 1
 // when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
-int imageStats(const fs::path& image, const fs::path& json);
+// region: x, y, width, height as fractions of the image (0..1); the whole image by default.
+int imageStats(const fs::path& image, const fs::path& json, const std::array<double, 4>& region = {0, 0, 1, 1});
 int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
 // --material-info, --texture-info: an asset's material slots (UV sets, transforms,
 // samplers) or its textures' levels and size at each texture_quality, as JSON. No GPU.

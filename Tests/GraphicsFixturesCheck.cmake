@@ -234,4 +234,98 @@ string(JSON rmse GET "${json}" rmse)
 if(rmse EQUAL 0)
     message(FATAL_ERROR "texture_quality low rendered exactly like ultra: the smaller images weren't used")
 endif()
+# Surface prepass and ambient occlusion (G03 + G04), on ambient-occlusion.swscene.
+function(render_ao name scene)
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/${scene}.swscene" --size 640x360 --fixed-step ${ARGN}
+        --screenshot "${TEMP}/${name}.png" RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "${scene} (${ARGN}) didn't render: ${out}\n${err}")
+    endif()
+endfunction()
+function(region_luma image region out_var)
+    execute_process(COMMAND "${PLAYER}" --image-stats "${TEMP}/${image}.png" --region ${region}
+        RESULT_VARIABLE result OUTPUT_VARIABLE stats)
+    string(REGEX MATCH "\"mean_luma\": ([0-9.]+)" _ "${stats}")
+    if(NOT result EQUAL 0 OR "${CMAKE_MATCH_1}" STREQUAL "")
+        message(FATAL_ERROR "--image-stats ${image} --region ${region} failed: ${stats}")
+    endif()
+    set(${out_var} ${CMAKE_MATCH_1} PARENT_SCOPE)
+endfunction()
+function(expect_same a b what)
+    image_diff(${a} ${b} json)
+    string(JSON rmse GET "${json}" rmse)
+    if(NOT rmse EQUAL 0)
+        message(FATAL_ERROR "${what} (rmse ${rmse})")
+    endif()
+endfunction()
+render_ao(ao-view ambient-occlusion --frames 10 --view ao --graphics-set ambient_occlusion=high)
+# Sky and open floor are white; the box's contact with the floor is darker; the far wall
+# right beside the thin pole 7 m in front of it isn't (no halo).
+region_luma(ao-view 0.5,0,0.45,0.08 sky)
+region_luma(ao-view 0.6,0.75,0.35,0.2 floor)
+region_luma(ao-view 0.5,0.55,0.1,0.05 contact)
+region_luma(ao-view 0.79,0.25,0.025,0.12 beside_pole)
+if(sky LESS 254.5 OR floor LESS 250 OR NOT contact LESS 248 OR beside_pole LESS 250)
+    message(FATAL_ERROR "ambient occlusion view: sky ${sky}, open floor ${floor} (both near 255), "
+                        "box contact ${contact} (darker), beside the pole ${beside_pole} (near 255)")
+endif()
+# A still camera sees still occlusion: the sample rotations are fixed, not random per frame.
+render_ao(ao-view-40 ambient-occlusion --frames 40 --view ao --graphics-set ambient_occlusion=high)
+expect_same(ao-view ao-view-40 "ambient occlusion flickers: frames 10 and 40 of a still scene differ")
+# Render scale changes the resolution it's worked out at, not what it finds.
+render_ao(ao-view-half ambient-occlusion --frames 10 --view ao --graphics-set ambient_occlusion=high --render-scale 0.5)
+image_diff(ao-view ao-view-half json)
+string(JSON rmse GET "${json}" rmse)
+if(rmse GREATER 4)
+    message(FATAL_ERROR "ambient occlusion at render scale 0.5 differs from 1 by rmse ${rmse}")
+endif()
+# Off is the old frame exactly, and on with nothing to do is too: ao_intensity 0 runs the
+# prepass and the EQUAL-depth shading (alpha test and all) and must change no pixel, and so
+# must ambient occlusion on a scene without ambient light (direct light is never occluded).
+render_ao(ao-lit-off ambient-occlusion --frames 10 --graphics-set ambient_occlusion=off)
+render_ao(ao-lit-high ambient-occlusion --frames 10 --graphics-set ambient_occlusion=high)
+render_ao(ao-zero-off ambient-occlusion-zero --frames 10 --graphics-set ambient_occlusion=off)
+render_ao(ao-zero-high ambient-occlusion-zero --frames 10 --graphics-set ambient_occlusion=high)
+render_ao(ao-direct-off ambient-occlusion-direct --frames 10 --graphics-set ambient_occlusion=off)
+render_ao(ao-direct-high ambient-occlusion-direct --frames 10 --graphics-set ambient_occlusion=high)
+render_ao(ao-default ambient-occlusion --frames 10)
+expect_same(ao-lit-off ao-default "ambient_occlusion off differs from the default: off must be the old path")
+expect_same(ao-zero-off ao-zero-high "ao_intensity 0 with ambient occlusion on changed the image")
+expect_same(ao-direct-off ao-direct-high "ambient occlusion changed a scene lit only directly")
+expect_same(ao-lit-off ao-zero-off "ao_intensity changed the image with ambient occlusion off")
+image_diff(ao-lit-off ao-lit-high json)
+string(JSON rmse GET "${json}" rmse)
+if(rmse EQUAL 0)
+    message(FATAL_ERROR "ambient occlusion high didn't change the lit image")
+endif()
+# The glowing block in the corner is black and emissive: occlusion never dims emission.
+# Its inside only: pixels on its silhouette also show the darkened floor and walls.
+region_luma(ao-lit-off 0.415,0.455,0.02,0.03 glow_off)
+region_luma(ao-lit-high 0.415,0.455,0.02,0.03 glow_high)
+if(NOT glow_off EQUAL glow_high)
+    message(FATAL_ERROR "ambient occlusion dimmed the emissive block: ${glow_off} -> ${glow_high}")
+endif()
+# Off has no prepass, no passes and no memory; on has all three.
+foreach(ao off medium)
+    execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics
+        --scene "${FIXTURE}/Scenes/ambient-occlusion.swscene" --size 320x180 --graphics-set ambient_occlusion=${ao}
+        --graphics-report --json "${TEMP}/ao-${ao}.json" RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT result EQUAL 0)
+        message(FATAL_ERROR "--graphics-report with ambient_occlusion ${ao} failed: ${out}\n${err}")
+    endif()
+    file(READ "${TEMP}/ao-${ao}.json" report)
+    string(JSON graph GET "${report}" frame_graph)
+    string(JSON surface_bytes GET "${report}" memory categories "surface buffers" bytes)
+    string(JSON ao_bytes GET "${report}" memory categories "ambient occlusion" bytes)
+    if(ao STREQUAL "off")
+        if(graph MATCHES "surface prepass" OR graph MATCHES "ambient occlusion" OR NOT surface_bytes EQUAL 0
+           OR NOT ao_bytes EQUAL 0)
+            message(FATAL_ERROR "ambient occlusion off still costs passes or memory:\n${graph}")
+        endif()
+    elseif(NOT graph MATCHES "surface prepass" OR NOT graph MATCHES "ambient occlusion" OR surface_bytes EQUAL 0
+           OR ao_bytes EQUAL 0)
+        message(FATAL_ERROR "ambient occlusion ${ao} is missing its passes or memory:\n${graph}")
+    endif()
+endforeach()
 file(REMOVE_RECURSE "${TEMP}")

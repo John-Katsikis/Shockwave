@@ -323,6 +323,8 @@ No fields; the component's presence is what matters.
 | `tonemapper` | one of: ACES, AgX, Reinhard, None (or its number, counting from 0) | `ACES` |
 | `shadow_distance` | number; range 1 to 10000 | `80` |
 | `shadow_cascades` | whole number; range 1 to 4 | `4` |
+| `ao_radius` | number; range 0.01 to 10 | `0.3` |
+| `ao_intensity` | number; range 0 to 4 | `1` |
 
 #### Light
 

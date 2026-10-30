@@ -83,6 +83,8 @@ void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha
     lighting.tonemapper = static_cast<LightingDesc::Tonemapper>(environment.tonemapper);
     lighting.shadowDistance = environment.shadowDistance;
     lighting.shadowCascades = static_cast<uint32_t>(std::clamp(environment.shadowCascades, 1, 4));
+    lighting.aoRadius = std::clamp(environment.aoRadius, 0.01f, 10.0f);
+    lighting.aoIntensity = std::clamp(environment.aoIntensity, 0.0f, 4.0f);
     renderer.setLighting(lighting);
 
     const float a = static_cast<float>(alpha);

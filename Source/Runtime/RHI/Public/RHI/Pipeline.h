@@ -20,6 +20,8 @@ struct GraphicsPipelineDesc {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
     bool depthWrite = true;   // with a depth format: test always, write only if set
+    // Reverse-Z: nearer is greater. EQUAL draws exactly the surfaces a depth prepass left (G03).
+    VkCompareOp depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL;
     // Depth bias set per draw with vkCmdSetDepthBias (shadow maps). Reverse-Z: negative
     // values push surfaces away from the viewer.
     bool dynamicDepthBias = false;

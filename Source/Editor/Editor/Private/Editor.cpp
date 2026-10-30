@@ -158,6 +158,8 @@ void Editor::applyViewPreferences() {
         engine().renderer().setAntiAliasing(settings.antiAliasing);
     if (shockwave::setGraphicsSetting(settings, "bloom_quality", m_prefs.bloomQuality, error))
         engine().renderer().setBloom(settings.bloomQuality, m_prefs.bloomScale);
+    if (shockwave::setGraphicsSetting(settings, "ambient_occlusion", m_prefs.ambientOcclusion, error))
+        engine().renderer().setAmbientOcclusion(settings.ambientOcclusion);
 }
 
 void Editor::savePreferences() {

@@ -111,6 +111,7 @@ public:
     virtual void setShadowQuality(ShadowQuality quality) = 0;
     // A backend without these reports them off in effectiveSettings.
     virtual void setAntiAliasing(AntiAliasing) {}
+    virtual void setAmbientOcclusion(AmbientOcclusion) {}
     virtual void setBloom(BloomQuality, float /*scale, already clamped to 0..1*/) {}
     virtual void setRenderScale(float scale) = 0;   // already clamped by Renderer
     virtual void setViewport(uint32_t width, uint32_t height) = 0;

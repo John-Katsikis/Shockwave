@@ -149,6 +149,27 @@ int main() {
                 !setGraphicsSetting(textures, "material_quality", bad, error) &&
                     textures.materialQuality == MaterialQuality::Low,
                 "material_quality values");
+        check(
+            GraphicsSettings{}.ambientOcclusion == AmbientOcclusion::Off &&
+                graphicsPreset(GraphicsPreset::Low).ambientOcclusion == AmbientOcclusion::Off &&
+                graphicsPreset(GraphicsPreset::Medium).ambientOcclusion == AmbientOcclusion::Low &&
+                graphicsPreset(GraphicsPreset::High).ambientOcclusion == AmbientOcclusion::Medium &&
+                graphicsPreset(GraphicsPreset::Ultra).ambientOcclusion == AmbientOcclusion::High,
+            "ambient occlusion is off by default and in the low preset, then rises with the presets");
+        check(
+            ambientOcclusionSamples(AmbientOcclusion::Off) == 0 && ambientOcclusionSamples(AmbientOcclusion::Low) == 8 &&
+                ambientOcclusionSamples(AmbientOcclusion::Medium) == 16 &&
+                ambientOcclusionSamples(AmbientOcclusion::High) == 32,
+            "ambient occlusion samples per tier");
+        check(
+            setGraphicsSetting(textures, "ambient_occlusion", "medium", error) &&
+                textures.ambientOcclusion == AmbientOcclusion::Medium,
+            "set ambient_occlusion");
+        for (const char* bad : {"ultra", "on", "1", ""})
+            check(
+                !setGraphicsSetting(textures, "ambient_occlusion", bad, error) &&
+                    textures.ambientOcclusion == AmbientOcclusion::Medium,
+                "ambient_occlusion values");
         auto custom = graphicsPreset(GraphicsPreset::High);
         custom.antiAliasing = AntiAliasing::None;
         check(!matchingGraphicsPreset(custom), "hand-tuned settings are Custom");

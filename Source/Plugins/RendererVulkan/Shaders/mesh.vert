@@ -26,6 +26,9 @@ layout(location = 9) flat out uvec4 vMaps;   // normal, metallic-roughness, emis
 layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion strength
 layout(location = 11) flat out uint vDraw;   // this draw's entry, for its slot bindings
 layout(location = 12) out float vLayerMask;   // a second layer's mask from the vertex colours (A02)
+// The surface prepass (G03) and the shading over it run this same shader in different
+// pipelines; their depths must match exactly for the EQUAL test.
+invariant gl_Position;
 
 void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];

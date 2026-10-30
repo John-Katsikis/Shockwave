@@ -26,9 +26,10 @@ frame 30 is the same moment on every run.
 | materials-expected | Main Camera | the same quads with every binding baked into plain UV0: must match `materials` |
 | material-instances | Main Camera | the `materials` quads, each part drawn through a `.swmaterial` that only names its source: must match `materials` exactly (A02) |
 | material-layers | Main Camera | stone cubes plain, with a detail normal layer, and with moss as a second layer; masked foliage near and far (A02) |
+| ambient-occlusion | Main Camera | a wall corner, a box on the floor, a thin pole 7 m in front of a far wall, a black glowing block and sky (G04); `-zero` has `ao_intensity 0`, `-direct` no ambient light |
 
 `Tools/generate.py` writes the textures, glTF models, material files, and the dense,
-materials and material scenes with only the Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
+materials, material and ambient occlusion scenes with only the Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
 the content.
 
 ## Commands
@@ -39,8 +40,9 @@ build/bin/player --project Tests/fixtures/graphics/Graphics.swproject --no-user-
     --scene Tests/fixtures/graphics/Scenes/motion.swscene --camera "Fixed" \
     --fixed-step --frames 30 --screenshot /tmp/motion.png
 
-# Numbers for an image, and how far apart two are (exit 1 past the RMSE tolerance):
-build/bin/player --image-stats /tmp/motion.png
+# Numbers for an image (or part of it: x,y,width,height as fractions), and how far apart
+# two are (exit 1 past the RMSE tolerance):
+build/bin/player --image-stats /tmp/motion.png [--region 0.5,0,0.45,0.08]
 build/bin/player --image-diff reference.png candidate.png --tolerance 1.0 [--json out.json]
 
 # Every scene, camera, size and render scale, plus paced and unpaced benchmarks:
@@ -67,10 +69,11 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 |---|---|---|
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
-| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `material-instances` matches `materials` exactly in all three; `material_quality low` changes `material-layers` (the detail goes) but under 10% of it; `texture_quality low` shrinks material textures, settles, and changes the image |
+| `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `material-instances` matches `materials` exactly in all three; `material_quality low` changes `material-layers` (the detail goes) but under 10% of it; `texture_quality low` shrinks material textures, settles, and changes the image; ambient occlusion (below) |
 | `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; only the Low preset sets `material_quality low`; hand-tuned settings read as Custom; `status()` |
 | `graphics_cli` | no | `--graphics-set`, `--anti-aliasing`, refused values with file and line, `--graphics-info --json` |
 | `graphics_materials_info` | no | `--material-info` on materials.glb: KHR_texture_transform values as authored, UV sets (including KHR's own `texCoord`), colour spaces, wrap and filter modes; a missing UV1 warns on import and fails `--check`; `--texture-info` sizes and bytes per quality; `--material-info` on `.swmaterial` files: the parent chain, inherited and overridden values, slots, features and what low quality drops; a missing parent, a loop and a typo each fail with the right kind of problem; `--material-schema` |
+| `screen_space` | no | the screen-space contract (G03): the view's corners land on UV (0, 0) and (1, 1) with v down; positions come back from reverse-Z depth at the near plane, far away, at every corner, for tall and wide views and orthographic ones; depth 0, negative and NaN depth are background; a texel centre at render scale 0.5, 1 and 2 lands within a texel; octahedral normals round-trip, also through 16 bits |
 | `materials` | no | the `.swmaterial` parser: a valid file, canonical writing that reads back the same, exact float round trips, and 19 kinds of mistake each rejected with its line; inheritance order, determinism, imported parents found by name after their materials are reordered, missing references, loops, the 16-file limit; features, low-quality omissions and warnings; reoriented normal mapping's identities and unit length; Toksvig widening; coverage-keeping mipmaps against plain ones; cache keys; `material` and `materials` scene fields round-trip; hot reload (a parent edit reaches the child, a half-written file keeps the last good version, a missing parent goes magenta and recovers with the same handle) |
 | `texture_quality` | no | exact BC7 and RGBA8 chain bytes, the 32-pixel floor, explicit LOD mapping, CPU tails averaged in linear light, sliced chains, UV transform maths, the sampler cache; then low, a reload at low, three changes in one frame, a change while one is running, and back to ultra, on the null renderer |
 | `texture_quality_vulkan` | yes | the same transitions with real images swapped in while they're drawn |
@@ -236,6 +239,67 @@ by `--image-diff`, RMSE 0; 44 by mean colour). Neither Toksvig nor the coverage 
 changed any of them at these sizes, so the baseline stands. `material-layers` is new; its 1280x720 image and
 entries were added to the baseline without re-recording the others.
 
+## G03 + G04: surface prepass and ambient occlusion
+
+- **Coordinate contract.** `Renderer/ScreenSpace.h` (and its GLSL twin
+  `Shaders/screen.glsl`): screen UV is u right, v down, (0, 0) the top-left of the image;
+  `screenUv = (0.5 ndc.x + 0.5, 0.5 - 0.5 ndc.y)`. Positions come back from reverse-Z depth
+  through the inverse of the camera's own projection, so perspective (infinite far
+  plane), orthographic and any aspect or render scale work the same way; depth 0 is
+  background and has no position. `screen_space` checks the C++ side; the GLSL side is the
+  same expressions and is checked by the ambient occlusion fixtures, whose occlusion would
+  land in the wrong place if either disagreed.
+- **Surface prepass.** Only when ambient occlusion is on (or its debug view is shown).
+  Opaque and alpha-tested surfaces are drawn with the scene's own vertex shader
+  (`invariant gl_Position`) and the same alpha test (`baseAlpha`), writing reverse-Z
+  depth and the geometric normal in view space, octahedral in `RG16_SNORM` (`RG16F` where
+  that can't be rendered to). Blended surfaces aren't in it. The scene then shades those
+  surfaces with depth compare EQUAL and no depth writes, over a read-only depth
+  attachment; blended surfaces, the sky and the grid test the same depth as before. No
+  receiver-flags target: nothing reads one yet.
+- **Ambient occlusion.** `Shaders/ssao.comp` at half resolution: each texel stands for the
+  nearest (greatest reverse-Z depth) of its four pixels; 8, 16 or 32 cosine-weighted
+  directions over the normal's hemisphere with distances stratified and biased towards
+  the point; a fixed rotation per pixel from a 4 x 4 Bayer tile, so a still camera sees
+  still occlusion. A sample counts as blocked when the surface seen there is nearer than
+  it by more than a bias that grows with distance, weighted down the further that
+  surface is from the point (so a pole far in front of a wall doesn't darken the wall);
+  samples off the screen don't count either way; `AO = 1 - blocked / counted`, then
+  `pow(AO, ao_intensity)`. Two 9-tap bilateral blurs (across, down) weigh depth and
+  normals, and `mesh.frag` upsamples with the four nearest texels weighted the same way.
+  It darkens only the light from the surroundings' irradiance (diffuse, and its
+  multiple-scattering share), combined with the material's occlusion map by the minimum.
+  Reflections keep only the map's; direct light, shadows and emission are untouched.
+- **Settings and scene fields.** `ambient_occlusion` off (default), low, medium, high;
+  presets Low off, Medium low, High medium, Ultra high. Environment `ao_radius` (0.3 m)
+  and `ao_intensity` (1). `player --view ao` and the editor's *Ambient occlusion* view
+  show it alone, white where nothing occludes (the sky included), computed at medium when
+  the setting is off. The report shows the sample count, resolution, radius, normal
+  format and memory, under *surface buffers* and *ambient occlusion*.
+- **Plugin ABI** is now 7 (`RenderBackend::setAmbientOcclusion`, `LightingDesc` and
+  `Environment` gained their ambient occlusion fields).
+
+`graphics_fixtures_render` now also checks, on `ambient-occlusion` at 640x360 with
+ambient occlusion high: in the AO view the sky and open floor are white and the box's
+contact with the floor is darker, and the far wall beside the thin pole isn't (no halo);
+frames 10 and 40 are identical; render scale 0.5 stays within RMSE 4 of 1; off matches
+the default exactly; `ao_intensity 0` with it on, and a scene with no ambient light with
+it on, both match off exactly (RMSE 0: the prepass and EQUAL shading change no pixel by
+themselves); on changes the lit image; the black glowing block is unchanged; off has no
+prepass, no AO pass and no memory for either, and on has all of them.
+
+**Measured** on llvmpipe at 640x360, ambient occlusion high: AO view sky and open floor
+255, the box's contact 242, the far wall beside the pole 255; render scale 0.5 against 1,
+RMSE 1.33 (0.7% of pixels changed, at edges). Lit, against off: RMSE 0.62 / 0.58 / 0.54
+for low / medium / high on `ambient-occlusion` (ambient 0.8, so occlusion is a gentle
+darkening of fill light), and 1.21 on `room-doorway` (Inside). At 1280x720 the report
+says 32 samples at 640x360, 3.5 MiB of surface buffers and 3.5 MiB for occlusion.
+
+Result: `capture.py --compare` with the default settings (ambient occlusion off) found
+all 52 baseline images identical (8 by `--image-diff`, RMSE 0; 44 by mean colour), so the
+baseline stands. The ambient occlusion scenes aren't in the capture: with the setting
+off they'd only show the old frame, and `graphics_fixtures_render` covers them on.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
@@ -259,6 +323,13 @@ entries were added to the baseline without re-recording the others.
 - Generated lightmap UVs (a third stream) are G05's.
 - The editor grid is drawn in the scene pass, so FXAA smooths it too.
 - Images waiting to be freed after a change aren't counted in the memory report.
+- Ambient occlusion follows geometric normals only: normal maps don't add occlusion of
+  their own (their material occlusion map still does). There's no specular occlusion,
+  no temporal accumulation (G10's TAA will smooth it further) and no bent normals.
+- With ambient occlusion on, opaque geometry's vertices are processed twice (prepass and
+  shading). Blended surfaces never receive it.
+- The AO debug view writes occlusion to the display as it is, so the sRGB encoding shows
+  middling values lighter than their number (0.5 reads as about 188 of 255).
 
 - Synchronization validation (`VK_LAYER_KHRONOS_validation` with sync checks) was not run
   for G00: the layer isn't installed on the machine that recorded the baseline. The render

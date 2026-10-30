@@ -259,11 +259,18 @@ struct LightingDesc {
     // Bright light spreading into its surroundings: how much of the blurred image is mixed
     // into the sharp one. 0 turns it off.
     float bloomIntensity = 0.04f;
+    // Screen-space ambient occlusion (G04), when the player's ambient_occlusion is on: the
+    // reach of the darkening in metres, and how strongly it darkens (0 none, 1 as computed,
+    // above 1 deeper). Only light from the surroundings is darkened.
+    float aoRadius = 0.3f;
+    float aoIntensity = 1.0f;
 };
 
 // What the scene shows: the lit result, or a view for checking content. ShadowCascades
 // tints the sun's shadow cascades (red, green, blue, yellow nearest to farthest).
-enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades };
+// AmbientOcclusion shows the screen-space occlusion alone, white for none (G04); with
+// ambient_occlusion off it's computed at medium for the view.
+enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades, AmbientOcclusion };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
 // performance setting, unlike the scene's shadow distance.
@@ -287,6 +294,16 @@ const char* antiAliasingName(AntiAliasing aa);   // "none", "fxaa"
 // Off skips the passes and frees the bloom chain.
 enum class BloomQuality : uint32_t { Off, Low, Medium, High };
 const char* bloomQualityName(BloomQuality quality);   // "off", "low", "medium", "high"
+// Screen-space ambient occlusion (G04): contact shadowing from light arriving from the
+// surroundings, computed at half resolution from a depth and normal prepass (G03).
+//            samples   blur
+//   Low      8         small (2 texels each way)
+//   Medium   16        4 texels each way
+//   High     32        4 texels each way
+// Off draws no prepass and holds no images.
+enum class AmbientOcclusion : uint32_t { Off, Low, Medium, High };
+const char* ambientOcclusionName(AmbientOcclusion quality);   // "off", "low", "medium", "high"
+uint32_t ambientOcclusionSamples(AmbientOcclusion quality);   // 0, 8, 16, 32
 
 // Lights used per frame; more are dropped and counted (Renderer::droppedLights).
 inline constexpr uint32_t kMaxLights = 256;

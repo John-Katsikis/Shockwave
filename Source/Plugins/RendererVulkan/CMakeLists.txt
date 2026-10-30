@@ -26,4 +26,6 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/sky.frag
     Shaders/bloom.comp
     Shaders/fxaa.frag
+    Shaders/prepass.frag
+    Shaders/ssao.comp
 )

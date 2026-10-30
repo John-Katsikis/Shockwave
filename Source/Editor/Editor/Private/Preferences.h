@@ -29,6 +29,7 @@ struct Preferences {
     // As spelled in .swgraphics (docs/GraphicsSchema.md).
     std::string antiAliasing = "none";
     std::string bloomQuality = "high";
+    std::string ambientOcclusion = "off";
     float bloomScale = 1.0f;
     float masterVolume = 1.0f;
 

@@ -118,6 +118,11 @@ struct Environment {
     // (more keeps nearby shadows sharp across long distances).
     float shadowDistance = 80.0f;   // meters
     int shadowCascades = 4;   // 1..4
+    // Screen-space ambient occlusion, when the player's ambient_occlusion setting is on: how
+    // far (meters) a surface looks for nearby geometry blocking light from its surroundings,
+    // and how strongly that darkens it (0 none, 1 as measured, more darker).
+    float aoRadius = 0.3f;
+    float aoIntensity = 1.0f;
 };
 
 // A light source, placed and aimed by the entity's Transform: directional and spot

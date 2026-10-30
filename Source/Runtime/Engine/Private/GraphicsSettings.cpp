@@ -50,6 +50,7 @@ const std::vector<const char*> kBloomChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kTextureQualityChoices = {"low", "medium", "high", "ultra"};
 const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
 const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
+const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -135,6 +136,18 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              }
              s.bloomScale = x;
              return true;
+         }});
+    info.push_back(
+        {"ambient_occlusion", "Ambient occlusion", "Quality",
+         "Darkens the light from the surroundings in creases, corners and under objects, worked out on the "
+         "screen at half resolution: low takes 8 samples a pixel, medium 16, high 32. Direct light, shadows and "
+         "glowing surfaces are unaffected. Off skips it and frees its memory.",
+         "off, low, medium, high", kAmbientOcclusionChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(ambientOcclusionName(s.ambientOcclusion)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kAmbientOcclusionChoices, v, s.ambientOcclusion)) return true;
+             error = "ambient_occlusion must be " + list(kAmbientOcclusionChoices);
+             return false;
          }});
     info.push_back(
         {"lod_error_pixels",
@@ -276,6 +289,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.textureQuality = TextureQuality::Low;
         base.anisotropy = 4;
         base.materialQuality = MaterialQuality::Low;
+        base.ambientOcclusion = AmbientOcclusion::Off;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -285,6 +299,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.textureQuality = TextureQuality::Medium;
         base.anisotropy = 8;
         base.materialQuality = MaterialQuality::High;
+        base.ambientOcclusion = AmbientOcclusion::Low;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -294,6 +309,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.textureQuality = TextureQuality::High;
         base.anisotropy = 16;
         base.materialQuality = MaterialQuality::High;
+        base.ambientOcclusion = AmbientOcclusion::Medium;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -303,6 +319,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.textureQuality = TextureQuality::Ultra;
         base.anisotropy = 16;
         base.materialQuality = MaterialQuality::High;
+        base.ambientOcclusion = AmbientOcclusion::High;
         break;
     }
     return base;
@@ -462,6 +479,7 @@ GraphicsSettings Graphics::current() const {
     s.textureQuality = r.textureQuality();
     s.anisotropy = r.anisotropy();
     s.materialQuality = r.materialQuality();
+    s.ambientOcclusion = r.ambientOcclusion();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -514,6 +532,7 @@ void Graphics::commit() {
     if (s.textureQuality != previous.textureQuality) r.setTextureQuality(s.textureQuality);
     if (s.anisotropy != previous.anisotropy) r.setAnisotropy(s.anisotropy);
     if (s.materialQuality != previous.materialQuality) r.setMaterialQuality(s.materialQuality);
+    if (s.ambientOcclusion != previous.ambientOcclusion) r.setAmbientOcclusion(s.ambientOcclusion);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

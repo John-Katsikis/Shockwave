@@ -154,6 +154,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyRenderFinishedSemaphores();
     destroyBloomTargets();
     destroyAaTarget(aaTarget);
+    destroyAoTargets(aoTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -203,6 +204,7 @@ bool VulkanRenderer::Impl::beginFrame() {
     if (needsShadowRebuild && rebuildShadowMaps()) needsShadowRebuild = false;
     updateBloomTargets();
     updateAaTarget();
+    updateAoTargets();
 
     SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
@@ -385,7 +387,9 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     VkPipeline boundPipeline = meshPipeline;
     for (const auto& draw : gatheredDraws) {
         if (!draw.visible) continue;
-        const VkPipeline pipeline = meshPipelineFor(draw);
+        // Over the surface prepass, opaque surfaces shade where its depth is EQUAL to theirs.
+        const VkPipeline pipeline =
+            prepassActive() && !draw.blend ? depthEqualPipelines[prepassIndex(draw)] : meshPipelineFor(draw);
         if (pipeline != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             boundPipeline = pipeline;
@@ -505,6 +509,13 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     header.debugView = static_cast<uint32_t>(debugView);
     header.brdfTable = brdfSlot;
     header.specularLevels = static_cast<float>(specularCube.levels);
+    header.aoTexture = prepassActive() ? aoTargets.slot : 0u;
+    header.view = view;
+    header.projection = projection;
+    header.inverseProjection = glm::inverse(projection);
+    header.renderSize = glm::vec2(sceneColor.extent.width, sceneColor.extent.height);
+    header.aoRadius = std::isfinite(lighting.aoRadius) ? std::clamp(lighting.aoRadius, 0.01f, 10.0f) : 0.3f;
+    header.aoIntensity = std::isfinite(lighting.aoIntensity) ? std::clamp(lighting.aoIntensity, 0.0f, 4.0f) : 1.0f;
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -590,6 +601,20 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             [this, &f](VkCommandBuffer cmd) { recordShadows(cmd, f, localPasses, localAtlas); }, vertexReads);
         sceneUses.push_back({atlas, ImageUse::Sampled});
     }
+    if (prepassActive()) {
+        // Surface prepass, then ambient occlusion from it; the scene tests its depth without writing.
+        const auto normals = graph.import(
+            "surface normals", aoTargets.normal.image, VK_IMAGE_ASPECT_COLOR_BIT, aoNormalState, true);
+        graph.addPass(
+            "surface prepass", {{depth, ImageUse::DepthAttachment}, {normals, ImageUse::ColorAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordPrepass(cmd, f); }, vertexReads);
+        // The occlusion images keep their own barriers, like bloom's: only this pass writes
+        // them and only the scene reads them.
+        graph.addPass(
+            "ambient occlusion", {{depth, ImageUse::ComputeSampled}, {normals, ImageUse::ComputeSampled}},
+            [this, &f](VkCommandBuffer cmd) { recordAmbientOcclusion(cmd, f); });
+        sceneUses[1] = {depth, ImageUse::DepthReadOnly};
+    }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, vertexReads);
     if (!particleDraws.empty()) {
         graph.addPass(
@@ -650,12 +675,19 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.clearValue.color = {{clearColor.r, clearColor.g, clearColor.b, clearColor.a}};
+    // The occlusion view is white wherever nothing occludes, the background included.
+    if (debugView == DebugView::AmbientOcclusion) colorAttachment.clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
 
     VkRenderingAttachmentInfo depthAttachment{};
     depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachment.imageView = sceneDepth.view;
     depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    if (prepassActive()) {
+        // The prepass's depth, tested and never written.
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    }
     // Kept when particles are drawn next, for their depth test.
     depthAttachment.storeOp = particleDraws.empty() ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
@@ -669,7 +701,7 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     rendering.pDepthAttachment = &depthAttachment;
     vkCmdBeginRendering(cmd, &rendering);
     setSceneViewport(cmd);
-    if (showsSky()) recordSky(cmd);
+    if (showsSky() && debugView != DebugView::AmbientOcclusion) recordSky(cmd);
     recordDraws(cmd, f);
     recordGrid(cmd);
     vkCmdEndRendering(cmd);
