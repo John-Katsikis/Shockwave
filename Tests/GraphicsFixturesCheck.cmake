@@ -300,8 +300,9 @@ if(rmse EQUAL 0)
     message(FATAL_ERROR "ambient occlusion high didn't change the lit image")
 endif()
 # The glowing block in the corner is black and emissive: occlusion never dims emission.
-region_luma(ao-lit-off 0.41,0.445,0.03,0.05 glow_off)
-region_luma(ao-lit-high 0.41,0.445,0.03,0.05 glow_high)
+# Its inside only: pixels on its silhouette also show the darkened floor and walls.
+region_luma(ao-lit-off 0.415,0.455,0.02,0.03 glow_off)
+region_luma(ao-lit-high 0.415,0.455,0.02,0.03 glow_high)
 if(NOT glow_off EQUAL glow_high)
     message(FATAL_ERROR "ambient occlusion dimmed the emissive block: ${glow_off} -> ${glow_high}")
 endif()
