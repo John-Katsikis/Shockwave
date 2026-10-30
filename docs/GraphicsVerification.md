@@ -364,6 +364,61 @@ Result: `capture.py --compare` (baked_lighting on, no baseline scene has a bake)
 56 baseline images identical (9 by `--image-diff`, RMSE 0; 47 by mean colour), so the
 baseline stands. `room-doorway-baked` isn't in the capture: its bake is made by the test.
 
+## G07: local reflection probes
+
+- **Contract.** `Renderer/ReflectionProbes.h` holds the CPU side of every rule and
+  `Shaders/reflection.glsl` the same in GLSL: cube faces in the global environment's
+  orientation, slab box projection with the unnormalised ray (no exit, a point outside or
+  a zero ray gives weight 0, never a NaN), the linear fade over `blend_distance`, up to two
+  probes a draw (priority, then smaller box, then binding id), and the blend (equal
+  priorities share and cover min(sum, 1); a higher one goes over the lower; the rest is
+  the global cube). `reflection_probes` checks all of it without a GPU, plus the cube
+  `.ktx2` (round trip, deterministic bytes, wrong face or level count, truncation), JSON
+  export/import back to the same bytes, capture resampling through each face camera from
+  a stretched image, the prefilter (uniform stays uniform, deterministic, level 0 kept,
+  rougher levels blur) and the `.swreflection` manifest (round trip, file:line errors).
+- **Renderer.** `TextureShape::Cube` textures (RGBA16F, 6 faces, 6 levels) get their own
+  descriptor array (binding 7, 128 slots) apart from the 2D bindless table; the probe
+  table (up to 64) lives in the frame buffer; `DrawData.reflections` packs the draw's two
+  probe indices, and is 0 when the setting is off, on a capture frame, or with no probes,
+  which leaves `mesh.frag` on the old path. `Renderer::requestSceneCapture` reads the HDR
+  scene target back after the scene pass (before particles, exposure, bloom and AA) with
+  the grid skipped and Lit forced. Cubes count under *reflection probes* in
+  `--graphics-report`. The null renderer refuses cubes and captures with a reason.
+- **Capture.** `ReflectionCapture` (frame-driven, six frames a probe, cancellable) draws
+  only static renderers, prefilters on the CPU with `environment_filter.comp`'s
+  estimator, writes each cube atomically and then the manifest; the old capture stays
+  until the new one has loaded completely. Each probe's hash covers its placement and
+  settings; the scene hash covers captured renderers, lights, the Environment and the
+  lighting bake. `player --capture-reflections`, Window > Lighting > *Capture
+  reflections* (progress and cancel), `--lighting-info` (a `reflections` section, also
+  in `--json`), `--check` (fails on damaged captures, warns on missing or stale ones and
+  on bad probes), `--lighting-export`/`--lighting-import` for cubes, `--view
+  reflections`, the editor's *Reflection probes* view, and the selected probe's box and
+  capture point in the viewport.
+- **Plugin ABI** is now 9 (texture shapes, `setReflectionProbes`, `setLocalReflections`,
+  scene capture).
+
+`graphics_fixtures_render` now also captures a copy of `reflection-rooms` (two rooms
+through a doorway, one probe and one dynamic mirror ball each): `--lighting-info` says
+missing, then ready; capturing twice gives identical cube bytes; `--check` passes without
+reflection warnings; the west cube's face means put the lamp-lit ceiling on +Y, the green
+floor on -Y, the red wall on -X and the blue one on -Z; `reflection_probes false` after
+capturing matches the uncaptured image exactly (RMSE 0); the capture changes the image
+(RMSE over 2); the west ball reflects red and the east ball doesn't; and after moving the
+west probe it's stale and left out (the ball reflects the sky again).
+
+**Measured** on llvmpipe at 640x360 (West camera): captured against off, RMSE 13.1 with
+19% of pixels changed (the ball, and the glossy walls and floor, now reflect the room
+instead of the sky); the west ball's red minus green is +47 with probes and -16 without.
+Two 64-pixel probes capture in 2.5 s (llvmpipe; the cost is twelve frames plus the CPU
+filter) and take 0.5 MiB of GPU memory, 513 KiB on disk.
+
+Result: `capture.py --compare` (reflection_probes on; no baseline scene has probes) found
+all 56 baseline images identical (9 by `--image-diff`, RMSE 0; 47 by mean colour), so the
+baseline stands. `reflection-rooms` isn't in the capture: its probes are captured by the
+test.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in

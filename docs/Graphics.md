@@ -67,6 +67,11 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   surroundings alone, pixel for pixel as if the scene had never been baked, and applies
   on the next frame; the bake stays loaded. Scenes without a bake look the same either
   way. Presets leave it alone.
+- `reflection_probes`: `true` (the default) or `false`. A scene's captured reflection
+  probes (docs/Lighting.md, *Reflection probes*) replace the sky's reflection inside
+  their boxes. False reflects the sky and environment everywhere, pixel for pixel as if
+  the scene had no probes, and applies on the next frame; the captures stay loaded.
+  Scenes without probes look the same either way. Presets leave it alone.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and

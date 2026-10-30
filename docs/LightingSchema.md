@@ -97,3 +97,37 @@ out of date (JSON schema `shockwave.lighting-info.1`). `player --lighting-export
 with 9 significant digits, so it round-trips exactly), and `player --lighting-import
 <in.json> --output <payload>` encodes it again, by the output's extension. An imported
 payload's hash differs from the manifest's until the scene is rebaked.
+
+## Reflection probes (.swreflection)
+
+A scene's captured reflection probes (G07). `BakedLighting { reflections "..." }` names
+the manifest; `player --capture-reflections` and the editor's Lighting window write it.
+Capturing needs a GPU renderer; everything else here is checked on the CPU.
+
+```
+swreflection 1
+scene "Scenes/Arena.swscene"
+tool "shockwave reflections 1"
+color linear_rec709_radiance
+algorithm 1
+scene_hash 0123456789abcdef
+probe <32 hex digits> path "Lighting/Arena/Reflection_<id>.ktx2" hash H bytes N size 128 probe_hash H
+```
+
+| Key | Required | Meaning |
+|---|---|---|
+| `swreflection 1` | first line | Format and version |
+| `scene` | yes | The scene captured, inside Content |
+| `tool` | no | What captured it |
+| `color linear_rec709_radiance` | no | Stored values are linear Rec.709 radiance, before exposure |
+| `algorithm` | yes | Capture and filter version; another version is out of date |
+| `scene_hash` | yes | Everything static the captures saw: geometry, lights, surroundings, the lighting bake. A change leaves probes usable but stale |
+| `probe <id> path P hash H bytes N size S probe_hash H` | | One probe: its cube file and content hash, its resolution, and its own placement and settings when captured (a change drops that probe until it's captured again) |
+
+Cube files are uncompressed `.ktx2`: `VK_FORMAT_R16G16B16A16_SFLOAT`, 6 faces (+X, -X,
++Y, -Y, +Z, -Z), 6 levels, linear. Level *L* holds roughness *L* / 5, the same steps
+as the global specular cube; level 0 is the mirror image as captured. Face texel
+(*i*, *j*) of a face of size *n* looks along `cubeFaceDirection(face, st)` with
+`st = ((i, j) + 0.5) / n * 2 - 1` (Renderer/ReflectionProbes.h): the environment
+cube's orientation, with the faces aligned to the world's axes whatever the probe's
+rotation. A 128 cube is about 1 MiB on the GPU, 256 about 4 MiB, 512 about 16 MiB.

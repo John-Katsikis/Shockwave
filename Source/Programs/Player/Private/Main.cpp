@@ -150,6 +150,8 @@ int main(int argc, char** argv) {
                 tool.bakeQuality = argv[++i];
                 if (tool.bakeQuality != "preview" && tool.bakeQuality != "final")
                     throw player::UsageError("--quality takes preview or final");
+            } else if (arg == "--capture-reflections") {
+                tool.captureReflections = true;
             } else if (arg == "--lighting-info") {
                 tool.mode = Tool::Mode::LightingInfo;
             } else if (arg == "--lighting-assign-ids") {
@@ -259,11 +261,13 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::AmbientOcclusion;
                 else if (view == "indirect")
                     tool.view = shockwave::DebugView::IndirectDiffuse;
+                else if (view == "reflections")
+                    tool.view = shockwave::DebugView::Reflections;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
                     throw std::runtime_error(
-                        "--view takes lit, unlit, normals, lighting, cascades, ao, indirect or navmesh");
+                        "--view takes lit, unlit, normals, lighting, cascades, ao, indirect, reflections or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -414,7 +418,8 @@ int main(int argc, char** argv) {
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                     "player --new-project folder [--name display-name] [--module module_id]\n"
                     "                                    create an independent C++ starter in an empty folder\n"
-                    "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|ao|navmesh] [--print-frame]\n"
+                    "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|ao|indirect|reflections|navmesh] "
+                    "[--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
                     "       [--graphics-set key=value]... [--anti-aliasing none|fxaa]\n"
@@ -439,6 +444,8 @@ int main(int argc, char** argv) {
                     "player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)\n"
                     "player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]\n"
                     "                                    bake lightmaps and probe volumes (docs/Lighting.md)\n"
+                    "player --capture-reflections [--scene file.swscene] [--size WxH]\n"
+                    "                                    capture reflection probes on the GPU (docs/Lighting.md)\n"
                     "player --lighting-info [--scene file.swscene] [--json file]\n"
                     "                                    the scene's bake: state, why it's out of date, sizes\n"
                     "player --lighting-assign-ids [--scene file.swscene] [--output new.swscene]\n"
@@ -556,6 +563,7 @@ int main(int argc, char** argv) {
             mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
+            mode(tool.captureReflections, "--capture-reflections");
             mode(tool.benchmarkSeconds > 0, "--benchmark");
             mode(tool.graphicsReportFrame > 0, "--graphics-report");
             mode(tool.optimise, "--optimise");
@@ -706,7 +714,8 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(error);
         } else if (
             !noUserGraphics && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
-            tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested) {
+            tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested &&
+            !tool.captureReflections) {
             if (char* pref = SDL_GetPrefPath("Shockwave", project.gameModule.c_str())) {
                 tool.graphicsFile = std::filesystem::path(pref) / "Graphics.swgraphics";
                 SDL_free(pref);
@@ -798,6 +807,13 @@ int main(int argc, char** argv) {
             // Like a screenshot: hidden, and quits once the save is written.
             if (frames) tool.saveFrame = frames;
             config.maxFrames = std::max(config.maxFrames, tool.saveFrame + 120);
+            config.window.hidden = true;
+            config.window.vsync = false;
+        }
+        if (tool.captureReflections) {
+            // Hidden, on the project's GPU renderer; quits once the manifest is written.
+            // maxFrames is a safety net: six frames a probe, plus a few to start.
+            config.maxFrames = 0;
             config.window.hidden = true;
             config.window.vsync = false;
         }

@@ -497,11 +497,14 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             f.path = it->path();
             f.name = fs::relative(f.path, m_root, ec).generic_string();
             // A baked lightmap (Lighting/<Scene>/Lightmap_000.ktx2 beside Lighting/<Scene>.swlighting)
-            // is loaded by the baked lighting runtime, not imported as a texture.
-            const bool bakedPayload = isKtx2File(f.path) && f.path.has_parent_path() &&
-                                      (fs::exists(f.path.parent_path().string() + ".swlighting", ec) ||
-                                       (f.path.filename().string().rfind("Lightmap_", 0) == 0 &&
-                                        f.path.parent_path().parent_path().filename() == "Lighting"));
+            // or a reflection probe's cube (Lighting/<Scene>_reflections/Probe_<id>.ktx2) is loaded
+            // by its runtime, not imported as a texture.
+            const std::string file = f.path.filename().string();
+            const bool inLighting = f.path.parent_path().parent_path().filename() == "Lighting";
+            const bool bakedPayload =
+                isKtx2File(f.path) && f.path.has_parent_path() &&
+                (fs::exists(f.path.parent_path().string() + ".swlighting", ec) ||
+                 (file.rfind("Lightmap_", 0) == 0 && inLighting) || (file.rfind("Probe_", 0) == 0 && inLighting));
             f.kind = bakedPayload                                ? Kind::Other
                      : isImageFile(f.path) || isKtx2File(f.path) ? Kind::Texture
                      : isModelFile(f.path)                       ? Kind::Model

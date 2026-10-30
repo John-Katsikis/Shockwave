@@ -1239,6 +1239,7 @@ Every field of the entity's BakedLighting; found is false when it has none.
 - Out `found` Bool
 - Out `asset` String
 - Out `enabled` Bool
+- Out `reflections` String
 
 ### Component.BakedLighting.Get.asset
 
@@ -1255,6 +1256,14 @@ The entity's BakedLighting enabled.
 - Changes: presentation
 - In `target` Entity, default self
 - Out `enabled` Bool
+
+### Component.BakedLighting.Get.reflections
+
+The entity's BakedLighting reflections.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `reflections` String
 
 ### Component.BakedLighting.Has
 
@@ -1283,6 +1292,7 @@ Sets the fields given (connected or written) of the entity's BakedLighting; the 
 - In `target` Entity, default self
 - In `asset` String
 - In `enabled` Bool
+- In `reflections` String
 
 ### Component.BakedLighting.Set.asset
 
@@ -1303,6 +1313,16 @@ Sets the entity's BakedLighting enabled.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `enabled` Bool, required
+
+### Component.BakedLighting.Set.reflections
+
+Sets the entity's BakedLighting reflections.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `reflections` String, required
 
 ### Component.Bob.Add
 
@@ -4506,6 +4526,229 @@ Sets the entity's Prefab path.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `path` String, required
+
+### Component.ReflectionProbe.Add
+
+Gives the entity a ReflectionProbe with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.ReflectionProbe.Get
+
+Every field of the entity's ReflectionProbe; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `half_extents` Vec3
+- Out `capture_offset` Vec3
+- Out `blend_distance` Float
+- Out `priority` Int
+- Out `resolution` Int
+- Out `near` Float
+- Out `far` Float
+- Out `enabled` Bool
+- Out `binding_id` String
+
+### Component.ReflectionProbe.Get.binding_id
+
+The entity's ReflectionProbe binding_id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `binding_id` String
+
+### Component.ReflectionProbe.Get.blend_distance
+
+The entity's ReflectionProbe blend_distance.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `blend_distance` Float
+
+### Component.ReflectionProbe.Get.capture_offset
+
+The entity's ReflectionProbe capture_offset.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `capture_offset` Vec3
+
+### Component.ReflectionProbe.Get.enabled
+
+The entity's ReflectionProbe enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.ReflectionProbe.Get.far
+
+The entity's ReflectionProbe far.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `far` Float
+
+### Component.ReflectionProbe.Get.half_extents
+
+The entity's ReflectionProbe half_extents.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `half_extents` Vec3
+
+### Component.ReflectionProbe.Get.near
+
+The entity's ReflectionProbe near.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `near` Float
+
+### Component.ReflectionProbe.Get.priority
+
+The entity's ReflectionProbe priority.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `priority` Int
+
+### Component.ReflectionProbe.Get.resolution
+
+The entity's ReflectionProbe resolution.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `resolution` Int
+
+### Component.ReflectionProbe.Has
+
+The entity has a ReflectionProbe.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.ReflectionProbe.Remove
+
+Takes the ReflectionProbe off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.ReflectionProbe.Set
+
+Sets the fields given (connected or written) of the entity's ReflectionProbe; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `half_extents` Vec3
+- In `capture_offset` Vec3
+- In `blend_distance` Float
+- In `priority` Int
+- In `resolution` Int, options 0=64px; 1=128px; 2=256px; 3=512px
+- In `near` Float
+- In `far` Float
+- In `enabled` Bool
+- In `binding_id` String
+
+### Component.ReflectionProbe.Set.binding_id
+
+Sets the entity's ReflectionProbe binding_id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `binding_id` String, required
+
+### Component.ReflectionProbe.Set.blend_distance
+
+Sets the entity's ReflectionProbe blend_distance.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `blend_distance` Float, required
+
+### Component.ReflectionProbe.Set.capture_offset
+
+Sets the entity's ReflectionProbe capture_offset.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `capture_offset` Vec3, required
+
+### Component.ReflectionProbe.Set.enabled
+
+Sets the entity's ReflectionProbe enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.ReflectionProbe.Set.far
+
+Sets the entity's ReflectionProbe far.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `far` Float, required
+
+### Component.ReflectionProbe.Set.half_extents
+
+Sets the entity's ReflectionProbe half_extents.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `half_extents` Vec3, required
+
+### Component.ReflectionProbe.Set.near
+
+Sets the entity's ReflectionProbe near.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `near` Float, required
+
+### Component.ReflectionProbe.Set.priority
+
+Sets the entity's ReflectionProbe priority.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `priority` Int, required
+
+### Component.ReflectionProbe.Set.resolution
+
+Sets the entity's ReflectionProbe resolution.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `resolution` Int, options 0=64px; 1=128px; 2=256px; 3=512px, required
 
 ### Component.RigidBody.Add
 

@@ -160,6 +160,16 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return boolean(v, s.bakedLighting, "baked_lighting", error);
          }});
     info.push_back(
+        {"reflection_probes", "Reflection probes", "Quality",
+         "Reflections captured inside rooms and corridors, blended over the sky's where a scene places reflection "
+         "probes. Off reflects the sky and environment everywhere. Costs up to two cube reads a pixel; scenes "
+         "without probes look the same either way.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.reflectionProbes ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.reflectionProbes, "reflection_probes", error);
+         }});
+    info.push_back(
         {"lod_error_pixels",
          "Mesh detail",
          "Quality",
@@ -491,6 +501,7 @@ GraphicsSettings Graphics::current() const {
     s.materialQuality = r.materialQuality();
     s.ambientOcclusion = r.ambientOcclusion();
     s.bakedLighting = r.bakedLighting();
+    s.reflectionProbes = r.localReflections();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -545,6 +556,7 @@ void Graphics::commit() {
     if (s.materialQuality != previous.materialQuality) r.setMaterialQuality(s.materialQuality);
     if (s.ambientOcclusion != previous.ambientOcclusion) r.setAmbientOcclusion(s.ambientOcclusion);
     if (s.bakedLighting != previous.bakedLighting) r.setBakedLighting(s.bakedLighting);
+    if (s.reflectionProbes != previous.reflectionProbes) r.setLocalReflections(s.reflectionProbes);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

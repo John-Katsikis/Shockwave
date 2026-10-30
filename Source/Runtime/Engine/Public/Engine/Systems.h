@@ -25,10 +25,12 @@ Transform presentedTransform(const World& world, Entity e, double alpha);
 // where its parents put it, spread across the job system, and sets the clear color from the Environment. alpha is Application::onRender's;
 // pass 1 to draw the current state with no blending (an editor that isn't playing).
 // Set the camera first. baked, when given (and updated this frame), lights static
-// receivers with their lightmaps and other objects with probes (G05, G06).
+// receivers with their lightmaps and other objects with probes (G05, G06). include, when
+// given, draws only the renderers it accepts (reflection capture's static objects, G07);
+// lights and the environment are always set.
 void renderWorld(
     World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets = nullptr,
-    const BakedLightingRuntime* baked = nullptr);
+    const BakedLightingRuntime* baked = nullptr, bool (*include)(const World&, Entity) = nullptr);
 
 // The first Camera with primary set (or failing that, the first Camera) that has a
 // Transform; kNullEntity if the scene has none.

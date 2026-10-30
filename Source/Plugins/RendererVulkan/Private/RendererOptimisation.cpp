@@ -17,7 +17,9 @@ constexpr std::array<glm::vec3, kMaxMeshLods + 1> kLevelColors = {{
     {0.60f, 0.40f, 0.90f},   // purple
 }};
 
-VkFormat vulkanFormat(TextureFormat format, bool srgb) {
+}   // namespace
+
+VkFormat detail::vulkanFormat(TextureFormat format, bool srgb) {
     switch (format) {
     case TextureFormat::RGBA8: return srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
     case TextureFormat::BC7: return srgb ? VK_FORMAT_BC7_SRGB_BLOCK : VK_FORMAT_BC7_UNORM_BLOCK;
@@ -25,7 +27,6 @@ VkFormat vulkanFormat(TextureFormat format, bool srgb) {
     }
     return VK_FORMAT_UNDEFINED;
 }
-}   // namespace
 
 void VulkanRenderer::Impl::setMeshLods(
     MeshHandle handle, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) {
@@ -96,6 +97,11 @@ bool VulkanRenderer::Impl::supportsTextureFormat(TextureFormat format) const {
 void VulkanRenderer::Impl::createTextureData(TextureHandle handle, const TextureData& data) {
     const uint32_t id = handle.id;
     if (id >= textureCapacity() || textures[id].image) throw std::runtime_error("createTexture: texture id is taken");
+    if (data.shape == TextureShape::Cube) {
+        vk::Image image = uploadCube(data);
+        publishCube(id, image);
+        return;
+    }
     vk::Image image = uploadTextureData(data);
     publishTexture(id, image);
 }
@@ -103,6 +109,8 @@ void VulkanRenderer::Impl::createTextureData(TextureHandle handle, const Texture
 void VulkanRenderer::Impl::updateTextureData(TextureHandle handle, const TextureData& data) {
     if (handle.id == 0 || handle.id >= textureCapacity())
         throw std::runtime_error("updateTexture: not a texture made with createTexture");
+    if (data.shape != TextureShape::Texture2D || cubeSlot(handle.id) != kNoSlot)
+        throw std::runtime_error("updateTexture: cube textures are replaced by making a new one");
     vk::Image image = uploadTextureData(data);
     std::lock_guard lock(textureSwapMutex);
     textureSwaps.push_back({handle.id, image});

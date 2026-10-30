@@ -28,6 +28,12 @@ public:
 
     void setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) override;
     bool supportsTextureFormat(TextureFormat format) const override;
+    bool supportsTextureShape(TextureShape shape) const override;
+    void setReflectionProbes(std::span<const ReflectionProbeDesc> probes) override;
+    void setLocalReflections(bool enabled) override;
+    bool requestSceneCapture(std::string& error) override;
+    bool sceneCapturePending() const override;
+    SceneCapture takeSceneCapture() override;
     void createTextureData(TextureHandle id, const TextureData& data) override;
     void setMeshUv1(MeshHandle id, std::span<const glm::vec2> uv1) override;
     void setMeshLightmapUv(MeshHandle id, std::span<const glm::vec2> uv) override;

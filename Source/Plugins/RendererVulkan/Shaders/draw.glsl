@@ -107,6 +107,10 @@ struct DrawData {
     uint lightmapTexture;   // bindless slot, with kIndirectLightmap
     uint indirectSource;
     uvec2 probes;   // a ProbeBuffer, with kIndirectProbes
+    // Local reflection probes (G07, reflection.glsl): index + 1 of the first in the low 16
+    // bits and of the second in the high 16; 0: the global environment only.
+    uint reflections;
+    uint pad;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

@@ -17,6 +17,12 @@ enum class TextureFormat : uint8_t {
 };
 const char* textureFormatName(TextureFormat format);   // "RGBA8", "BC7", "RGBA16F"
 
+// A plain 2D texture, or a cube map (G07): six square faces, +X, -X, +Y, -Y, +Z, -Z, in the
+// orientation of Renderer/ReflectionProbes.h cubeFaceDirection. Cubes are sampled through a
+// table of their own, never as 2D textures; a backend says which it has (supportsTextureShape).
+enum class TextureShape : uint8_t { Texture2D, Cube };
+const char* textureShapeName(TextureShape shape);   // "2d", "cube"
+
 struct TextureData {
     struct Level {
         uint32_t width = 0, height = 0;
@@ -25,11 +31,14 @@ struct TextureData {
     TextureFormat format = TextureFormat::RGBA8;
     bool srgb = true;   // colour textures are sRGB; data (normals, masks) is linear
     uint32_t width = 0, height = 0;
-    // Largest first. An RGBA8 or RGBA16F texture with a single level gets the rest made on
-    // the GPU.
+    // Largest first. An RGBA8 or RGBA16F 2D texture with a single level gets the rest made on
+    // the GPU; a cube has exactly the levels given. A cube level is its six faces one after
+    // another (each width x height, square), so its size is six faces' worth.
     std::vector<Level> levels;
     std::vector<uint8_t> bytes;
+    TextureShape shape = TextureShape::Texture2D;   // last, so aggregate initialisers keep working
 
+    uint32_t faces() const { return shape == TextureShape::Cube ? 6u : 1u; }
     // What it takes on the GPU, mipmaps included.
     size_t gpuBytes() const;
     // Every level's size is right for its format and fits in bytes.

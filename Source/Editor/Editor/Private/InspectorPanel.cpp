@@ -166,6 +166,8 @@ void Editor::drawAddComponentPopup(Entity e) {
             g->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
         if (auto* v = m_world.get<shockwave::DiffuseProbeVolume>(e); v && v->bindingId.empty())
             v->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
+        if (auto* r = m_world.get<shockwave::ReflectionProbe>(e); r && r->bindingId.empty())
+            r->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
         log("Added " + chosen->name + " to " + displayName(e));
         ImGui::CloseCurrentPopup();
     }

@@ -129,6 +129,7 @@ void Editor::drawViewport() {
         const Entity primary = selected();
         for (Entity e : selection()) {
             drawOutline(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
+            drawReflectionProbe(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
         }
         if (m_prefs.showCameraIcons) {
             drawCameraIcons(pos, size);
@@ -312,13 +313,15 @@ void Editor::drawViewportToolbar() {
         }
         // What the scene shows: the lit result or a view for checking content. The same
         // views are available to tools as player --view.
-        static const char* views[] = {"Lit",
-                                      "Unlit (albedo)",
-                                      "Normals",
-                                      "Lighting only",
-                                      "Shadow cascades",
-                                      "Ambient occlusion",
-                                      "Indirect diffuse"};
+        static const char* views[] = {
+            "Lit",
+            "Unlit (albedo)",
+            "Normals",
+            "Lighting only",
+            "Shadow cascades",
+            "Ambient occlusion",
+            "Indirect diffuse",
+            "Reflection probes"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {
@@ -468,6 +471,35 @@ void Editor::drawOutline(Entity e, const ImVec2& pos, const ImVec2& size, ImU32 
             if (j == i || !visible[i] || !visible[j]) continue;
             draw->AddLine(screen[i], screen[j], color, 1.5f);
         }
+    }
+}
+
+// A selected reflection probe: its box, and a cross where its cube is captured from (G07).
+void Editor::drawReflectionProbe(Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color) {
+    const auto* probe = m_world.get<shockwave::ReflectionProbe>(e);
+    if (!probe || !m_world.has<Transform>(e)) return;
+    const glm::mat4 model = shockwave::worldMatrix(m_world, e);
+    const glm::vec3 h = probe->halfExtents;
+    ImVec2 screen[8];
+    bool visible[8];
+    for (int i = 0; i < 8; ++i) {
+        const glm::vec3 corner((i & 1) ? h.x : -h.x, (i & 2) ? h.y : -h.y, (i & 4) ? h.z : -h.z);
+        visible[i] = worldToScreen(glm::vec3(model * glm::vec4(corner, 1.0f)), pos, size, screen[i]);
+    }
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    for (int i = 0; i < 8; ++i) {
+        for (int bit = 1; bit < 8; bit <<= 1) {
+            const int j = i | bit;
+            if (j == i || !visible[i] || !visible[j]) continue;
+            draw->AddLine(screen[i], screen[j], color, 1.2f);
+        }
+    }
+    ImVec2 c;
+    if (worldToScreen(glm::vec3(model * glm::vec4(probe->captureOffset, 1.0f)), pos, size, c)) {
+        const float s = 6.0f * ImGui::GetStyle().FontScaleDpi;
+        draw->AddLine(ImVec2(c.x - s, c.y), ImVec2(c.x + s, c.y), color, 1.5f);
+        draw->AddLine(ImVec2(c.x, c.y - s), ImVec2(c.x, c.y + s), color, 1.5f);
+        draw->AddCircle(c, s * 0.6f, color, 0, 1.5f);
     }
 }
 

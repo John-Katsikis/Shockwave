@@ -8,6 +8,7 @@
 #include <Audio/Audio.h>
 #include <Core/Log.h>
 #include <Engine/BakedLighting.h>
+#include <Engine/ReflectionProbes.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
@@ -189,6 +190,7 @@ private:
     void drawViewportOverlay(const ImVec2& pos, const ImVec2& size);
     void drawGizmo(const ImVec2& pos, const ImVec2& size);
     void drawOutline(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
+    void drawReflectionProbe(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     void drawCameraIcons(const ImVec2& pos, const ImVec2& size);
     shockwave::Entity cameraIconAt(const ImVec2& mouse, const ImVec2& pos, const ImVec2& size) const;
     void drawLightIcons(const ImVec2& pos, const ImVec2& size);
@@ -289,7 +291,17 @@ private:
     void drawLightingWindow();
     void startLightingBake();
     void finishLightingBake();
-    void cancelLightingBake();
+    void cancelLightingBake();   // and a reflection capture
+    // Capture reflections (G07): frame-driven on the main thread, drawing into the viewport's
+    // scene target for six frames a probe; onRender hands it the frame while it runs.
+    void startReflectionCapture();
+    void finishReflectionCapture();
+    void drawReflectionSection();
+    // The scene's BakedLighting to point field at value (added, with an undo step, if the
+    // scene has none); null when it already does.
+    shockwave::BakedLighting* bakedLightingFor(const std::string& value, std::string shockwave::BakedLighting::*field);
+    std::unique_ptr<shockwave::ReflectionCapture> m_reflectionCapture;
+    std::string m_reflectionResult;   // the last capture's report, or why it failed
     bool m_showLighting = false;
     std::shared_ptr<struct LightingBakeJob> m_lightingBake;
     int m_lightingQuality = 0;   // 0 preview, 1 final
@@ -469,6 +481,7 @@ private:
     shockwave::NavMeshOverlay m_navOverlay;
     shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)
     double m_bakedLightingTime = 0;
+    shockwave::ReflectionProbesRuntime m_reflections;   // the scene's captured reflection probes (G07)
     std::filesystem::path m_navScene;   // the scene m_navMesh belongs to
     bool m_showNavMesh = false, m_navStale = false, m_navUsed = false;
     double m_navCheckTimer = 0.0;

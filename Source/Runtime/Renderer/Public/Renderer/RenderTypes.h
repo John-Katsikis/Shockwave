@@ -292,7 +292,18 @@ struct LightingDesc {
 // ambient_occlusion off it's computed at medium for the view. IndirectDiffuse shows the
 // diffuse light from the surroundings each surface receives (E / pi before its colour):
 // its lightmap, probe sample or the environment's irradiance (G05, G06).
-enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades, AmbientOcclusion, IndirectDiffuse };
+enum class DebugView : uint32_t {
+    Lit,
+    Unlit,
+    Normals,
+    Lighting,
+    ShadowCascades,
+    AmbientOcclusion,
+    IndirectDiffuse,
+    // G07: which local reflection probes each pixel reads, one colour per probe weighted by
+    // its share, dark grey where only the global environment is left.
+    Reflections
+};
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
 // performance setting, unlike the scene's shadow distance.

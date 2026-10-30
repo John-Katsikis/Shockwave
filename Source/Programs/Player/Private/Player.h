@@ -6,6 +6,7 @@
 
 #include <Assets/AssetFolder.h>
 #include <Engine/BakedLighting.h>
+#include <Engine/ReflectionProbes.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
@@ -104,6 +105,9 @@ struct Tool {
     // preview|final [--seed N], --lighting-info and --lighting-assign-ids, for --scene or
     // the startup scene.
     std::string bakeQuality = "preview";
+    // --capture-reflections (PlayerLighting.cpp): the scene's reflection probes, captured on
+    // the GPU in a hidden window, then quit.
+    bool captureReflections = false;
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -263,6 +267,10 @@ private:
     int lightingInfo();
     int lightingAssignIds();
     int bakeLightingTool();
+    // --capture-reflections: starts the capture job on the loaded scene; each frame drives
+    // it, and it reports and quits when it's done.
+    void startReflectionCapture();
+    bool driveReflectionCapture(shockwave::Renderer& renderer);
 
     // --check for multiplayer (PlayerNetwork.cpp): Config/Network.swnetwork, the network
     // manifest, its prefabs and the registered types, then each scene's network objects.
@@ -336,6 +344,9 @@ private:
     shockwave::NavMeshOverlay m_navOverlay;
     shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)
     double m_bakedLightingTime = 0;
+    shockwave::ReflectionProbesRuntime m_reflections;   // the scene's captured reflection probes (G07)
+    std::unique_ptr<shockwave::ReflectionCapture> m_reflectionCapture;   // --capture-reflections
+    std::string m_reflectionStage;   // the last progress line printed
     std::unique_ptr<shockwave::net::ReplicationRegistry> m_networkRegistry;   // --check: frozen, or null
     bool m_predictedSpawns = false;   // --check: the manifest spawns a PredictedCharacter
 };

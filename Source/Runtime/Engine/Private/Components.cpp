@@ -8,6 +8,10 @@
 
 namespace shockwave {
 
+uint32_t reflectionProbeSize(ReflectionProbe::Resolution resolution) {
+    return 64u << std::clamp(static_cast<int>(resolution), 0, 3);
+}
+
 const MaterialOverride* findMaterialOverride(const MaterialOverrides& overrides, std::string_view part) {
     for (const MaterialOverride& o : overrides)
         if (o.part == part) return &o;
@@ -222,6 +226,7 @@ void registerBuiltins() {
         {
             field("asset", &BakedLighting::asset),
             field("enabled", &BakedLighting::enabled),
+            field("reflections", &BakedLighting::reflections),
         },
         "Lighting");
     registerComponent<DiffuseProbeVolume>(
@@ -233,6 +238,20 @@ void registerBuiltins() {
             field("priority", &DiffuseProbeVolume::priority, 1.0f, -1000.0f, 1000.0f),
             field("enabled", &DiffuseProbeVolume::enabled),
             field("binding_id", &DiffuseProbeVolume::bindingId),
+        },
+        "Lighting");
+    registerComponent<ReflectionProbe>(
+        "ReflectionProbe",
+        {
+            field("half_extents", &ReflectionProbe::halfExtents, 0.05f, 0.05f, 10000.0f),
+            field("capture_offset", &ReflectionProbe::captureOffset, 0.05f, -10000.0f, 10000.0f),
+            field("blend_distance", &ReflectionProbe::blendDistance, 0.05f, 0.0f, 100.0f),
+            field("priority", &ReflectionProbe::priority, 1.0f, -1000.0f, 1000.0f),
+            enumField("resolution", &ReflectionProbe::resolution, {"64px", "128px", "256px", "512px"}),
+            field("near", &ReflectionProbe::nearPlane, 0.01f, 0.01f, 100.0f),
+            field("far", &ReflectionProbe::farPlane, 1.0f, 1.0f, 100000.0f),
+            field("enabled", &ReflectionProbe::enabled),
+            field("binding_id", &ReflectionProbe::bindingId),
         },
         "Lighting");
     registerComponent<Spin>(

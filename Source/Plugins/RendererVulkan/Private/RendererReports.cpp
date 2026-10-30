@@ -306,6 +306,7 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::SurfaceBuffers, aoTargets.normal.allocation);
     for (const vk::Image& image : aoTargets.ao) add(GpuMemoryCategory::AmbientOcclusion, image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
+    add(GpuMemoryCategory::Readback, captureBuffer.allocation);
     for (const Frame& f : frames) {
         for (const vk::Buffer* b :
              {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
@@ -327,7 +328,9 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
         // Textures can be created from worker threads; their descriptor write takes this lock.
         std::lock_guard lock(const_cast<std::mutex&>(descriptorMutex));
         for (uint32_t id = 0; id < textureCapacity(); ++id)
-            if (textures[id].image) add(GpuMemoryCategory::Textures, textures[id].allocation);
+            if (textures[id].image)
+                add(cubeSlot(id) != kNoSlot ? GpuMemoryCategory::ReflectionProbes : GpuMemoryCategory::Textures,
+                    textures[id].allocation);
     }
 
     std::vector<VmaBudget> budgets(VK_MAX_MEMORY_HEAPS);

@@ -43,17 +43,20 @@ bool participates(const World& world, Entity e) {
         if (g->mobility == BakeGeometry::Mobility::Static && (g->castIndirect || g->receiveLightmap) &&
             (world.has<MeshRenderer>(e) || world.has<ModelRenderer>(e)))
             return true;
-    if (const DiffuseProbeVolume* v = world.get<DiffuseProbeVolume>(e)) return v->enabled;
+    if (const DiffuseProbeVolume* v = world.get<DiffuseProbeVolume>(e); v && v->enabled) return true;
+    if (const ReflectionProbe* r = world.get<ReflectionProbe>(e)) return r->enabled;
     return false;
 }
 std::string* localId(World& world, Entity e) {
     if (BakeGeometry* g = world.get<BakeGeometry>(e)) return &g->bindingId;
     if (DiffuseProbeVolume* v = world.get<DiffuseProbeVolume>(e)) return &v->bindingId;
+    if (ReflectionProbe* r = world.get<ReflectionProbe>(e)) return &r->bindingId;
     return nullptr;
 }
 const std::string* localId(const World& world, Entity e) {
     if (const BakeGeometry* g = world.get<BakeGeometry>(e)) return &g->bindingId;
     if (const DiffuseProbeVolume* v = world.get<DiffuseProbeVolume>(e)) return &v->bindingId;
+    if (const ReflectionProbe* r = world.get<ReflectionProbe>(e)) return &r->bindingId;
     return nullptr;
 }
 std::vector<Entity> participants(const World& world) {

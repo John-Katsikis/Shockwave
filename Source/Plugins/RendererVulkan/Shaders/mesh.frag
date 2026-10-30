@@ -19,6 +19,7 @@ layout(set = 0, binding = 5) uniform textureCube irradianceCube;
 
 #include "frame.glsl"
 #include "screen.glsl"
+#include "reflection.glsl"
 
 layout(push_constant, scalar) uniform PushConstants {
     DrawBuffer drawBuffer;
@@ -412,6 +413,26 @@ void main() {
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
     if (frame.debugView == 6u) { outColor = vec4(surroundingsIrradiance(n), 1.0); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
+    if (frame.debugView == 7u) {
+        // Which local reflection probes this pixel reads (G07): a colour per probe times its
+        // share, dark grey for what's left to the global environment.
+        vec3 R = reflect(-normalize(frame.cameraPosition - vWorldPosition), n);
+        uint picked = pc.drawBuffer.draws[vDraw].reflections;
+        vec2 shares = vec2(0.0);
+        vec3 lookups[2];
+        uint slots[2];
+        if (picked != 0u) shares = reflectionShares(frame, picked, vWorldPosition, R, lookups, slots);
+        const vec3 colors[6] = vec3[](
+            vec3(1.0, 0.3, 0.2), vec3(0.2, 0.8, 1.0), vec3(1.0, 0.85, 0.2), vec3(0.6, 0.35, 1.0),
+            vec3(0.3, 1.0, 0.4), vec3(1.0, 0.4, 0.8));
+        vec3 shown = vec3(0.05) * (1.0 - min(shares.x + shares.y, 1.0));
+        if (picked != 0u) {
+            shown += shares.x * colors[((picked & 0xFFFFu) - 1u) % 6u];
+            if ((picked >> 16) != 0u) shown += shares.y * colors[((picked >> 16) - 1u) % 6u];
+        }
+        outColor = vec4(shown, 1.0);
+        return;
+    }
     if (frame.debugView >= 3u) albedo.rgb = vec3(0.8);
     uint cascade = 99u;
     if (frame.debugView == 4u && frame.cascadeCount > 0u) {
@@ -479,6 +500,13 @@ void main() {
         clamp(vec2(nDotV, roughness), vec2(tableTexel * 0.5), vec2(1.0 - tableTexel * 0.5)), 0.0).rg;
     vec3 prefiltered = textureLod(
         samplerCube(specularCube, linearSampler), reflect(-v, n), roughness * (frame.specularLevels - 1.0)).rgb;
+    // Local reflection probes (G07) blend over the global reflection; draws without any
+    // (and every draw with reflection_probes off) keep it exactly.
+    uint pickedProbes = pc.drawBuffer.draws[vDraw].reflections;
+    if (pickedProbes != 0u) {
+        vec2 shares;
+        prefiltered = localReflections(frame, pickedProbes, vWorldPosition, reflect(-v, n), roughness, prefiltered, shares);
+    }
     vec3 irradiance = surroundingsIrradiance(n);
     vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);
     vec3 singleScatter = fresnel * brdf.x + brdf.y;

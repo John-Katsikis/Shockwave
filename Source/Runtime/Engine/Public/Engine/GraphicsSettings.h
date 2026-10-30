@@ -32,6 +32,8 @@ struct GraphicsSettings {
     AmbientOcclusion ambientOcclusion = AmbientOcclusion::Off;
     // Baked lightmaps and probe volumes (G05, G06); off draws the environment instead.
     bool bakedLighting = true;
+    // Local reflection probes (G07); off reflects the global environment everywhere.
+    bool reflectionProbes = true;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

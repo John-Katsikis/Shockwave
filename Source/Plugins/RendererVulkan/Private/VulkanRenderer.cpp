@@ -33,6 +33,19 @@ void VulkanRenderer::setMeshLods(MeshHandle id, std::span<const MeshLod> lods, s
     m_impl->setMeshLods(id, lods, lodIndices);
 }
 bool VulkanRenderer::supportsTextureFormat(TextureFormat format) const { return m_impl->supportsTextureFormat(format); }
+bool VulkanRenderer::supportsTextureShape(TextureShape) const { return true; }
+void VulkanRenderer::setReflectionProbes(std::span<const ReflectionProbeDesc> probes) {
+    m_impl->setReflectionProbes(probes);
+}
+void VulkanRenderer::setLocalReflections(bool enabled) {
+    m_impl->localReflections.store(enabled, std::memory_order_relaxed);
+}
+bool VulkanRenderer::requestSceneCapture(std::string&) {
+    m_impl->captureRequested = true;
+    return true;
+}
+bool VulkanRenderer::sceneCapturePending() const { return m_impl->captureRequested; }
+SceneCapture VulkanRenderer::takeSceneCapture() { return std::exchange(m_impl->capture, {}); }
 void VulkanRenderer::createTextureData(TextureHandle id, const TextureData& data) {
     m_impl->createTextureData(id, data);
 }

@@ -66,7 +66,7 @@ Transform presentedTransform(const World& world, Entity e, double alpha) {
 
 void renderWorld(
     World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets,
-    const BakedLightingRuntime* baked) {
+    const BakedLightingRuntime* baked, bool (*include)(const World&, Entity)) {
     // The first Environment sets the sky, ambient light and tonemapping; defaults without one.
     Environment environment;
     if (const Pool<Environment>* environments = world.pool<Environment>(); environments && environments->size()) {
@@ -122,7 +122,7 @@ void renderWorld(
     world.parallelEach<const Transform, const MeshRenderer>(
         jobs,
         [&](Entity e, const Transform& t, const MeshRenderer& m) {
-            if (!m.visible || !m.mesh.valid()) return;
+            if (!m.visible || !m.mesh.valid() || (include && !include(world, e))) return;
             glm::mat4 model = local(e, t);
             if (hasParents) {
                 Entity parent = parentOf(world, e);
@@ -165,7 +165,7 @@ void renderWorld(
         world.parallelEach<const Transform, const ModelRenderer>(
             jobs,
             [&](Entity e, const Transform& t, const ModelRenderer& instance) {
-                if (!instance.visible) return;
+                if (!instance.visible || (include && !include(world, e))) return;
                 const auto asset = assets->model(instance.model);
                 if (!asset) return;
                 auto model = local(e, t);

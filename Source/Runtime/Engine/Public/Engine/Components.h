@@ -171,9 +171,12 @@ struct BakeLight {
 };
 // The scene's bake: asset is the .swlighting manifest inside Content ("Lighting/Arena.swlighting").
 // One per scene. enabled false keeps the bake but draws without it.
+// reflections is the scene's captured reflection probes, a .swreflection manifest (G07,
+// "Lighting/Arena.swreflection"), drawn whether or not the scene has a lightmap bake.
 struct BakedLighting {
     std::string asset;
     bool enabled = true;
+    std::string reflections;
 };
 // A box of light probes, for diffuse light on moving objects: placed and turned by the
 // entity's Transform, probes every spacing metres, fading out blend_distance inside its
@@ -186,6 +189,26 @@ struct DiffuseProbeVolume {
     bool enabled = true;
     std::string bindingId;
 };
+
+// A box that local reflections come from (G07): surfaces inside it reflect a cube captured
+// offline from a point in it, box-projected so nearby walls line up, instead of the global
+// environment. Placed and turned by the entity's Transform (its scale stretches the box),
+// fading out blend_distance inside its faces; where boxes overlap the higher priority goes
+// over the lower one. Captured with `player --capture-reflections` or the editor's Lighting
+// window, never automatically: it shows static surfaces as they were then, not players.
+struct ReflectionProbe {
+    enum class Resolution : int { R64, R128, R256, R512 };
+    glm::vec3 halfExtents{4.0f, 2.0f, 4.0f};   // the box, along the entity's own axes
+    glm::vec3 captureOffset{0.0f};   // where it's captured from, in the box's own frame; inside it
+    float blendDistance = 0.5f;   // metres
+    int priority = 0;
+    Resolution resolution = Resolution::R128;   // per face; 128 is about 1 MiB on the GPU
+    float nearPlane = 0.05f;   // what the capture sees: from this far from the capture point...
+    float farPlane = 500.0f;   // ...to this far
+    bool enabled = true;
+    std::string bindingId;   // ties it to its captured cube, like BakeGeometry's
+};
+uint32_t reflectionProbeSize(ReflectionProbe::Resolution resolution);   // 64, 128, 256 or 512
 
 // Turns around an axis (world space) at a steady rate.
 struct Spin {

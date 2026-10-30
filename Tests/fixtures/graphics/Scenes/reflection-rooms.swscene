@@ -1,0 +1,228 @@
+# Reflection probes (G07): two rooms side by side through a doorway, each with a probe
+# box and a mirror ball. The west room is red with a green floor and a blue back wall; the
+# east room is blue. The balls are dynamic (BakeGeometry mobility dynamic), so captures leave
+# them out. Tests/GraphicsFixturesCheck.cmake captures a copy and checks the cube faces'
+# orientation, that reflection_probes false gives the uncaptured image, and that each ball
+# reflects its own room. The boxes reach the blend distance past the walls, so the walls'
+# surfaces get their room's probe in full. Cameras: "West" (primary, at the west ball), "East".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.5 0.85 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.5
+  BakedLighting
+    asset ""
+    reflections "Lighting/reflection-rooms.swreflection"
+end
+
+entity "Sun"
+  Transform
+    rotation -35 20 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Ground"
+  Transform
+    position 0 -0.3 0
+    scale 60 0.2 60
+  MeshRenderer
+    mesh cube
+    tint 0.5 0.5 0.48 1
+end
+
+entity "West floor (green)"
+  Transform
+    position -4 -0.1 0
+    scale 8 0.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.15 0.75 0.15 1
+end
+
+entity "East floor"
+  Transform
+    position 4 -0.1 0
+    scale 8 0.2 8
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.78 1
+end
+
+entity "Ceiling"
+  Transform
+    position 0 3.1 0
+    scale 16.4 0.2 8.4
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.78 1
+end
+
+entity "West wall (red)"
+  Transform
+    position -8.1 1.5 0
+    scale 0.2 3.2 8.4
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.1 0.08 1
+end
+
+entity "West front wall (red)"
+  Transform
+    position -4 1.5 4.1
+    scale 8 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.1 0.08 1
+end
+
+entity "West back wall (blue)"
+  Transform
+    position -4 1.5 -4.1
+    scale 8 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.15 0.8 1
+end
+
+entity "East wall (blue)"
+  Transform
+    position 8.1 1.5 0
+    scale 0.2 3.2 8.4
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.15 0.8 1
+end
+
+entity "East front wall (blue)"
+  Transform
+    position 4 1.5 4.1
+    scale 8 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.15 0.8 1
+end
+
+entity "East back wall (blue)"
+  Transform
+    position 4 1.5 -4.1
+    scale 8 3.2 0.2
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.15 0.8 1
+end
+
+entity "Middle wall north"
+  Transform
+    position 0 1.5 -2.4
+    scale 0.2 3.2 3.2
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.78 1
+end
+
+entity "Middle wall south"
+  Transform
+    position 0 1.5 2.4
+    scale 0.2 3.2 3.2
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.78 1
+end
+
+entity "Middle lintel"
+  Transform
+    position 0 2.65 0
+    scale 0.2 0.9 1.6
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.8 0.78 1
+end
+
+entity "West lamp"
+  Transform
+    position -4 2.6 0
+  Light
+    type Point
+    color 1 0.92 0.8 1
+    intensity 8
+    range 9
+end
+
+entity "West ball"
+  Transform
+    position -5 1 1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.95 0.95 1
+    roughness 0.05
+    metallic 1
+  BakeGeometry
+    mobility dynamic
+end
+
+entity "East lamp"
+  Transform
+    position 4 2.6 0
+  Light
+    type Point
+    color 1 0.92 0.8 1
+    intensity 8
+    range 9
+end
+
+entity "East ball"
+  Transform
+    position 5 1 1
+  MeshRenderer
+    mesh sphere
+    tint 0.95 0.95 0.95 1
+    roughness 0.05
+    metallic 1
+  BakeGeometry
+    mobility dynamic
+end
+
+entity "West probe"
+  Transform
+    position -4 1.5 0
+  ReflectionProbe
+    half_extents 4.3 1.8 4.3
+    blend_distance 0.3
+    resolution 64px
+    binding_id "5e0a1c3b7d2f4a6b8c9d0e1f2a3b4c5d"
+end
+
+entity "East probe"
+  Transform
+    position 4 1.5 0
+  ReflectionProbe
+    half_extents 4.3 1.8 4.3
+    blend_distance 0.3
+    resolution 64px
+    binding_id "6f1b2d4c8e3a5b7c9d0e1f2a3b4c5d6e"
+end
+
+entity "West"
+  Transform
+    position -6.5 1.4 3.4
+    rotation -8 -35 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end
+
+entity "East"
+  Transform
+    position 6.5 1.4 3.4
+    rotation -8 35 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 0
+end
