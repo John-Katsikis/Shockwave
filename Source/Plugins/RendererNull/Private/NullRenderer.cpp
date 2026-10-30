@@ -52,6 +52,7 @@ public:
     void setBloom(BloomQuality quality, float) override { m_bloom = quality; }
     void setAnisotropy(uint32_t anisotropy) override { m_anisotropy = anisotropy; }
     void setMaterialQuality(MaterialQuality quality) override { m_material = quality; }
+    void setAmbientOcclusion(AmbientOcclusion ao) override { m_ao = ao; }
     void setRenderScale(float scale) override { m_scale = scale; }
     void setViewport(uint32_t width, uint32_t height) override {
         m_viewportWidth = width;
@@ -98,6 +99,7 @@ public:
             {"anisotropy", std::to_string(m_anisotropy), "1", m_anisotropy == 1 ? "" : why, ""},
             {"material_quality", materialQualityName(m_material), "low", m_material == MaterialQuality::Low ? "" : why,
              ""},
+            {"ambient_occlusion", ambientOcclusionName(m_ao), "off", m_ao == AmbientOcclusion::Off ? "" : why, ""},
         };
     }
 
@@ -145,6 +147,7 @@ private:
     AntiAliasing m_antiAliasing = AntiAliasing::None;
     uint32_t m_anisotropy = 16;
     MaterialQuality m_material = MaterialQuality::High;
+    AmbientOcclusion m_ao = AmbientOcclusion::Off;
     BloomQuality m_bloom = BloomQuality::High;
     bool m_vsync = true, m_lowLatency = false;
     float m_scale = 1.0f;

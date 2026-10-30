@@ -63,8 +63,22 @@ void write(const fs::path& json, const std::string& text) {
 
 }   // namespace
 
-int imageStats(const fs::path& image, const fs::path& json) {
-    const Stats s = stats(load(image));
+int imageStats(const fs::path& image, const fs::path& json, const std::array<double, 4>& region) {
+    shockwave::Image whole = load(image);
+    // Only the region's pixels: whole pixels from its top-left corner, at least one.
+    const auto x0 = std::min(uint32_t(region[0] * whole.width), whole.width - 1);
+    const auto y0 = std::min(uint32_t(region[1] * whole.height), whole.height - 1);
+    const auto w = std::clamp(uint32_t(std::lround(region[2] * whole.width)), 1u, whole.width - x0);
+    const auto h = std::clamp(uint32_t(std::lround(region[3] * whole.height)), 1u, whole.height - y0);
+    shockwave::Image part;
+    part.width = w;
+    part.height = h;
+    part.rgba.resize(size_t(w) * h * 4);
+    for (uint32_t y = 0; y < h; ++y)
+        std::copy_n(
+            whole.rgba.data() + (size_t(y0 + y) * whole.width + x0) * 4, size_t(w) * 4,
+            part.rgba.data() + size_t(y) * w * 4);
+    const Stats s = stats(part);
     write(json, statsJson(s) + "\n");
     return 0;
 }

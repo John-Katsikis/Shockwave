@@ -17,53 +17,8 @@ layout(set = 0, binding = 2) uniform samplerShadow shadowSampler;
 layout(set = 0, binding = 4) uniform textureCube specularCube;
 layout(set = 0, binding = 5) uniform textureCube irradianceCube;
 
-// Must match LightData, ShadowView and FrameData in RendererImpl.h.
-struct LightData {
-    vec3 position;
-    uint type;        // 0 directional, 1 point, 2 spot
-    vec3 direction;   // where the light shines
-    float range;
-    vec3 color;       // color times intensity
-    float cosOuter;
-    float cosInner;
-    uint shadowView;  // first shadow map; 0xFFFFFFFF: casts none
-    float shadowStrength;
-    float shadowSoftness;   // filter radius, texels
-    float shadowBias;       // normal offset, texels
-    float pad0, pad1, pad2;
-};
-
-struct ShadowView {
-    mat4 viewProjection;
-    vec4 rect;          // uv offset (xy) and scale (zw) in its atlas
-    float texelSize;    // world size of a texel (at distance 1 when perspective)
-    uint perspective;
-    float pad0, pad1;
-};
-
-layout(buffer_reference, scalar) readonly buffer ShadowViews {
-    ShadowView views[];
-};
-
-layout(buffer_reference, scalar) readonly buffer FrameBuffer {
-    vec3 cameraPosition;
-    uint lightCount;
-    vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades
-    vec3 groundAmbient;
-    uint cascadeCount;
-    vec3 cameraForward;
-    float shadowDistance;
-    vec4 cascadeEnds;   // view depth where each sun cascade ends
-    uint cascadeAtlas;
-    uint localAtlas;
-    uint shadowTaps;
-    uint brdfTable;   // bindless slot of image-based lighting's BRDF table
-    uvec2 shadowViews;   // a ShadowViews: MoltenVK reads references kept inside buffers as null
-    float specularLevels;   // mip levels of specularCube
-    uint pad;
-    LightData lights[];
-};
+#include "frame.glsl"
+#include "screen.glsl"
 
 layout(push_constant, scalar) uniform PushConstants {
     DrawBuffer drawBuffer;
@@ -89,6 +44,10 @@ layout(location = 0) out vec4 outColor;
 // False for solid surfaces' pipelines (RendererPipelines.cpp): without a discard the GPU can
 // test depth before shading, so surfaces hidden behind nearer ones cost almost nothing.
 layout(constant_id = 0) const bool kAlphaTest = true;
+// True only for the pipelines that shade over the surface prepass (G03), with its depth and
+// EQUAL test: those surfaces are in the ambient occlusion image. Everything else (blended
+// surfaces, frames without the prepass) is the shader as it was, bit for bit.
+layout(constant_id = 1) const bool kReceivesAo = false;
 
 const float PI = 3.14159265;
 
@@ -294,6 +253,39 @@ vec3 surfaceNormal(out float len) {
     return n;
 }
 
+// This pixel's ambient occlusion from the half-resolution image (G04): a joint bilateral
+// upsample, the four nearest texels weighted by distance, by how close each one's surface
+// is to this one's view distance and by how much their normals agree, so occlusion doesn't
+// bleed across silhouettes. The normal is the geometric one, as the prepass stored it.
+float ambientOcclusion(FrameBuffer frame, vec3 geometricNormal) {
+    uint ao = frame.aoTexture;
+    ivec2 size = textureSize(sampler2D(textures[ao], linearSampler), 0);
+    vec3 viewPosition = (frame.view * vec4(vWorldPosition, 1.0)).xyz;
+    float distance = -viewPosition.z;
+    vec3 normal = normalize(mat3(frame.view) * geometricNormal);
+    // Half-resolution texel i covers full-resolution pixels 2i and 2i + 1.
+    vec2 p = gl_FragCoord.xy * 0.5 - 0.5;
+    ivec2 base = ivec2(floor(p));
+    vec2 f = p - vec2(base);
+    float sum = 0.0, weights = 0.0;
+    float nearest = 1.0, nearestGap = 1e30;
+    for (int i = 0; i < 4; ++i) {
+        ivec2 o = ivec2(i & 1, i >> 1);
+        vec4 t = texelFetch(sampler2D(textures[ao], linearSampler), clamp(base + o, ivec2(0), size - 1), 0);
+        if (t.y <= 0.0) continue;   // background
+        float gap = abs(t.y - distance);
+        if (gap < nearestGap) { nearestGap = gap; nearest = t.x; }
+        float bilinear = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
+        float depthWeight = 1.0 / (1.0 + gap / (0.02 * distance + 0.01));
+        float normalWeight = pow(clamp(dot(octDecode(t.zw), normal), 0.0, 1.0), 8.0);
+        float w = max(bilinear, 1e-3) * depthWeight * depthWeight * normalWeight;
+        sum += t.x * w;
+        weights += w;
+    }
+    // No texel agrees (a thin surface in front of everything around it): the closest in depth.
+    return weights > 1e-4 ? sum / weights : nearest;
+}
+
 float maskChannel(vec4 v, uint channel) {
     return channel == 0u ? v.r : channel == 1u ? v.g : channel == 2u ? v.b : v.a;
 }
@@ -377,6 +369,19 @@ void main() {
         }
     }
     n = gl_FrontFacing ? n : -n;
+    bool receivesAo = kReceivesAo && frame.aoTexture != 0u;
+    float ssao = 1.0;
+    if (receivesAo) {
+        vec3 geometricNormal = normalize(vNormal);
+        ssao = ambientOcclusion(frame, gl_FrontFacing ? geometricNormal : -geometricNormal);
+    }
+    if (frame.debugView == 5u) {
+        // Ambient occlusion alone, white where there's none; blended surfaces aren't in it.
+        if (receivesAo) outColor = vec4(vec3(ssao), 1.0);
+        else if (kAlphaTest) discard;
+        else outColor = vec4(1.0);
+        return;
+    }
     vec3 emissive = vEmissive;
     if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
@@ -455,7 +460,16 @@ void main() {
     vec3 averageFresnel = f0 + (1.0 - f0) / 21.0;
     vec3 multiScatter = missed * singleScatter * averageFresnel / (1.0 - missed * averageFresnel);
     vec3 diffuseShare = diffuseColor * (1.0 - singleScatter - multiScatter);
-    light += (singleScatter * prefiltered + (multiScatter + diffuseShare) * irradiance) * occlusion;
+    if (receivesAo) {
+        // Screen-space ambient occlusion darkens only the light from the surroundings' irradiance
+        // (diffuse, and the multiple scattering that comes with it), combined with the material's
+        // own by the minimum: min(occlusion, ssao) = occlusion * share. Reflections keep the map's.
+        // Written so that no occlusion (ssao 1, share exactly 1) is the same sum as below.
+        float share = occlusion > 0.0 ? min(1.0, ssao / occlusion) : 1.0;
+        light += (singleScatter * prefiltered + (multiScatter + diffuseShare) * irradiance * share) * occlusion;
+    } else {
+        light += (singleScatter * prefiltered + (multiScatter + diffuseShare) * irradiance) * occlusion;
+    }
 
     if (frame.debugView == 4u) {
         // Which sun cascade each pixel reads: red, green, blue, yellow from near to far.

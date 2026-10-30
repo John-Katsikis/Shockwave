@@ -32,6 +32,15 @@ const char* bloomQualityName(BloomQuality quality) {
     return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
 }
 
+const char* ambientOcclusionName(AmbientOcclusion quality) {
+    constexpr const char* names[] = {"off", "low", "medium", "high"};
+    return names[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
+}
+uint32_t ambientOcclusionSamples(AmbientOcclusion quality) {
+    constexpr uint32_t samples[] = {0, 8, 16, 32};
+    return samples[std::min<uint32_t>(static_cast<uint32_t>(quality), 3)];
+}
+
 const char* textureWrapName(TextureWrap wrap) {
     constexpr const char* names[] = {"repeat", "clamp", "mirror"};
     return names[std::min<uint32_t>(static_cast<uint32_t>(wrap), 2)];
@@ -104,6 +113,7 @@ struct Renderer::State {
     DebugView debugView = DebugView::Lit;
     ShadowQuality shadowQuality = ShadowQuality::High;
     AntiAliasing antiAliasing = AntiAliasing::None;
+    AmbientOcclusion ambientOcclusion = AmbientOcclusion::Off;
     BloomQuality bloomQuality = BloomQuality::High;
     float bloomScale = 1.0f;
     LodSettings lodSettings;
@@ -306,6 +316,7 @@ struct Renderer::State {
         backend->setDebugView(debugView);
         backend->setShadowQuality(shadowQuality);
         backend->setAntiAliasing(antiAliasing);
+        backend->setAmbientOcclusion(ambientOcclusion);
         backend->setBloom(bloomQuality, bloomScale);
         backend->setRenderScale(renderScale);
         backend->setViewport(viewportWidth, viewportHeight);
@@ -768,6 +779,11 @@ void Renderer::setAntiAliasing(AntiAliasing aa) {
     m->backend->setAntiAliasing(aa);
 }
 AntiAliasing Renderer::antiAliasing() const { return m->antiAliasing; }
+void Renderer::setAmbientOcclusion(AmbientOcclusion quality) {
+    m->ambientOcclusion = quality;
+    m->backend->setAmbientOcclusion(quality);
+}
+AmbientOcclusion Renderer::ambientOcclusion() const { return m->ambientOcclusion; }
 void Renderer::setBloom(BloomQuality quality, float scale) {
     m->bloomQuality = quality;
     m->bloomScale = std::isfinite(scale) ? std::clamp(scale, 0.0f, 1.0f) : 1.0f;

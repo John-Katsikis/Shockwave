@@ -37,8 +37,8 @@ constexpr uint32_t kFramesInFlight = 2;
 constexpr uint32_t kMaxMeshes = 65536;
 // Scene color, BRDF table, two for bloom: a new bloom chain takes the
 // slot the old one isn't using, so it can be made while frames still read the old one.
-// Shadow atlases likewise have two pairs of slots.
-constexpr uint32_t kInternalTextureSlots = 8;
+// Shadow atlases likewise have two pairs of slots, and ambient occlusion two slots.
+constexpr uint32_t kInternalTextureSlots = 10;
 // Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
 // goes into a spare while frames in flight still read the old slot, which becomes a spare
 // once they finish. Below the internal slots.
@@ -127,7 +127,7 @@ constexpr uint32_t kMaxShadowViews = kMaxCascades + kMaxLocalShadowViews;
 constexpr uint32_t kNoShadow = 0xFFFFFFFFu;
 constexpr uint32_t kNoSkin = 0xFFFFFFFFu;
 
-// Must match LightData and FrameBuffer in shaders/mesh.frag.
+// Must match LightData and FrameBuffer in shaders/frame.glsl.
 struct LightData {
     glm::vec3 position;
     uint32_t type;
@@ -168,11 +168,19 @@ struct FrameData {
     uint32_t brdfTable;   // bindless slot of image-based lighting's BRDF table
     VkDeviceAddress shadowViews;
     float specularLevels;   // mip levels of the prefiltered specular cube
-    uint32_t pad;
+    uint32_t aoTexture;   // bindless slot of the final ambient occlusion; 0: none this frame
+    // The screen-space contract's (G03, Renderer/ScreenSpace.h): the camera's, unmodified.
+    glm::mat4 view;
+    glm::mat4 projection;
+    glm::mat4 inverseProjection;
+    glm::vec2 renderSize;   // the scene targets' size in pixels
+    float aoRadius;   // metres
+    float aoIntensity;
 };
 static_assert(
-    sizeof(FrameData) == 112 && offsetof(FrameData, shadowViews) == 96,
-    "FrameData must match the shader's scalar layout");
+    sizeof(FrameData) == 320 && offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
+        offsetof(FrameData, renderSize) == 304,
+    "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
 constexpr VkDeviceSize kShadowViewsOffset = sizeof(FrameData) + sizeof(LightData) * kMaxLights;
 constexpr VkDeviceSize kFrameDataSize = kShadowViewsOffset + sizeof(ShadowView) * kMaxShadowViews;
 
@@ -432,6 +440,13 @@ struct VulkanRenderer::Impl {
     std::array<VkPipeline, 4> mirroredPipelines{};
     // Opaque without alpha test, so with early depth testing: + 1 double-sided, + 2 mirrored.
     std::array<VkPipeline, 4> solidPipelines{};
+    // With the surface prepass (G03): the prepass itself, and the opaque shading over it
+    // (depth EQUAL, no writes, reading ambient occlusion). Indexed by prepassIndex.
+    std::array<VkPipeline, 8> prepassPipelines{};
+    std::array<VkPipeline, 8> depthEqualPipelines{};
+    static uint32_t prepassIndex(const DrawCommand& draw) {
+        return (draw.data.alphaCutoff >= 0.0f ? 4 : 0) + (draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0);
+    }
     VkPipeline meshPipelineFor(const DrawCommand& draw) const;
     VkPipelineLayout gridLayout = VK_NULL_HANDLE;
     VkPipeline gridPipeline = VK_NULL_HANDLE;
@@ -938,6 +953,41 @@ struct VulkanRenderer::Impl {
     void updateAaTarget();   // at a frame boundary: retire or make aaTarget to match antiAliasing
     bool fxaaActive() const;   // this frame runs FXAA
     void recordFxaa(VkCommandBuffer cmd);
+
+    // ---- Surface prepass and ambient occlusion (RendererAmbientOcclusion.cpp) ---------
+    // With ambient occlusion on, opaque surfaces are drawn twice: first a prepass writing
+    // depth and view-space normals, then the shading, which tests depth for EQUAL. Between
+    // them a compute pass works out the occlusion at half resolution and blurs it, and the
+    // shading upsamples it (shaders/mesh.frag). Off, none of it exists.
+
+    struct AoTargets {
+        vk::Image normal;   // full resolution, octahedral view-space normals
+        vk::Image ao[2];   // half resolution (occlusion, view distance, normal); ao[0] is the result
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet sets[3] = {};   // occlusion into ao[0], blur ao[0] -> ao[1], ao[1] -> ao[0]
+        uint32_t slot = 0;   // bindless slot of ao[0]
+    };
+    AoTargets aoTargets;   // no images while it's off
+    vk::ImageState aoNormalState;
+    AmbientOcclusion ambientOcclusion = AmbientOcclusion::Off;   // asked for
+    VkFormat aoNormalFormat = VK_FORMAT_R16G16_SFLOAT;
+    uint32_t aoSlots[2] = {0, 0};
+    bool aoSlotBusy[2] = {false, false};
+    VkSampler aoSampler = VK_NULL_HANDLE;   // nearest, clamped
+    VkDescriptorSetLayout aoSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout aoLayout = VK_NULL_HANDLE;
+    VkPipeline aoPipeline = VK_NULL_HANDLE;
+
+    void createAmbientOcclusionPipeline();
+    void destroyAmbientOcclusionPipeline();
+    // The quality this frame computes: the setting, or medium for the debug view.
+    AmbientOcclusion effectiveAmbientOcclusion() const;
+    bool createAoTargets();   // false while both slots are in flight
+    void destroyAoTargets(AoTargets& targets);   // the GPU must be done with them
+    void updateAoTargets();   // at a frame boundary
+    bool prepassActive() const { return aoTargets.normal.image != VK_NULL_HANDLE; }
+    void recordPrepass(VkCommandBuffer cmd, Frame& f);
+    void recordAmbientOcclusion(VkCommandBuffer cmd, Frame& f);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.

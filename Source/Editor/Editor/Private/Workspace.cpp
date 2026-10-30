@@ -701,6 +701,7 @@ void Editor::drawPreferencesWindow() {
     };
     choiceSetting("anti_aliasing", m_prefs.antiAliasing);
     choiceSetting("bloom_quality", m_prefs.bloomQuality);
+    choiceSetting("ambient_occlusion", m_prefs.ambientOcclusion);
     if (const auto* info = shockwave::findGraphicsSetting("bloom_scale")) {
         if (ImGui::SliderFloat(info->label, &m_prefs.bloomScale, 0.0f, 1.0f, "%.2fx")) {
             auto settings = engine().graphics().requested();

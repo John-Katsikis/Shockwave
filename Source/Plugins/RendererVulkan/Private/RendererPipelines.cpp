@@ -323,6 +323,7 @@ void VulkanRenderer::Impl::createPipelines() {
     createSkinningPipeline();
     createBloomPipeline();
     createAntiAliasingPipeline();
+    createAmbientOcclusionPipeline();
 
     createUiPipeline();
 }

@@ -28,6 +28,8 @@ struct GraphicsSettings {
     TextureQuality textureQuality = TextureQuality::Ultra;   // material textures' largest resident level
     uint32_t anisotropy = 16;   // 1, 2, 4, 8 or 16: caps every sampler's anisotropic filtering
     MaterialQuality materialQuality = MaterialQuality::High;   // low: materials skip their detail layer (A02)
+    // Off by default, like anti-aliasing: the presets turn it on (G04).
+    AmbientOcclusion ambientOcclusion = AmbientOcclusion::Off;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

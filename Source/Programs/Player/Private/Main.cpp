@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
         double imageTolerance = 1.0;   // --tolerance
+        std::array<double, 4> imageRegion{0, 0, 1, 1};   // --region
         std::filesystem::path output;   // --output: --package, --net-encode and the network tools
         bool devDirectJoin = false;   // --dev-direct-join
         bool joinSteam = false, joinLobby = false;
@@ -195,6 +196,23 @@ int main(int argc, char** argv) {
                 tool.fixedStep = true;
             } else if (arg == "--image-stats" && i + 1 < argc) {
                 imageStats = argv[++i];
+            } else if (arg == "--region" && i + 1 < argc) {
+                // x,y,w,h as fractions of the image, for --image-stats.
+                const std::string value = argv[++i];
+                size_t start = 0;
+                for (int k = 0; k < 4; ++k) {
+                    const size_t comma = k < 3 ? value.find(',', start) : value.size();
+                    const char* first = value.data() + start;
+                    const char* last = value.data() + std::min(comma, value.size());
+                    const auto [end, ec] = std::from_chars(first, last, imageRegion[size_t(k)]);
+                    if (comma == std::string::npos || ec != std::errc{} || end != last ||
+                        !(imageRegion[size_t(k)] >= 0 && imageRegion[size_t(k)] <= 1))
+                        throw player::UsageError("--region takes x,y,width,height as fractions from 0 to 1");
+                    start = comma + 1;
+                }
+                if (imageRegion[2] <= 0 || imageRegion[3] <= 0 || imageRegion[0] + imageRegion[2] > 1.000001 ||
+                    imageRegion[1] + imageRegion[3] > 1.000001)
+                    throw player::UsageError("--region must be a non-empty part of the image");
             } else if (arg == "--material-info" && i + 1 < argc) {
                 materialInfo = argv[++i];
             } else if (arg == "--texture-info" && i + 1 < argc) {
@@ -220,10 +238,12 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Lighting;
                 else if (view == "cascades")
                     tool.view = shockwave::DebugView::ShadowCascades;
+                else if (view == "ao")
+                    tool.view = shockwave::DebugView::AmbientOcclusion;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
-                    throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades or navmesh");
+                    throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -374,7 +394,7 @@ int main(int argc, char** argv) {
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
                     "player --new-project folder [--name display-name] [--module module_id]\n"
                     "                                    create an independent C++ starter in an empty folder\n"
-                    "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|navmesh] [--print-frame]\n"
+                    "       [--size WxH] [--view lit|unlit|normals|lighting|cascades|ao|navmesh] [--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
                     "       [--graphics-set key=value]... [--anti-aliasing none|fxaa]\n"
@@ -389,7 +409,7 @@ int main(int argc, char** argv) {
                     "       [--camera name] [--fixed-step]\n"
                     "                                    look through a named Camera entity; advance exactly\n"
                     "                                    one tick per frame so motion is reproducible\n"
-                    "player --image-stats file.png [--json file]\n"
+                    "player --image-stats file.png [--region x,y,w,h] [--json file]\n"
                     "player --image-diff reference.png candidate.png [--tolerance rmse] [--json file]\n"
                     "                                    compare two screenshots; exit 1 over the tolerance\n"
                     "player --material-info model.glb|file.swmaterial [--json file]\n"
@@ -554,7 +574,7 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
             package.output = tool.output = output;
         }
-        if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson);   // no project
+        if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
         if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())

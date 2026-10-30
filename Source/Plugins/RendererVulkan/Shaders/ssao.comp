@@ -1,0 +1,138 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Screen-space ambient occlusion (G04, RendererAmbientOcclusion.cpp), at half resolution:
+//   0: occlusion, from the prepass's depth and normals;
+//   1: bilateral blur across, 2: bilateral blur down.
+// Each texel of the result holds (occlusion, view distance, octahedral normal), so the blur
+// and mesh.frag's upsample can tell which texels belong to the same surface. View distance
+// 0 is background: nothing there, no occlusion.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D depthTexture;   // full resolution, reverse-Z
+layout(set = 0, binding = 1) uniform sampler2D normalTexture;   // full resolution, octahedral view space
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D source;   // the blur's input
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D target;
+
+// Must match AoPushConstants in RendererAmbientOcclusion.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    FrameBuffer frame;
+    uint mode;
+    uint samples;   // per pixel: 8, 16 or 32
+    uvec2 fullSize;   // the depth and normal images
+    uvec2 halfSize;   // this pass's images
+} pc;
+
+const float PI = 3.14159265;
+
+// Van der Corput: the bits of i mirrored about the binary point.
+float radicalInverse(uint i) {
+    return float(bitfieldReverse(i)) * 2.3283064365386963e-10;
+}
+
+// A tangent and bitangent for a unit normal, without a branch on its direction
+// (Duff et al. 2017).
+void basis(vec3 n, out vec3 t, out vec3 b) {
+    float s = n.z >= 0.0 ? 1.0 : -1.0;
+    float a = -1.0 / (s + n.z);
+    float c = n.x * n.y * a;
+    t = vec3(1.0 + s * n.x * n.x * a, s * c, -s * n.x);
+    b = vec3(c, s + n.y * n.y * a, -n.y);
+}
+
+ivec2 fullTexel(vec2 uv) {
+    return clamp(ivec2(uv * vec2(pc.fullSize)), ivec2(0), ivec2(pc.fullSize) - 1);
+}
+
+vec4 occlusion(ivec2 h) {
+    // The half-resolution texel stands for the nearest of its four full-resolution ones
+    // (reverse-Z: the greatest depth), so thin things in front aren't lost between them.
+    ivec2 best = min(2 * h, ivec2(pc.fullSize) - 1);
+    float depth = -1.0;
+    for (int i = 0; i < 4; ++i) {
+        ivec2 q = min(2 * h + ivec2(i & 1, i >> 1), ivec2(pc.fullSize) - 1);
+        float d = texelFetch(depthTexture, q, 0).r;
+        if (d > depth) { depth = d; best = q; }
+    }
+    FrameBuffer frame = pc.frame;
+    vec3 p;
+    if (!viewPositionFromDepth((vec2(best) + 0.5) / vec2(pc.fullSize), depth, frame.inverseProjection, p))
+        return vec4(1.0, 0.0, 0.0, 0.0);
+    vec2 encoded = texelFetch(normalTexture, best, 0).xy;
+    vec3 n = octDecode(encoded);
+    float radius = max(frame.aoRadius, 1e-3);
+    // How much nearer than a sample a surface has to be to hide it: the depth buffer's own
+    // precision grows with distance.
+    float bias = 0.03 * radius + 0.002 * -p.z;
+    vec3 t, b;
+    basis(n, t, b);
+    // A fixed rotation per pixel from a 4 x 4 tile (Bayer order): the same every frame, so a
+    // still camera sees still occlusion, and the blur averages the tile's sixteen rotations.
+    const uint bayer[16] = uint[](0u, 8u, 2u, 10u, 12u, 4u, 14u, 6u, 3u, 11u, 1u, 9u, 15u, 7u, 13u, 5u);
+    float rotation = (float(bayer[(h.x & 3) + (h.y & 3) * 4]) + 0.5) / 16.0 * 2.0 * PI;
+    float occluded = 0.0, valid = 0.0;
+    uint count = max(pc.samples, 1u);
+    for (uint i = 0u; i < count; ++i) {
+        // Cosine-weighted directions over the hemisphere, kept a little off the surface;
+        // distances stratified separately and biased towards the point.
+        float u = (float(i) + 0.5) / float(count);
+        float phi = radicalInverse(i) * 2.0 * PI + rotation;
+        float sinTheta = sqrt(u);
+        float cosTheta = max(sqrt(1.0 - u), 0.15);
+        vec3 direction = normalize(t * (cos(phi) * sinTheta) + b * (sin(phi) * sinTheta) + n * cosTheta);
+        float stratum = fract(0.5 + float(i) * 0.6180339887);
+        float reach = radius * mix(0.1, 1.0, stratum * stratum);
+        vec3 s = p + direction * reach;
+        vec4 clip = frame.projection * vec4(s, 1.0);
+        if (!(clip.w > 1e-6)) continue;
+        vec2 uv = screenUvFromClip(clip);
+        // Off the screen there's nothing to see: such samples don't count either way.
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) continue;
+        valid += 1.0;
+        ivec2 q = fullTexel(uv);
+        vec3 seen;
+        if (!viewPositionFromDepth((vec2(q) + 0.5) / vec2(pc.fullSize), texelFetch(depthTexture, q, 0).r,
+                frame.inverseProjection, seen))
+            continue;   // background: open
+        // Occluded when the surface seen there is nearer than the sample by more than the
+        // bias; less so the further that surface is from this point (a pole far in front
+        // of a wall doesn't darken it).
+        if (seen.z > s.z + bias) occluded += smoothstep(0.0, 1.0, radius / max(abs(p.z - seen.z), 1e-4));
+    }
+    float ao = valid > 0.0 ? clamp(1.0 - occluded / valid, 0.0, 1.0) : 1.0;
+    ao = frame.aoIntensity > 0.0 ? pow(ao, frame.aoIntensity) : 1.0;
+    return vec4(ao, -p.z, encoded);
+}
+
+// Nine taps along one axis, weighted by a Gaussian and by how alike the surfaces are, so
+// the tile's noise smooths out without blurring across edges.
+vec4 blur(ivec2 h, ivec2 axis) {
+    vec4 center = imageLoad(source, h);
+    if (center.y <= 0.0) return center;
+    vec3 n = octDecode(center.zw);
+    float sum = 0.0, weights = 0.0;
+    for (int k = -4; k <= 4; ++k) {
+        ivec2 q = clamp(h + axis * k, ivec2(0), ivec2(pc.halfSize) - 1);
+        vec4 t = imageLoad(source, q);
+        if (t.y <= 0.0) continue;
+        float gaussian = exp(-float(k * k) / 8.0);
+        float gap = abs(t.y - center.y) / (0.02 * center.y + 0.01);
+        float w = gaussian * exp(-gap * gap) * pow(clamp(dot(octDecode(t.zw), n), 0.0, 1.0), 8.0);
+        sum += t.x * w;
+        weights += w;
+    }
+    return vec4(weights > 0.0 ? sum / weights : center.x, center.yzw);
+}
+
+void main() {
+    ivec2 h = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(uvec2(h), pc.halfSize))) return;
+    vec4 result = pc.mode == 0u ? occlusion(h) : blur(h, pc.mode == 1u ? ivec2(1, 0) : ivec2(0, 1));
+    imageStore(target, h, result);
+}

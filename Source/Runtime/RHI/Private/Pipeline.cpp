@@ -75,7 +75,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     // Blended surfaces test depth but never write it, so what's behind still shows.
     depth.depthWriteEnable =
         desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend && !desc.premultipliedAlpha;
-    depth.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+    depth.depthCompareOp = desc.depthCompare;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.colorWriteMask =

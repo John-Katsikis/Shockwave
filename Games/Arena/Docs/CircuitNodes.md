@@ -1821,6 +1821,8 @@ Every field of the entity's Environment; found is false when it has none.
 - Out `bloom_intensity` Float
 - Out `shadow_distance` Float
 - Out `shadow_cascades` Int
+- Out `ao_radius` Float
+- Out `ao_intensity` Float
 
 ### Component.Environment.Get.ambient_intensity
 
@@ -1829,6 +1831,22 @@ The entity's Environment ambient_intensity.
 - Changes: presentation
 - In `target` Entity, default self
 - Out `ambient_intensity` Float
+
+### Component.Environment.Get.ao_intensity
+
+The entity's Environment ao_intensity.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `ao_intensity` Float
+
+### Component.Environment.Get.ao_radius
+
+The entity's Environment ao_radius.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `ao_radius` Float
 
 ### Component.Environment.Get.bloom_intensity
 
@@ -1955,6 +1973,8 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `bloom_intensity` Float
 - In `shadow_distance` Float
 - In `shadow_cascades` Int
+- In `ao_radius` Float
+- In `ao_intensity` Float
 
 ### Component.Environment.Set.ambient_intensity
 
@@ -1965,6 +1985,26 @@ Sets the entity's Environment ambient_intensity.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `ambient_intensity` Float, required
+
+### Component.Environment.Set.ao_intensity
+
+Sets the entity's Environment ao_intensity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `ao_intensity` Float, required
+
+### Component.Environment.Set.ao_radius
+
+Sets the entity's Environment ao_radius.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `ao_radius` Float, required
 
 ### Component.Environment.Set.bloom_intensity
 

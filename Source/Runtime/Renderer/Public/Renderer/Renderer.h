@@ -181,6 +181,10 @@ public:
     // frees its images once the frames using them finish; neither waits for the GPU.
     void setAntiAliasing(AntiAliasing aa);
     AntiAliasing antiAliasing() const;
+    // Screen-space ambient occlusion and the depth and normal prepass it reads (G03, G04).
+    // Off has no prepass and no images; changing it makes the new ones beside the old.
+    void setAmbientOcclusion(AmbientOcclusion quality);
+    AmbientOcclusion ambientOcclusion() const;
     // scale: the player's multiplier on the scene's authored bloom intensity, 0..1; 0 or
     // BloomQuality::Off draws no bloom.
     void setBloom(BloomQuality quality, float scale);

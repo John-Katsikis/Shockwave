@@ -205,6 +205,33 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         settings.push_back({"bloom_scale", requested, requested, "", detail2});
     }
 
+    // Ambient occlusion (G04), with the surface prepass it needs (G03).
+    {
+        const AmbientOcclusion effective = effectiveAmbientOcclusion();
+        const bool have = prepassActive();
+        std::string why;
+        if (effective != AmbientOcclusion::Off && !have) why = "pending: its images are made at the next frame";
+        else if (effective != ambientOcclusion) why = "the ambient occlusion debug view computes it at medium";
+        char detail[200] = "";
+        if (have) {
+            const VkExtent2D half = aoTargets.ao[0].image ? aoTargets.ao[0].extent : VkExtent2D{0, 0};
+            uint64_t bytes = imageBytes(aoTargets.normal);
+            for (const vk::Image& image : aoTargets.ao) bytes += imageBytes(image);
+            std::snprintf(
+                detail, sizeof(detail),
+                "%u samples at %ux%u (half of %ux%u), radius %g m; surface prepass with %s normals; %.1f MiB",
+                ambientOcclusionSamples(effective), half.width, half.height, sceneColor.extent.width,
+                sceneColor.extent.height, static_cast<double>(lighting.aoRadius),
+                aoNormalFormat == VK_FORMAT_R16G16_SNORM ? "rg16 snorm" : "rg16f",
+                static_cast<double>(bytes) / (1024.0 * 1024.0));
+        } else {
+            std::snprintf(detail, sizeof(detail), "no surface prepass");
+        }
+        settings.push_back(
+            {"ambient_occlusion", ambientOcclusionName(ambientOcclusion),
+             ambientOcclusionName(have ? effective : AmbientOcclusion::Off), why, detail});
+    }
+
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
     const bool synced = mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR ||
@@ -276,6 +303,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::Environment, brdfTable.allocation);
     add(GpuMemoryCategory::Bloom, bloom.image.allocation);
     add(GpuMemoryCategory::AntiAliasing, aaTarget.image.allocation);
+    add(GpuMemoryCategory::SurfaceBuffers, aoTargets.normal.allocation);
+    for (const vk::Image& image : aoTargets.ao) add(GpuMemoryCategory::AmbientOcclusion, image.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     for (const Frame& f : frames) {
         for (const vk::Buffer* b : {&f.drawBuffer, &f.layerBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})

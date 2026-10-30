@@ -37,6 +37,8 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     brdfSlot = bindlessSlots() - 4;
     bloomSlots[0] = bindlessSlots() - 5;
     bloomSlots[1] = bindlessSlots() - 6;
+    aoSlots[0] = bindlessSlots() - 9;
+    aoSlots[1] = bindlessSlots() - 10;
     createRenderTargets();
     createShadowMaps();
     createEnvironment();
@@ -64,6 +66,8 @@ VulkanRenderer::Impl::~Impl() {
     destroyBloomPipeline();
     destroyAaTarget(aaTarget);
     destroyAntiAliasingPipeline();
+    destroyAoTargets(aoTargets);
+    destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -176,6 +180,7 @@ void VulkanRenderer::Impl::createRenderTargets() {
     createDisplayUiView();
     createBloomTargets();   // the GPU is idle, so a slot is free
     if (antiAliasing == AntiAliasing::Fxaa) createAaTarget();
+    if (effectiveAmbientOcclusion() != AmbientOcclusion::Off) createAoTargets();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
     // The tonemap pass reads the scene through the bindless table like any texture.
@@ -206,6 +211,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     collectRetired(true);
     destroyBloomTargets();
     destroyAaTarget(aaTarget);
+    destroyAoTargets(aoTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
