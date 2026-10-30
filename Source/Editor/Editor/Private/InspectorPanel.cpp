@@ -4,6 +4,7 @@
 #include "Editor.h"
 
 #include <Circuits/Circuit.h>
+#include <Engine/BakedLighting.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -159,6 +160,12 @@ void Editor::drawAddComponentPopup(Entity e) {
         // A scene's network object needs a unique key; a prefab's is left empty so each
         // copy gets its own.
         if (!isEditingPrefab()) shockwave::net::assignMissingNetworkKey(m_world, e);
+        // Bake participants are bound to their lighting by a persistent id, made here once
+        // (docs/Lighting.md): saving, reordering and reloading keep it.
+        if (auto* g = m_world.get<shockwave::BakeGeometry>(e); g && g->bindingId.empty())
+            g->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
+        if (auto* v = m_world.get<shockwave::DiffuseProbeVolume>(e); v && v->bindingId.empty())
+            v->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
         log("Added " + chosen->name + " to " + displayName(e));
         ImGui::CloseCurrentPopup();
     }

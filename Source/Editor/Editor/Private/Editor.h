@@ -7,6 +7,7 @@
 #include <Assets/AssetFolder.h>
 #include <Audio/Audio.h>
 #include <Core/Log.h>
+#include <Engine/BakedLighting.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/GameModuleLibrary.h>
@@ -61,6 +62,7 @@ struct EditorOptions {
     bool showPreferences = false;   // --preferences: open settings on startup
     bool showGraphicsGuide = false;   // --graphics-guide: open the implementation guide
     bool showNetwork = false;   // --network: open the Network window
+    bool showLighting = false;   // --lighting: open the Lighting window
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -281,6 +283,18 @@ private:
     std::string m_materialLoadError;
     bool m_showCircuits = false;
     bool m_showNetwork = false;
+    // EditorLighting.cpp: Window > Lighting, the scene's bake (G05, G06; docs/Lighting.md).
+    // Bakes a copy of the scene on a thread, so editing carries on; cancelled when the
+    // project or scene changes, or the editor closes.
+    void drawLightingWindow();
+    void startLightingBake();
+    void finishLightingBake();
+    void cancelLightingBake();
+    bool m_showLighting = false;
+    std::shared_ptr<struct LightingBakeJob> m_lightingBake;
+    int m_lightingQuality = 0;   // 0 preview, 1 final
+    int m_lightingSeed = 1;
+    std::string m_lightingResult;   // the last bake's report, or why it failed
     std::shared_ptr<struct CircuitEditorState> m_circuitEditor;   // created when the window first opens
     // SaveGamesPanel.cpp: the project's save slots; save and load during Play.
     void drawSaveGamesWindow();
@@ -453,6 +467,8 @@ private:
     // Navigation while editing: the mesh last baked or loaded for this scene.
     std::shared_ptr<const shockwave::NavMesh> m_navMesh;
     shockwave::NavMeshOverlay m_navOverlay;
+    shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)
+    double m_bakedLightingTime = 0;
     std::filesystem::path m_navScene;   // the scene m_navMesh belongs to
     bool m_showNavMesh = false, m_navStale = false, m_navUsed = false;
     double m_navCheckTimer = 0.0;

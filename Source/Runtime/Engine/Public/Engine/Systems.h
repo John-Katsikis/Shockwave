@@ -7,6 +7,7 @@ namespace shockwave {
 
 class Renderer;
 class Assets;
+class BakedLightingRuntime;
 
 // The built-in gameplay systems: Spin and Bob.
 void addBuiltinSystems(Schedule& schedule);
@@ -23,8 +24,11 @@ Transform presentedTransform(const World& world, Entity e, double alpha);
 // Draws every visible MeshRenderer and, when assets is supplied, ModelRenderer,
 // where its parents put it, spread across the job system, and sets the clear color from the Environment. alpha is Application::onRender's;
 // pass 1 to draw the current state with no blending (an editor that isn't playing).
-// Set the camera first.
-void renderWorld(World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets = nullptr);
+// Set the camera first. baked, when given (and updated this frame), lights static
+// receivers with their lightmaps and other objects with probes (G05, G06).
+void renderWorld(
+    World& world, Renderer& renderer, JobSystem& jobs, double alpha, const Assets* assets = nullptr,
+    const BakedLightingRuntime* baked = nullptr);
 
 // The first Camera with primary set (or failing that, the first Camera) that has a
 // Transform; kNullEntity if the scene has none.

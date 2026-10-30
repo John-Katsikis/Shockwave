@@ -100,6 +100,9 @@ public:
     // A second UV set for a mesh (MeshData::uv1), one per vertex, right after createMesh
     // or createSkinnedMesh. Same threads as createMesh.
     void setMeshUv1(MeshHandle mesh, std::span<const glm::vec2> uv1);
+    // Lightmap UVs for a baked receiver's mesh (MeshData::lightmapUv, G05), one per vertex,
+    // right after createMesh. Same threads as createMesh.
+    void setMeshLightmapUv(MeshHandle mesh, std::span<const glm::vec2> uv);
     // The sampler for desc, made the first time it's asked for and the same handle after
     // that. Any thread; resolve them when loading a material, not per draw. Past
     // kMaxSamplers distinct descs it logs once and returns the default.
@@ -114,6 +117,11 @@ public:
     // frame's draws on. Main thread.
     void setMaterialQuality(MaterialQuality quality);
     MaterialQuality materialQuality() const;
+    // Whether draws use the baked lighting they're given (DrawMaterial::indirect, G05 and
+    // G06). Off draws everything with the environment's light, as if nothing were baked.
+    // From the next frame's draws on. Main thread.
+    void setBakedLighting(bool enabled);
+    bool bakedLighting() const;
 
     // ---- Texture quality (A01) ----
     // Main thread. Material textures (TextureUsage::Material) are rebuilt with their

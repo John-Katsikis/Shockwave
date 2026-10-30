@@ -150,6 +150,16 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"baked_lighting", "Baked lighting", "Quality",
+         "Light bounced around the scene, baked ahead of time into lightmaps and probe volumes. Off lights "
+         "everything from the sky and environment alone. Costs one texture read a pixel; scenes without a bake "
+         "look the same either way.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.bakedLighting ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.bakedLighting, "baked_lighting", error);
+         }});
+    info.push_back(
         {"lod_error_pixels",
          "Mesh detail",
          "Quality",
@@ -480,6 +490,7 @@ GraphicsSettings Graphics::current() const {
     s.anisotropy = r.anisotropy();
     s.materialQuality = r.materialQuality();
     s.ambientOcclusion = r.ambientOcclusion();
+    s.bakedLighting = r.bakedLighting();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -533,6 +544,7 @@ void Graphics::commit() {
     if (s.anisotropy != previous.anisotropy) r.setAnisotropy(s.anisotropy);
     if (s.materialQuality != previous.materialQuality) r.setMaterialQuality(s.materialQuality);
     if (s.ambientOcclusion != previous.ambientOcclusion) r.setAmbientOcclusion(s.ambientOcclusion);
+    if (s.bakedLighting != previous.bakedLighting) r.setBakedLighting(s.bakedLighting);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

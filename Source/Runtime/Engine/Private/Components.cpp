@@ -73,7 +73,9 @@ void registerBuiltins() {
     if (started) return;
     started = true;
     registerComponent<Name>("Name", {field("value", &Name::value)}, "Core");
-    registerComponent<PrefabInstance>("Prefab", {field("path", &PrefabInstance::path)}, "Core");   // Prefab.h
+    registerComponent<PrefabInstance>(
+        "Prefab", {field("path", &PrefabInstance::path), field("bake_id", &PrefabInstance::bakeId)},
+        "Core");   // Prefab.h
     registerComponent<Transform>(
         "Transform",
         {
@@ -204,6 +206,35 @@ void registerBuiltins() {
             field("shadow_bias", &Light::shadowBias, 0.05f, 0.0f, 10.0f),
         },
         "Rendering");
+    registerComponent<BakeGeometry>(
+        "BakeGeometry",
+        {
+            field("binding_id", &BakeGeometry::bindingId),
+            enumField("mobility", &BakeGeometry::mobility, {"static", "dynamic"}),
+            field("cast_indirect", &BakeGeometry::castIndirect),
+            field("receive_lightmap", &BakeGeometry::receiveLightmap),
+            field("texels_per_meter", &BakeGeometry::texelsPerMeter, 0.5f, 0.25f, 256.0f),
+        },
+        "Lighting");
+    registerComponent<BakeLight>("BakeLight", {field("include_indirect", &BakeLight::includeIndirect)}, "Lighting");
+    registerComponent<BakedLighting>(
+        "BakedLighting",
+        {
+            field("asset", &BakedLighting::asset),
+            field("enabled", &BakedLighting::enabled),
+        },
+        "Lighting");
+    registerComponent<DiffuseProbeVolume>(
+        "DiffuseProbeVolume",
+        {
+            field("half_extents", &DiffuseProbeVolume::halfExtents, 0.05f, 0.05f, 10000.0f),
+            field("spacing", &DiffuseProbeVolume::spacing, 0.05f, 0.1f, 100.0f),
+            field("blend_distance", &DiffuseProbeVolume::blendDistance, 0.05f, 0.0f, 100.0f),
+            field("priority", &DiffuseProbeVolume::priority, 1.0f, -1000.0f, 1000.0f),
+            field("enabled", &DiffuseProbeVolume::enabled),
+            field("binding_id", &DiffuseProbeVolume::bindingId),
+        },
+        "Lighting");
     registerComponent<Spin>(
         "Spin",
         {

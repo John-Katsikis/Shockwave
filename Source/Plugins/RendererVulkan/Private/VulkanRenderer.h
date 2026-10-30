@@ -30,6 +30,7 @@ public:
     bool supportsTextureFormat(TextureFormat format) const override;
     void createTextureData(TextureHandle id, const TextureData& data) override;
     void setMeshUv1(MeshHandle id, std::span<const glm::vec2> uv1) override;
+    void setMeshLightmapUv(MeshHandle id, std::span<const glm::vec2> uv) override;
     void createSampler(SamplerHandle id, const SamplerDesc& desc) override;
     void setAnisotropy(uint32_t anisotropy) override;
     void setMaterialQuality(MaterialQuality quality) override;

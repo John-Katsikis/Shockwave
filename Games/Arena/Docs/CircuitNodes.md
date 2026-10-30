@@ -1015,6 +1015,295 @@ Sets the entity's AudioSource volume.
 - In `target` Entity, default self
 - In `volume` Float, required
 
+### Component.BakeGeometry.Add
+
+Gives the entity a BakeGeometry with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakeGeometry.Get
+
+Every field of the entity's BakeGeometry; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `binding_id` String
+- Out `mobility` Int
+- Out `cast_indirect` Bool
+- Out `receive_lightmap` Bool
+- Out `texels_per_meter` Float
+
+### Component.BakeGeometry.Get.binding_id
+
+The entity's BakeGeometry binding_id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `binding_id` String
+
+### Component.BakeGeometry.Get.cast_indirect
+
+The entity's BakeGeometry cast_indirect.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `cast_indirect` Bool
+
+### Component.BakeGeometry.Get.mobility
+
+The entity's BakeGeometry mobility.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `mobility` Int
+
+### Component.BakeGeometry.Get.receive_lightmap
+
+The entity's BakeGeometry receive_lightmap.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `receive_lightmap` Bool
+
+### Component.BakeGeometry.Get.texels_per_meter
+
+The entity's BakeGeometry texels_per_meter.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `texels_per_meter` Float
+
+### Component.BakeGeometry.Has
+
+The entity has a BakeGeometry.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.BakeGeometry.Remove
+
+Takes the BakeGeometry off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakeGeometry.Set
+
+Sets the fields given (connected or written) of the entity's BakeGeometry; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `binding_id` String
+- In `mobility` Int, options 0=static; 1=dynamic
+- In `cast_indirect` Bool
+- In `receive_lightmap` Bool
+- In `texels_per_meter` Float
+
+### Component.BakeGeometry.Set.binding_id
+
+Sets the entity's BakeGeometry binding_id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `binding_id` String, required
+
+### Component.BakeGeometry.Set.cast_indirect
+
+Sets the entity's BakeGeometry cast_indirect.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `cast_indirect` Bool, required
+
+### Component.BakeGeometry.Set.mobility
+
+Sets the entity's BakeGeometry mobility.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `mobility` Int, options 0=static; 1=dynamic, required
+
+### Component.BakeGeometry.Set.receive_lightmap
+
+Sets the entity's BakeGeometry receive_lightmap.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `receive_lightmap` Bool, required
+
+### Component.BakeGeometry.Set.texels_per_meter
+
+Sets the entity's BakeGeometry texels_per_meter.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `texels_per_meter` Float, required
+
+### Component.BakeLight.Add
+
+Gives the entity a BakeLight with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakeLight.Get
+
+Every field of the entity's BakeLight; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `include_indirect` Bool
+
+### Component.BakeLight.Get.include_indirect
+
+The entity's BakeLight include_indirect.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `include_indirect` Bool
+
+### Component.BakeLight.Has
+
+The entity has a BakeLight.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.BakeLight.Remove
+
+Takes the BakeLight off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakeLight.Set
+
+Sets the fields given (connected or written) of the entity's BakeLight; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `include_indirect` Bool
+
+### Component.BakeLight.Set.include_indirect
+
+Sets the entity's BakeLight include_indirect.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `include_indirect` Bool, required
+
+### Component.BakedLighting.Add
+
+Gives the entity a BakedLighting with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakedLighting.Get
+
+Every field of the entity's BakedLighting; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `asset` String
+- Out `enabled` Bool
+
+### Component.BakedLighting.Get.asset
+
+The entity's BakedLighting asset.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `asset` String
+
+### Component.BakedLighting.Get.enabled
+
+The entity's BakedLighting enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.BakedLighting.Has
+
+The entity has a BakedLighting.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.BakedLighting.Remove
+
+Takes the BakedLighting off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.BakedLighting.Set
+
+Sets the fields given (connected or written) of the entity's BakedLighting; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String
+- In `enabled` Bool
+
+### Component.BakedLighting.Set.asset
+
+Sets the entity's BakedLighting asset.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String, required
+
+### Component.BakedLighting.Set.enabled
+
+Sets the entity's BakedLighting enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
 ### Component.Bob.Add
 
 Gives the entity a Bob with default values, if it has none.
@@ -1792,6 +2081,169 @@ Sets the entity's Collider shape.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model, required
+
+### Component.DiffuseProbeVolume.Add
+
+Gives the entity a DiffuseProbeVolume with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DiffuseProbeVolume.Get
+
+Every field of the entity's DiffuseProbeVolume; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `half_extents` Vec3
+- Out `spacing` Float
+- Out `blend_distance` Float
+- Out `priority` Int
+- Out `enabled` Bool
+- Out `binding_id` String
+
+### Component.DiffuseProbeVolume.Get.binding_id
+
+The entity's DiffuseProbeVolume binding_id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `binding_id` String
+
+### Component.DiffuseProbeVolume.Get.blend_distance
+
+The entity's DiffuseProbeVolume blend_distance.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `blend_distance` Float
+
+### Component.DiffuseProbeVolume.Get.enabled
+
+The entity's DiffuseProbeVolume enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.DiffuseProbeVolume.Get.half_extents
+
+The entity's DiffuseProbeVolume half_extents.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `half_extents` Vec3
+
+### Component.DiffuseProbeVolume.Get.priority
+
+The entity's DiffuseProbeVolume priority.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `priority` Int
+
+### Component.DiffuseProbeVolume.Get.spacing
+
+The entity's DiffuseProbeVolume spacing.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `spacing` Float
+
+### Component.DiffuseProbeVolume.Has
+
+The entity has a DiffuseProbeVolume.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.DiffuseProbeVolume.Remove
+
+Takes the DiffuseProbeVolume off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.DiffuseProbeVolume.Set
+
+Sets the fields given (connected or written) of the entity's DiffuseProbeVolume; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `half_extents` Vec3
+- In `spacing` Float
+- In `blend_distance` Float
+- In `priority` Int
+- In `enabled` Bool
+- In `binding_id` String
+
+### Component.DiffuseProbeVolume.Set.binding_id
+
+Sets the entity's DiffuseProbeVolume binding_id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `binding_id` String, required
+
+### Component.DiffuseProbeVolume.Set.blend_distance
+
+Sets the entity's DiffuseProbeVolume blend_distance.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `blend_distance` Float, required
+
+### Component.DiffuseProbeVolume.Set.enabled
+
+Sets the entity's DiffuseProbeVolume enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.DiffuseProbeVolume.Set.half_extents
+
+Sets the entity's DiffuseProbeVolume half_extents.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `half_extents` Vec3, required
+
+### Component.DiffuseProbeVolume.Set.priority
+
+Sets the entity's DiffuseProbeVolume priority.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `priority` Int, required
+
+### Component.DiffuseProbeVolume.Set.spacing
+
+Sets the entity's DiffuseProbeVolume spacing.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `spacing` Float, required
 
 ### Component.Environment.Add
 
@@ -3989,6 +4441,15 @@ Every field of the entity's Prefab; found is false when it has none.
 - In `target` Entity, default self
 - Out `found` Bool
 - Out `path` String
+- Out `bake_id` String
+
+### Component.Prefab.Get.bake_id
+
+The entity's Prefab bake_id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `bake_id` String
 
 ### Component.Prefab.Get.path
 
@@ -4024,6 +4485,17 @@ Sets the fields given (connected or written) of the entity's Prefab; the rest st
 - Exec out: `then`
 - In `target` Entity, default self
 - In `path` String
+- In `bake_id` String
+
+### Component.Prefab.Set.bake_id
+
+Sets the entity's Prefab bake_id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `bake_id` String, required
 
 ### Component.Prefab.Set.path
 

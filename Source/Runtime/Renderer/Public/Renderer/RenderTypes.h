@@ -197,6 +197,23 @@ struct MaterialLayers {
 enum class MaterialQuality : uint32_t { Low, High };
 const char* materialQualityName(MaterialQuality quality);   // "low", "high"
 
+// Where a draw's diffuse light from its surroundings comes from (G05, G06). By default
+// the environment's irradiance, as always; baked lighting replaces it, one for one (both
+// hold E / pi, linear): a static surface reads its lightmap, a moving object a probe
+// sample. Only that one input changes: direct lights, shadows, reflections and the
+// occlusion terms are the same either way.
+struct IndirectLighting {
+    enum class Source : uint32_t { Environment, Lightmap, Probes };
+    Source source = Source::Environment;
+    // Lightmap: an RGBA16F texture read at level 0 through the mesh's lightmap UVs
+    // (MeshData::lightmapUv). A mesh without them falls back to the environment.
+    TextureHandle lightmap;
+    // Probes: nine coefficients of irradiance / pi per channel, in the order of
+    // Assets/LightingData.h (Y00, Y1-1, Y10, Y11, Y2-2, Y2-1, Y20, Y21, Y22), evaluated
+    // with each pixel's normal.
+    std::array<glm::vec3, 9> sh{};
+};
+
 struct DrawMaterial {
     float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
@@ -220,6 +237,9 @@ struct DrawMaterial {
     // The detail layer and second layer, if the material has them; read during the draw
     // call only, so the caller keeps them alive until it returns.
     const MaterialLayers* layers = nullptr;
+    // Baked diffuse light in place of the environment's (G05, G06); null: the environment.
+    // Read during the draw call only, like layers.
+    const IndirectLighting* indirect = nullptr;
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of
@@ -269,8 +289,10 @@ struct LightingDesc {
 // What the scene shows: the lit result, or a view for checking content. ShadowCascades
 // tints the sun's shadow cascades (red, green, blue, yellow nearest to farthest).
 // AmbientOcclusion shows the screen-space occlusion alone, white for none (G04); with
-// ambient_occlusion off it's computed at medium for the view.
-enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades, AmbientOcclusion };
+// ambient_occlusion off it's computed at medium for the view. IndirectDiffuse shows the
+// diffuse light from the surroundings each surface receives (E / pi before its colour):
+// its lightmap, probe sample or the environment's irradiance (G05, G06).
+enum class DebugView : uint32_t { Lit, Unlit, Normals, Lighting, ShadowCascades, AmbientOcclusion, IndirectDiffuse };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
 // performance setting, unlike the scene's shadow distance.

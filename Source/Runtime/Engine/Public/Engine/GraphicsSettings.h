@@ -30,6 +30,8 @@ struct GraphicsSettings {
     MaterialQuality materialQuality = MaterialQuality::High;   // low: materials skip their detail layer (A02)
     // Off by default, like anti-aliasing: the presets turn it on (G04).
     AmbientOcclusion ambientOcclusion = AmbientOcclusion::Off;
+    // Baked lightmaps and probe volumes (G05, G06); off draws the environment instead.
+    bool bakedLighting = true;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

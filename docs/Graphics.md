@@ -61,6 +61,12 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   (`ao_intensity`, 1). Off, there's no prepass and no memory for it. `player --view ao`
   and the editor's *Ambient occlusion* shading view show it alone (at medium when the
   setting is off).
+- `baked_lighting`: `true` (the default) or `false`. A scene's baked lightmaps and probe
+  volumes (docs/Lighting.md, *Baked lighting*) replace the light from the surroundings
+  with light that knows about walls and bounces. False lights everything from the
+  surroundings alone, pixel for pixel as if the scene had never been baked, and applies
+  on the next frame; the bake stays loaded. Scenes without a bake look the same either
+  way. Presets leave it alone.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and

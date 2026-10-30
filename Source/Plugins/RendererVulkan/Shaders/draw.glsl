@@ -19,6 +19,19 @@ layout(buffer_reference, scalar) readonly buffer VertexBuffer {
 layout(buffer_reference, scalar) readonly buffer Uv1Buffer {
     vec2 uv1[];
 };
+layout(buffer_reference, scalar) readonly buffer LightmapUvBuffer {
+    vec2 lightmapUv[];
+};
+// A draw's probe sample (G06): irradiance / pi spherical harmonics, rgb in xyz, in the
+// order of Assets/LightingData.h. Must match ProbeData in RendererImpl.h.
+struct ProbeData {
+    vec4 sh[9];
+};
+layout(buffer_reference, scalar) readonly buffer ProbeBuffer {
+    ProbeData probe;
+};
+// DrawData::indirectSource: where diffuse light from the surroundings comes from.
+const uint kIndirectEnvironment = 0u, kIndirectLightmap = 1u, kIndirectProbes = 2u;
 
 // How one material slot reads its texture. Must match SlotBinding in RendererImpl.h.
 struct SlotBinding {
@@ -90,6 +103,10 @@ struct DrawData {
     uvec2 uv1Buffer;   // a Uv1Buffer; 0: the mesh has no second UV set, UV0 stands in
     SlotBinding slots[5];
     uvec2 layers;   // a LayerBuffer; 0: no detail or second layer
+    uvec2 lightmapUvBuffer;   // a LightmapUvBuffer, with kIndirectLightmap
+    uint lightmapTexture;   // bindless slot, with kIndirectLightmap
+    uint indirectSource;
+    uvec2 probes;   // a ProbeBuffer, with kIndirectProbes
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

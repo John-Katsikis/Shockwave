@@ -312,8 +312,13 @@ void Editor::drawViewportToolbar() {
         }
         // What the scene shows: the lit result or a view for checking content. The same
         // views are available to tools as player --view.
-        static const char* views[] = {"Lit", "Unlit (albedo)", "Normals", "Lighting only", "Shadow cascades",
-                                      "Ambient occlusion"};
+        static const char* views[] = {"Lit",
+                                      "Unlit (albedo)",
+                                      "Normals",
+                                      "Lighting only",
+                                      "Shadow cascades",
+                                      "Ambient occlusion",
+                                      "Indirect diffuse"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

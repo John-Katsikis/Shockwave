@@ -55,6 +55,7 @@ VulkanRenderer::Impl::~Impl() {
         vmaDestroyBuffer(allocator, meshes[i].indices.buffer, meshes[i].indices.allocation);
         vmaDestroyBuffer(allocator, meshes[i].lodIndices.buffer, meshes[i].lodIndices.allocation);   // null is fine
         vmaDestroyBuffer(allocator, meshes[i].uv1.buffer, meshes[i].uv1.allocation);
+        vmaDestroyBuffer(allocator, meshes[i].lightmapUv.buffer, meshes[i].lightmapUv.allocation);
     }
     for (uint32_t i = 0; i < textureCapacity(); ++i) destroyImage(textures[i]);
     for (TextureSwap& swap : textureSwaps) destroyImage(swap.image);
@@ -100,6 +101,7 @@ VulkanRenderer::Impl::~Impl() {
     for (Frame& f : frames) {
         vmaDestroyBuffer(allocator, f.drawBuffer.buffer, f.drawBuffer.allocation);
         if (f.layerBuffer.buffer) vmaDestroyBuffer(allocator, f.layerBuffer.buffer, f.layerBuffer.allocation);
+        if (f.probeBuffer.buffer) vmaDestroyBuffer(allocator, f.probeBuffer.buffer, f.probeBuffer.allocation);
         vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
         vkDestroySemaphore(device, f.imageAcquired, nullptr);
         vkDestroyQueryPool(device, f.timestamps, nullptr);

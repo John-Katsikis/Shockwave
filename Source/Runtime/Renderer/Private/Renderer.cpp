@@ -119,6 +119,7 @@ struct Renderer::State {
     LodSettings lodSettings;
     uint32_t anisotropy = 16;
     MaterialQuality materialQuality = MaterialQuality::High;
+    std::atomic<bool> bakedLighting{true};
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
@@ -343,6 +344,7 @@ struct Renderer::State {
             for (const auto& [id, mesh] : meshes) {
                 backend->createMesh({id}, mesh.vertices, mesh.indices);
                 if (!mesh.uv1.empty()) backend->setMeshUv1({id}, mesh.uv1);
+                if (!mesh.lightmapUv.empty()) backend->setMeshLightmapUv({id}, mesh.lightmapUv);
             }
             for (const auto& [id, skin] : skins) backend->setMeshSkin({id}, skin);
         }
@@ -402,7 +404,19 @@ MeshHandle Renderer::createMesh(std::span<const Vertex> vertices, std::span<cons
 MeshHandle Renderer::createMesh(const MeshData& mesh) {
     const MeshHandle handle = createMesh(mesh.vertices, mesh.indices);
     if (handle.valid() && !mesh.uv1.empty()) setMeshUv1(handle, mesh.uv1);
+    if (handle.valid() && !mesh.lightmapUv.empty()) setMeshLightmapUv(handle, mesh.lightmapUv);
     return handle;
+}
+
+void Renderer::setMeshLightmapUv(MeshHandle mesh, std::span<const glm::vec2> uv) {
+    if (!mesh.valid() || uv.empty()) return;
+    std::shared_lock swap(m->swapMutex);
+    m->backend->setMeshLightmapUv(mesh, uv);
+    if (m->swappable) {
+        std::lock_guard lock(m->journalMutex);
+        if (auto it = m->meshes.find(mesh.id); it != m->meshes.end())
+            it->second.lightmapUv.assign(uv.begin(), uv.end());
+    }
 }
 
 void Renderer::setMeshUv1(MeshHandle mesh, std::span<const glm::vec2> uv1) {
@@ -667,6 +681,8 @@ void Renderer::setMaterialQuality(MaterialQuality quality) {
     m->backend->setMaterialQuality(quality);
 }
 MaterialQuality Renderer::materialQuality() const { return m->materialQuality; }
+void Renderer::setBakedLighting(bool enabled) { m->bakedLighting.store(enabled, std::memory_order_relaxed); }
+bool Renderer::bakedLighting() const { return m->bakedLighting.load(std::memory_order_relaxed); }
 
 // ---- Texture quality (A01) ----
 
@@ -741,12 +757,24 @@ void Renderer::drawMesh(
     MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
     const DrawMaterial& material, RenderInstanceKey key) {
     if (key.valid()) key.meshGeneration = m->meshGeneration(mesh);
+    if (material.indirect && !m->bakedLighting.load(std::memory_order_relaxed)) {
+        DrawMaterial environment = material;
+        environment.indirect = nullptr;
+        m->backend->drawMesh(mesh, transform, texture, tint, environment, key);
+        return;
+    }
     m->backend->drawMesh(mesh, transform, texture, tint, material, key);
 }
 void Renderer::drawSkinnedMesh(
     MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
     const glm::vec4& tint, const DrawMaterial& material, RenderInstanceKey key) {
     if (key.valid()) key.meshGeneration = m->meshGeneration(mesh);
+    if (material.indirect && !m->bakedLighting.load(std::memory_order_relaxed)) {
+        DrawMaterial environment = material;
+        environment.indirect = nullptr;
+        m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, environment, key);
+        return;
+    }
     m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material, key);
 }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
@@ -861,7 +889,8 @@ RendererMemoryReport Renderer::memoryReport() const {
         report.cpuCopyBytes += mesh.vertices.size() * sizeof(Vertex) + mesh.indices.size() * sizeof(uint32_t);
     for (const auto& [id, lods] : m->meshLods) report.cpuCopyBytes += lods.second.size() * sizeof(uint32_t);
     for (const auto& [id, skin] : m->skins) report.cpuCopyBytes += skin.size() * sizeof(VertexSkin);
-    for (const auto& [id, mesh] : m->meshes) report.cpuCopyBytes += mesh.uv1.size() * sizeof(glm::vec2);
+    for (const auto& [id, mesh] : m->meshes)
+        report.cpuCopyBytes += (mesh.uv1.size() + mesh.lightmapUv.size()) * sizeof(glm::vec2);
     std::lock_guard records(m->residencyMutex);
     for (const auto& [id, r] : m->records)
         if (r->source) report.cpuCopyBytes += r->source->bytes.size();

@@ -375,7 +375,9 @@ void writeScene(std::ostream& out, const World& world, const Assets& assets, con
                 const void* value = static_cast<const char*>(data) + f.offset;
                 const bool unset =
                     (f.type == FieldType::Material && !static_cast<const MaterialHandle*>(value)->valid()) ||
-                    (f.type == FieldType::MaterialOverrides && static_cast<const MaterialOverrides*>(value)->empty());
+                    (f.type == FieldType::MaterialOverrides && static_cast<const MaterialOverrides*>(value)->empty()) ||
+                    (info.id == instanceId && f.type == FieldType::String && f.name == "bake_id" &&
+                     static_cast<const std::string*>(value)->empty());
                 if (!partial && unset) continue;
                 if (!header) out << "  " << info.name << '\n';
                 header = true;

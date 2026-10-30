@@ -169,6 +169,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
         checkMaterialOverrides(world, scene.string(), problems);
+        checkLighting(world, shown, problems);
         checkAnimators(world, scene.string(), problems);
         checkCircuits(world, scene.string(), problems, usedCircuits);
         checkNetworkScene(world, shown, problems);

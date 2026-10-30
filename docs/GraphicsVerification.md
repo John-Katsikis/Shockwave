@@ -27,6 +27,7 @@ frame 30 is the same moment on every run.
 | material-instances | Main Camera | the `materials` quads, each part drawn through a `.swmaterial` that only names its source: must match `materials` exactly (A02) |
 | material-layers | Main Camera | stone cubes plain, with a detail normal layer, and with moss as a second layer; masked foliage near and far (A02) |
 | ambient-occlusion | Main Camera | a wall corner, a box on the floor, a thin pole 7 m in front of a far wall, a black glowing block and sky (G04); `-zero` has `ao_intensity 0`, `-direct` no ambient light |
+| room-doorway-baked | Inside, Outside | `room-doorway` with its room as static lightmap receivers, the sun and lamp bounced, and a probe volume for the unbaked ball (G05, G06). Its bake isn't committed: the render test bakes a copy |
 
 `Tools/generate.py` writes the textures, glTF models, material files, and the dense,
 materials, material and ambient occlusion scenes with only the Python standard library; the other scenes are written by hand. `Content/LICENSE.md` covers
@@ -300,6 +301,69 @@ all 52 baseline images identical (8 by `--image-diff`, RMSE 0; 44 by mean colour
 baseline stands. The ambient occlusion scenes aren't in the capture: with the setting
 off they'd only show the old frame, and `graphics_fixtures_render` covers them on.
 
+## G05 + G06: lightmaps and diffuse probe volumes
+
+- **Identity.** `BakeGeometry` (static receivers and occluders), `BakeLight`,
+  `DiffuseProbeVolume` and `BakedLighting` components; persistent 128-bit `binding_id`s
+  made when the component is added or an object duplicated, and a `bake_id` on prefab
+  copies from which their parts' ids are derived (namespace `shockwave.bake.prefab.1`).
+  `lighting_identity` checks that ids survive saving and reordering, that missing,
+  malformed and duplicate ids are reported and only `assign` fixes them, that two copies
+  of one prefab get distinct ids by the documented derivation, and that a receiver's hash
+  covers mirrored and stretched transforms and its colour but not its name.
+- **Files.** `Content/Lighting/<scene>.swlighting` (strict text manifest, errors with
+  file:line), `Lightmap_NNN.ktx2` (standard KTX2, RGBA16F, one level),
+  `Receivers.swbake` and `Probes.swprobe` (bounded binary readers); docs/LightingSchema.md
+  is generated from the code. Published through a hidden folder and swapped only when
+  every file reads back with its hash; `lighting_format` covers the round trips, every
+  truncation, wrong magic and overflowing counts, and JSON export/import giving back the
+  same bytes.
+- **Bake.** xatlas per receiver at its texels_per_meter, shelf-packed into power-of-two
+  atlases; a binned-SAH BVH; cosine-weighted paths with Hammersley first bounces, seeded
+  from binding, texel and seed only. `lighting_bake` checks, against closed forms:
+  a constant environment bakes that constant, black bakes zero, the receiver's own direct
+  light is never baked, a red wall bounces red, 0/1/2 bounces order correctly, a closed
+  box bakes zero, alpha-masked holes let light through, the same seed gives the same bytes
+  on 1 and 4 threads, cancel leaves the last bake, and editing one receiver invalidates it
+  alone while a light change invalidates all.
+- **Probes.** SH9 irradiance / pi plus 8 x 8 octahedral distance moments per probe;
+  probes with a quarter of their rays on backfaces are invalid. Sampling is trilinear x
+  validity x Chebyshev visibility, normalised, falling back to the nearest valid visible
+  probe; volumes by priority then size, with boundary blending to the environment.
+  `diffuse_probes` checks interpolation, invalid and hidden probes, the wall (no leak
+  through), priorities, blending, rotated volumes and a doorway walk with no jump or black
+  frame.
+- **Rendering.** `mesh.frag`'s `surroundingsIrradiance` reads the lightmap (level 0,
+  clamped half a texel in) or the draw's probe SH instead of the irradiance cube, in the
+  same units; nothing else in shading changes. Receivers draw a re-indexed copy of their
+  mesh with lightmap UVs; everything else samples probes at its bounds centre. The
+  `baked_lighting` setting (default true) strips both in `Renderer::drawMesh`, so false is
+  the old path. `player --view indirect` and the editor's *Indirect diffuse* view show it.
+- **Tools.** `player --bake-lighting`, `--lighting-info [--json]`, `--lighting-assign-ids`,
+  `--lighting-schema`, `--lighting-export`/`--lighting-import`; `--check` fails on missing,
+  malformed or duplicate ids and damaged bakes, and warns about missing or stale ones.
+  Window > Lighting bakes a copy of the scene on a thread with progress and cancel.
+- **Plugin ABI** is now 8 (`RenderBackend::setMeshLightmapUv`, `DrawMaterial::indirect`).
+
+`graphics_fixtures_render` now also bakes a copy of `room-doorway-baked` (preview, seed 7)
+twice and requires identical lightmap bytes; `--lighting-info` says missing, then ready;
+`--check` passes without bake warnings; `baked_lighting false` matches `room-doorway`
+exactly (RMSE 0); the bake changes the lit image (RMSE over 2); in the indirect view the
+ceiling beside the red wall is at least 10 steps redder than beside the green one, and
+not red unbaked; the ball (not baked) changes through the probes; and after moving the
+box, `--lighting-info` says stale while the rest of the room keeps its light.
+
+**Measured** on llvmpipe at 640x360 (Inside): baked against unbaked, RMSE 24.8 with 95%
+of pixels changed (the room's inside is lit by its own bounces, not the open sky); the
+ceiling beside the red wall reads red minus green 28 baked and 5 unbaked (1 beside the green wall); off against
+unbaked RMSE 0. The bake takes 0.22 s preview and 1.2 s final on 4 threads: 9 receivers,
+8899 texels in one 512 x 512 atlas (2 MiB), 324 probes (85 inside walls, invalid),
+198 KiB.
+
+Result: `capture.py --compare` (baked_lighting on, no baseline scene has a bake) found all
+56 baseline images identical (9 by `--image-diff`, RMSE 0; 47 by mean colour), so the
+baseline stands. `room-doorway-baked` isn't in the capture: its bake is made by the test.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
@@ -320,7 +384,6 @@ off they'd only show the old frame, and `graphics_fixtures_render` covers them o
   Optimisation window).
 - A MeshRenderer with a material ignores its own texture, roughness and metallic but still
   applies its tint and tiling.
-- Generated lightmap UVs (a third stream) are G05's.
 - The editor grid is drawn in the scene pass, so FXAA smooths it too.
 - Images waiting to be freed after a change aren't counted in the memory report.
 - Ambient occlusion follows geometric normals only: normal maps don't add occlusion of
@@ -328,6 +391,11 @@ off they'd only show the old frame, and `graphics_fixtures_render` covers them o
   no temporal accumulation (G10's TAA will smooth it further) and no bent normals.
 - With ambient occlusion on, opaque geometry's vertices are processed twice (prepass and
   shading). Blended surfaces never receive it.
+- Baked lighting: lightmaps are non-directional (one colour a texel), moving objects take
+  one probe sample at their centre, the bake ignores emissive textures and samples base
+  colour textures with wrap at full size, copies of one mesh each get their own lightmap
+  space, and lightmaps are read at level 0 only. Preview bakes (64 paths) are visibly
+  noisy; there's no denoiser.
 - The AO debug view writes occlusion to the display as it is, so the sRGB encoding shows
   middling values lighter than their number (0.5 reads as about 188 of 255).
 

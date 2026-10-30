@@ -43,6 +43,9 @@ struct MeshData {
     // Kept beside the vertices rather than in Vertex, so meshes without it cost nothing;
     // materials pick it with TextureBinding::uvSet. Renderer::setMeshUv1 uploads it.
     std::vector<glm::vec2> uv1{};
+    // Where each vertex is in a baked lightmap atlas (G05), one per vertex, or empty. Only
+    // meshes made for baked receivers have it; Renderer::setMeshLightmapUv uploads it.
+    std::vector<glm::vec2> lightmapUv{};
 };
 
 // Built-in shapes, centred on the origin.
