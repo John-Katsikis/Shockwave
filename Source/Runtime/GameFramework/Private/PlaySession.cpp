@@ -20,6 +20,9 @@
 namespace shockwave {
 
 Graphics& GameContext::graphics() const { return engine ? engine->graphics() : subsystems.get<Graphics>(); }
+void GameContext::cutCamera() const {
+    if (engine) engine->renderer().cutCamera();
+}
 
 AudioWorld& GameContext::audio() const { return subsystems.get<AudioWorld>(); }
 AudioWorld* PlaySession::audio() const { return m_subsystems.find<AudioWorld>(); }

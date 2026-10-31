@@ -288,6 +288,15 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Motion vectors and TAA (G09, G10) on the fixtures: the debug views' values, TAA against
+    # a supersampled image, determinism, and nothing temporal when it's off.
+    add_test(NAME graphics_temporal_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsTemporal
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTemporalCheck.cmake)
+    set_tests_properties(graphics_temporal_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
     # The same report without a GPU: the null renderer says what it can't do, and why.
     # It plays a few frames, so like the other headless play tests it needs Xvfb.
     find_program(SHOCKWAVE_XVFB_RUN xvfb-run)

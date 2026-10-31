@@ -106,13 +106,13 @@ int main() {
             "setters reach the fields");
         {
             auto taa = edited;
-            check(setGraphicsSetting(taa, "anti_aliasing", "taa", error) && taa.antiAliasing == AntiAliasing::Taa,
-                  "taa accepted");
+            check(
+                setGraphicsSetting(taa, "anti_aliasing", "taa", error) && taa.antiAliasing == AntiAliasing::Taa,
+                "taa accepted");
         }
         auto unchanged = edited;
         check(!setGraphicsSetting(edited, "anti_aliasing", "msaa", error) && edited == unchanged, "msaa refused");
-        check(error.find("taa") != std::string::npos,
-              "anti_aliasing refusal lists the choices");
+        check(error.find("taa") != std::string::npos, "anti_aliasing refusal lists the choices");
         for (const char* bad : {"2", "-0.5", "nan", "inf", "x"})
             check(!setGraphicsSetting(edited, "bloom_scale", bad, error) && edited == unchanged, "bloom_scale range");
         check(!setGraphicsSetting(edited, "no_such_key", "1", error), "unknown key refused");
@@ -163,7 +163,8 @@ int main() {
                 graphicsPreset(GraphicsPreset::Ultra).ambientOcclusion == AmbientOcclusion::High,
             "ambient occlusion is off by default and in the low preset, then rises with the presets");
         check(
-            ambientOcclusionSamples(AmbientOcclusion::Off) == 0 && ambientOcclusionSamples(AmbientOcclusion::Low) == 8 &&
+            ambientOcclusionSamples(AmbientOcclusion::Off) == 0 &&
+                ambientOcclusionSamples(AmbientOcclusion::Low) == 8 &&
                 ambientOcclusionSamples(AmbientOcclusion::Medium) == 16 &&
                 ambientOcclusionSamples(AmbientOcclusion::High) == 32,
             "ambient occlusion samples per tier");

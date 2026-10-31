@@ -16,7 +16,7 @@ restart, and none waits for the GPU to go idle except where noted in Graphics.md
 |---|---|---|---|---|---|
 | render_scale | 0.25..2 | 1 | preset | targets | Scene resolution as a multiple of the output. Below 1 is faster and softer; above 1 supersamples. Game UI always draws at output resolution. |
 | shadow_quality | off, low, medium, high, ultra | high | preset | targets | Shadow map size and filtering. Off keeps direct lighting but draws no shadow maps. |
-| anti_aliasing | none, fxaa | none | preset | targets | Smooths jagged edges. FXAA is a fast pass after tone mapping; it never touches game UI. TAA comes later (batch G10). |
+| anti_aliasing | none, fxaa, taa | none | preset | targets | Smooths jagged edges. FXAA is a fast pass after tone mapping. TAA jitters the camera and blends each frame with the last ones: steadier edges and fine detail, at the cost of some softness and ghosting on fast motion. Neither touches game UI, and they're never stacked. |
 | bloom_quality | off, low, medium, high | high | preset | targets | How finely bloom is filtered: low starts at quarter resolution with 4 levels, medium at half with 5, high at half with 6. Off skips bloom and frees its memory. The scene's bloom intensity stays as authored. |
 | bloom_scale | 0..1 | 1 |  | uniform | Your multiplier on each scene's bloom intensity: 1 is as the artist set it, 0 turns bloom off. |
 | ambient_occlusion | off, low, medium, high | off | preset | targets | Darkens the light from the surroundings in creases, corners and under objects, worked out on the screen at half resolution: low takes 8 samples a pixel, medium 16, high 32. Direct light, shadows and glowing surfaces are unaffected. Off skips it and frees its memory. |

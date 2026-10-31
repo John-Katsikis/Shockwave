@@ -373,9 +373,11 @@ private:
         hooks.reloaded = [this, &game](Entity pawn) {
             if (pawn == localPawn(game)) game.audio().playClip("Audio/arena-reload.wav", {.volume = 0.25f});
         };
-        hooks.respawned = [&game](Entity pawn) {
-            // A new life (or a teleport): clients drop anything from the old one.
+        hooks.respawned = [this, &game](Entity pawn) {
+            // A new life (or a teleport): clients drop anything from the old one, and the
+            // camera jumps, so TAA starts afresh rather than smearing the old view in.
             if (game.network().online() && game.network().identity(pawn)) (void)game.network().respawn(pawn);
+            if (pawn == localPawn(game)) game.cutCamera();
         };
     }
 

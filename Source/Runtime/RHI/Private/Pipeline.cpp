@@ -73,9 +73,8 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth.depthTestEnable = desc.depthFormat != VK_FORMAT_UNDEFINED;
     // Blended surfaces test depth but never write it, so what's behind still shows.
-    depth.depthWriteEnable =
-        desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend && !desc.premultipliedAlpha &&
-        !desc.maxBlend;
+    depth.depthWriteEnable = desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend &&
+                             !desc.premultipliedAlpha && !desc.maxBlend;
     depth.depthCompareOp = desc.depthCompare;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
@@ -98,7 +97,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED;
-    const uint32_t colorCount = !hasColor                                          ? 0u
+    const uint32_t colorCount = !hasColor                                       ? 0u
                                 : desc.thirdColorFormat != VK_FORMAT_UNDEFINED  ? 3u
                                 : desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2u
                                                                                 : 1u;

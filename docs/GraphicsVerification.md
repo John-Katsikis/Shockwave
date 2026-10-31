@@ -44,7 +44,7 @@ build/bin/player --project Tests/fixtures/graphics/Graphics.swproject --no-user-
 # Numbers for an image (or part of it: x,y,width,height as fractions), and how far apart
 # two are (exit 1 past the RMSE tolerance):
 build/bin/player --image-stats /tmp/motion.png [--region 0.5,0,0.45,0.08]
-build/bin/player --image-diff reference.png candidate.png --tolerance 1.0 [--json out.json]
+build/bin/player --image-diff reference.png candidate.png --tolerance 1.0 [--region x,y,w,h] [--json out.json]
 
 # Every scene, camera, size and render scale, plus paced and unpaced benchmarks:
 python3 Tests/fixtures/graphics/Tools/capture.py --out /tmp/capture
@@ -71,7 +71,7 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 | `render_graph` | no | barriers for mip chains, compute to fragment/vertex/indirect, reads in several stages, read-only depth, history ping-pong; contradictory uses in one pass are refused |
 | `graphics_fixtures` | no | every fixture scene passes `--check` |
 | `graphics_fixtures_render` | yes | every scene renders (not black); two `--fixed-step` runs are identical; frame 10 and 40 differ; `--graphics-report` has memory and settings, and every draw has a stable instance key; FXAA brings thin-geometry closer to a 2x supersampled image, touches under 10% of pixels and keeps the brightness; `anti_aliasing none` matches the default; bloom and FXAA off leave no pass and no memory, each bloom tier has both; `materials` matches `materials-expected` in the unlit, normals and lit views; `material-instances` matches `materials` exactly in all three; `material_quality low` changes `material-layers` (the detail goes) but under 10% of it; `texture_quality low` shrinks material textures, settles, and changes the image; ambient occlusion (below) |
-| `graphics` | no | every settings key round-trips; `taa` and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; only the Low preset sets `material_quality low`; hand-tuned settings read as Custom; `status()` |
+| `graphics` | no | every settings key round-trips; `taa` is accepted, an unknown anti-aliasing and out-of-range `bloom_scale` are refused; presets set FXAA and bloom and keep bloom strength; only the Low preset sets `material_quality low`; hand-tuned settings read as Custom; `status()` |
 | `graphics_cli` | no | `--graphics-set`, `--anti-aliasing`, refused values with file and line, `--graphics-info --json` |
 | `graphics_materials_info` | no | `--material-info` on materials.glb: KHR_texture_transform values as authored, UV sets (including KHR's own `texCoord`), colour spaces, wrap and filter modes; a missing UV1 warns on import and fails `--check`; `--texture-info` sizes and bytes per quality; `--material-info` on `.swmaterial` files: the parent chain, inherited and overridden values, slots, features and what low quality drops; a missing parent, a loop and a typo each fail with the right kind of problem; `--material-schema` |
 | `screen_space` | no | the screen-space contract (G03): the view's corners land on UV (0, 0) and (1, 1) with v down; positions come back from reverse-Z depth at the near plane, far away, at every corner, for tall and wide views and orthographic ones; depth 0, negative and NaN depth are background; a texel centre at render scale 0.5, 1 and 2 lands within a texel; octahedral normals round-trip, also through 16 bits |
@@ -79,6 +79,8 @@ driver (llvmpipe), or set `SDL_VIDEO_DRIVER=offscreen`.
 | `texture_quality` | no | exact BC7 and RGBA8 chain bytes, the 32-pixel floor, explicit LOD mapping, CPU tails averaged in linear light, sliced chains, UV transform maths, the sampler cache; then low, a reload at low, three changes in one frame, a change while one is running, and back to ultra, on the null renderer |
 | `texture_quality_vulkan` | yes | the same transitions with real images swapped in while they're drawn |
 | `graphics_report_null` | no (runs under Xvfb, so Linux only, like the other headless play tests) | the report works on the null renderer |
+| `temporal` | no | the motion and TAA contract (G09, G10): Halton jitter and its projection, motion and both history reads, reset rules, YCoCg, box clipping, history weights, depth tolerance |
+| `graphics_temporal_render` | yes | the motion and reactive views' values, TAA against a 2x supersampled image, determinism with `--fixed-step`, TAA's passes and memory in the report, none of them with it off |
 | `network_session` | no | includes the fixed-step clock: one tick a frame whatever the real time |
 
 ## Baseline (G00)
@@ -472,6 +474,62 @@ pixels at 1280x720), as intended. With `decals_quality off`, decal-wall at 1280x
 the old committed reference exactly (RMSE 0). decal-wall's reference image and its
 baseline.json entries were then re-recorded from that capture; nothing else was.
 
+## G09 + G10: motion vectors and temporal anti-aliasing
+
+- **Contract.** `Renderer/Temporal.h` holds the CPU side of every rule: the centred
+  Halton(2, 3) jitter over eight frames, the jittered projection (J pixels right and down,
+  depth untouched, perspective and orthographic), unjittered motion (`current - previous`
+  UV), reading a raw previous frame (`previousHistoryUv`, with both jitters) and reading
+  the resolved history (`resolvedHistoryUv = uv - motion`), the history reset rules in
+  order (first frame, view, size, projection, camera cut, mode), and the resolve's maths
+  (YCoCg, clipping along the line to the box centre, the 0.9 / 0.7 / reactive weights, the
+  depth tolerance). `temporal` checks all of it against hand-worked values, including a
+  camera moving 0.5 m reading exactly 12.5 pixels and a jittered sample reprojecting onto
+  last frame's jittered sample.
+- **Renderer.** With `anti_aliasing taa` (or the motion or reactive view), `setCamera`
+  jitters the projection (culling keeps the unjittered one); each keyed draw finds its
+  previous model matrix by `RenderInstanceKey`, and skinned draws are skinned a second
+  time with last frame's joints; the surface prepass writes RGBA16F motion (uv motion,
+  previous view distance, validity) as a third target; a *reactive mask* pass (R8, MAX
+  blended) draws blended meshes' coverage and particles' change after the particles; the
+  *taa* compute pass resolves into one of two RGBA16F histories (plus R32F view
+  distances) and *taa resolve copy* puts it back in the scene image, so bloom and tone
+  mapping read the resolved image. History images go through the render graph like any
+  other image (the reads not discarded). Memory counts under *temporal history*. The
+  report's `temporal` block and the `anti_aliasing` detail give the last reset and why.
+  With `none` or `fxaa` there's no jitter, no prepass for it, no passes and no memory.
+- **Spec note.** 13.3's formula with both jitters is right for reading a previous *raw*
+  frame. TAA's history is the resolved image on the unjittered grid, so it's read at
+  `uv - motion`; the first version used the jittered formula and drifted and blurred the
+  checker floor (RMSE against the supersampled image 12.2, against 4.95 without TAA).
+- **Engine and tools.** `anti_aliasing` accepts `taa` (presets keep FXAA);
+  `Renderer::cutCamera` and `GameContext::cutCamera` (Arena calls it on the local
+  player's respawn); `Renderer::temporalStats`; `player --view motion|reactive`,
+  `--anti-aliasing taa`; `--image-diff --region`; the editor's *Motion vectors* and
+  *Reactive mask* shading views; Arena's menu cycles none, FXAA, TAA.
+  docs/TemporalAntiAliasing.md is the user guide.
+- **Plugin ABI** is now 11 (`RenderBackend::cutCamera`, `temporalStats`, `DebugView`,
+  `AntiAliasing::Taa`).
+
+`graphics_temporal_render` checks, on the fixtures: the motion view reads still (127, 127,
+255) across the fixed camera's floor, the bending skinned strip moves (red under 125, so
+its previous pose was used), and the orbiting camera's floor isn't still; the reactive
+view is over 50 on the transparent panel and 0 on the floor; TAA brings thin-geometry's
+geometry (the top 42%, above the floor) closer to the 2x supersampled image than no
+anti-aliasing and keeps the mean brightness within 2; two TAA runs of the moving scene
+with `--fixed-step` are identical; with TAA the report shows the *motion vectors*,
+*reactive mask* and *taa resolve copy* passes, temporal memory, no reset after the first
+frames and every draw with a previous pose; with `none` there's no temporal pass, no
+prepass (AO off) and 0 bytes.
+
+**Measured** on llvmpipe. thin-geometry at 640x360, 10 frames, against the same view at
+render scale 2, geometry region: none RMSE 4.64, TAA 3.29 (29% closer). The whole image is
+further (4.95 none, 5.76 TAA): the floor's checker texture near the horizon is sharper at
+the 2x reference's finer mip, and TAA's jitter softens it a little more. The orbiting
+motion scene at 320x180, 40 frames: none 3.47, TAA 3.70 against its 2x render, the gap
+being a moving shadow on the still floor, which has no motion of its own (a known limit).
+Temporal memory is 33 bytes a pixel: 1.8 MiB at 320x180, 7.3 MiB at 640x360.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
@@ -501,7 +559,7 @@ baseline.json entries were then re-recorded from that capture; nothing else was.
 - Images waiting to be freed after a change aren't counted in the memory report.
 - Ambient occlusion follows geometric normals only: normal maps don't add occlusion of
   their own (their material occlusion map still does). There's no specular occlusion,
-  no temporal accumulation (G10's TAA will smooth it further) and no bent normals.
+  no temporal accumulation of its own (TAA smooths it when it's on) and no bent normals.
 - With ambient occlusion on, opaque geometry's vertices are processed twice (prepass and
   shading). Blended surfaces never receive it.
 - Baked lighting: lightmaps are non-directional (one colour a texel), moving objects take
@@ -509,6 +567,12 @@ baseline.json entries were then re-recorded from that capture; nothing else was.
   colour textures with wrap at full size, copies of one mesh each get their own lightmap
   space, and lightmaps are read at level 0 only. Preview bakes (64 paths) are visibly
   noisy; there's no denoiser.
+- TAA: surfaces whose shading changes without moving (a shadow moving over a still floor,
+  animated emissive) have zero motion, so colour clipping alone limits their ghosting;
+  emissive changes aren't in the reactive mask. Orthographic views skip depth rejection.
+  No first-person weapon view of its own, no finer texture mip under TAA, and it isn't an
+  upscaler (render scale below 1 resolves at the lower size). Camera cuts need the game to
+  say so (`cutCamera`); only a new view, size, projection or mode resets by itself.
 - The AO debug view writes occlusion to the display as it is, so the sRGB encoding shows
   middling values lighter than their number (0.5 reads as about 188 of 255).
 

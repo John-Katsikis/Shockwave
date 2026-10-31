@@ -45,7 +45,9 @@ glm::mat4 jitterProjection(const glm::mat4& projection, const glm::vec2& jitter,
 
 // ---- Motion and reprojection ----
 
-inline glm::vec2 motionVector(const glm::vec2& currentUv, const glm::vec2& previousUv) { return currentUv - previousUv; }
+inline glm::vec2 motionVector(const glm::vec2& currentUv, const glm::vec2& previousUv) {
+    return currentUv - previousUv;
+}
 inline glm::vec2 previousHistoryUv(
     const glm::vec2& uv, const glm::vec2& motion, const glm::vec2& previousJitter, const glm::vec2& previousExtent,
     const glm::vec2& currentJitter, const glm::vec2& currentExtent) {

@@ -189,8 +189,7 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
             for (int i = 0; i < 2; ++i)
                 bytes += imageBytes(temporalTargets.color[i]) + imageBytes(temporalTargets.distance[i]);
             std::snprintf(
-                detail, sizeof(detail),
-                "at %ux%u before bloom, jitter cycle %u; last reset: %s (%u so far); %.1f MiB",
+                detail, sizeof(detail), "at %ux%u before bloom, jitter cycle %u; last reset: %s (%u so far); %.1f MiB",
                 temporalTargets.motion.extent.width, temporalTargets.motion.extent.height, kTaaJitterCycle,
                 historyResetName(lastTemporalStats.reset), lastTemporalStats.resets,
                 static_cast<double>(bytes) / (1024.0 * 1024.0));

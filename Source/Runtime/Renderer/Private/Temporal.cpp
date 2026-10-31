@@ -29,8 +29,8 @@ glm::mat4 jitterProjection(const glm::mat4& projection, const glm::vec2& jitter,
 }
 
 const char* historyResetName(HistoryReset reset) {
-    constexpr const char* names[] = {"none",          "first frame", "view changed", "resized",
-                                     "projection changed", "camera cut", "mode changed"};
+    constexpr const char* names[] = {"none",       "first frame", "view changed", "resized", "projection changed",
+                                     "camera cut", "mode changed"};
     return names[std::min<uint32_t>(static_cast<uint32_t>(reset), 6)];
 }
 

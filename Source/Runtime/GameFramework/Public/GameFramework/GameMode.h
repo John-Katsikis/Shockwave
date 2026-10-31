@@ -41,6 +41,10 @@ struct GameContext {
         return subsystems.find<T>();
     }
     Graphics& graphics() const;   // player quality and pacing; main thread, see docs/Graphics.md
+    // This frame's camera jumped (a teleport, a respawn, a cut between shots): temporal
+    // anti-aliasing starts afresh instead of smearing the old view into the new one
+    // (docs/TemporalAntiAliasing.md). Main thread; does nothing without a window.
+    void cutCamera() const;
     AudioWorld& audio() const;   // always there during Play
     // Particle effects (docs/Effects.md). Always there during Play; without a window it
     // does nothing, so game code doesn't need to check.

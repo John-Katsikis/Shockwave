@@ -106,9 +106,10 @@ void GraphicsMenu::refresh(GameContext& game) {
     std::snprintf(text, sizeof(text), "Render scale: %.0f%%", m_draft.renderScale * 100);
     label("graphics-scale", text);
     label("graphics-shadows", std::string("Shadows: ") + shadowQualityName(static_cast<int>(m_draft.shadows)));
-    label("graphics-aa", m_draft.antiAliasing == AntiAliasing::Fxaa  ? "Anti-aliasing: FXAA"
-                         : m_draft.antiAliasing == AntiAliasing::Taa ? "Anti-aliasing: TAA"
-                                                                     : "Anti-aliasing: none");
+    label(
+        "graphics-aa", m_draft.antiAliasing == AntiAliasing::Fxaa  ? "Anti-aliasing: FXAA"
+                       : m_draft.antiAliasing == AntiAliasing::Taa ? "Anti-aliasing: TAA"
+                                                                   : "Anti-aliasing: none");
     label("graphics-bloom", std::string("Bloom: ") + bloomQualityName(m_draft.bloomQuality));
     std::snprintf(text, sizeof(text), "Bloom strength: %.0f%%", m_draft.bloomScale * 100);
     label("graphics-bloom-scale", text);

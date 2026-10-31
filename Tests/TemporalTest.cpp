@@ -37,12 +37,14 @@ glm::vec2 project(const glm::mat4& viewProjection, const glm::vec3& world) {
 }
 
 void testHalton() {
-    check(near(halton(1, 2), 0.5f) && near(halton(2, 2), 0.25f) && near(halton(3, 2), 0.75f) &&
-              near(halton(4, 2), 0.125f),
-          "halton base 2");
-    check(near(halton(1, 3), 1.0f / 3.0f) && near(halton(2, 3), 2.0f / 3.0f) && near(halton(3, 3), 1.0f / 9.0f) &&
-              near(halton(4, 3), 4.0f / 9.0f),
-          "halton base 3");
+    check(
+        near(halton(1, 2), 0.5f) && near(halton(2, 2), 0.25f) && near(halton(3, 2), 0.75f) &&
+            near(halton(4, 2), 0.125f),
+        "halton base 2");
+    check(
+        near(halton(1, 3), 1.0f / 3.0f) && near(halton(2, 3), 2.0f / 3.0f) && near(halton(3, 3), 1.0f / 9.0f) &&
+            near(halton(4, 3), 4.0f / 9.0f),
+        "halton base 3");
     check(halton(0, 2) == 0.0f, "halton of 0");
 
     // Frame 0 is index 1: (0.5 - 0.5, 1/3 - 0.5).
@@ -50,8 +52,9 @@ void testHalton() {
     check(near(taaJitter(1), {-0.25f, 1.0f / 6.0f}), "frame 1 jitter");
     // Index 8: 1/16 in base 2, 22 (8/9) in base 3.
     check(near(taaJitter(7), {0.0625f - 0.5f, 8.0f / 9.0f - 0.5f}), "frame 7 jitter");
-    check(taaJitter(kTaaJitterCycle) == taaJitter(0) && taaJitter(kTaaJitterCycle + 3) == taaJitter(3),
-          "jitter repeats every cycle");
+    check(
+        taaJitter(kTaaJitterCycle) == taaJitter(0) && taaJitter(kTaaJitterCycle + 3) == taaJitter(3),
+        "jitter repeats every cycle");
     glm::vec2 sum(0.0f);
     for (uint32_t i = 0; i < kTaaJitterCycle; ++i) {
         const glm::vec2 j = taaJitter(i);
@@ -103,8 +106,7 @@ void testMotion() {
     // Reprojecting into last frame's jittered image: the current sample at its jittered uv
     // lands on the previous frame's jittered position of the same point.
     const glm::vec2 currentJitter = taaJitter(3), previousJitter = taaJitter(2);
-    const glm::vec2 currentJittered =
-        project(jitterProjection(projection, currentJitter, extent) * currentView, point);
+    const glm::vec2 currentJittered = project(jitterProjection(projection, currentJitter, extent) * currentView, point);
     const glm::vec2 previousJittered =
         project(jitterProjection(projection, previousJitter, extent) * previousView, point);
     // The motion target is written at the jittered uv; motion itself is unjittered.
@@ -116,9 +118,11 @@ void testMotion() {
     check(resolvedHistoryUv(centre, glm::vec2(0.0f)) == centre, "a still pixel reads its own history texel");
     check(near(resolvedHistoryUv(current, motion), previous, 1e-6f), "resolved history follows the motion");
     // Static camera, no motion: only the jitter difference remains.
-    check(near(previousHistoryUv({0.3f, 0.6f}, glm::vec2(0.0f), {0.5f, 0.0f}, extent, {0.0f, 0.0f}, extent),
-               {0.3f + 0.5f / 400.0f, 0.6f}),
-          "jitter difference alone");
+    check(
+        near(
+            previousHistoryUv({0.3f, 0.6f}, glm::vec2(0.0f), {0.5f, 0.0f}, extent, {0.0f, 0.0f}, extent),
+            {0.3f + 0.5f / 400.0f, 0.6f}),
+        "jitter difference alone");
 }
 
 void testResets() {
@@ -140,19 +144,22 @@ void testResets() {
     // The first matching reason wins.
     other.extent = {1, 1};
     check(historyReset(current, other, true) == HistoryReset::ViewChanged, "view change reported before resize");
-    check(std::string(historyResetName(HistoryReset::None)) == "none" &&
-              std::string(historyResetName(HistoryReset::CameraCut)) == "camera cut" &&
-              std::string(historyResetName(HistoryReset::ModeChanged)) == "mode changed",
-          "reset names");
+    check(
+        std::string(historyResetName(HistoryReset::None)) == "none" &&
+            std::string(historyResetName(HistoryReset::CameraCut)) == "camera cut" &&
+            std::string(historyResetName(HistoryReset::ModeChanged)) == "mode changed",
+        "reset names");
 }
 
 void testResolve() {
     check(near(taaHistoryWeight(0.0f, 0.0f), 0.9f), "rest weight");
     check(near(taaHistoryWeight(2.0f, 0.0f), 0.8f), "half way to the motion weight");
-    check(near(taaHistoryWeight(4.0f, 0.0f), 0.7f) && near(taaHistoryWeight(40.0f, 0.0f), 0.7f),
-          "motion weight from 4 pixels on");
-    check(near(taaHistoryWeight(0.0f, 1.0f), 0.0f) && near(taaHistoryWeight(0.0f, 0.5f), 0.45f),
-          "reactive pulls the weight to 0");
+    check(
+        near(taaHistoryWeight(4.0f, 0.0f), 0.7f) && near(taaHistoryWeight(40.0f, 0.0f), 0.7f),
+        "motion weight from 4 pixels on");
+    check(
+        near(taaHistoryWeight(0.0f, 1.0f), 0.0f) && near(taaHistoryWeight(0.0f, 0.5f), 0.45f),
+        "reactive pulls the weight to 0");
     check(near(taaHistoryWeight(0.0f, 2.0f), 0.0f) && near(taaHistoryWeight(0.0f, -1.0f), 0.9f), "reactive clamped");
 
     check(near(taaDepthTolerance(0.2f), 0.01f) && near(taaDepthTolerance(50.0f), 0.5f), "depth tolerance");

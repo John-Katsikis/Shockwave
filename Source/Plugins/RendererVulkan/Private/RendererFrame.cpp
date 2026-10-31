@@ -751,8 +751,8 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         const auto historyOut = graph.import(
             "history", temporalTargets.color[w].image, VK_IMAGE_ASPECT_COLOR_BIT, historyColorState[w], true);
         const auto distanceOut = graph.import(
-            "history distance", temporalTargets.distance[w].image, VK_IMAGE_ASPECT_COLOR_BIT,
-            historyDistanceState[w], true);
+            "history distance", temporalTargets.distance[w].image, VK_IMAGE_ASPECT_COLOR_BIT, historyDistanceState[w],
+            true);
         graph.addPass(
             "taa",
             {{color, ImageUse::ComputeSampled},
@@ -836,8 +836,8 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     }
     // Kept when particles are drawn next, for their depth test, and for the reactive mask and TAA.
-    depthAttachment.storeOp = particleDraws.empty() && !temporalThisFrame ? VK_ATTACHMENT_STORE_OP_DONT_CARE
-                                                                          : VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.storeOp =
+        particleDraws.empty() && !temporalThisFrame ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     VkRenderingInfo rendering{};
