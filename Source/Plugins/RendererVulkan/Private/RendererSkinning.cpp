@@ -128,6 +128,15 @@ void VulkanRenderer::Impl::prepareSkinning(Frame& f) {
         }
     }
     if (vertexOffsets.empty()) return;
+    // Draws with a previous pose (G09) are skinned again with last frame's joints, after the rest.
+    auto meshOf = [&](const DrawCommand& draw) { return list(draw.skinList).skins[draw.skin].mesh; };
+    std::vector<uint32_t> previousJointOffsets, previousOffsets;   // per previous skin
+    for (const PreviousSkin& skin : previousSkins) {
+        previousJointOffsets.push_back(static_cast<uint32_t>(joints));
+        joints += skin.jointCount;
+        previousOffsets.push_back(static_cast<uint32_t>(vertices));
+        vertices += meshes[meshOf(gatheredDraws[skin.draw])].vertexCount;
+    }
 
     // Grow this frame's buffers when needed; the GPU is done with them (beginFrame waited).
     VmaAllocator allocator = context->allocator();
@@ -172,6 +181,23 @@ void VulkanRenderer::Impl::prepareSkinning(Frame& f) {
             dispatch.push.jointCount = job.jointCount;
             skinDispatches.push_back(dispatch);
         }
+    }
+    for (size_t s = 0; s < previousSkins.size(); ++s) {
+        const PreviousSkin& skin = previousSkins[s];
+        DrawCommand& draw = gatheredDraws[skin.draw];
+        const Mesh& mesh = meshes[meshOf(draw)];
+        const uint32_t firstJoint = previousJointOffsets[s];
+        std::memcpy(
+            f.joints + firstJoint, previousJoints.data() + skin.firstJoint, skin.jointCount * sizeof(glm::mat4));
+        SkinDispatch dispatch;
+        dispatch.push.source = mesh.vertexAddress;
+        dispatch.push.skin = mesh.skinAddress;
+        dispatch.push.joints = f.jointAddress + VkDeviceAddress(firstJoint) * sizeof(glm::mat4);
+        dispatch.push.target = f.skinnedAddress + VkDeviceAddress(previousOffsets[s]) * sizeof(Vertex);
+        dispatch.push.vertexCount = mesh.vertexCount;
+        dispatch.push.jointCount = skin.jointCount;
+        skinDispatches.push_back(dispatch);
+        draw.data.previousVertexBuffer = dispatch.push.target;
     }
     vk::check(
         vmaFlushAllocation(allocator, f.jointBuffer.allocation, 0, joints * sizeof(glm::mat4)), "vmaFlushAllocation");

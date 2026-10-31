@@ -6,6 +6,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Temporal.h>
 #include <Renderer/TextureData.h>
 
 #include <glm/glm.hpp>
@@ -183,6 +184,10 @@ public:
     // effects keep separate history per view; leave it out for a view without history.
     void setCamera(const glm::mat4& view, const glm::mat4& projection, RenderViewId id = {});
     RenderViewId currentView() const;   // the id passed with the last setCamera
+    // This frame's camera jumped (a teleport, a cut between shots, a respawn): temporal
+    // effects drop their history instead of smearing the old view into the new one. Same
+    // thread as setCamera, before the frame ends; a new RenderViewId does this by itself.
+    void cutCamera();
     // The camera set last, for systems that build geometry for it (particle effects).
     const glm::mat4& cameraView() const;
     const glm::mat4& cameraProjection() const;
@@ -289,6 +294,7 @@ public:
     uint32_t culledDraws() const;   // of those, outside the camera's view, so not drawn in the scene
     ParticleStats particleStats() const;   // last frame's particle upload (Renderer/Particles.h)
     uint32_t unkeyedDraws() const;   // of drawCount, draws without a RenderInstanceKey
+    TemporalStats temporalStats() const;   // last frame's motion vectors and TAA (Temporal.h)
 
     // ---- Capabilities, effective settings and memory (RenderTypes.h) ----
     // What the GPU supports that effects depend on: formats, indirect drawing, limits.

@@ -111,6 +111,13 @@ struct DrawData {
     // bits and of the second in the high 16; 0: the global environment only.
     uint reflections;
     uint decalLayers;   // G08: decal receiver layer bits (Renderer/Decals.h); 0 for blended draws
+    // G09: where the draw was last frame, for motion vectors: last frame's unjittered view
+    // projection times its model matrix, and its vertices then (a skinned draw's previous
+    // pose; 0: the same vertices as now). history 0: no previous pose, no motion written.
+    mat4 previousMvp;
+    uvec2 previousVertexBuffer;
+    uint history;
+    uint pad;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

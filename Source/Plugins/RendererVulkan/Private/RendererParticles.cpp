@@ -149,6 +149,19 @@ void VulkanRenderer::Impl::createParticlePipelines() {
         setBlend(blendAttachment, static_cast<ParticleBlend>(i));
         result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &particlePipelines[i]);
     }
+    // The reactive mask's (G09): one channel, the greatest of what each particle writes.
+    const VkBool32 reactive = VK_TRUE;
+    const VkSpecializationMapEntry entry{0, 0, sizeof(VkBool32)};
+    const VkSpecializationInfo specialization{1, &entry, sizeof(reactive), &reactive};
+    stages[1].pSpecializationInfo = &specialization;
+    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.srcColorBlendFactor = blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.srcAlphaBlendFactor = blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAttachment.colorBlendOp = blendAttachment.alphaBlendOp = VK_BLEND_OP_MAX;
+    const VkFormat reactiveFormat = VK_FORMAT_R8_UNORM;
+    rendering.pColorAttachmentFormats = &reactiveFormat;
+    if (result == VK_SUCCESS)
+        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &reactiveParticlePipeline);
     vkDestroyShaderModule(device, frag, nullptr);
     vkDestroyShaderModule(device, vert, nullptr);
     vk::check(result, "vkCreateGraphicsPipelines");
@@ -160,6 +173,8 @@ void VulkanRenderer::Impl::destroyParticles() {
         if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
         pipeline = VK_NULL_HANDLE;
     }
+    if (reactiveParticlePipeline) vkDestroyPipeline(device, reactiveParticlePipeline, nullptr);
+    reactiveParticlePipeline = VK_NULL_HANDLE;
     if (particleLayout) vkDestroyPipelineLayout(device, particleLayout, nullptr);
     particleLayout = VK_NULL_HANDLE;
     for (ParticleBuffers& buffers : particleBuffers) {
@@ -268,7 +283,8 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
     depthAttachment.imageView = sceneDepth.view;
     depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // Kept for the reactive mask and TAA (G09, G10).
+    depthAttachment.storeOp = temporalThisFrame ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea = {{0, 0}, sceneColor.extent};
@@ -302,6 +318,24 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, i);   // instance i: its batch
     }
     vkCmdEndRendering(cmd);
+}
+
+void VulkanRenderer::Impl::recordParticleReactive(VkCommandBuffer cmd) {
+    // Inside the reactive pass: the same batches, depth tested as drawn but never written.
+    const ParticleBuffers& b = particleBuffers[frameIndex];
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, reactiveParticlePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleLayout, 0, 1, &bindlessSet, 0, nullptr);
+    vkCmdBindIndexBuffer(cmd, b.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    const ParticlePushConstants push{viewProjection, b.vertexAddress, b.batchAddress};
+    vkCmdPushConstants(
+        cmd, particleLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+    vkCmdSetDepthWriteEnable(cmd, VK_FALSE);
+    for (uint32_t i = 0; i < particleDraws.size(); ++i) {
+        const ParticleDraw& draw = particleDraws[i];
+        vkCmdSetCullMode(cmd, cullMode(draw.cull));
+        vkCmdSetDepthTestEnable(cmd, draw.depthTest);
+        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, i);
+    }
 }
 
 }   // namespace shockwave

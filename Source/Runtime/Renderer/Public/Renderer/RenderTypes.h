@@ -308,7 +308,13 @@ enum class DebugView : uint32_t {
     Reflections,
     // G08: decal coverage: red for the colour buffer's, green for roughness and metallic's,
     // over the unlit surface darkened.
-    Decals
+    Decals,
+    // G09: each pixel's motion since last frame: red and green 0.5 + pixels / 32 (right and
+    // down; grey is still), blue 1 where the motion is valid. Black: the background.
+    Motion,
+    // G09: the reactive mask: how much transparent and particle drawing changed each pixel,
+    // white for fully, so TAA trusts history less there.
+    Reactive
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
@@ -321,9 +327,11 @@ enum class DebugView : uint32_t {
 // A spot light takes one tile, a point light six.
 enum class ShadowQuality : uint32_t { Off, Low, Medium, High, Ultra };
 
-// Spatial anti-aliasing after tone mapping, before game UI (G01). TAA arrives with G10.
-enum class AntiAliasing : uint32_t { None, Fxaa };
-const char* antiAliasingName(AntiAliasing aa);   // "none", "fxaa"
+// Anti-aliasing. FXAA is spatial, after tone mapping, before game UI (G01). TAA (G10)
+// jitters the camera each frame and blends the scene with its history at internal
+// resolution, before bloom and tone mapping; the two are never stacked.
+enum class AntiAliasing : uint32_t { None, Fxaa, Taa };
+const char* antiAliasingName(AntiAliasing aa);   // "none", "fxaa", "taa"
 // Bloom's workload (A00). The scene's look stays Environment::bloom_intensity; this picks
 // how finely it's filtered:
 //            first level   levels

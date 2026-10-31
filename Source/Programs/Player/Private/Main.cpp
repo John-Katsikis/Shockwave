@@ -265,11 +265,15 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Reflections;
                 else if (view == "decals")
                     tool.view = shockwave::DebugView::Decals;
+                else if (view == "motion")
+                    tool.view = shockwave::DebugView::Motion;
+                else if (view == "reactive")
+                    tool.view = shockwave::DebugView::Reactive;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
                     throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao, indirect, "
-                                             "reflections, decals or navmesh");
+                                             "reflections, decals, motion, reactive or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -421,11 +425,11 @@ int main(int argc, char** argv) {
                     "player --new-project folder [--name display-name] [--module module_id]\n"
                     "                                    create an independent C++ starter in an empty folder\n"
                     "       [--size WxH] [--view "
-                    "lit|unlit|normals|lighting|cascades|ao|indirect|reflections|decals|navmesh] "
+                    "lit|unlit|normals|lighting|cascades|ao|indirect|reflections|decals|motion|reactive|navmesh] "
                     "[--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
-                    "       [--graphics-set key=value]... [--anti-aliasing none|fxaa]\n"
+                    "       [--graphics-set key=value]... [--anti-aliasing none|fxaa|taa]\n"
                     "                                    any setting in docs/GraphicsSchema.md, for this run\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
@@ -438,7 +442,7 @@ int main(int argc, char** argv) {
                     "                                    look through a named Camera entity; advance exactly\n"
                     "                                    one tick per frame so motion is reproducible\n"
                     "player --image-stats file.png [--region x,y,w,h] [--json file]\n"
-                    "player --image-diff reference.png candidate.png [--tolerance rmse] [--json file]\n"
+                    "player --image-diff reference.png candidate.png [--tolerance rmse] [--region x,y,w,h] [--json file]\n"
                     "                                    compare two screenshots; exit 1 over the tolerance\n"
                     "player --material-info model.glb|file.swmaterial [--json file]\n"
                     "                                    each material slot's UV set, transform and sampler;\n"
@@ -631,7 +635,7 @@ int main(int argc, char** argv) {
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
         if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())
-            return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson);
+            return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson, imageRegion);
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
         if (!netEncode.empty()) return player::netEncode(netEncode, output);
         if (!materialSchema.empty()) return player::materialSchema(materialSchema);   // no project

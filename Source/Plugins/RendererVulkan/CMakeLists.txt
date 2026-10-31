@@ -30,4 +30,6 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/ssao.comp
     Shaders/decal.vert
     Shaders/decal.frag
+    Shaders/reactive.frag
+    Shaders/taa.comp
 )

@@ -115,18 +115,21 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
         desc.cullMode = shade.cullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
         desc.fragmentSpecialization = &prepassSpec;
         shade.fragmentSpecialization = &shadeSpec;
-        prepassPipelines[i] = vk::createGraphicsPipeline(device, desc);
-        vk::GraphicsPipelineDesc withLayers = desc;   // decals on (G08): receiver layers too
-        withLayers.secondColorFormat = VK_FORMAT_R8_UINT;
-        prepassDecalPipelines[i] = vk::createGraphicsPipeline(device, withLayers);
+        // Decals on (G08): receiver layers too. Motion vectors on (G09): motion too.
+        for (uint32_t targets = 0; targets < 4; ++targets) {
+            vk::GraphicsPipelineDesc variant = desc;
+            if (targets & 1) variant.secondColorFormat = VK_FORMAT_R8_UINT;
+            if (targets & 2) variant.thirdColorFormat = kMotionFormat;
+            prepassPipelines[targets][i] = vk::createGraphicsPipeline(device, variant);
+        }
         depthEqualPipelines[i] = vk::createGraphicsPipeline(device, shade);
     }
 }
 
 void VulkanRenderer::Impl::destroyAmbientOcclusionPipeline() {
     VkDevice device = context->device();
-    for (VkPipeline pipeline : prepassPipelines) vkDestroyPipeline(device, pipeline, nullptr);
-    for (VkPipeline pipeline : prepassDecalPipelines) vkDestroyPipeline(device, pipeline, nullptr);
+    for (const auto& pipelines : prepassPipelines)
+        for (VkPipeline pipeline : pipelines) vkDestroyPipeline(device, pipeline, nullptr);
     for (VkPipeline pipeline : depthEqualPipelines) vkDestroyPipeline(device, pipeline, nullptr);
     vkDestroyPipeline(device, aoPipeline, nullptr);
     vkDestroyPipelineLayout(device, aoLayout, nullptr);
@@ -232,8 +235,9 @@ void VulkanRenderer::Impl::destroyAoTargets(AoTargets& targets) {
 }
 
 void VulkanRenderer::Impl::updateAoTargets() {
-    // The prepass runs for ambient occlusion and for decals (G08), which read its depth and normals.
-    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off || decalsWanted();
+    // The prepass runs for ambient occlusion, for decals (G08), which read its depth and
+    // normals, and for motion vectors (G09).
+    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off || decalsWanted() || temporalWanted();
     if (want == prepassActive()) return;
     if (!want) {
         const int slot = aoTargets.slot == aoSlots[0] ? 0 : 1;
@@ -266,23 +270,24 @@ void VulkanRenderer::Impl::recordPrepass(VkCommandBuffer cmd, Frame& f) {
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     // With decals (G08), each surface's receiver layers beside its normal; 0 (none) elsewhere.
-    VkRenderingAttachmentInfo colorAttachments[2] = {normalAttachment, normalAttachment};
-    const bool decals = decalsActive();
-    if (decals) {
-        colorAttachments[1].imageView = decalTargets.layers.view;
-        colorAttachments[1].clearValue.color = {};
-    }
+    // With motion vectors (G09), its motion third; 0 (none known) elsewhere. A target the
+    // frame doesn't have is left out (no view), and the shader's write to it goes nowhere.
+    VkRenderingAttachmentInfo colorAttachments[3] = {normalAttachment, normalAttachment, normalAttachment};
+    const bool decals = decalsActive(), motion = temporalActive();
+    colorAttachments[1].imageView = decals ? decalTargets.layers.view : VK_NULL_HANDLE;
+    colorAttachments[1].clearValue.color = {};
+    colorAttachments[2].imageView = motion ? temporalTargets.motion.view : VK_NULL_HANDLE;
 
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea = {{0, 0}, sceneColor.extent};
     rendering.layerCount = 1;
-    rendering.colorAttachmentCount = decals ? 2 : 1;
+    rendering.colorAttachmentCount = motion ? 3 : decals ? 2 : 1;
     rendering.pColorAttachments = colorAttachments;
     rendering.pDepthAttachment = &depthAttachment;
     vkCmdBeginRendering(cmd, &rendering);
     setSceneViewport(cmd);
-    const auto& pipelines = decals ? prepassDecalPipelines : prepassPipelines;
+    const auto& pipelines = prepassPipelines[(decals ? 1 : 0) + (motion ? 2 : 0)];
     if (!gatheredDraws.empty()) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
         DrawPushConstants push{f.drawAddress, f.frameAddress};

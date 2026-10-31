@@ -17,6 +17,13 @@
 // the previous frame's (jittered) image, is
 //   previousHistoryUv = uv - motion + previousJitter / previousExtent - currentJitter / currentExtent
 // and history is reset whenever the extent changes, so the two extents are always equal.
+//
+// TAA's history isn't a jittered frame, though: it's the resolved image, on the unjittered
+// pixel grid (what's shown, steady while the samples under it move). Each frame's jittered
+// sample is blended into the pixel it lands in, so the resolve reads history at
+//   resolvedHistoryUv = uv - motion
+// with uv the pixel's centre: the jitter terms above are for reading a raw previous frame
+// (docs/TemporalAntiAliasing.md). A still image is read texel for texel, never resampled.
 
 #include <Renderer/RenderTypes.h>
 
@@ -44,6 +51,9 @@ inline glm::vec2 previousHistoryUv(
     const glm::vec2& currentJitter, const glm::vec2& currentExtent) {
     return uv - motion + previousJitter / previousExtent - currentJitter / currentExtent;
 }
+inline glm::vec2 resolvedHistoryUv(const glm::vec2& pixelCentreUv, const glm::vec2& motion) {
+    return pixelCentreUv - motion;
+}
 
 // ---- When history is thrown away ----
 
@@ -68,6 +78,17 @@ struct TemporalViewState {
 };
 // cut: the engine asked for one. Checked in the order the enum lists them.
 HistoryReset historyReset(const TemporalViewState& previous, const TemporalViewState& current, bool cut);
+
+// Last frame's temporal work (Renderer::temporalStats).
+struct TemporalStats {
+    bool motion = false;   // motion vectors were drawn (TAA, or the motion view)
+    bool taa = false;   // TAA resolved the scene
+    HistoryReset reset = HistoryReset::None;   // why last frame started history afresh, if it did
+    uint32_t resets = 0;   // history resets since the renderer started
+    uint32_t historyDraws = 0;   // draws whose previous pose was known
+    uint32_t newDraws = 0;   // keyed draws seen for the first time (or after a LOD change)
+    glm::vec2 jitter{0.0f};   // in pixels
+};
 
 // ---- Resolve (Shaders/taa.comp) ----
 

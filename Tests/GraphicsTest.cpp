@@ -104,9 +104,15 @@ int main() {
             edited.antiAliasing == AntiAliasing::Fxaa && edited.bloomQuality == BloomQuality::Low &&
                 edited.bloomScale == 0.25f,
             "setters reach the fields");
+        {
+            auto taa = edited;
+            check(setGraphicsSetting(taa, "anti_aliasing", "taa", error) && taa.antiAliasing == AntiAliasing::Taa,
+                  "taa accepted");
+        }
         auto unchanged = edited;
-        check(!setGraphicsSetting(edited, "anti_aliasing", "taa", error) && edited == unchanged, "taa refused");
-        check(error.find("taa") != std::string::npos, "taa refusal says why");
+        check(!setGraphicsSetting(edited, "anti_aliasing", "msaa", error) && edited == unchanged, "msaa refused");
+        check(error.find("taa") != std::string::npos,
+              "anti_aliasing refusal lists the choices");
         for (const char* bad : {"2", "-0.5", "nan", "inf", "x"})
             check(!setGraphicsSetting(edited, "bloom_scale", bad, error) && edited == unchanged, "bloom_scale range");
         check(!setGraphicsSetting(edited, "no_such_key", "1", error), "unknown key refused");

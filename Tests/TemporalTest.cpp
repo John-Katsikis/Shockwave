@@ -110,6 +110,11 @@ void testMotion() {
     // The motion target is written at the jittered uv; motion itself is unjittered.
     const glm::vec2 history = previousHistoryUv(currentJittered, motion, previousJitter, extent, currentJitter, extent);
     check(near(history, previousJittered, 1e-5f), "previous history uv lands on last frame's jittered sample");
+    // TAA's resolved history is on the unjittered grid: a still pixel reads its own texel,
+    // whatever the jitter; a moving one reads where its surface was, unjittered.
+    const glm::vec2 centre = (glm::vec2(17.0f, 9.0f) + 0.5f) / extent;
+    check(resolvedHistoryUv(centre, glm::vec2(0.0f)) == centre, "a still pixel reads its own history texel");
+    check(near(resolvedHistoryUv(current, motion), previous, 1e-6f), "resolved history follows the motion");
     // Static camera, no motion: only the jitter difference remains.
     check(near(previousHistoryUv({0.3f, 0.6f}, glm::vec2(0.0f), {0.5f, 0.0f}, extent, {0.0f, 0.0f}, extent),
                {0.3f + 0.5f / 400.0f, 0.6f}),

@@ -323,7 +323,9 @@ void Editor::drawViewportToolbar() {
             "Ambient occlusion",
             "Indirect diffuse",
             "Reflection probes",
-            "Decals"};
+            "Decals",
+            "Motion vectors",
+            "Reactive mask"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

@@ -346,6 +346,7 @@ void VulkanRenderer::Impl::createPipelines() {
     createAntiAliasingPipeline();
     createAmbientOcclusionPipeline();
     createDecalPipeline();   // after it: shares its sampler
+    createTemporalPipelines();
 
     createUiPipeline();
 }

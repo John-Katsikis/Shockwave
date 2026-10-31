@@ -26,6 +26,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Temporal.h>
 #include <Renderer/TextureData.h>
 
 #include <memory>
@@ -99,6 +100,8 @@ public:
     // Before setCamera: which view the camera belongs to (RenderTypes.h). A different view
     // than last frame's means no history carries over.
     virtual void setView(RenderViewId) {}
+    // Renderer::cutCamera: drop temporal history this frame.
+    virtual void cutCamera() {}
     // key: which object this is (RenderTypes.h); invalid for draws without one.
     virtual void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
@@ -143,6 +146,7 @@ public:
     virtual ParticleStats particleStats() const { return {}; }
     // Of drawCount, how many came without a RenderInstanceKey (so have no history).
     virtual uint32_t unkeyedDraws() const { return 0; }
+    virtual TemporalStats temporalStats() const { return {}; }
 
     // ---- Capabilities, effective settings and memory (RenderTypes.h) ----
     // What the device supports, for picking effects and fallbacks. Fill in backend.

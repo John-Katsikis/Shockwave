@@ -168,7 +168,10 @@ int netEncode(const fs::path& json, const fs::path& output);
 // when the sizes differ or the RMSE is over the tolerance (default 1). No project needed.
 // region: x, y, width, height as fractions of the image (0..1); the whole image by default.
 int imageStats(const fs::path& image, const fs::path& json, const std::array<double, 4>& region = {0, 0, 1, 1});
-int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json);
+// region: compare only that part of both (fractions x, y, width, height), as --image-stats.
+int imageDiff(
+    const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json,
+    const std::array<double, 4>& region = {0, 0, 1, 1});
 // --material-info, --texture-info: an asset's material slots (UV sets, transforms,
 // samplers) or its textures' levels and size at each texture_quality, as JSON. No GPU.
 int materialInfo(const fs::path& asset, const fs::path& json);
