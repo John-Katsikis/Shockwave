@@ -139,6 +139,8 @@ struct BatchState {
     uint8_t edgeColor[4] = {0, 0, 0, 0};
     EffekseerRenderer::RendererStateFlipbook flipbook;
     bool materialFile = false;   // a custom .efkmat material
+    float softFar = 0.0f, softNear = 0.0f, softNearOffset = 0.0f;   // Effekseer's soft particle distances
+    float distortion = 0.0f;   // Effekseer's distortion intensity
 };
 
 class CaptureRenderer final : public EffekseerRenderer::Renderer, public Effekseer::ReferenceObject {
@@ -152,6 +154,16 @@ public:
     void begin(const glm::mat4& view, const glm::mat4& projection);
     void end();
     void setDepth(float depth) { m_depth = depth; }
+    // What follows is one effect's (setDepth's): its batches never merge with the ones
+    // before, so Effects can sort them (batchGroups). softDistance >= 0 replaces the
+    // effect's own soft particle distance (ParticleEffect::softDistance).
+    void beginGroup(uint32_t group, float softDistance);
+    // For each batch of drawList(), the group it was drawn in.
+    const std::vector<uint32_t>& batchGroups() const { return m_groups; }
+    // Reorders the batches (only their order; indices are kept).
+    void reorderBatches(const std::vector<uint32_t>& order);
+    // Sets a batch's sort depth.
+    void setBatchDepth(size_t batch, float depth) { m_batches[batch].depth = depth; }
     ParticleDrawList drawList() const;
     uint32_t skippedBatches() const { return m_skipped; }
 
@@ -201,8 +213,12 @@ private:
     std::vector<ParticleVertex> m_vertices;
     std::vector<uint32_t> m_indices;
     std::vector<ParticleBatch> m_batches;
+    std::vector<uint32_t> m_groups;   // parallel to m_batches
     glm::mat4 m_view{1.0f};
     float m_depth = 0.0f;
+    uint32_t m_group = 0;
+    float m_softOverride = -1.0f;
+    bool m_newGroup = false;   // the next batch starts a new draw
     uint32_t m_skipped = 0;
 };
 

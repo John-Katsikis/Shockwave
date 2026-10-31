@@ -56,6 +56,20 @@ std::string clustersJson(const shockwave::ClusterStats& c) {
     return text;
 }
 
+// Particles (A04) in the last frame.
+std::string particlesJson(const shockwave::ParticleSettings& s, const shockwave::ParticleStats& p) {
+    char text[512];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"soft_particles\": %s, \"distortion\": %s, \"lighting\": \"%s\", \"draws\": %u, \"vertices\": %u, "
+        "\"soft_draws\": %u, \"distortion_draws\": %u, \"skipped_distortion\": %u, \"scene_lit_draws\": %u, "
+        "\"depth_pass\": %s}",
+        s.softParticles ? "true" : "false", s.distortion ? "true" : "false",
+        shockwave::particleLightingName(s.lighting), p.draws, p.vertices, p.softDraws, p.distortionDraws,
+        p.skippedDistortion, p.sceneLitDraws, p.depthPass ? "true" : "false");
+    return text;
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -160,6 +174,7 @@ void Player::graphicsReport() {
          << ", \"retained_cpu_bytes\": " << residency.retainedBytes
          << "},\n  \"temporal\": " << temporalJson(renderer.temporalStats())
          << ",\n  \"clusters\": " << clustersJson(renderer.clusterStats())
+         << ",\n  \"particles\": " << particlesJson(renderer.particleSettings(), renderer.particleStats())
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

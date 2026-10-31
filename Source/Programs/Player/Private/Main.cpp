@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
+        std::filesystem::path effectInfo;   // --effect-info
         std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project
         double imageTolerance = 1.0;   // --tolerance
         std::array<double, 4> imageRegion{0, 0, 1, 1};   // --region
@@ -232,6 +233,8 @@ int main(int argc, char** argv) {
                 if (imageRegion[2] <= 0 || imageRegion[3] <= 0 || imageRegion[0] + imageRegion[2] > 1.000001 ||
                     imageRegion[1] + imageRegion[3] > 1.000001)
                     throw player::UsageError("--region must be a non-empty part of the image");
+            } else if (arg == "--effect-info" && i + 1 < argc) {
+                effectInfo = argv[++i];
             } else if (arg == "--material-info" && i + 1 < argc) {
                 materialInfo = argv[++i];
             } else if (arg == "--texture-info" && i + 1 < argc) {
@@ -453,6 +456,9 @@ int main(int argc, char** argv) {
                     "                                    for a .swmaterial, also its parents, values, features,\n"
                     "                                    what material_quality low leaves out, and warnings\n"
                     "player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)\n"
+                    "player --effect-info file.efkefc [--json file]\n"
+                    "                                    each part of a particle effect and how it's drawn:\n"
+                    "                                    supported, approximated or unsupported (docs/Effects.md)\n"
                     "player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]\n"
                     "                                    bake lightmaps and probe volumes (docs/Lighting.md)\n"
                     "player --capture-reflections [--scene file.swscene] [--size WxH]\n"
@@ -637,6 +643,7 @@ int main(int argc, char** argv) {
         }
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
+        if (!effectInfo.empty()) return player::effectInfo(effectInfo, tool.benchmarkJson);   // no project
         if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())
             return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson, imageRegion);

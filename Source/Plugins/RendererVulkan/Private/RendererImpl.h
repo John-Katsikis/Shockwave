@@ -38,7 +38,7 @@ constexpr uint32_t kMaxMeshes = 65536;
 // Scene color, BRDF table, two for bloom: a new bloom chain takes the
 // slot the old one isn't using, so it can be made while frames still read the old one.
 // Shadow atlases likewise have two pairs of slots, and ambient occlusion two slots.
-constexpr uint32_t kInternalTextureSlots = 14;
+constexpr uint32_t kInternalTextureSlots = 17;
 // Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
 // goes into a spare while frames in flight still read the old slot, which becomes a spare
 // once they finish. Below the internal slots.
@@ -907,14 +907,20 @@ struct VulkanRenderer::Impl {
         uint32_t flags;
         float emissive;
         uint32_t blend;
+        float softDistance;   // metres; 0: no fade against the scene
+        float softNear;   // metres; 0: no fade near the camera
+        float softNearOffset;
+        float distortion;   // metres at full strength (kParticleDistortion)
         float pad[2];
     };
-    static_assert(sizeof(ParticleBatchData) == 96, "ParticleBatchData must match shaders/particle.frag");
+    static_assert(sizeof(ParticleBatchData) == 112, "ParticleBatchData must match shaders/particle.frag");
     struct ParticleDraw {
         uint32_t firstIndex, indexCount;
         ParticleBlend blend;
         ParticleCull cull;
         bool depthTest, depthWrite;
+        bool soft;   // fades against the scene's depth (softDistance or softNear)
+        bool distortion;
     };
     // Per frame in flight, persistently mapped, grown (only) when a frame doesn't fit.
     struct ParticleBuffers {
@@ -932,14 +938,42 @@ struct VulkanRenderer::Impl {
     std::vector<ParticleBatchData> particleBatchData;
     std::vector<ParticleDraw> particleDraws;
     float particleGatherMs = 0;   // this frame's drawParticles calls, added up
+    uint32_t particleSkippedDistortion = 0;   // distortion batches left out (particle_distortion off)
     ParticleStats lastParticleStats;   // set by prepareParticles
+    // The particle settings (A04), set from any thread, read when the frame is recorded.
+    std::atomic<bool> softParticles{true};
+    std::atomic<bool> particleDistortion{true};
+    std::atomic<ParticleLighting> particleLighting{ParticleLighting::Scene};
+    // Decided by prepareParticles for this frame.
+    bool particleSoftThisFrame = false;   // the main particle pass samples scene depth (read-only)
+    bool particleDepthPassThisFrame = false;   // opaque depth-writing batches go first, in a pass of their own
+    bool particleBackgroundThisFrame = false;   // distortion: the scene is copied before the particles
+    VkDeviceAddress particleFrameAddress = 0;
+    // Scene depth in the bindless table, for soft particles and distortion; written with
+    // the render targets (the GPU is idle then), read in the read-only depth layout.
+    uint32_t sceneDepthSlot = 0;
+    // Distortion's copy of the scene before particles, made the first frame that needs it
+    // and freed when particle_distortion is turned off; two slots, as the occlusion images.
+    struct ParticleBackground {
+        vk::Image image;
+        uint32_t slot = 0;
+    };
+    ParticleBackground particleBackground;
+    vk::ImageState particleBackgroundState;
+    uint32_t particleBackgroundSlots[2] = {0, 0};
+    bool particleBackgroundSlotBusy[2] = {false, false};
 
     void createParticlePipelines();
     void destroyParticles();
     void drawParticles(const ParticleDrawList& list);
     void clearParticles();
     void prepareParticles();   // copies the frame's particles to the GPU
-    void recordParticles(VkCommandBuffer cmd);
+    // Which draws the pass records: the depth-writing pass's, or the rest (main).
+    void recordParticles(VkCommandBuffer cmd, bool depthPass);
+    void recordParticleBackgroundCopy(VkCommandBuffer cmd);
+    void updateParticleBackground(bool want);
+    void destroyParticleBackground(ParticleBackground& background);
+    void writeSceneDepthSlot();
 
     void endFrame();
 

@@ -90,12 +90,23 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   sets how far out clusters reach (`cluster_far`, 250 m). `player --view clusters` and
   the editor's *Light clusters* shading view show how many lights each pixel tests.
   Presets leave it alone.
+- `soft_particles`: `true` (the default) or `false`. Particles fade out where they meet
+  walls and floors, and as they reach the camera, as each effect asks
+  (docs/Effects.md, *Soft particles*). False draws the hard edges and doesn't read the
+  scene's depth for it. Low turns it off.
+- `particle_distortion`: `true` (the default) or `false`. Heat haze and other effects
+  that bend the scene behind them. False skips those parts of an effect, with no copy of
+  the scene and no memory for one. Low turns it off.
+- `particle_lighting`: `scene` (the default) or `simple`. Lit particles are lit by every
+  light through the light clusters, or by the first directional light and the ambient
+  light alone. Low uses simple.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
 sets bloom quality low, medium or high, texture quality to its own name, anisotropy to
 4, 8, 16 and 16, material quality low for Low and high for the rest, ambient
-occlusion off, low, medium and high, and decals low, medium, high and high.
+occlusion off, low, medium and high, decals low, medium, high and high, and soft
+particles, heat haze and scene-lit particles off (simple) for Low and on for the rest.
 `matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
 Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

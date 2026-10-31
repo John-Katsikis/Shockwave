@@ -84,27 +84,37 @@ void flipbook(
     nextUv = origin + cell(next) * oneSize + offset;
 }
 
+// Effekseer's texture slots (ShaderParameterCollector::Collect): colour first; then the
+// normal map for lit shaders or the background for distortion; then the alpha texture.
 int alphaTextureSlot(RendererShaderType shader) {
     if (shader == RendererShaderType::AdvancedUnlit) return 1;
-    if (shader == RendererShaderType::AdvancedLit) return 2;
+    if (shader == RendererShaderType::AdvancedLit || shader == RendererShaderType::AdvancedBackDistortion) return 2;
     return -1;
 }
 
 bool advanced(RendererShaderType shader) {
-    return shader == RendererShaderType::AdvancedUnlit || shader == RendererShaderType::AdvancedLit;
+    return shader == RendererShaderType::AdvancedUnlit || shader == RendererShaderType::AdvancedLit ||
+           shader == RendererShaderType::AdvancedBackDistortion;
 }
+
+bool distortionShader(RendererShaderType shader) {
+    return shader == RendererShaderType::BackDistortion || shader == RendererShaderType::AdvancedBackDistortion;
+}
+
+int alphaTextureSlot(RendererShaderType shader);
 
 bool drawable(const BatchState& state) {
     return !state.materialFile &&
            (state.shader == RendererShaderType::Unlit || state.shader == RendererShaderType::Lit ||
-            state.shader == RendererShaderType::AdvancedUnlit || state.shader == RendererShaderType::AdvancedLit);
+            state.shader == RendererShaderType::AdvancedUnlit || state.shader == RendererShaderType::AdvancedLit ||
+            distortionShader(state.shader));
 }
 
 // One vertex, whatever Effekseer layout it came in.
 struct Decoded {
     glm::vec3 position;
     Effekseer::Color color;
-    uint32_t normal = 0;
+    uint32_t normal = 0, tangent = 0;
     glm::vec2 uv{0.0f}, alphaUv{0.0f};
     float flipbookIndex = 0.0f, alphaThreshold = 0.0f;
 };
@@ -118,6 +128,7 @@ Decoded decodeAs(const uint8_t* data) {
     d.color = v.Col;
     d.uv = {v.UV[0], v.UV[1]};
     if constexpr (requires { v.Normal; }) d.normal = packColor(v.Normal);
+    if constexpr (requires { v.Tangent; }) d.tangent = packColor(v.Tangent);
     if constexpr (requires { v.AlphaUV; }) {
         d.alphaUv = {v.AlphaUV[0], v.AlphaUV[1]};
         d.flipbookIndex = v.FlipbookIndexAndNextRate;
@@ -128,9 +139,11 @@ Decoded decodeAs(const uint8_t* data) {
 
 Decoded decode(RendererShaderType shader, const uint8_t* data) {
     switch (shader) {
-    case RendererShaderType::Lit: return decodeAs<EffekseerRenderer::LightingVertex>(data);
+    case RendererShaderType::Lit:
+    case RendererShaderType::BackDistortion: return decodeAs<EffekseerRenderer::LightingVertex>(data);
     case RendererShaderType::AdvancedUnlit: return decodeAs<EffekseerRenderer::AdvancedSimpleVertex>(data);
-    case RendererShaderType::AdvancedLit: return decodeAs<EffekseerRenderer::AdvancedLightingVertex>(data);
+    case RendererShaderType::AdvancedLit:
+    case RendererShaderType::AdvancedBackDistortion: return decodeAs<EffekseerRenderer::AdvancedLightingVertex>(data);
     default: return decodeAs<EffekseerRenderer::SimpleVertex>(data);
     }
 }
@@ -251,6 +264,10 @@ public:
         std::memcpy(state.edgeColor, basic.EdgeColor, 4);
         state.flipbook = EffekseerRenderer::ToState(basic.Flipbook);
         state.materialFile = basic.MaterialType == Effekseer::RendererMaterialType::File;
+        state.softFar = basic.SoftParticleDistanceFar;
+        state.softNear = basic.SoftParticleDistanceNear;
+        state.softNearOffset = basic.SoftParticleDistanceNearOffset;
+        state.distortion = basic.DistortionIntensity;
         for (size_t i = 0; i < m_matrixes.size(); ++i) {
             const int32_t frame = m_times[i] % model->GetFrameCount();
             m_renderer->addModel(
@@ -311,6 +328,10 @@ void CaptureStandardRenderer::flush() {
         std::memcpy(state.edgeColor, s.EdgeColor, 4);
         state.flipbook = s.Flipbook;
         state.materialFile = s.MaterialType == Effekseer::RendererMaterialType::File;
+        state.softFar = s.SoftParticleDistanceFar;
+        state.softNear = s.SoftParticleDistanceNear;
+        state.softNearOffset = s.SoftParticleDistanceNearOffset;
+        state.distortion = s.DistortionIntensity;
         m_renderer->addQuads(state, m_scratch.data() + chunk.offset, chunk.stride, chunk.count);
     }
     m_chunks.clear();
@@ -362,6 +383,10 @@ void CaptureRenderer::begin(const glm::mat4& view, const glm::mat4& projection) 
     m_vertices.clear();
     m_indices.clear();
     m_batches.clear();
+    m_groups.clear();
+    m_group = 0;
+    m_softOverride = -1.0f;
+    m_newGroup = false;
     m_skipped = 0;
     m_view = view;
     // glm's column-major, column-vector matrices have the same memory layout as
@@ -374,6 +399,26 @@ void CaptureRenderer::begin(const glm::mat4& view, const glm::mat4& projection) 
 }
 
 void CaptureRenderer::end() { m_standard.flush(); }
+
+void CaptureRenderer::beginGroup(uint32_t group, float softDistance) {
+    m_standard.flush();
+    m_group = group;
+    m_softOverride = softDistance;
+    m_newGroup = true;
+}
+
+void CaptureRenderer::reorderBatches(const std::vector<uint32_t>& order) {
+    std::vector<ParticleBatch> batches;
+    std::vector<uint32_t> groups;
+    batches.reserve(order.size());
+    groups.reserve(order.size());
+    for (uint32_t i : order) {
+        batches.push_back(m_batches[i]);
+        groups.push_back(m_groups[i]);
+    }
+    m_batches.swap(batches);
+    m_groups.swap(groups);
+}
 
 ParticleDrawList CaptureRenderer::drawList() const {
     ParticleDrawList list;
@@ -413,6 +458,13 @@ bool CaptureRenderer::beginBatch(const BatchState& state, uint32_t triangles) {
     batch.depthWrite = state.depthWrite;
     if (state.shader == RendererShaderType::Lit || state.shader == RendererShaderType::AdvancedLit)
         batch.flags |= kParticleLit;
+    if (distortionShader(state.shader)) {
+        batch.flags |= kParticleDistortion;
+        batch.distortion = state.distortion;
+    }
+    batch.softDistance = m_softOverride >= 0.0f ? m_softOverride : std::max(state.softFar, 0.0f);
+    batch.softNear = std::max(state.softNear, 0.0f);
+    batch.softNearOffset = state.softNearOffset;
     if (c.TextureWrapTypes[0] == Effekseer::TextureWrapType::Clamp) batch.flags |= kParticleClampUV;
     if (advanced(state.shader)) {
         batch.flags |= kParticleAlphaCutoff;
@@ -427,18 +479,22 @@ bool CaptureRenderer::beginBatch(const BatchState& state, uint32_t triangles) {
     batch.depth = m_depth;
     batch.indexCount = triangles * 3;
 
-    // Back to back with the same look: one draw.
-    if (!m_batches.empty()) {
+    // Back to back with the same look, in the same effect: one draw.
+    if (!m_batches.empty() && !m_newGroup) {
         ParticleBatch& last = m_batches.back();
         if (last.firstIndex + last.indexCount == batch.firstIndex && last.texture.id == batch.texture.id &&
             last.alphaTexture.id == batch.alphaTexture.id && last.blend == batch.blend && last.cull == batch.cull &&
             last.depthTest == batch.depthTest && last.depthWrite == batch.depthWrite && last.flags == batch.flags &&
-            last.emissive == batch.emissive && last.edgeColor == batch.edgeColor) {
+            last.emissive == batch.emissive && last.edgeColor == batch.edgeColor &&
+            last.softDistance == batch.softDistance && last.softNear == batch.softNear &&
+            last.softNearOffset == batch.softNearOffset && last.distortion == batch.distortion) {
             last.indexCount += batch.indexCount;
             return true;
         }
     }
     m_batches.push_back(batch);
+    m_groups.push_back(m_group);
+    m_newGroup = false;
     return true;
 }
 
@@ -458,6 +514,7 @@ void CaptureRenderer::addQuads(const BatchState& state, const uint8_t* vertices,
         float rate = 0.0f;
         flipbook(state.flipbook, d.flipbookIndex, d.uv, v.nextUV, rate);
         v.normal = d.normal ? d.normal : packNormal({0, 1, 0});
+        v.tangent = d.tangent ? d.tangent : packNormal({1, 0, 0});
         v.params = glm::packHalf2x16({rate, advancedShader ? d.alphaThreshold : 0.0f});
         m_vertices.push_back(v);
     }
@@ -497,6 +554,7 @@ void CaptureRenderer::addModel(
         float rate = 0.0f;
         flipbook(state.flipbook, flipbookIndex, v.uv, v.nextUV, rate);
         v.normal = packNormal(transform(s.Normal, 0.0f));
+        v.tangent = packNormal(transform(s.Tangent, 0.0f));
         v.params = glm::packHalf2x16({rate, threshold});
         m_vertices.push_back(v);
     }

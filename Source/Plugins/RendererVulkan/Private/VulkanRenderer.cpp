@@ -44,6 +44,11 @@ void VulkanRenderer::drawDecals(std::span<const DecalDesc> decals) { m_impl->dra
 void VulkanRenderer::setDecalQuality(DecalQuality quality) { m_impl->decalQuality = quality; }
 DecalStats VulkanRenderer::decalStats() const { return m_impl->lastDecalStats; }
 void VulkanRenderer::setLightCulling(LightCulling culling) { m_impl->lightCulling = culling; }
+void VulkanRenderer::setParticleSettings(const ParticleSettings& settings) {
+    m_impl->softParticles = settings.softParticles;
+    m_impl->particleDistortion = settings.distortion;
+    m_impl->particleLighting = settings.lighting;
+}
 ClusterStats VulkanRenderer::clusterStats() const { return m_impl->lastClusterStats; }
 bool VulkanRenderer::requestSceneCapture(std::string&) {
     m_impl->captureRequested = true;

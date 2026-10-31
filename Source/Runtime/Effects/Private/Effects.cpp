@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <chrono>
 #include <climits>
+#include <limits>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -35,7 +37,9 @@ void registerEffectsComponents() {
         "ParticleEffect",
         {field("effect", &ParticleEffect::effect), field("playing", &ParticleEffect::playing),
          field("loop", &ParticleEffect::loop), field("speed", &ParticleEffect::speed, 0.01f, 0.0f, 10.0f),
-         field("scale", &ParticleEffect::scale, 0.01f, 0.001f, 1000.0f), field("color", &ParticleEffect::color)},
+         field("scale", &ParticleEffect::scale, 0.01f, 0.001f, 1000.0f), field("color", &ParticleEffect::color),
+         field("soft_distance", &ParticleEffect::softDistance, 0.01f, -1.0f, 100.0f),
+         enumField("sorting", &ParticleEffect::sorting, {"whole", "parts"})},
         "Effects");
 }
 
@@ -89,17 +93,80 @@ fs::file_time_type modified(const fs::path& path) {
     return ec ? fs::file_time_type::min() : time;
 }
 
-// Features in an effect the bridge doesn't draw, as warnings.
-void unsupportedFeatures(Effekseer::EffectNode* node, bool& distortion, bool& material, bool& falloff) {
+std::string metres(float value) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%g m", value);
+    return text;
+}
+
+const char* nodeKind(Effekseer::EffectNodeType type) {
+    switch (type) {
+    case Effekseer::EffectNodeType::Sprite: return "sprite";
+    case Effekseer::EffectNodeType::Ribbon: return "ribbon";
+    case Effekseer::EffectNodeType::Ring: return "ring";
+    case Effekseer::EffectNodeType::Model: return "model";
+    case Effekseer::EffectNodeType::Track: return "track";
+    default: return nullptr;
+    }
+}
+
+// The support report (EffectFeature) for a node and its children, from its decoded
+// render parameters. Keep it to what the bridge and particle.frag really do.
+void nodeFeatures(Effekseer::EffectNode* node, const std::string& path, EffectInfo& info) {
     if (!node) return;
-    if (node->GetType() != Effekseer::EffectNodeType::Root && node->GetType() != Effekseer::EffectNodeType::NoneType) {
+    using Effekseer::RendererMaterialType;
+    using Texture = Effekseer::RendererTextureType;
+    if (const char* kind = nodeKind(node->GetType())) {
+        ++info.nodes;
         const Effekseer::EffectBasicRenderParameter p = node->GetBasicRenderParameter();
-        distortion |= p.MaterialType == Effekseer::RendererMaterialType::BackDistortion;
-        material |= p.MaterialType == Effekseer::RendererMaterialType::File;
-        falloff |= p.EnableFalloff;
+        auto add = [&](std::string feature, const char* status, std::string detail, const char* setting = "") {
+            info.features.push_back({path, std::move(feature), status, std::move(detail), setting});
+        };
+        auto uses = [&](Texture slot) { return p.TextureIndexes[static_cast<size_t>(slot)] >= 0; };
+        const bool material = p.MaterialType == RendererMaterialType::File;
+        if (material) {
+            add(std::string(kind) + " with a custom .efkmat material", "unsupported",
+                "not drawn: custom materials need compiling for Shockwave, which isn't done yet");
+        } else if (p.MaterialType == RendererMaterialType::BackDistortion) {
+            add(std::string(kind) + " (distortion)", "supported",
+                "bends the scene behind it by up to " + metres(p.DistortionIntensity) +
+                    " along its surface; one layer: see-through particles drawn before it are covered by "
+                    "the scene it shows",
+                "particle_distortion");
+        } else if (p.MaterialType == RendererMaterialType::Lighting) {
+            add(std::string(kind) + " (lit)", "supported",
+                "lit by every light with particle_lighting scene, by the sun and ambient light with simple",
+                "particle_lighting");
+            if (uses(Texture::Normal))
+                add("normal map", "approximated", "lit by the particle's surface normal; the normal map isn't read");
+        } else {
+            add(kind, "supported", "");
+        }
+        if (!material) {
+            if (p.FlipbookParams.EnableInterpolation) add("flipbook blending", "supported", "");
+            if (uses(Texture::Alpha)) add("alpha texture", "supported", "");
+            if (p.EdgeParam.Threshold > 0.0f || p.EdgeParam.Color[3] > 0.0f) add("alpha cutoff edge", "supported", "");
+            if (uses(Texture::UVDistortion))
+                add("UV distortion", "unsupported", "drawn with its textures' UVs left as they are");
+            if (uses(Texture::Blend)) add("blend texture", "unsupported", "drawn without the blend texture");
+            if (p.EnableFalloff) add("falloff", "unsupported", "drawn without the colour change toward the edges");
+            if (p.SoftParticleDistanceFar > 0.0f || p.SoftParticleDistanceNear > 0.0f) {
+                std::string detail;
+                if (p.SoftParticleDistanceFar > 0.0f)
+                    detail = "fades over " + metres(p.SoftParticleDistanceFar) + " to the scene behind it";
+                if (p.SoftParticleDistanceNear > 0.0f)
+                    detail += std::string(detail.empty() ? "" : "; ") + "fades out over " +
+                              metres(p.SoftParticleDistanceNear) + " toward " +
+                              metres(p.SoftParticleDistanceNearOffset) + " from the camera";
+                add("soft particles", "supported", detail, "soft_particles");
+            }
+            if (p.ZWrite && p.AlphaBlend != Effekseer::AlphaBlendType::Opacity)
+                add("depth writes on a see-through part", "approximated",
+                    "with soft particles on, see-through parts don't write depth", "soft_particles");
+        }
     }
     for (int i = 0; i < node->GetChildrenCount(); ++i)
-        unsupportedFeatures(node->GetChild(i), distortion, material, falloff);
+        nodeFeatures(node->GetChild(i), path.empty() ? std::to_string(i) : path + "/" + std::to_string(i), info);
 }
 
 }   // namespace
@@ -121,6 +188,14 @@ struct Effects::Impl {
         bool started = false;   // played at least once (a non-looping effect plays once)
         bool stopping = false;   // StopRoot sent: no new particles, the live ones finish
         uint64_t seen = 0;
+        float softDistance = -1.0f;   // ParticleEffect's
+        ParticleEffect::Sorting sorting = ParticleEffect::Sorting::Whole;
+    };
+    // An effect instance to draw this frame, and how.
+    struct DrawItem {
+        Handle handle;
+        float softDistance;
+        ParticleEffect::Sorting sorting;
     };
 
     Engine* engine;
@@ -133,7 +208,7 @@ struct Effects::Impl {
     std::map<std::string, Loaded, std::less<>> cache;
     std::unordered_map<uint32_t, Running> running;   // by entity index
     std::vector<Handle> oneShots;   // game code's, and entity effects left to finish
-    std::vector<std::pair<float, Handle>> drawOrder;
+    std::vector<DrawItem> drawOrder;
     uint64_t frame = 0;
     double pollTimer = 0.0;
     bool enabled = true;
@@ -237,12 +312,16 @@ struct Effects::Impl {
             return l;
         }
         for (const std::string& missing : report.missing) problem("Missing " + missing);
-        bool distortion = false, material = false, falloff = false;
-        unsupportedFeatures(l.effect->GetRoot(), distortion, material, falloff);
-        if (distortion) problem("Uses distortion, which isn't drawn yet; those parts are skipped", true);
-        if (material || l.effect->GetMaterialCount() > 0)
-            problem("Uses custom .efkmat materials, which aren't drawn yet; those parts are skipped", true);
-        if (falloff) problem("Uses falloff, which is drawn without it", true);
+        // Parts of it that aren't drawn as made, as warnings, by node (the support report).
+        EffectInfo info;
+        nodeFeatures(l.effect->GetRoot(), "", info);
+        for (const EffectFeature& f : info.features)
+            if (f.status == "unsupported") problem("node " + f.node + ": " + f.feature + ": " + f.detail, true);
+        if (l.effect->GetMaterialCount() > 0 &&
+            std::none_of(info.features.begin(), info.features.end(), [](const EffectFeature& f) {
+                return f.feature.find(".efkmat") != std::string::npos;
+            }))
+            problem("Has custom .efkmat materials, which aren't drawn yet", true);
         if (l.effect->GetWaveCount() > 0)
             problem("Has sounds, which Effects doesn't play; use an AudioSource next to it", true);
         for (const EffectProblem& p : l.problems) SW_LOG(LogEffects, Warning, "{}: {}", p.file, p.message);
@@ -301,6 +380,8 @@ struct Effects::Impl {
                 r.effect = pe.effect;
             }
             r.seen = frame;
+            r.softDistance = pe.softDistance;
+            r.sorting = pe.sorting;
             const glm::mat4 transform =
                 worldMatrix(world, e) * glm::scale(glm::mat4(1.0f), glm::vec3(std::max(pe.scale, 0.0f)));
             const bool live = alive(r.handle);
@@ -353,6 +434,51 @@ struct Effects::Impl {
         ambient = glm::vec3(environment.skyColor + environment.groundColor) * 0.5f * environment.ambientIntensity;
     }
 
+    // Back to front, so see-through particles layer correctly. An effect sorted whole
+    // keeps the order its parts were made in and goes by the middle of its particles' bounds;
+    // one sorted in parts sorts each batch by the middle of its own (A04). Equal distances
+    // keep the order they were drawn in.
+    void sortBatches(const glm::vec3& eye, const glm::vec3& front) {
+        const ParticleDrawList list = capture->drawList();
+        const std::vector<uint32_t>& groups = capture->batchGroups();
+        struct Bounds {
+            glm::vec3 lo{std::numeric_limits<float>::max()}, hi{-std::numeric_limits<float>::max()};
+            void add(const Bounds& b) {
+                lo = glm::min(lo, b.lo);
+                hi = glm::max(hi, b.hi);
+            }
+            bool empty() const { return lo.x > hi.x; }
+        };
+        std::vector<Bounds> batchBounds(list.batches.size()), groupBounds(drawOrder.size());
+        for (size_t b = 0; b < list.batches.size(); ++b) {
+            const ParticleBatch& batch = list.batches[b];
+            for (uint32_t k = batch.firstIndex; k < batch.firstIndex + batch.indexCount; ++k) {
+                const glm::vec3& p = list.vertices[list.indices[k]].position;
+                batchBounds[b].lo = glm::min(batchBounds[b].lo, p);
+                batchBounds[b].hi = glm::max(batchBounds[b].hi, p);
+            }
+            groupBounds[groups[b]].add(batchBounds[b]);
+        }
+        auto distance = [&](const Bounds& b, float fallback) {
+            return b.empty() ? fallback : glm::dot((b.lo + b.hi) * 0.5f - eye, front);
+        };
+        std::vector<std::pair<float, uint32_t>> keys(list.batches.size());
+        for (uint32_t b = 0; b < keys.size(); ++b) {
+            const bool parts = drawOrder[groups[b]].sorting == ParticleEffect::Sorting::Parts;
+            const float key = distance(parts ? batchBounds[b] : groupBounds[groups[b]], list.batches[b].depth);
+            keys[b] = {key, b};
+            capture->setBatchDepth(b, key);
+        }
+        std::stable_sort(keys.begin(), keys.end(), [&](const auto& a, const auto& b) {
+            if (a.first != b.first) return a.first > b.first;
+            // The same distance: a whole effect's batches stay together, in their order.
+            return groups[a.second] < groups[b.second];
+        });
+        std::vector<uint32_t> order(keys.size());
+        for (size_t i = 0; i < keys.size(); ++i) order[i] = keys[i].second;
+        capture->reorderBatches(order);
+    }
+
     ParticleDrawList build(const glm::mat4& view, const glm::mat4& projection) {
         SW_PROFILE_SCOPE("Effects build");
         const auto waitStart = Clock::now();
@@ -370,24 +496,24 @@ struct Effects::Impl {
         parameter.CameraFrontDirection = {front.x, front.y, front.z};
         parameter.CameraCullingMask = manager->GetCameraCullingMaskToShowAllEffects();
 
-        // Whole effects back to front, so blended ones layer correctly with each other.
+        // Each effect is captured as a group of its own, then the groups (or, for effects
+        // sorted in parts, their batches) are put back to front (sortBatches).
         drawOrder.clear();
-        auto add = [&](Handle h) {
-            if (!alive(h)) return;
-            const Effekseer::Matrix43 m = manager->GetMatrix(h);
-            const glm::vec3 position(m.Value[3][0], m.Value[3][1], m.Value[3][2]);
-            drawOrder.emplace_back(glm::dot(position - eye, front), h);
+        auto add = [&](Handle h, float softDistance, ParticleEffect::Sorting sorting) {
+            if (alive(h)) drawOrder.push_back({h, softDistance, sorting});
         };
-        for (const auto& [index, r] : running) add(r.handle);
-        for (Handle h : oneShots) add(h);
-        std::sort(drawOrder.begin(), drawOrder.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        for (const auto& [index, r] : running) add(r.handle, r.softDistance, r.sorting);
+        for (Handle h : oneShots) add(h, -1.0f, ParticleEffect::Sorting::Whole);
 
         capture->begin(view, projection);
-        for (const auto& [depth, handle] : drawOrder) {
-            capture->setDepth(depth);
-            manager->DrawHandle(handle, parameter);
+        for (uint32_t i = 0; i < drawOrder.size(); ++i) {
+            const Effekseer::Matrix43 m = manager->GetMatrix(drawOrder[i].handle);
+            capture->setDepth(glm::dot(glm::vec3(m.Value[3][0], m.Value[3][1], m.Value[3][2]) - eye, front));
+            capture->beginGroup(i, drawOrder[i].softDistance);
+            manager->DrawHandle(drawOrder[i].handle, parameter);
         }
         capture->end();
+        sortBatches(eye, front);
         ParticleDrawList list = capture->drawList();
         list.lightDirection = lightDirection;
         list.lightColor = lightColor;
@@ -496,6 +622,24 @@ float Effects::duration(std::string_view effect) {
 std::vector<EffectProblem> Effects::validate(std::string_view effect) {
     m->join();
     return m->load(effect).problems;
+}
+
+EffectInfo Effects::info(std::string_view effect) {
+    m->join();
+    EffectInfo info;
+    info.file = Impl::key(effect);
+    const Impl::Loaded& l = m->load(effect);
+    info.problems = l.problems;
+    if (l.effect == nullptr) return info;
+    info.loaded = true;
+    info.duration = duration(effect);
+    info.textures = static_cast<uint32_t>(
+        l.effect->GetColorImageCount() + l.effect->GetNormalImageCount() + l.effect->GetDistortionImageCount());
+    info.models = static_cast<uint32_t>(l.effect->GetModelCount());
+    info.materials = static_cast<uint32_t>(l.effect->GetMaterialCount());
+    info.sounds = static_cast<uint32_t>(l.effect->GetWaveCount());
+    nodeFeatures(l.effect->GetRoot(), "", info);
+    return info;
 }
 
 bool Effects::preload(std::string_view effect) {

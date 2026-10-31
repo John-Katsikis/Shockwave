@@ -4689,6 +4689,8 @@ Every field of the entity's ParticleEffect; found is false when it has none.
 - Out `speed` Float
 - Out `scale` Float
 - Out `color` Color
+- Out `soft_distance` Float
+- Out `sorting` Int
 
 ### Component.ParticleEffect.Get.color
 
@@ -4730,6 +4732,22 @@ The entity's ParticleEffect scale.
 - In `target` Entity, default self
 - Out `scale` Float
 
+### Component.ParticleEffect.Get.soft_distance
+
+The entity's ParticleEffect soft_distance.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `soft_distance` Float
+
+### Component.ParticleEffect.Get.sorting
+
+The entity's ParticleEffect sorting.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `sorting` Int
+
 ### Component.ParticleEffect.Get.speed
 
 The entity's ParticleEffect speed.
@@ -4769,6 +4787,8 @@ Sets the fields given (connected or written) of the entity's ParticleEffect; the
 - In `speed` Float
 - In `scale` Float
 - In `color` Color
+- In `soft_distance` Float
+- In `sorting` Int, options 0=whole; 1=parts
 
 ### Component.ParticleEffect.Set.color
 
@@ -4819,6 +4839,26 @@ Sets the entity's ParticleEffect scale.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `scale` Float, required
+
+### Component.ParticleEffect.Set.soft_distance
+
+Sets the entity's ParticleEffect soft_distance.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `soft_distance` Float, required
+
+### Component.ParticleEffect.Set.sorting
+
+Sets the entity's ParticleEffect sorting.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `sorting` Int, options 0=whole; 1=parts, required
 
 ### Component.ParticleEffect.Set.speed
 

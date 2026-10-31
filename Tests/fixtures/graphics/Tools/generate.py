@@ -25,6 +25,12 @@ after changing it; the outputs are committed so tests don't need Python.
                                      as authored, with ao_intensity 0 and with no ambient light
   Scenes/many-lights.swscene         200 point and 4 spot lights down a long floor (G11)
   Scenes/light-overflow.swscene      96 overlapping lights: overflowing cluster lists (G11)
+  Content/effects/*.efkefc           particle effects in Effekseer's runtime format (A04): soft
+                                     smoke in each blend mode, heat haze, lit smoke, two layers
+                                     (Content/effects/upstream/ is Effekseer's own, not generated)
+  Content/effects/textures/*.png     their textures: a soft puff and a ripple distortion map
+  Scenes/particles-soft.swscene, particles-distortion.swscene, particles-lit.swscene, and
+                                     particles-soft-empty.swscene (the same room without them)
 """
 import json, math, struct, zlib
 from pathlib import Path
@@ -647,6 +653,179 @@ def light_scenes():
     (root / 'Scenes/light-overflow.swscene').write_text('\n'.join(lines))
 
 
+# ---- Particle effects (A04) -----------------------------------------------------------
+# Written straight to Effekseer's runtime format, version 1610, as Games/Sample's
+# MakeParticleStress.py does (field order from Effekseer 1.7.3's loader:
+# EffectImplemented::LoadBody, EffectNodeImplemented::LoadParameter, EffectNodeSprite).
+# Every particle is still and lives forever, so a screenshot is the same on any frame.
+FX_VERSION = 1610
+FX_COLOR_TEXTURES = ['textures/puff.png']
+FX_DISTORTION_TEXTURES = ['textures/ripple.png']
+FX_FOREVER = 2**31 - 1
+FX_DEFAULT, FX_DISTORTION, FX_LIT = 0, 6, 7   # Effekseer's RendererMaterialType
+FX_OPAQUE, FX_ALPHA, FX_ADD, FX_SUBTRACT, FX_MULTIPLY = range(5)   # AlphaBlendType
+
+
+def i32(*v):
+    return struct.pack(f'<{len(v)}i', *v)
+
+
+def f32(*v):
+    return struct.pack(f'<{len(v)}f', *v)
+
+
+def puff(size=64):
+    """White, alpha falling smoothly from 1 in the middle to 0 at the edge."""
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            r = math.hypot((x + 0.5) / size * 2 - 1, (y + 0.5) / size * 2 - 1)
+            a = max(0.0, 1 - r) ** 1.5
+            pixels += [255, 255, 255, round(a * 255)]
+    return png(size, size, pixels)
+
+
+def ripple(size=64, waves=3):
+    """A distortion map (data, not colour): red and green are the offset along u and v,
+    0.5 meaning none, in rings around the middle; alpha fades out toward the edge."""
+    pixels = []
+    for y in range(size):
+        for x in range(size):
+            u, v = (x + 0.5) / size * 2 - 1, (y + 0.5) / size * 2 - 1
+            r = math.hypot(u, v)
+            w = math.sin(r * waves * 2 * math.pi) * (1 - min(r, 1))
+            dx, dy = (u / r * w, v / r * w) if r > 1e-6 else (0, 0)
+            pixels += [round((dx * 0.5 + 0.5) * 255), round((dy * 0.5 + 0.5) * 255), 128,
+                       round(max(0.0, 1 - r) ** 0.5 * 255)]
+    return png(size, size, pixels)
+
+
+def fx_sprite(at, size, color, blend=FX_ALPHA, material=FX_DEFAULT, soft=(0, 0, 0), distortion=1.0):
+    """One still, camera-facing sprite at `at` (metres), size metres wide. soft: Effekseer's
+    soft particle distances (far, near, near offset)."""
+    return dict(at=at, size=size, color=color, blend=blend, material=material, soft=soft, distortion=distortion)
+
+
+def fx_node(n, number):
+    out = [i32(2, 1, number)]   # a sprite, drawn, its slot in the draw list
+    # Common values: one particle, bound at creation, never removed, living forever, no delay.
+    out += [i32(80), i32(*[-1] * 7), i32(1, 1, 1, 1), i32(1, 0, 0), i32(FX_FOREVER, FX_FOREVER), f32(0, 0), f32(0, 0)]
+    out += [i32(1, 96), i32(*[-1] * 6), f32(0, 0, 0, 0, 0, 0), f32(0, 0, 0, 0, 0, 0), f32(0, 0, 0, 0, 0, 0)]
+    out += [i32(4)] + [i32(0) + f32(1, 0, 0, 0, 0, 0, 0) + i32(0)] * 4   # no local force fields
+    out += [i32(1, 96), i32(*[-1] * 6), f32(0, 0, 0, 0, 0, 0), f32(0, 0, 0, 0, 0, 0), f32(0, 0, 0, 0, 0, 0)]
+    out += [i32(3, 24), f32(n['size'], n['size']), f32(0, 0), f32(0, 0)]   # one scale for x and y
+    out += [i32(0, 0), f32(*n['at'], *n['at'])]   # spawned at a point
+    out += [f32(0), i32(0, 0), f32(1, 3.4028234663852886e38), i32(0, 0), f32(1)]   # depth: defaults
+    texture = 0
+    out += [i32(n['material'])]
+    if n['material'] != FX_DISTORTION:
+        out += [f32(1)]   # emissive scaling
+    out += [i32(texture, *[-1] * 6), i32(n['blend'])]
+    out += [i32(1, 1) * 7, i32(1, 0)]   # linear, clamped textures; depth test, no depth write
+    out += [i32(0), i32(0)]   # no fade in or out
+    out += [i32(0, 0, 0), f32(0.01), i32(0, -1, 0, 0), f32(0.01)]   # no UV animation
+    out += [i32(0), f32(n['distortion']), i32(0, 0), i32(0), i32(0), f32(*n['soft'])]
+    out += [i32(2, 0, 0), i32(0), bytes(max(0, min(255, round(c * 255))) for c in n['color'])]
+    out += [i32(0), i32(1), f32(-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5)]
+    out += [i32(0), i32(0)]   # no sound, no children
+    return b''.join(out)
+
+
+def fx_file(*nodes):
+    body = [b'SKFE', i32(FX_VERSION), i32(len(FX_COLOR_TEXTURES))]
+    for path in FX_COLOR_TEXTURES:
+        body += [i32(len(path) + 1), (path + '\0').encode('utf-16-le')]
+    body += [i32(0), i32(len(FX_DISTORTION_TEXTURES))]   # no normal images; distortion images
+    for path in FX_DISTORTION_TEXTURES:
+        body += [i32(len(path) + 1), (path + '\0').encode('utf-16-le')]
+    body += [i32(0) * 5]   # sounds, models, materials, curves, procedural models
+    body += [i32(4), f32(0, 0, 0, 0), i32(0)]   # dynamic inputs, no equations
+    body += [i32(len(nodes), 0), f32(1), i32(-1), i32(0)]   # magnification 1, random seed, no culling
+    body += [i32(-1, len(nodes))] + [fx_node(n, i) for i, n in enumerate(nodes)]
+    runtime = b''.join(body)
+    return b'EFKE' + i32(0) + b'BIN_' + i32(len(runtime)) + runtime
+
+
+def particle_fixtures():
+    fx = root / 'Content/effects'
+    (fx / 'textures').mkdir(parents=True, exist_ok=True)
+    (fx / 'textures/puff.png').write_bytes(puff())
+    (fx / 'textures/ripple.png').write_bytes(ripple())
+    soft = (1.0, 0.0, 0.0)   # fade over a metre to the scene behind
+    # Big puffs half sunk into the floor and against the wall, in each blend mode, left to right.
+    for name, blend, color in [('alpha', FX_ALPHA, (0.85, 0.85, 0.9, 0.9)), ('add', FX_ADD, (1, 0.6, 0.25, 1)),
+                               ('subtract', FX_SUBTRACT, (0.5, 0.5, 0.5, 1)),
+                               ('multiply', FX_MULTIPLY, (0.2, 0.5, 1, 1))]:
+        nodes = [fx_sprite((0, 0, 0), 2.4, color, blend, soft=soft), fx_sprite((0, 1.2, -1.0), 2.4, color, blend, soft=soft)]
+        (fx / f'soft-{name}.efkefc').write_bytes(fx_file(*nodes))
+    # A puff that fades out toward the camera: over 2 m, gone at 0.5 m (near 2, offset 0.5).
+    (fx / 'soft-near.efkefc').write_bytes(fx_file(fx_sprite((0, 0, 0), 0.5, (0.9, 0.9, 0.9, 0.9), soft=(0, 2.0, 0.5))))
+    (fx / 'heat-haze.efkefc').write_bytes(
+        fx_file(fx_sprite((0, 0, 0), 2.5, (1, 1, 1, 1), FX_ALPHA, FX_DISTORTION, distortion=0.25)))
+    (fx / 'lit-smoke.efkefc').write_bytes(fx_file(fx_sprite((0, 0, 0), 2.0, (0.8, 0.8, 0.8, 1), FX_ALPHA, FX_LIT)))
+    # Two parts made near one first, a far glow behind it: sorted whole they keep that order,
+    # sorted in parts the far one goes first (EffectsTest).
+    (fx / 'two-layers.efkefc').write_bytes(fx_file(fx_sprite((0, 0, 0), 1.0, (1, 1, 1, 0.8)),
+                                                   fx_sprite((0, 0, -3), 1.0, (1, 0.5, 0.2, 1), FX_ADD)))
+
+    def effect(name, file, position, **extra):
+        out = [f'entity "{name}"', '  Transform', f'    position {position[0]:g} {position[1]:g} {position[2]:g}',
+               '  ParticleEffect', f'    effect effects/{file}']
+        out += [f'    {k} {v}' for k, v in extra.items()]
+        return out + ['end', '']
+
+    def room(ambient=0.5):
+        return ['entity "Environment"', '  Environment', '    sky_color 0.35 0.42 0.55 1',
+                '    ground_color 0.2 0.18 0.15 1', f'    ambient_intensity {ambient:g}', 'end', '',
+                'entity "Sun"', '  Transform', '    rotation -50 30 0', '  Light', '    type Directional',
+                '    color 1 0.96 0.9 1', '    intensity 1.5', 'end', '',
+                'entity "Floor"', '  Transform', '    scale 20 1 20', '  MeshRenderer', '    mesh floor',
+                '    texture grid', '    tint 0.8 0.8 0.8 1', 'end', '',
+                'entity "Wall"', '  Transform', '    position 0 2 -2', '    scale 14 4 0.2', '  MeshRenderer',
+                '    mesh cube', '    texture textures/checker-fine.png', '    tint 0.9 0.9 0.9 1', 'end', '']
+
+    head = ['# Generated by Tools/generate.py; edit that, not this file.']
+    lines = head + [
+        '# Soft particles (A04): big puffs sunk into the floor and against the wall, alpha, add,',
+        '# subtract and multiply from left to right, each fading over 1 m to the scene behind; and',
+        '# a small one 1.3 m from the camera, partly faded by its near fade. soft_particles false shows the hard',
+        '# edges. Camera: "Main Camera".', 'shockwave_scene 2', ''] + room()
+    for i, name in enumerate(['alpha', 'add', 'subtract', 'multiply']):
+        lines += effect(f'Puff {name}', f'soft-{name}.efkefc', (-4.5 + i * 3, 0, -0.6))
+    lines += effect('Near puff', 'soft-near.efkefc', (0.9, 2.5, 4.7))
+    lines += ['entity "Main Camera"', '  Transform', '    position 0 2.5 6', '    rotation -12 0 0', '  Camera',
+              '    fov 60', '    near_plane 0.1', '    primary 1', 'end', '']
+    (root / 'Scenes/particles-soft.swscene').write_text('\n'.join(lines))
+    camera = ['entity "Main Camera"', '  Transform', '    position 0 2.5 6', '    rotation -12 0 0', '  Camera',
+              '    fov 60', '    near_plane 0.1', '    primary 1', 'end', '']
+    (root / 'Scenes/particles-soft-empty.swscene').write_text('\n'.join(head + [
+        '# particles-soft.swscene without its particles: what soft particles fade to at the floor and',
+        '# wall. Camera: "Main Camera".', 'shockwave_scene 2', ''] + room() + camera))
+
+    lines = head + [
+        '# Heat haze (A04): a distortion sprite in front of the checker wall, with a post nearer',
+        '# than it down its middle that must stay sharp (the haze bends only what is behind it).',
+        '# particle_distortion false draws no haze at all. Camera: "Main Camera".', 'shockwave_scene 2', ''] + room()
+    lines += effect('Haze', 'heat-haze.efkefc', (0, 1.6, 0))
+    lines += ['entity "Post"', '  Transform', '    position 0.4 1 1.2', '    scale 0.15 2 0.15', '  MeshRenderer',
+              '    mesh cube', '    tint 0.9 0.3 0.2 1', 'end', '',
+              'entity "Main Camera"', '  Transform', '    position 0 1.6 4', '  Camera', '    fov 50',
+              '    near_plane 0.1', '    primary 1', 'end', '']
+    (root / 'Scenes/particles-distortion.swscene').write_text('\n'.join(lines))
+
+    lines = head + [
+        '# Scene-lit particles (A04): a lit smoke puff with a red point light just left of it and a',
+        '# blue one right of it. particle_lighting scene tints its sides red and blue; simple lights',
+        '# it by the sun and ambient alone. Camera: "Main Camera".', 'shockwave_scene 2', ''] + room(0.3)
+    lines += effect('Smoke', 'lit-smoke.efkefc', (0, 1.5, 0))
+    for name, x, c in [('Red lamp', -1.3, '1 0.15 0.1 1'), ('Blue lamp', 1.3, '0.15 0.3 1 1')]:
+        lines += [f'entity "{name}"', '  Transform', f'    position {x:g} 1.5 0.6', '  Light', '    type Point',
+                  f'    color {c}', '    intensity 6', '    range 3', 'end', '']
+    lines += ['entity "Main Camera"', '  Transform', '    position 0 1.6 4', '  Camera', '    fov 50',
+              '    near_plane 0.1', '    primary 1', 'end', '']
+    (root / 'Scenes/particles-lit.swscene').write_text('\n'.join(lines))
+
+
 (root / 'Content/textures/checker-fine.png').write_bytes(checker())
 (root / 'Content/textures/ramp.png').write_bytes(ramp())
 panels()
@@ -665,3 +844,4 @@ material_layers_scene()
 ambient_occlusion_scene('ambient-occlusion', 'GraphicsFixturesCheck: the AO view is white on sky and open floor, darker in the corner.')
 ambient_occlusion_scene('ambient-occlusion-zero', 'ao_intensity 0: ambient occlusion on must match off exactly.', intensity=0)
 ambient_occlusion_scene('ambient-occlusion-direct', 'No ambient light: ambient occlusion has nothing to darken.', ambient=0)
+particle_fixtures()

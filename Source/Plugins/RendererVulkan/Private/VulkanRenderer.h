@@ -35,6 +35,7 @@ public:
     void setDecalQuality(DecalQuality quality) override;
     DecalStats decalStats() const override;
     void setLightCulling(LightCulling culling) override;
+    void setParticleSettings(const ParticleSettings& settings) override;
     ClusterStats clusterStats() const override;
     bool requestSceneCapture(std::string& error) override;
     bool sceneCapturePending() const override;

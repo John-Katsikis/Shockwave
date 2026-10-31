@@ -127,6 +127,69 @@ return false. When Play stops, every effect game code started is removed.
 Call `game.effects()` from the main thread: `beginPlay`, `frame`, `fixedUpdate` and
 `endPlay`. Don't call it from systems, which run on worker threads.
 
+## Soft particles, heat haze and lighting
+
+**Soft particles.** Where a particle meets a wall or the floor, it fades out over a short
+distance instead of cutting a hard line through it, and it can fade out as it reaches the
+camera too. This works for every blend mode: alpha, add, subtract and multiply. Effekseer's
+own soft particle settings (*Depth* in a node's render settings) are used as made:
+
+- the distance it fades over in front of geometry;
+- the distance it fades over near the camera, and how far from the camera that starts.
+
+A distance of 0 turns that fade off. A `ParticleEffect` can override the first distance
+for the whole effect with `soft_distance` in metres: -1 (the default) keeps what the
+effect says, 0 turns it off, and anything larger replaces it. The graphics setting
+`soft_particles false` turns every fade off and draws the hard edges.
+
+**Heat haze (distortion).** Parts made with Effekseer's distortion material bend the
+scene behind them: heat above a fire, a shock wave ring. The texture's red and green
+push the scene sideways along the particle's surface, scaled by the part's distortion
+intensity, as in Effekseer. Things in front of the haze are never bent into it: a look-up
+that would land on something nearer than the particle uses the scene straight behind
+it instead. The haze is one layer, read from a copy of the scene taken just before
+particles are drawn, so see-through particles drawn before it are covered by what it
+shows, and two hazes don't bend each other. `particle_distortion false` skips those parts,
+with no copy of the scene and no memory for it.
+
+**Lighting.** Lit parts (Effekseer's *Lighting* material) are lit like the world around
+them with `particle_lighting scene` (the default above Low): every directional light,
+the point and spot lights that reach them through the light clusters
+(docs/ClusteredLighting.md), and the ambient light, brighter from the sky above than the
+ground below. They face the camera, so the side you see is the lit side. They don't take
+or cast shadows. `particle_lighting simple` lights them by the scene's first directional
+light and the ambient light alone, as before.
+
+**Sorting.** Blended effects are drawn back to front, each by the middle of its own
+particles. Its parts draw in the order the effect was made. A `ParticleEffect` with
+`sorting parts` sorts each of its parts by its own particles instead, for an effect
+spread out far enough that one part can be in front of a neighbouring effect and another
+behind it.
+
+| Setting | Text name | What it does |
+|---|---|---|
+| Soft distance | `soft_distance` | Metres to fade over in front of geometry. -1 keeps the effect's own, 0 turns it off. |
+| Sorting | `sorting` | `whole` (the default) sorts the effect as one; `parts` sorts each part by itself. |
+
+`player --effect-info` lists each part of an effect and how it's drawn: supported,
+approximated or unsupported, with the graphics setting that turns it off. It needs no
+project. `--json file` writes the same list as JSON.
+
+```sh
+build/bin/player --effect-info Content/Effects/fire.efkefc
+```
+
+```text
+Content/Effects/fire.efkefc: loaded
+  node 0      supported     sprite
+  node 0      supported     soft particles: fades over 0.5 m to the scene behind it [soft_particles]
+  node 1      supported     sprite (distortion): bends the scene behind it by up to 0.2 m along its surface; one layer: see-through particles drawn before it are covered by the scene it shows [particle_distortion]
+  node 2      supported     sprite (lit): lit by every light with particle_lighting scene, by the sun and ambient light with simple [particle_lighting]
+  node 2      approximated  normal map: lit by the particle's surface normal; the normal map isn't read
+```
+
+It exits with 1 when the effect can't load or has a problem that isn't a warning.
+
 ## Check effects for mistakes
 
 `player --check` loads every effect the way the game does and reports what's wrong:
@@ -141,7 +204,7 @@ because game code can play those too. You'll see lines like these:
 ```text
 Scenes/main.swscene: entity 'Torch': ParticleEffect Effects/fire.efkefc: Missing texture Flame01.png (can't open file)
 Scenes/main.swscene: entity 'Smoke': ParticleEffect has no effect file
-warning Content/Effects/portal.efkefc: Uses distortion, which isn't drawn yet; those parts are skipped
+warning Content/Effects/portal.efkefc: node 3: sprite with a custom .efkmat material: not drawn: custom materials need compiling for Shockwave, which isn't done yet
 ```
 
 It reports these problems, which fail the check:
@@ -296,17 +359,20 @@ across every effect. Past that, new particles aren't spawned.
 
 ## Limits
 
-- Distortion (heat haze, refraction) isn't drawn yet. Those parts of an effect are
-  skipped, and `player --check` warns about them.
 - Custom materials made in Effekseer's material editor (`.efkmat`) aren't drawn yet.
-- Falloff, UV distortion, blend textures and normal maps are drawn without those touches.
+  Those parts are skipped, and `player --check` warns about them.
 - Effekseer's GPU particles aren't drawn yet.
+- UV distortion, blend textures and falloff are drawn without those touches. Normal maps
+  on lit parts are approximated: they're lit as if flat.
+- Heat haze is one layer: see-through particles drawn before it are covered, and two
+  hazes don't bend each other.
+- Particles don't take or cast shadows.
+- With soft particles on, see-through parts that write depth (*ZWrite* on a blended
+  part) no longer do, because the scene's depth is being read. Solid parts still do.
+  `player --effect-info` names those parts.
 - Sounds inside an effect aren't played. Put an `AudioSource` next to the effect instead.
-- Soft particles (fading where particles meet solid geometry) aren't done yet.
-- Particles are lit by the scene's first directional light and its ambient light. Point
-  and spot lights don't light them.
-- Effects are sorted back to front as a whole, so two blended effects in the same place
-  can overlap in the wrong order.
+- Sorting is by effect or by part, never by particle, so two parts that cross each other
+  can still overlap in the wrong order.
 
 ## How it works
 
@@ -326,7 +392,14 @@ For people changing the engine:
 - `Renderer::drawParticles` hands that list to the renderer plugin. The Vulkan renderer
   draws it in a `particles` render graph pass, after the `scene` pass, into the HDR scene
   color with depth testing (`RendererParticles.cpp`, `particle.vert`, `particle.frag`).
-  The null renderer ignores it.
+  When soft particles or heat haze read the scene's depth, the pass keeps depth
+  read-only and samples it from a bindless slot; solid parts that write depth are drawn
+  first, in a *particles (depth writing)* pass. Heat haze reads a *particle background
+  copy* of the scene color made just before. Lit parts read the light table and the
+  cluster lists. The null renderer ignores it.
+- Each running effect is captured as its own group, so batches never merge across
+  effects. `sortBatches` orders the groups back to front by the middle of their bounds
+  (or each batch by its own, for `sorting parts`), keeping the made order on ties.
 - Effekseer's textures are loaded with Shockwave's image loader into the renderer's
   bindless texture table. Effekseer can free a texture during the simulation job, so the
   handle is queued and freed on the main thread at the next `update()`.

@@ -217,6 +217,10 @@ public:
     // as setCamera; the data is copied, so it can be reused straight away. Several calls
     // in one frame add up.
     void drawParticles(const ParticleDrawList& particles);
+    // The player's particle settings (A04): soft particles, distortion and how lit
+    // particles are lit. Each is off-able; off costs nothing.
+    void setParticleSettings(const ParticleSettings& settings);
+    ParticleSettings particleSettings() const;
 
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no

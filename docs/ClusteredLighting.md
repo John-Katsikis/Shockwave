@@ -119,4 +119,4 @@ That's about 40% off the scene pass, and 23% off the frame.
   spot light that points away from it (the cone test while shading still keeps it dark).
 - Lists are fixed at 64 lights a cluster. Past that, the cluster tests every light, which
   is correct but slower; a compact variable-length list would remove that.
-- Particles aren't lit by point and spot lights yet (A04 adds that, through the clusters).
+- Lit particles read the same cluster lists with `particle_lighting scene` (docs/Effects.md), without shadows.
