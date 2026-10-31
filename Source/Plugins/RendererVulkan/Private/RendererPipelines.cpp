@@ -347,6 +347,7 @@ void VulkanRenderer::Impl::createPipelines() {
     createAmbientOcclusionPipeline();
     createDecalPipeline();   // after it: shares its sampler
     createTemporalPipelines();
+    createClusterPipeline();
 
     createUiPipeline();
 }

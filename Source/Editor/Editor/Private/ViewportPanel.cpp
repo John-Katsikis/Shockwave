@@ -325,7 +325,8 @@ void Editor::drawViewportToolbar() {
             "Reflection probes",
             "Decals",
             "Motion vectors",
-            "Reactive mask"};
+            "Reactive mask",
+            "Light clusters"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

@@ -279,6 +279,30 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
              decalQualityName(have ? decalQuality : DecalQuality::Off), why, detail});
     }
 
+    // Clustered lighting (G11): whether last frame built lists, and what they came to.
+    {
+        const ClusterStats& c = lastClusterStats;
+        const LightCulling asked = lightCulling.load(std::memory_order_relaxed);
+        char detail[256];
+        if (c.clustered)
+            std::snprintf(
+                detail, sizeof(detail),
+                "%ux%u-pixel tiles, %ux%ux%u clusters to %g m; %u point and spot lights, up to %u a cluster "
+                "(%.1f on average), %u overflowed; %.2f MiB",
+                c.grid.tileSize, c.grid.tileSize, c.grid.tilesX, c.grid.tilesY, c.grid.slices,
+                static_cast<double>(c.farPlane), c.localLights, c.maxCandidates,
+                static_cast<double>(c.averageCandidates), c.overflowClusters,
+                static_cast<double>(c.listBytes) / (1024.0 * 1024.0));
+        else
+            std::snprintf(
+                detail, sizeof(detail), "%u point and spot lights, each tested by every pixel (%s)", c.localLights,
+                c.reason);
+        // Brute force asked for, or auto choosing it, isn't a fallback; clustered not clustering is.
+        settings.push_back(
+            {"light_culling", lightCullingName(asked), c.clustered ? "clustered" : "brute_force",
+             asked == LightCulling::Clustered && !c.clustered ? c.reason : "", detail});
+    }
+
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
     const bool synced = mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR ||
@@ -360,6 +384,10 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (int i = 0; i < 2; ++i) {
         add(GpuMemoryCategory::TemporalHistory, temporalTargets.color[i].allocation);
         add(GpuMemoryCategory::TemporalHistory, temporalTargets.distance[i].allocation);
+    }
+    for (const Frame& f : frames) {
+        add(GpuMemoryCategory::Clusters, f.clusterBuffer.allocation);
+        add(GpuMemoryCategory::Clusters, f.clusterCounters.allocation);
     }
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);

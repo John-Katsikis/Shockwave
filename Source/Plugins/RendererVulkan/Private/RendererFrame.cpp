@@ -604,6 +604,11 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
         sun.castShadows = true;
         used.push_back(sun);
     }
+    // Directional lights first, every pixel's short list; then point and spot lights, which
+    // clusters pick from (G11). Each keeps its order, so the shadows they get don't change.
+    const auto locals = std::stable_partition(
+        used.begin(), used.end(), [](const LightDesc& l) { return l.type == LightDesc::Type::Directional; });
+    header.directionalCount = static_cast<uint32_t>(locals - used.begin());
     const uint32_t count = static_cast<uint32_t>(used.size());
     for (uint32_t i = 0; i < count; ++i) {
         const LightDesc& light = used[i];
@@ -621,6 +626,7 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     }
     planShadows(used, out, count, views, header);
     header.lightCount = count;
+    prepareClusters(f, header, count - header.directionalCount);
     header.shadowViews = f.frameAddress + kShadowViewsOffset;
     std::memcpy(f.frameData, &header, sizeof(header));
     vk::check(
@@ -722,7 +728,16 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
                 [this, &f](VkCommandBuffer cmd) { recordAmbientOcclusion(cmd, f); });
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
-    graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, vertexReads);
+    std::vector<vk::RenderGraph::BufferAccess> sceneReads = vertexReads;
+    if (clustersThisFrame) {
+        // G11: each cluster's lights, then the scene's fragments read them.
+        const auto lists = graph.importBuffer("light clusters", f.clusterBuffer.buffer, f.clusterState);
+        graph.addPass(
+            "light clusters", {}, [this, &f](VkCommandBuffer cmd) { recordClusters(cmd, f); },
+            {{lists, vk::BufferUse::ComputeWrite}});
+        sceneReads.push_back({lists, vk::BufferUse::FragmentShaderRead});
+    }
+    graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, sceneReads);
     if (captureRequested) {
         // Reflection capture (G07): the HDR scene as drawn, before particles, exposure and the rest.
         graph.addPass("reflection capture readback", {{color, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {

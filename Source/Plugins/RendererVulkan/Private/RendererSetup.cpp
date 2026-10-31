@@ -78,6 +78,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
     destroyTemporalPipelines();
+    destroyClusters();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);

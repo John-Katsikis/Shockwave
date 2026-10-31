@@ -192,6 +192,7 @@ void registerBuiltins() {
             field("shadow_cascades", &Environment::shadowCascades, 1.0f, 1.0f, 4.0f),
             field("ao_radius", &Environment::aoRadius, 0.01f, 0.01f, 10.0f),
             field("ao_intensity", &Environment::aoIntensity, 0.01f, 0.0f, 4.0f),
+            field("cluster_far", &Environment::clusterFar, 1.0f, 1.0f, 100000.0f),
         },
         "Rendering");
     registerComponent<Light>(

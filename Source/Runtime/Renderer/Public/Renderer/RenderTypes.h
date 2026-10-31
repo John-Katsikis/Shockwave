@@ -287,6 +287,10 @@ struct LightingDesc {
     // above 1 deeper). Only light from the surroundings is darkened.
     float aoRadius = 0.3f;
     float aoIntensity = 1.0f;
+    // Clustered lighting (G11): how far from the camera (metres) point and spot lights are
+    // sorted into clusters; past it, pixels test every light. Not a cut-off: lights past it
+    // still shine.
+    float clusterFar = 250.0f;
 };
 
 // What the scene shows: the lit result, or a view for checking content. ShadowCascades
@@ -314,7 +318,12 @@ enum class DebugView : uint32_t {
     Motion,
     // G09: the reactive mask: how much transparent and particle drawing changed each pixel,
     // white for fully, so TAA trusts history less there.
-    Reactive
+    Reactive,
+    // G11: how many point and spot lights each pixel's cluster lists, as a heat map (dark
+    // blue none, through green and yellow, to red at 32 or more); magenta where the list
+    // overflowed, grey where the pixel loops over every light (past cluster_far, brute
+    // force, orthographic views).
+    Clusters
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device

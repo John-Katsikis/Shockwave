@@ -26,6 +26,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
 #include <Renderer/TextureData.h>
 
@@ -178,6 +179,11 @@ public:
     virtual void drawDecals(std::span<const DecalDesc>) {}
     virtual void setDecalQuality(DecalQuality) {}
     virtual DecalStats decalStats() const { return {}; }
+
+    // ---- Clustered local lighting (G11, Renderer/Clusters.h) ----
+    // A backend without clusters loops over every light (and reports brute_force).
+    virtual void setLightCulling(LightCulling) {}
+    virtual ClusterStats clusterStats() const { return {}; }
 
     // ---- Screenshots ----
     virtual void requestScreenshot(const std::string& path) = 0;

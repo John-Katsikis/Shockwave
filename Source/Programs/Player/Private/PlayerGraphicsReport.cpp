@@ -42,6 +42,20 @@ std::string temporalJson(const shockwave::TemporalStats& t) {
     return text;
 }
 
+// Clustered local lighting (G11) in the last frame; the GPU's counts are a frame or two late.
+std::string clustersJson(const shockwave::ClusterStats& c) {
+    char text[512];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"requested\": \"%s\", \"clustered\": %s, \"reason\": \"%s\", \"tile_size\": %u, "
+        "\"grid\": [%u, %u, %u], \"cluster_far\": %g, \"local_lights\": %u, \"directional_lights\": %u, "
+        "\"list_bytes\": %llu, \"max_candidates\": %u, \"average_candidates\": %.3f, \"overflow_clusters\": %u}",
+        shockwave::lightCullingName(c.requested), c.clustered ? "true" : "false", c.reason, c.grid.tileSize,
+        c.grid.tilesX, c.grid.tilesY, c.grid.slices, double(c.farPlane), c.localLights, c.directionalLights,
+        static_cast<unsigned long long>(c.listBytes), c.maxCandidates, double(c.averageCandidates), c.overflowClusters);
+    return text;
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -145,6 +159,7 @@ void Player::graphicsReport() {
          << ", \"resident_bytes\": " << residency.residentBytes << ", \"full_bytes\": " << residency.fullBytes
          << ", \"retained_cpu_bytes\": " << residency.retainedBytes
          << "},\n  \"temporal\": " << temporalJson(renderer.temporalStats())
+         << ",\n  \"clusters\": " << clustersJson(renderer.clusterStats())
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

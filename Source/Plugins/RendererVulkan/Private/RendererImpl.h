@@ -210,12 +210,19 @@ struct FrameData {
     uint32_t decalAlbedo;   // G08: bindless slots of the decal buffers; 0: no decals this frame
     uint32_t decalMaterial;
     glm::vec2 jitter;   // G09: this frame's camera jitter in pixels; 0 without TAA
-    uint32_t pad;
+    // G11: the light table starts with its directional lights; local lights follow.
+    uint32_t directionalCount;
+    // G11: the cluster lists (Renderer/Clusters.h), 0: every pixel loops over every light.
+    VkDeviceAddress clusters;
+    uint32_t clusterTile;   // pixels
+    uint32_t clusterTilesX, clusterTilesY, clusterSlices;
+    float clusterNear, clusterFar;   // positive view distances
 };
 static_assert(
-    sizeof(FrameData) == 352 && offsetof(FrameData, decalAlbedo) == 332 && offsetof(FrameData, shadowViews) == 96 &&
+    sizeof(FrameData) == 384 && offsetof(FrameData, decalAlbedo) == 332 && offsetof(FrameData, shadowViews) == 96 &&
         offsetof(FrameData, view) == 112 && offsetof(FrameData, renderSize) == 304 &&
-        offsetof(FrameData, reflectionProbes) == 320 && offsetof(FrameData, jitter) == 340,
+        offsetof(FrameData, reflectionProbes) == 320 && offsetof(FrameData, jitter) == 340 &&
+        offsetof(FrameData, clusters) == 352 && offsetof(FrameData, clusterFar) == 380,
     "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
 // A local reflection probe as the shaders read it (G07). Must match ReflectionProbeData in
 // shaders/reflection.glsl.
@@ -485,6 +492,14 @@ struct VulkanRenderer::Impl {
         glm::mat4* joints = nullptr;
         VkDeviceAddress jointAddress = 0, skinnedAddress = 0;
         size_t jointCapacity = 0, skinnedCapacity = 0;   // matrices; vertices
+        // Clustered lighting (RendererClusters.cpp): the lists the cluster pass writes and the
+        // scene reads, and the GPU's counts of them, read once this slot's frame finished.
+        vk::Buffer clusterBuffer, clusterCounters;
+        vk::BufferState clusterState;
+        VkDeviceAddress clusterAddress = 0, countersAddress = 0;
+        uint64_t clusterCapacity = 0;   // bytes
+        uint32_t* counters = nullptr;   // ClusterCounters in clusters.comp
+        bool countersPending = false;   // this slot's last frame built lists
     };
 
     Window& window;
@@ -1221,6 +1236,19 @@ struct VulkanRenderer::Impl {
     void recordParticleReactive(VkCommandBuffer cmd);   // RendererParticles.cpp
     void recordTaa(VkCommandBuffer cmd, Frame& f);
     void recordTaaCopy(VkCommandBuffer cmd);
+
+    // ---- Clustered local lighting (G11, RendererClusters.cpp, Renderer/Clusters.h) --------
+    std::atomic<LightCulling> lightCulling{LightCulling::Auto};
+    VkPipelineLayout clusterLayout = VK_NULL_HANDLE;
+    VkPipeline clusterPipeline = VK_NULL_HANDLE;
+    bool clustersThisFrame = false;   // the cluster pass runs and the scene reads its lists
+    ClusterStats lastClusterStats;
+    void createClusterPipeline();
+    void destroyClusters();
+    // In writeFrameData, once the light table is written: decides whether this frame
+    // clusters, makes its lists' buffer, and fills the header's cluster fields.
+    void prepareClusters(Frame& f, FrameData& header, uint32_t localLights);
+    void recordClusters(VkCommandBuffer cmd, Frame& f);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.
