@@ -131,6 +131,7 @@ void Editor::drawViewport() {
             drawOutline(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
             drawReflectionProbe(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
             drawDecalBox(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
+            drawPostProcessVolume(e, pos, size, e == primary ? accentU32() : accentU32(0.55f));
         }
         if (m_prefs.showCameraIcons) {
             drawCameraIcons(pos, size);
@@ -326,7 +327,8 @@ void Editor::drawViewportToolbar() {
             "Decals",
             "Motion vectors",
             "Reactive mask",
-            "Light clusters"};
+            "Light clusters",
+            "Fog transmittance"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

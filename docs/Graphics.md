@@ -100,13 +100,26 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `particle_lighting`: `scene` (the default) or `simple`. Lit particles are lit by every
   light through the light clusters, or by the first directional light and the ambient
   light alone. Low uses simple.
+- `color_grading`: `true` (the default) or `false`. Postprocess profiles' white balance
+  and LUTs (docs/PostProcess.md). False shows the colours ungraded, pixel for pixel as
+  without them. Presets leave it alone.
+- `auto_exposure`: `true` (the default) or `false`. Lets profiles that ask for it meter
+  the scene and adapt exposure. False keeps each profile's manual exposure, pixel for
+  pixel, with no metering pass and no memory for it. Presets leave it alone.
+- `fog_quality`: `off`, `analytic`, `low`, `medium` (the default) or `high`. How fog from
+  postprocess profiles is drawn (docs/Fog.md): the closed form alone, or a lit froxel
+  volume near the camera with the sun's shadows and every lamp, at coarser to finer
+  detail. Off draws no fog, with no passes or memory. `player --view fog` and the
+  editor's *Fog transmittance* shading view show how much the fog lets through. Scenes
+  without fog cost nothing either way.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
 sets bloom quality low, medium or high, texture quality to its own name, anisotropy to
 4, 8, 16 and 16, material quality low for Low and high for the rest, ambient
 occlusion off, low, medium and high, decals low, medium, high and high, and soft
-particles, heat haze and scene-lit particles off (simple) for Low and on for the rest.
+particles, heat haze and scene-lit particles off (simple) for Low and on for the rest,
+and fog analytic, low, medium and high.
 `matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
 Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

@@ -84,6 +84,9 @@ void Editor::drawCreateMenuItems(Entity parent) {
         createParticleEffect(files.empty() ? std::string() : files.front());
     }
     ImGui::SetItemTooltip("Fire, smoke, sparks... from an .efkefc file made in Effekseer");
+    if (ImGui::MenuItem("Postprocess volume")) createPostProcessVolume();
+    ImGui::SetItemTooltip("Exposure, white balance, a LUT, bloom and fog where the camera is (a .swpostprocess "
+                          "profile)");
 }
 
 void Editor::drawMenuBar() {

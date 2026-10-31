@@ -1,0 +1,45 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Metering for auto exposure (A05): a weighted histogram of log2 luminance of the unexposed,
+// ungraded scene (after TAA, before bloom and UI), every other pixel each way. Must match
+// histogramBin and meteringWeight in Renderer/Private/PostProcess.cpp.
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(set = 0, binding = 0) uniform texture2D textures[];
+layout(set = 0, binding = 1) uniform sampler linearSampler;
+
+#include "exposure.glsl"
+
+shared uint bins[kExposureBins];
+shared uint clampedWeight;
+
+void main() {
+    uint local = gl_LocalInvocationIndex;
+    if (local < kExposureBins) bins[local] = 0u;
+    if (local == 0u) clampedWeight = 0u;
+    barrier();
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy) * 2;
+    if (all(lessThan(pixel, ivec2(pc.size)))) {
+        vec3 rgb = texelFetch(sampler2D(textures[nonuniformEXT(pc.sceneTexture)], linearSampler), pixel, 0).rgb;
+        float l = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+        if (!isnan(l) && !isinf(l) && l >= 0.0) {
+            uint weight = 256u;
+            if (pc.metering == 1u) {
+                vec2 d = ((vec2(pixel) + 0.5) / vec2(pc.size) - 0.5) * 2.0;
+                float r = min(length(d) / 1.41421356, 1.0);
+                weight = uint((1.0 - 0.875 * r * r * (3.0 - 2.0 * r)) * 256.0 + 0.5);
+            }
+            float t = (log2(max(l, kLuminanceFloor)) - kHistogramMinLog2) / (kHistogramMaxLog2 - kHistogramMinLog2);
+            uint bin = uint(clamp(t * float(kExposureBins), 0.0, float(kExposureBins - 1u)));
+            atomicAdd(bins[bin], weight);
+            if (l < kLuminanceFloor || t >= 1.0) atomicAdd(clampedWeight, weight);
+        }
+    }
+    barrier();
+    if (local < kExposureBins && bins[local] != 0u) atomicAdd(pc.state.histogram[local], bins[local]);
+    if (local == 0u && clampedWeight != 0u) atomicAdd(pc.state.clamped, clampedWeight);
+}

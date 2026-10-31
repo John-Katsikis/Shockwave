@@ -180,9 +180,12 @@ fast as it can, unless VSync or a frame limit slows it down:
 3. **Render.** `renderWorld` gathers what to draw and the lights, in parallel. It blends
    positions between ticks so motion looks smooth. The Renderer then builds a render
    graph:
-   - the scene pass, in HDR (high dynamic range);
+   - the fog volume, when the camera is in fog (see [Fog](Fog.md));
+   - the scene pass, in HDR (high dynamic range), fogged per surface;
    - particle effects, blended into the HDR scene (see [Particle effects](Effects.md));
-   - tonemapping, which maps HDR colors to the screen;
+   - exposure metering, when a postprocess profile asks for auto exposure;
+   - tonemapping, which maps HDR colors to the screen, with white balance and colour
+     grading (see [Colour grading, exposure and fog](PostProcess.md));
    - the game UI, drawn at the output's own resolution (see [Game UI](GameUI.md));
    - the editor UI, or a copy to the window;
    - present, which shows the frame.

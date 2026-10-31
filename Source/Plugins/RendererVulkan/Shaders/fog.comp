@@ -1,0 +1,120 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// The froxel fog volume (A06, Renderer/PostProcess.h froxelGrid, RendererPostProcess.cpp):
+// one thread per screen tile marches its column of depth slices front to back. Each cell
+// takes the fog's density at its centre and the light it scatters toward the camera there:
+// the fog's own colour, every directional light (with the sun's shadow, one tap) and the
+// point and spot lights of its light cluster (unshadowed), through the Henyey-Greenstein
+// phase. Constant over the cell, integrated exactly (7.7):
+//   T = exp(-sigma ds), S = q (1 - T) / sigma, then (S, T) = (S + T Scell, T Tcell).
+// Every cell is written: what's integrated from the camera to its far side.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform texture2D textures[];
+layout(set = 0, binding = 2) uniform samplerShadow shadowSampler;
+
+#include "frame.glsl"
+#include "clusters.glsl"
+#include "fog.glsl"
+
+layout(buffer_reference, scalar) writeonly buffer FroxelOut {
+    uvec2 cells[];
+};
+
+// Must match FogPushConstants in RendererPostProcess.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    FrameBuffer frame;
+    FroxelOut froxels;
+} pc;
+
+// Must match mesh.frag's.
+float rangeFalloff(float distance, float range) {
+    float ratio = distance / range;
+    float window = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
+    return window * window / (distance * distance + 1.0);
+}
+
+// The sun's shadow at a point in the air: its cascade, one hardware-filtered tap.
+float sunShadow(FrameBuffer frame, LightData l, vec3 p) {
+    if (l.shadowView == 0xFFFFFFFFu || frame.cascadeCount == 0u) return 1.0;
+    float depth = dot(p - frame.cameraPosition, frame.cameraForward);
+    if (depth >= frame.shadowDistance) return 1.0;
+    uint cascade = 0u;
+    while (cascade + 1u < frame.cascadeCount && depth > frame.cascadeEnds[cascade]) cascade++;
+    ShadowView s = ShadowViews(frame.shadowViews).views[l.shadowView + cascade];
+    vec4 clip = s.viewProjection * vec4(p, 1.0);
+    if (clip.w <= 0.0) return 1.0;
+    vec3 ndc = clip.xyz / clip.w;
+    if (any(greaterThan(abs(ndc.xy), vec2(1.0))) || ndc.z <= 0.0 || ndc.z > 1.0) return 1.0;
+    vec2 uv = s.rect.xy + (ndc.xy * 0.5 + 0.5) * s.rect.zw;
+    float lit = texture(sampler2DShadow(textures[frame.cascadeAtlas], shadowSampler), vec3(uv, ndc.z));
+    return mix(1.0, lit, l.shadowStrength);
+}
+
+vec3 localLight(FrameBuffer frame, uint i, vec3 p, vec3 direction) {
+    LightData l = frame.lights[i];
+    vec3 offset = p - l.position;
+    float d = length(offset);
+    if (d >= l.range) return vec3(0.0);
+    vec3 propagation = offset / max(d, 1e-4);   // from the light to the point
+    float attenuation = rangeFalloff(d, l.range);
+    if (l.type == 2u) attenuation *= smoothstep(l.cosOuter, l.cosInner, dot(propagation, l.direction));
+    return l.color * attenuation * fogPhase(frame.fogAnisotropy, dot(propagation, -direction));
+}
+
+void main() {
+    FrameBuffer frame = pc.frame;
+    uvec2 tile = gl_GlobalInvocationID.xy;
+    if (tile.x >= frame.froxelTilesX || tile.y >= frame.froxelTilesY) return;
+    // The ray through the tile's centre, and how much longer it is than view depth.
+    vec2 pixel = (vec2(tile) + 0.5) * float(frame.froxelTile);
+    vec2 ndc = vec2(pixel.x / frame.renderSize.x * 2.0 - 1.0, 1.0 - pixel.y / frame.renderSize.y * 2.0);
+    vec4 h = frame.inverseProjection * vec4(ndc, 1.0, 1.0);
+    vec3 viewRay = normalize(h.xyz / h.w);
+    float stretch = 1.0 / max(-viewRay.z, 1e-3);
+    vec3 direction = normalize(transpose(mat3(frame.view)) * viewRay);
+    vec3 ownLight = frame.fogColor;
+    vec3 scattering = vec3(0.0);
+    float transmittance = 1.0;
+    float ratio = log(frame.fogVolumetricDistance / frame.froxelNear);
+    for (uint k = 0u; k < frame.froxelSlices; ++k) {
+        float d0 = frame.froxelNear * exp(ratio * float(k) / float(frame.froxelSlices));
+        float d1 = frame.froxelNear * exp(ratio * float(k + 1u) / float(frame.froxelSlices));
+        float s0 = max(d0 * stretch, frame.fogStart), s1 = d1 * stretch;
+        if (s1 > s0 && transmittance > 1e-4) {
+            float s = 0.5 * (s0 + s1);
+            vec3 p = frame.cameraPosition + direction * s;
+            float sigma = fogDensityAt(frame, p.y);
+            if (sigma > 0.0) {
+                vec3 incoming = vec3(0.0);
+                for (uint i = 0u; i < frame.directionalCount; ++i) {
+                    LightData l = frame.lights[i];
+                    incoming += l.color * fogPhase(frame.fogAnisotropy, dot(l.direction, -direction)) * sunShadow(frame, l, p);
+                }
+                uint list = clusterListStart(frame, pixel, 0.5 * (d0 + d1));
+                ClusterLists lists = ClusterLists(frame.clusters);
+                uint listed = list != kNoCluster ? lists.words[list] : kClusterOverflow;
+                if ((listed & kClusterOverflow) != 0u) {
+                    for (uint i = frame.directionalCount; i < frame.lightCount; ++i) incoming += localLight(frame, i, p, direction);
+                } else {
+                    for (uint n = 0u; n < listed; ++n) {
+                        uint i = (lists.words[list + 1u + (n >> 2)] >> ((n & 3u) * 8u)) & 0xFFu;
+                        incoming += localLight(frame, i, p, direction);
+                    }
+                }
+                vec3 q = sigma * (ownLight + frame.fogAlbedo * incoming);
+                float x = sigma * (s1 - s0);
+                float cellT = exp(-x);
+                float share = x < 1e-3 ? 1.0 - x * (0.5 - x / 6.0) : (1.0 - cellT) / x;
+                scattering += transmittance * q * ((s1 - s0) * share);
+                transmittance *= cellT;
+            }
+        }
+        uint index = (k * frame.froxelTilesY + tile.y) * frame.froxelTilesX + tile.x;
+        pc.froxels.cells[index] = uvec2(packHalf2x16(scattering.rg), packHalf2x16(vec2(scattering.b, transmittance)));
+    }
+}

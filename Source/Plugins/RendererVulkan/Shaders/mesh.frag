@@ -21,6 +21,7 @@ layout(set = 0, binding = 5) uniform textureCube irradianceCube;
 #include "screen.glsl"
 #include "reflection.glsl"
 #include "clusters.glsl"
+#include "fog.glsl"
 
 layout(push_constant, scalar) uniform PushConstants {
     DrawBuffer drawBuffer;
@@ -582,5 +583,16 @@ void main() {
         const vec3 tints[4] = vec3[](vec3(1.0, 0.35, 0.35), vec3(0.35, 1.0, 0.35), vec3(0.4, 0.5, 1.0), vec3(1.0, 1.0, 0.3));
         if (cascade < 4u) light *= tints[cascade];
     }
-    outColor = vec4(light + emissive, albedo.a);
+    vec3 radiance = light + emissive;
+    // Fog (A06): S + T L. Blended surfaces blend this over the fogged scene behind them,
+    // which keeps the fog in front of them once (docs/Graphics/07-MathematicalContracts.md 7.10).
+    if (frame.fogMode != kFogNone && (frame.debugView == 0u || frame.debugView == 12u)) {
+        vec4 fog = sceneFog(frame, gl_FragCoord.xy, vWorldPosition);
+        if (frame.debugView == 12u) { outColor = vec4(vec3(fog.a), 1.0); return; }
+        radiance = fog.rgb + fog.a * radiance;
+    } else if (frame.debugView == 12u) {
+        outColor = vec4(1.0);
+        return;
+    }
+    outColor = vec4(radiance, albedo.a);
 }

@@ -83,6 +83,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyParticleBackground(particleBackground);
     destroyTemporalPipelines();
     destroyClusters();
+    destroyPostProcess();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);

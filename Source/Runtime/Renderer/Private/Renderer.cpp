@@ -93,6 +93,8 @@ const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
     case GpuMemoryCategory::ReflectionProbes: return "reflection probes";
     case GpuMemoryCategory::Clusters: return "light clusters";
     case GpuMemoryCategory::Hzb: return "depth pyramid";
+    case GpuMemoryCategory::Fog: return "fog";
+    case GpuMemoryCategory::Exposure: return "exposure";
     case GpuMemoryCategory::Count: break;
     }
     return "?";
@@ -127,6 +129,8 @@ struct Renderer::State {
     DecalQuality decalQuality = DecalQuality::High;
     LightCulling lightCulling = LightCulling::Auto;
     ParticleSettings particleSettings;
+    PostProcessDesc postProcess;
+    PostProcessSettings postProcessSettings;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -378,6 +382,8 @@ struct Renderer::State {
         backend->setDecalQuality(decalQuality);
         backend->setLightCulling(lightCulling);
         backend->setParticleSettings(particleSettings);
+        backend->setPostProcessSettings(postProcessSettings);
+        backend->setPostProcess(postProcess);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
@@ -971,6 +977,18 @@ void Renderer::setParticleSettings(const ParticleSettings& settings) {
     m->backend->setParticleSettings(settings);
 }
 ParticleSettings Renderer::particleSettings() const { return m->particleSettings; }
+
+void Renderer::setPostProcess(const PostProcessDesc& desc) {
+    m->postProcess = desc;
+    m->backend->setPostProcess(desc);
+}
+const PostProcessDesc& Renderer::postProcess() const { return m->postProcess; }
+void Renderer::setPostProcessSettings(const PostProcessSettings& settings) {
+    m->postProcessSettings = settings;
+    m->backend->setPostProcessSettings(settings);
+}
+PostProcessSettings Renderer::postProcessSettings() const { return m->postProcessSettings; }
+PostProcessStats Renderer::postProcessStats() const { return m->backend->postProcessStats(); }
 ClusterStats Renderer::clusterStats() const {
     ClusterStats stats = m->backend->clusterStats();
     stats.requested = m->lightCulling;

@@ -83,7 +83,10 @@ void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projectio
     m_impl->jitterCamera();   // TAA (G10): the culling frustum stays unjittered
 }
 void VulkanRenderer::setView(RenderViewId id) { m_impl->setView(id); }
-void VulkanRenderer::cutCamera() { m_impl->cameraCut = true; }
+void VulkanRenderer::cutCamera() {
+    m_impl->cameraCut = true;
+    m_impl->exposureCut = true;
+}
 void VulkanRenderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
 void VulkanRenderer::drawParticles(const ParticleDrawList& particles) { m_impl->drawParticles(particles); }
 
@@ -176,6 +179,11 @@ const char* VulkanRenderer::gpuName() const { return m_impl->context->gpuName();
 const GpuChoice* VulkanRenderer::gpuChoice() const { return &m_impl->context->gpuChoice(); }
 uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
 ParticleStats VulkanRenderer::particleStats() const { return m_impl->lastParticleStats; }
+void VulkanRenderer::setPostProcess(const PostProcessDesc& desc) { m_impl->postProcess = desc; }
+void VulkanRenderer::setPostProcessSettings(const PostProcessSettings& settings) {
+    m_impl->postProcessSettings = settings;
+}
+PostProcessStats VulkanRenderer::postProcessStats() const { return m_impl->lastPostProcessStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 uint32_t VulkanRenderer::unkeyedDraws() const { return m_impl->lastUnkeyedDraws; }
 TemporalStats VulkanRenderer::temporalStats() const { return m_impl->lastTemporalStats; }

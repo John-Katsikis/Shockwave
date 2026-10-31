@@ -244,7 +244,7 @@ float VulkanRenderer::Impl::bloomIntensity() const {
     // Debug views show raw values, like the tonemap pass.
     const bool lit =
         debugView == DebugView::Lit || debugView == DebugView::Lighting || debugView == DebugView::ShadowCascades;
-    return lit && bloom.image.image ? std::clamp(lighting.bloomIntensity, 0.0f, 1.0f) * bloomScale : 0.0f;
+    return lit && bloom.image.image ? std::clamp(authoredBloom(), 0.0f, 1.0f) * bloomScale : 0.0f;
 }
 
 void VulkanRenderer::Impl::recordBloom(VkCommandBuffer cmd) {

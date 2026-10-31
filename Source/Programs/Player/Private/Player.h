@@ -11,6 +11,7 @@
 #include <GameFramework/GameModule.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
+#include <Engine/PostProcess.h>
 #include <GameUI/GameUI.h>
 #include <Multiplayer/Replication.h>
 #include <Network/Loopback.h>
@@ -177,6 +178,13 @@ int imageDiff(
 int materialInfo(const fs::path& asset, const fs::path& json);
 // --effect-info (PlayerEffects.cpp): an effect file's parts and how each is drawn (A04).
 int effectInfo(const fs::path& effect, const fs::path& json);
+// Post-processing (PlayerPostProcess.cpp, A05/A06), no project needed: --postprocess-schema
+// writes docs/PostProcessSchema.md ("-": stdout); --postprocess-info reports a profile with
+// its parents applied and its LUT (JSON with --json); --lut-export-neutral writes an
+// identity .cube of 17, 33 or 65 entries a side.
+int postProcessSchema(const fs::path& file);
+int postProcessInfo(const fs::path& profile, const fs::path& json);
+int lutExportNeutral(uint32_t size, const fs::path& output);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);
@@ -265,6 +273,12 @@ private:
     // reported those that don't), and its warnings are printed without failing the check.
     void checkMaterialOverrides(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
     void checkMaterialFiles();
+    // --check for colour grading, exposure and fog (PlayerPostProcess.cpp, A05/A06): each
+    // PostProcessVolume's profile and LUT resolve, then every .swpostprocess in Content.
+    void checkPostProcessVolumes(
+        shockwave::World& world, const std::string& shown, std::vector<std::string>& problems,
+        std::vector<std::string>& checkedProfiles);
+    void checkPostProcessFiles(const std::vector<std::string>& checkedProfiles, std::vector<std::string>& problems);
     // Baked lighting (PlayerLighting.cpp, G05/G06): --check's id and bake rules, and the
     // scene tools. A damaged bake fails the check; a missing or out-of-date one warns.
     void checkLighting(const shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
@@ -345,6 +359,9 @@ private:
     std::unique_ptr<shockwave::PlaySession> m_previewHost;
     std::unique_ptr<shockwave::GameUI> m_ui;   // before the session, whose UIWorld uses it
     std::unique_ptr<shockwave::Effects> m_effects;   // the same, for EffectsWorld
+    // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
+    std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
+    double m_frameDt = 1.0 / 60.0;
     std::unique_ptr<shockwave::PlaySession> m_session;
     shockwave::NavMeshOverlay m_navOverlay;
     shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)

@@ -70,6 +70,25 @@ std::string particlesJson(const shockwave::ParticleSettings& s, const shockwave:
     return text;
 }
 
+// Colour grading, exposure and fog (A05, A06) in the last frame; metering is a frame or two late.
+std::string postProcessJson(const shockwave::PostProcessSettings& s, const shockwave::PostProcessStats& p) {
+    char text[768];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"color_grading\": %s, \"auto_exposure\": %s, \"white_balance\": %s, \"luts\": %u, "
+        "\"luts_approximated\": %s, \"exposure\": %.4f, \"auto_share\": %.4f, \"metered_valid\": %s, "
+        "\"metered_target\": %.4f, \"clamped_fraction\": %.4f, \"exposure_resets\": %u, "
+        "\"fog_requested\": \"%s\", \"fog_quality\": \"%s\", \"fog_reason\": \"%s\", "
+        "\"froxels\": [%u, %u, %u], \"froxel_tile\": %u, \"fog_bytes\": %llu, \"exposure_bytes\": %llu}",
+        s.colorGrading ? "true" : "false", s.autoExposure ? "true" : "false", p.whiteBalance ? "true" : "false", p.luts,
+        p.lutsApproximated ? "true" : "false", double(p.exposure), double(p.autoExposure),
+        p.meteredValid ? "true" : "false", double(p.meteredTarget), double(p.clampedFraction), p.exposureResets,
+        shockwave::fogQualityName(p.fogRequested), shockwave::fogQualityName(p.fogQuality), p.fogReason,
+        p.froxels.tilesX, p.froxels.tilesY, p.froxels.slices, p.froxels.tileSize,
+        static_cast<unsigned long long>(p.fogBytes), static_cast<unsigned long long>(p.exposureBytes));
+    return text;
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -175,6 +194,7 @@ void Player::graphicsReport() {
          << "},\n  \"temporal\": " << temporalJson(renderer.temporalStats())
          << ",\n  \"clusters\": " << clustersJson(renderer.clusterStats())
          << ",\n  \"particles\": " << particlesJson(renderer.particleSettings(), renderer.particleStats())
+         << ",\n  \"postprocess\": " << postProcessJson(renderer.postProcessSettings(), renderer.postProcessStats())
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

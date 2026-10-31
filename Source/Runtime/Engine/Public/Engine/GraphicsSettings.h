@@ -4,6 +4,7 @@
 #include <Renderer/Clusters.h>
 #include <Renderer/Decals.h>
 #include <Renderer/Particles.h>
+#include <Renderer/PostProcess.h>
 #include <Renderer/RenderTypes.h>
 
 #include <filesystem>
@@ -47,6 +48,12 @@ struct GraphicsSettings {
     bool softParticles = true;
     bool particleDistortion = true;
     ParticleLighting particleLighting = ParticleLighting::Scene;
+    // Colour and fog (A05, A06): white balance and LUTs from postprocess profiles, their
+    // auto exposure, and how fog is drawn. Grading and auto exposure are the scene's look,
+    // so presets leave them alone; fog quality follows the preset.
+    bool colorGrading = true;
+    bool autoExposure = true;
+    FogQuality fogQuality = FogQuality::Medium;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

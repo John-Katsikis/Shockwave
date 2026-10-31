@@ -64,6 +64,7 @@ bool Editor::openProject(const fs::path& path, const fs::path& sceneToOpen) {
         m_assetFolder->open(m_options.assetFolder.empty() ? m_project.assetFolder : fs::path(m_options.assetFolder)));
     m_gameUI->setContentFolder(m_project.assetFolder);
     m_effects->setContentFolder(m_project.assetFolder);
+    m_postProcess->setContentFolder(m_project.assetFolder);
     shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     loadEditorState();
     scanScenes();
@@ -112,6 +113,7 @@ void Editor::closeProject() {
     m_world.clear();
     m_gameUI->setContentFolder({});
     m_effects->setContentFolder({});
+    m_postProcess->setContentFolder({});
     shockwave::prefabs().setup({}, nullptr);
     m_scenePath.clear();
     m_selection.clear();

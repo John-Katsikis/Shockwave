@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters, 12 fog
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -65,5 +65,14 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint clusterTile;   // pixels
     uint clusterTilesX, clusterTilesY, clusterSlices;
     float clusterNear, clusterFar;   // positive view distances
+    // A06: fog (fog.glsl, Renderer/PostProcess.h). fogMode 0 none, 1 analytic, 2 froxels.
+    uint fogMode;
+    float fogDensity, fogHeightFalloff, fogBaseHeight, fogMaxDensity;
+    vec3 fogColor;
+    float fogAlbedo, fogAnisotropy, fogStart, fogSkyDistance;
+    float fogVolumetricDistance;   // the froxel volume's far plane, metres of view depth
+    uint froxelTile, froxelTilesX, froxelTilesY, froxelSlices;
+    float froxelNear;
+    uvec2 froxels;   // FroxelCells
     LightData lights[];
 };

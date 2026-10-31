@@ -217,12 +217,23 @@ struct FrameData {
     uint32_t clusterTile;   // pixels
     uint32_t clusterTilesX, clusterTilesY, clusterSlices;
     float clusterNear, clusterFar;   // positive view distances
+    // A06: fog (Shaders/fog.glsl, RendererPostProcess.cpp). fogMode: kFogNone, ...
+    uint32_t fogMode;
+    float fogDensity, fogHeightFalloff, fogBaseHeight, fogMaxDensity;
+    glm::vec3 fogColor;
+    float fogAlbedo, fogAnisotropy, fogStart, fogSkyDistance;
+    float fogVolumetricDistance;
+    uint32_t froxelTile, froxelTilesX, froxelTilesY, froxelSlices;
+    float froxelNear;
+    VkDeviceAddress froxels;
 };
 static_assert(
-    sizeof(FrameData) == 384 && offsetof(FrameData, decalAlbedo) == 332 && offsetof(FrameData, shadowViews) == 96 &&
-        offsetof(FrameData, view) == 112 && offsetof(FrameData, renderSize) == 304 &&
-        offsetof(FrameData, reflectionProbes) == 320 && offsetof(FrameData, jitter) == 340 &&
-        offsetof(FrameData, clusters) == 352 && offsetof(FrameData, clusterFar) == 380,
+    sizeof(FrameData) == 464 && offsetof(FrameData, fogMode) == 384 && offsetof(FrameData, froxels) == 456 &&
+        offsetof(FrameData, fogColor) == 404 && offsetof(FrameData, decalAlbedo) == 332 &&
+        offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
+        offsetof(FrameData, renderSize) == 304 && offsetof(FrameData, reflectionProbes) == 320 &&
+        offsetof(FrameData, jitter) == 340 && offsetof(FrameData, clusters) == 352 &&
+        offsetof(FrameData, clusterFar) == 380,
     "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
 // A local reflection probe as the shaders read it (G07). Must match ReflectionProbeData in
 // shaders/reflection.glsl.
@@ -283,7 +294,28 @@ struct TonemapPushConstants {
     uint32_t tonemapper;
     uint32_t bloomTexture;   // the bloom chain's top level
     float bloomIntensity;   // 0: none
+    float autoExposure;   // A05: 0 manual .. 1 metered
+    glm::mat3 whiteBalance;   // A05: identity for none
+    uint32_t lutTexture[2];   // A05: LUT atlases; 0 none
+    uint32_t lutSize[2];   // entries a side; kLutLinear: on linear values
+    float lutWeight[2];
+    uint32_t pad0;
+    VkDeviceAddress exposure;   // A05: ExposureState; 0 without metering
+    float manualEv;
+    uint32_t pad1;
 };
+static_assert(
+    sizeof(TonemapPushConstants) == 112 && offsetof(TonemapPushConstants, exposure) == 96 &&
+        offsetof(TonemapPushConstants, whiteBalance) == 32 && offsetof(TonemapPushConstants, lutWeight) == 84,
+    "TonemapPushConstants must match shaders/tonemap.frag");
+constexpr uint32_t kLutLinear = 0x80000000u;
+// Must match ExposureReadback in shaders/exposure.glsl.
+struct ExposureReadback {
+    float ev, target, meanLog2;
+    uint32_t valid, clamped, total, resets, pad;
+};
+// ExposureState in shaders/exposure.glsl: the histogram, then the state.
+constexpr VkDeviceSize kExposureStateBytes = kExposureBins * 4 + 9 * 4;
 
 // Must match the push constants in shaders/grid.vert and grid.frag.
 struct GridPushConstants {
@@ -500,6 +532,12 @@ struct VulkanRenderer::Impl {
         uint64_t clusterCapacity = 0;   // bytes
         uint32_t* counters = nullptr;   // ClusterCounters in clusters.comp
         bool countersPending = false;   // this slot's last frame built lists
+        // Auto exposure (RendererPostProcess.cpp): the adapt pass's copy of its state, read
+        // back once this slot's frame is done.
+        vk::Buffer exposureReadback;
+        const ExposureReadback* exposureData = nullptr;
+        VkDeviceAddress exposureReadbackAddress = 0;
+        bool exposurePending = false;
     };
 
     Window& window;
@@ -1054,7 +1092,7 @@ struct VulkanRenderer::Impl {
     void recordEnvironment(VkCommandBuffer cmd);
     // The environment map behind everything, before the scene's draws.
     bool showsSky() const;
-    void recordSky(VkCommandBuffer cmd);
+    void recordSky(VkCommandBuffer cmd, VkDeviceAddress frame);
 
     // ---- Bloom (RendererBloom.cpp) ----------------------------------------------------
     // Bright light spreads into its surroundings, the way it does in a camera lens. The HDR
@@ -1283,6 +1321,44 @@ struct VulkanRenderer::Impl {
     // clusters, makes its lists' buffer, and fills the header's cluster fields.
     void prepareClusters(Frame& f, FrameData& header, uint32_t localLights);
     void recordClusters(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Colour, exposure and fog (A05, A06; RendererPostProcess.cpp, Renderer/PostProcess.h)
+    // White balance and LUTs are push constants of the tonemap pass. Auto exposure: a
+    // histogram pass and a one-thread adapt pass into one persistent state buffer the tonemap
+    // reads, none of it without a metered profile. Fog: the frame header's analytic terms,
+    // and with fog_quality low..high a froxel volume compute pass before the scene.
+    PostProcessDesc postProcess;   // the frame's, from Renderer::setPostProcess
+    PostProcessSettings postProcessSettings;
+    VkPipelineLayout exposureLayout = VK_NULL_HANDLE;
+    VkPipeline exposureHistogramPipeline = VK_NULL_HANDLE, exposureAdaptPipeline = VK_NULL_HANDLE;
+    vk::Buffer exposureState;   // ExposureState in Shaders/exposure.glsl, made the first frame that meters
+    vk::BufferState exposureBufferState;
+    VkDeviceAddress exposureAddress = 0;
+    bool exposureThisFrame = false;
+    bool exposureReset = true;   // jump to the target on the next metered frame
+    bool exposureCut = false;   // Renderer::cutCamera since the last metered frame
+    bool needsExposureClear = false;   // a new state buffer, zeroed before its first use
+    float meteredEv = 0.0f;   // the GPU's exposure, a frame or two late
+    RenderViewId exposureView;
+    VkPipelineLayout fogLayout = VK_NULL_HANDLE;
+    VkPipeline fogPipeline = VK_NULL_HANDLE;
+    vk::Buffer froxelBuffer;   // FroxelCells, sized for the largest grid so far
+    vk::BufferState froxelState;
+    VkDeviceAddress froxelAddress = 0;
+    uint64_t froxelCapacity = 0;
+    bool froxelsThisFrame = false;
+    PostProcessStats lastPostProcessStats;
+    void createPostProcessPipelines();
+    void destroyPostProcess();
+    // In writeFrameData, after the light table and clusters: fog's header fields, the froxel
+    // grid and buffer, and whether this frame meters exposure.
+    void preparePostProcess(Frame& f, FrameData& header);
+    void recordFog(VkCommandBuffer cmd, Frame& f);
+    void recordExposureHistogram(VkCommandBuffer cmd);
+    void recordExposureAdapt(VkCommandBuffer cmd, Frame& f);
+    // The tonemap pass's grading and exposure fields.
+    void gradeTonemap(TonemapPushConstants& push) const;
+    float authoredBloom() const;   // the scene's, or the postprocess volumes' override
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.

@@ -217,7 +217,7 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
              have == bloomQuality ? "" : "pending: the new bloom chain is made at the next frame", detail});
         char requested[32];
         std::snprintf(requested, sizeof(requested), "%g", static_cast<double>(bloomScale));
-        const float authored = std::clamp(lighting.bloomIntensity, 0.0f, 1.0f);
+        const float authored = std::clamp(authoredBloom(), 0.0f, 1.0f);
         // Not a fallback when bloom is off: the scale just has nothing to scale.
         char detail2[128];
         if (bloom.image.image)
@@ -324,6 +324,56 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
             {"particle_lighting", particleLightingName(lighting), particleLightingName(lighting), "", detail});
     }
 
+    // Colour grading, exposure and fog (A05, A06): what last frame applied.
+    {
+        const PostProcessStats& p = lastPostProcessStats;
+        const PostProcessSettings& asked = postProcessSettings;
+        const bool lit = debugView == DebugView::Lit;
+        char detail[256];
+        const bool grading = p.whiteBalance || p.luts;
+        std::snprintf(
+            detail, sizeof(detail), "white balance %s; %u LUT%s%s", p.whiteBalance ? "applied" : "none", p.luts,
+            p.luts == 1 ? "" : "s", p.lutsApproximated ? " (more than 2 overlapped: the top two, renormalized)" : "");
+        std::string why;
+        if (asked.colorGrading && !lit)
+            why = "off in debug views, which show raw values";
+        else if (asked.colorGrading && !grading)
+            why = "no post-process volume grades the camera";
+        settings.push_back(
+            {"color_grading", onOff(asked.colorGrading), onOff(asked.colorGrading && grading), why,
+             asked.colorGrading ? detail : "white balance and LUTs skipped"});
+        const bool metering = p.autoExposure > 0.0f;
+        if (metering)
+            std::snprintf(
+                detail, sizeof(detail),
+                "%.0f%% metered; exposure %.2f EV, target %.2f EV%s; %.1f%% outside the "
+                "histogram; %u resets; %.1f KiB",
+                static_cast<double>(p.autoExposure * 100.0f), static_cast<double>(p.exposure),
+                static_cast<double>(p.meteredTarget), p.meteredValid ? "" : " (nothing metered yet)",
+                static_cast<double>(p.clampedFraction * 100.0f), p.exposureResets,
+                static_cast<double>(p.exposureBytes) / 1024.0);
+        else
+            std::snprintf(detail, sizeof(detail), "manual exposure %.2f EV", static_cast<double>(p.exposure));
+        why.clear();
+        if (asked.autoExposure && !metering)
+            why = captureRequested ? "reflection captures use manual exposure"
+                                   : "no post-process volume asks for auto exposure";
+        settings.push_back({"auto_exposure", onOff(asked.autoExposure), onOff(metering), why, detail});
+        if (p.fogQuality >= FogQuality::Low)
+            std::snprintf(
+                detail, sizeof(detail), "%ux%ux%u froxels of %u px to %g m, analytic past it; %.2f MiB",
+                p.froxels.tilesX, p.froxels.tilesY, p.froxels.slices, p.froxels.tileSize,
+                static_cast<double>(postProcess.fog.volumetricDistance),
+                static_cast<double>(p.fogBytes) / (1024.0 * 1024.0));
+        else if (p.fogQuality == FogQuality::Analytic)
+            std::snprintf(detail, sizeof(detail), "closed form per pixel, sun unshadowed; no buffers");
+        else
+            std::snprintf(detail, sizeof(detail), "no fog pass or buffers");
+        settings.push_back(
+            {"fog_quality", fogQualityName(p.fogRequested), fogQualityName(p.fogQuality),
+             p.fogQuality == p.fogRequested ? "" : p.fogReason, detail});
+    }
+
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
     const bool synced = mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR ||
@@ -410,6 +460,10 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
         add(GpuMemoryCategory::Clusters, f.clusterBuffer.allocation);
         add(GpuMemoryCategory::Clusters, f.clusterCounters.allocation);
     }
+    // A05, A06: only once a frame meters exposure or fills the volume.
+    add(GpuMemoryCategory::Fog, froxelBuffer.allocation);
+    add(GpuMemoryCategory::Exposure, exposureState.allocation);
+    for (const Frame& f : frames) add(GpuMemoryCategory::Exposure, f.exposureReadback.allocation);
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);
     for (const Frame& f : frames) {

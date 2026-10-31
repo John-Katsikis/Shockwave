@@ -323,7 +323,10 @@ enum class DebugView : uint32_t {
     // blue none, through green and yellow, to red at 32 or more); magenta where the list
     // overflowed, grey where the pixel loops over every light (past cluster_far, brute
     // force, orthographic views).
-    Clusters
+    Clusters,
+    // A06: the fog's transmittance from the camera to each pixel, white for clear air, black
+    // where the fog hides everything behind it. White everywhere with fog_quality off.
+    Fog
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
@@ -434,6 +437,8 @@ enum class GpuMemoryCategory : uint32_t {
     ReflectionProbes,
     Clusters,
     Hzb,
+    Fog,   // A06: the froxel volume
+    Exposure,   // A05: the exposure histogram, state and readbacks
     Count
 };
 const char* gpuMemoryCategoryName(GpuMemoryCategory category);   // "render targets", ...

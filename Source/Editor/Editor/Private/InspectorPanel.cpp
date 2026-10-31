@@ -3,6 +3,8 @@
 // components show up here as soon as they're registered.
 #include "Editor.h"
 
+#include <Engine/PostProcess.h>
+
 #include <Circuits/Circuit.h>
 #include <Engine/BakedLighting.h>
 #include <Multiplayer/NetworkComponents.h>
@@ -227,6 +229,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
     drawNavigationNotes(info, e);
     drawSpatialAudioNotes(info, e);
     if (info.id == shockwave::componentId<shockwave::ParticleEffect>()) drawParticleEffectNotes(e);
+    if (info.id == shockwave::componentId<shockwave::PostProcessVolume>()) drawPostProcessVolumeNotes(e);
     if (info.id == shockwave::componentId<shockwave::Animator>()) drawAnimatorNotes(e);
     if (info.id == shockwave::componentId<shockwave::net::NetworkObject>()) drawNetworkObjectNotes(e);
     if (info.id == shockwave::componentId<shockwave::Circuit>()) {

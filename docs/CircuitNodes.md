@@ -4790,6 +4790,189 @@ Sets the entity's PhysicsSettings gravity.
 - In `target` Entity, default self
 - In `gravity` Vec3, required
 
+### Component.PostProcessVolume.Add
+
+Gives the entity a PostProcessVolume with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.PostProcessVolume.Get
+
+Every field of the entity's PostProcessVolume; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `profile` String
+- Out `enabled` Bool
+- Out `unbounded` Bool
+- Out `half_extents` Vec3
+- Out `priority` Int
+- Out `blend_distance` Float
+- Out `weight` Float
+
+### Component.PostProcessVolume.Get.blend_distance
+
+The entity's PostProcessVolume blend_distance.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `blend_distance` Float
+
+### Component.PostProcessVolume.Get.enabled
+
+The entity's PostProcessVolume enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.PostProcessVolume.Get.half_extents
+
+The entity's PostProcessVolume half_extents.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `half_extents` Vec3
+
+### Component.PostProcessVolume.Get.priority
+
+The entity's PostProcessVolume priority.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `priority` Int
+
+### Component.PostProcessVolume.Get.profile
+
+The entity's PostProcessVolume profile.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `profile` String
+
+### Component.PostProcessVolume.Get.unbounded
+
+The entity's PostProcessVolume unbounded.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `unbounded` Bool
+
+### Component.PostProcessVolume.Get.weight
+
+The entity's PostProcessVolume weight.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `weight` Float
+
+### Component.PostProcessVolume.Has
+
+The entity has a PostProcessVolume.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.PostProcessVolume.Remove
+
+Takes the PostProcessVolume off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.PostProcessVolume.Set
+
+Sets the fields given (connected or written) of the entity's PostProcessVolume; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `profile` String
+- In `enabled` Bool
+- In `unbounded` Bool
+- In `half_extents` Vec3
+- In `priority` Int
+- In `blend_distance` Float
+- In `weight` Float
+
+### Component.PostProcessVolume.Set.blend_distance
+
+Sets the entity's PostProcessVolume blend_distance.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `blend_distance` Float, required
+
+### Component.PostProcessVolume.Set.enabled
+
+Sets the entity's PostProcessVolume enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.PostProcessVolume.Set.half_extents
+
+Sets the entity's PostProcessVolume half_extents.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `half_extents` Vec3, required
+
+### Component.PostProcessVolume.Set.priority
+
+Sets the entity's PostProcessVolume priority.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `priority` Int, required
+
+### Component.PostProcessVolume.Set.profile
+
+Sets the entity's PostProcessVolume profile.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `profile` String, required
+
+### Component.PostProcessVolume.Set.unbounded
+
+Sets the entity's PostProcessVolume unbounded.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `unbounded` Bool, required
+
+### Component.PostProcessVolume.Set.weight
+
+Sets the entity's PostProcessVolume weight.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `weight` Float, required
+
 ### Component.Prefab.Add
 
 Gives the entity a Prefab with default values, if it has none.

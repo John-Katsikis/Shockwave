@@ -2,6 +2,8 @@
 // entities, undo/redo and the keyboard shortcuts.
 #include "Editor.h"
 
+#include <Engine/PostProcess.h>
+
 #include <Assets/BuiltinAssets.h>
 #include <Engine/BakedLighting.h>
 #include <Engine/Decals.h>
@@ -127,6 +129,7 @@ std::string Editor::kindLabel(Entity e) {
         return model.empty() ? "Model" : fs::path(model).stem().string();
     }
     if (m_world.has<shockwave::ParticleEffect>(e)) return "Particle effect";
+    if (m_world.has<shockwave::PostProcessVolume>(e)) return "Postprocess volume";
     if (m_world.has<shockwave::CharacterController>(e)) return "Character";
     if (m_world.has<shockwave::PhysicsSettings>(e)) return "Physics";
     if (m_world.has<shockwave::Collider>(e)) {

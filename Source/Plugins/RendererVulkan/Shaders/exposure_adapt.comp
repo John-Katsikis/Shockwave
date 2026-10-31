@@ -1,0 +1,77 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Auto exposure (A05): from this frame's histogram, the target exposure, then one step of
+// adaptation toward it in stop space; clears the histogram for the next frame. One thread.
+// Must match meteredExposure and adaptExposure in Renderer/Private/PostProcess.cpp.
+layout(local_size_x = 1) in;
+
+#include "exposure.glsl"
+
+float binLog2(uint i) {
+    return kHistogramMinLog2 + (float(i) + 0.5) * (kHistogramMaxLog2 - kHistogramMinLog2) / float(kExposureBins);
+}
+
+void main() {
+    ExposureState s = pc.state;
+    float total = 0.0;
+    for (uint i = 0u; i < kExposureBins; ++i) total += float(s.histogram[i]);
+    bool valid = total > 0.0;
+    float target = s.target, mean = s.meanLog2;
+    if (valid) {
+        float low = total * clamp(pc.lowPercentile, 0.0, 1.0);
+        float high = total * clamp(pc.highPercentile, 0.0, 1.0);
+        float sum = 0.0, weight = 0.0, cumulative = 0.0;
+        for (uint i = 0u; i < kExposureBins; ++i) {
+            float a = cumulative, b = cumulative + float(s.histogram[i]);
+            cumulative = b;
+            float overlap = min(b, high) - max(a, low);
+            if (overlap > 0.0) {
+                sum += overlap * binLog2(i);
+                weight += overlap;
+            }
+        }
+        if (!(weight > 0.0)) {
+            cumulative = 0.0;
+            uint i = 0u;
+            for (; i + 1u < kExposureBins; ++i) {
+                cumulative += float(s.histogram[i]);
+                if (cumulative > low) break;
+            }
+            sum = binLog2(i);
+            weight = 1.0;
+        }
+        mean = sum / weight;
+        target = clamp(log2(pc.targetGray) - mean + pc.compensation, pc.minEv, pc.maxEv);
+    }
+    // No valid pixels keeps the last exposure (or, before any, the limits' middle... 0).
+    float ev = s.ev;
+    if (s.initialized == 0u) ev = valid ? target : clamp(0.0, pc.minEv, pc.maxEv);
+    if (pc.reset != 0u && valid) {
+        ev = target;
+        s.resets += 1u;
+    } else if (valid && s.initialized != 0u) {
+        float dt = clamp(pc.dt, 0.0, 0.25);
+        float tau = target > ev ? pc.brightenTime : pc.darkenTime;
+        ev = tau > 0.0 ? ev + (target - ev) * (1.0 - exp(-dt / tau)) : target;
+    }
+    ev = clamp(ev, pc.minEv, pc.maxEv);
+    s.ev = ev;
+    s.target = target;
+    s.meanLog2 = mean;
+    s.valid = valid ? 1u : 0u;
+    s.total = uint(min(total, 4294967040.0));
+    s.initialized = valid || s.initialized != 0u ? 1u : 0u;
+    pc.readback.ev = ev;
+    pc.readback.target = target;
+    pc.readback.meanLog2 = mean;
+    pc.readback.valid = s.valid;
+    pc.readback.clamped = s.clamped;
+    pc.readback.total = s.total;
+    pc.readback.resets = s.resets;
+    for (uint i = 0u; i < kExposureBins; ++i) s.histogram[i] = 0u;
+    s.clamped = 0u;
+}
