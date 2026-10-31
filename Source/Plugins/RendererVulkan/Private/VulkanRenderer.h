@@ -50,6 +50,7 @@ public:
     void setClearColor(const Color& color) override;
     void setCamera(const glm::mat4& view, const glm::mat4& projection) override;
     void setView(RenderViewId id) override;
+    void cutCamera() override;
     void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material, const RenderInstanceKey& key) override;
@@ -87,6 +88,7 @@ public:
     uint32_t culledDraws() const override;
     ParticleStats particleStats() const override;
     uint32_t unkeyedDraws() const override;
+    TemporalStats temporalStats() const override;
 
     RendererCapabilities capabilities() const override;
     std::vector<EffectiveSetting> effectiveSettings() const override;

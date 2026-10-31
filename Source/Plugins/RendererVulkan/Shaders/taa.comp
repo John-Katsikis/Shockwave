@@ -1,0 +1,188 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Temporal anti-aliasing (G10, RendererTemporal.cpp, Renderer/Temporal.h), at internal
+// resolution, before bloom and tone mapping. Each pixel takes the scene as drawn this frame
+// (with the camera jittered) and blends in where the same surface was in history:
+//   1. the nearest surface of the 3x3 around it gives the motion (so moving edges carry
+//      their own motion), from the prepass's motion target, or, where that has none (the
+//      sky, draws with no previous pose), reprojected from depth as if it stood still;
+//   2. history is thrown away off screen, after a reset, and where something nearer than
+//      the surface's expected distance covered it last frame (it was hidden);
+//   3. what's kept is clipped to the 3x3's colour box (mean +- sigma in YCoCg), so stale
+//      colours can't linger;
+//   4. history's share is 0.9 at rest, down to 0.7 with motion, and towards 0 under
+//      transparent and particle drawing (the reactive mask).
+// Modes 1 and 2 show the motion and reactive targets instead (DebugView::Motion, Reactive).
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D sceneColor;   // nearest
+layout(set = 0, binding = 1) uniform sampler2D sceneDepth;   // nearest, reverse-Z
+layout(set = 0, binding = 2) uniform sampler2D motionTexture;   // nearest
+layout(set = 0, binding = 3) uniform sampler2D reactiveTexture;   // nearest
+layout(set = 0, binding = 4) uniform sampler2D historyColor;   // linear, last frame's result
+layout(set = 0, binding = 5) uniform sampler2D historyDistance;   // nearest, last frame's view distance
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image2D outColor;
+layout(set = 0, binding = 7, r32f) uniform writeonly image2D outDistance;
+
+// Must match TaaPushConstants in RendererTemporal.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    // Current unjittered NDC (x, y, depth, 1) to last frame's unjittered clip space: what a
+    // surface that didn't move reprojects with.
+    mat4 reprojection;
+    FrameBuffer frame;
+    vec2 previousJitter;   // pixels
+    uint mode;   // 0 resolve, 1 motion view, 2 reactive view
+    uint historyValid;   // 0: this frame starts history afresh
+    uint orthographic;   // no distances to compare
+    uint pad0, pad1, pad2;
+} pc;
+
+// Renderer/Temporal.h's constants.
+const float kRestWeight = 0.9, kMotionWeight = 0.7, kMotionPixels = 4.0, kVarianceScale = 1.0;
+
+vec3 rgbToYCoCg(vec3 c) {
+    return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b);
+}
+vec3 yCoCgToRgb(vec3 c) { return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
+vec3 clipToBox(vec3 history, vec3 lo, vec3 hi) {
+    vec3 centre = 0.5 * (lo + hi), extents = max(0.5 * (hi - lo), vec3(1e-6));
+    vec3 offset = history - centre;
+    vec3 units = abs(offset / extents);
+    float outside = max(units.x, max(units.y, units.z));
+    return outside > 1.0 ? centre + offset / outside : history;
+}
+// History read through a Catmull-Rom filter (five bilinear taps, Jimenez 2016): sharper
+// than bilinear, so moving surfaces don't blur a little more every frame.
+vec3 sampleHistory(vec2 uv, vec2 size) {
+    vec2 position = uv * size;
+    vec2 centre = floor(position - 0.5) + 0.5;
+    vec2 f = position - centre;
+    vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    vec2 w3 = f * f * (-0.5 + 0.5 * f);
+    vec2 w12 = w1 + w2;
+    vec2 tc0 = (centre - 1.0) / size, tc3 = (centre + 2.0) / size, tc12 = (centre + w2 / w12) / size;
+    vec3 result = textureLod(historyColor, vec2(tc12.x, tc0.y), 0.0).rgb * (w12.x * w0.y) +
+                  textureLod(historyColor, vec2(tc0.x, tc12.y), 0.0).rgb * (w0.x * w12.y) +
+                  textureLod(historyColor, tc12, 0.0).rgb * (w12.x * w12.y) +
+                  textureLod(historyColor, vec2(tc3.x, tc12.y), 0.0).rgb * (w3.x * w12.y) +
+                  textureLod(historyColor, vec2(tc12.x, tc3.y), 0.0).rgb * (w12.x * w3.y);
+    float weight = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+    return max(result / weight, vec3(0.0));
+}
+float srgbDecode(float c) { return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4); }
+
+// Positive view distance at a pixel; 0 for background.
+float viewDistance(ivec2 p, vec2 size) {
+    vec3 position;
+    vec2 uv = (vec2(p) + 0.5) / size;
+    return viewPositionFromDepth(uv, texelFetch(sceneDepth, p, 0).r, pc.frame.inverseProjection, position)
+               ? -position.z
+               : 0.0;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sizeI = textureSize(sceneColor, 0);
+    if (any(greaterThanEqual(p, sizeI))) return;
+    vec2 size = vec2(sizeI);
+    vec2 jitterUv = pc.frame.jitter / size;
+
+    // The nearest surface around (reverse-Z: greatest depth) and the colour box.
+    vec3 current = texelFetch(sceneColor, p, 0).rgb;
+    vec3 mean = vec3(0.0), meanSquared = vec3(0.0), lo = vec3(1e30), hi = vec3(-1e30);
+    ivec2 nearest = p;
+    float nearestDepth = -1.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 q = clamp(p + ivec2(x, y), ivec2(0), sizeI - 1);
+            vec3 c = rgbToYCoCg(texelFetch(sceneColor, q, 0).rgb);
+            mean += c;
+            meanSquared += c * c;
+            lo = min(lo, c);
+            hi = max(hi, c);
+            float d = texelFetch(sceneDepth, q, 0).r;
+            if (d > nearestDepth) {
+                nearestDepth = d;
+                nearest = q;
+            }
+        }
+    }
+    mean /= 9.0;
+    vec3 sigma = sqrt(max(meanSquared / 9.0 - mean * mean, vec3(0.0)));
+
+    // Its motion: from the prepass where it has a previous pose, from depth where it doesn't.
+    vec4 stored = texelFetch(motionTexture, nearest, 0);
+    vec2 motion = stored.xy;
+    float expected = stored.z;
+    if (stored.w <= 0.0) {
+        vec2 uv = (vec2(nearest) + 0.5) / size - jitterUv;   // unjittered
+        vec4 previous = pc.reprojection * vec4(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y, nearestDepth, 1.0);
+        motion = previous.w > 1e-6 ? uv - screenUvFromClip(previous) : vec2(0.0);
+        expected = nearestDepth > 0.0 ? previous.w : 0.0;
+    }
+
+    if (pc.mode == 1u) {
+        // Motion view: 0.5 + pixels / 32 in red and green (as the screenshot's bytes), blue
+        // where the prepass knew the previous pose. The background stays black.
+        vec2 pixels = texelFetch(motionTexture, p, 0).w > 0.0 ? texelFetch(motionTexture, p, 0).xy * size : motion * size;
+        bool surface = texelFetch(sceneDepth, p, 0).r > 0.0;
+        vec2 encoded = clamp(0.5 + pixels / 32.0, 0.0, 1.0);
+        vec3 shown = vec3(srgbDecode(encoded.x), srgbDecode(encoded.y), texelFetch(motionTexture, p, 0).w);
+        imageStore(outColor, p, vec4(surface ? shown : vec3(0.0), 1.0));
+        imageStore(outDistance, p, vec4(0.0));
+        return;
+    }
+    float reactive = texelFetch(reactiveTexture, p, 0).r;
+    if (pc.mode == 2u) {
+        imageStore(outColor, p, vec4(vec3(reactive), 1.0));
+        imageStore(outDistance, p, vec4(0.0));
+        return;
+    }
+
+    float distance = viewDistance(p, size);
+    // History is the resolved image on the unjittered pixel grid (resolvedHistoryUv in
+    // Renderer/Temporal.h): no jitter terms, so a still image is read texel for texel.
+    vec2 historyUv = (vec2(p) + 0.5) / size - motion;
+    bool valid = pc.historyValid != 0u && all(greaterThanEqual(historyUv, vec2(0.0))) &&
+                 all(lessThanEqual(historyUv, vec2(1.0)));
+    if (valid && pc.orthographic == 0u && expected > 0.0) {
+        // Hidden last frame: something nearer than the surface's expected distance covered
+        // every texel of history around where it's read (3x3: the jitter moves each frame's
+        // samples by up to a pixel, and distance changes fast across a surface seen at a
+        // grazing angle). Background or farther surfaces there aren't a reason: that's the
+        // surface newly in front, or too thin to have been sampled, and clipping handles it.
+        float tolerance = max(0.01, 0.01 * expected);
+        ivec2 centre = ivec2(floor(historyUv * size));
+        float farthestWas = 0.0;
+        bool background = false;
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                float was = texelFetch(historyDistance, clamp(centre + ivec2(x, y), ivec2(0), sizeI - 1), 0).r;
+                background = background || was <= 0.0;
+                farthestWas = max(farthestWas, was);
+            }
+        }
+        valid = background || farthestWas >= expected - tolerance;
+    }
+
+    vec3 result = current;
+    if (valid) {
+        vec3 history = rgbToYCoCg(sampleHistory(historyUv, size));
+        vec3 boxLo = max(lo, mean - kVarianceScale * sigma), boxHi = min(hi, mean + kVarianceScale * sigma);
+        history = yCoCgToRgb(clipToBox(history, boxLo, boxHi));
+        float moving = clamp(length(motion * size) / kMotionPixels, 0.0, 1.0);
+        float weight = mix(kRestWeight, kMotionWeight, moving) * (1.0 - clamp(reactive, 0.0, 1.0));
+        result = mix(current, max(history, vec3(0.0)), weight);
+    }
+    imageStore(outColor, p, vec4(result, 1.0));
+    imageStore(outDistance, p, vec4(distance));
+}

@@ -27,6 +27,9 @@ layout(location = 10) flat out vec2 vMapScales;   // normal scale, occlusion str
 layout(location = 11) flat out uint vDraw;   // this draw's entry, for its slot bindings
 layout(location = 12) out float vLayerMask;   // a second layer's mask from the vertex colours (A02)
 layout(location = 13) out vec2 vLightmapUv;   // in the draw's lightmap atlas (G05); 0 without one
+// Where this vertex was last frame, in last frame's unjittered clip space (G09); w 0: no
+// previous pose, so the prepass writes no motion.
+layout(location = 14) out vec4 vPreviousClip;
 // The surface prepass (G03) and the shading over it run this same shader in different
 // pipelines; their depths must match exactly for the EQUAL test.
 invariant gl_Position;
@@ -37,6 +40,13 @@ void main() {
     Vertex v = VertexBuffer(draw.vertexBuffer).vertices[gl_VertexIndex];
 
     gl_Position = draw.mvp * vec4(v.position, 1.0);
+    vPreviousClip = vec4(0.0);
+    if (draw.history != 0u) {
+        vec3 previous = v.position;
+        if (draw.previousVertexBuffer != uvec2(0u))
+            previous = VertexBuffer(draw.previousVertexBuffer).vertices[gl_VertexIndex].position;
+        vPreviousClip = draw.previousMvp * vec4(previous, 1.0);
+    }
     vNormal = mat3(draw.normalMatrix) * v.normal;
     vUvs = vertexUvs(draw, v, gl_VertexIndex);
     vDraw = gl_InstanceIndex;

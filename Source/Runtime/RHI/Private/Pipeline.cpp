@@ -73,8 +73,8 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depth.depthTestEnable = desc.depthFormat != VK_FORMAT_UNDEFINED;
     // Blended surfaces test depth but never write it, so what's behind still shows.
-    depth.depthWriteEnable =
-        desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend && !desc.premultipliedAlpha;
+    depth.depthWriteEnable = desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend &&
+                             !desc.premultipliedAlpha && !desc.maxBlend;
     depth.depthCompareOp = desc.depthCompare;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
@@ -88,12 +88,21 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    if (desc.maxBlend) {
+        blendAttachment.blendEnable = VK_TRUE;
+        blendAttachment.srcColorBlendFactor = blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.srcAlphaBlendFactor = blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.colorBlendOp = blendAttachment.alphaBlendOp = VK_BLEND_OP_MAX;
+    }
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     const bool hasColor = desc.colorFormat != VK_FORMAT_UNDEFINED;
-    const uint32_t colorCount = hasColor ? (desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2u : 1u) : 0u;
-    const VkPipelineColorBlendAttachmentState blendAttachments[2] = {blendAttachment, blendAttachment};
-    const VkFormat colorFormats[2] = {desc.colorFormat, desc.secondColorFormat};
+    const uint32_t colorCount = !hasColor                                       ? 0u
+                                : desc.thirdColorFormat != VK_FORMAT_UNDEFINED  ? 3u
+                                : desc.secondColorFormat != VK_FORMAT_UNDEFINED ? 2u
+                                                                                : 1u;
+    const VkPipelineColorBlendAttachmentState blendAttachments[3] = {blendAttachment, blendAttachment, blendAttachment};
+    const VkFormat colorFormats[3] = {desc.colorFormat, desc.secondColorFormat, desc.thirdColorFormat};
     blend.attachmentCount = colorCount;
     blend.pAttachments = blendAttachments;
 

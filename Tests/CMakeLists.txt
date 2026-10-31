@@ -244,6 +244,12 @@ add_executable(decal_test DecalTest.cpp)
 target_link_libraries(decal_test PRIVATE Shockwave::Engine)
 shockwave_warnings(decal_test)
 add_test(NAME decals COMMAND decal_test)
+# Motion vectors and TAA (G09, G10): jitter, reprojection, history resets and the resolve's
+# maths. No GPU.
+add_executable(temporal_test TemporalTest.cpp)
+target_link_libraries(temporal_test PRIVATE Shockwave::Engine)
+shockwave_warnings(temporal_test)
+add_test(NAME temporal COMMAND temporal_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -281,6 +287,15 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFixtures
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Motion vectors and TAA (G09, G10) on the fixtures: the debug views' values, TAA against
+    # a supersampled image, determinism, and nothing temporal when it's off.
+    add_test(NAME graphics_temporal_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsTemporal
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTemporalCheck.cmake)
+    set_tests_properties(graphics_temporal_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
     # The same report without a GPU: the null renderer says what it can't do, and why.
     # It plays a few frames, so like the other headless play tests it needs Xvfb.

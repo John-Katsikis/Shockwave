@@ -159,8 +159,9 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
              pending ? "pending: the new shadow maps are made once the old ones are out of use" : "", detail});
     }
 
-    // Anti-aliasing: FXAA needs its input image, made at the next frame boundary.
-    {
+    // Anti-aliasing: FXAA needs its input image, TAA its motion, reactive and history
+    // images (G10), each made at the next frame boundary.
+    if (antiAliasing != AntiAliasing::Taa) {
         const bool wanted = antiAliasing == AntiAliasing::Fxaa;
         const bool have = aaTarget.image.image != VK_NULL_HANDLE;
         std::string why = wanted && !have ? "pending: its image is made at the next frame" : "";
@@ -174,6 +175,29 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         settings.push_back(
             {"anti_aliasing", antiAliasingName(antiAliasing),
              antiAliasingName(have && fxaaActive() ? AntiAliasing::Fxaa : AntiAliasing::None), why, detail});
+    } else {
+        const bool have = temporalActive();
+        const bool lit =
+            debugView == DebugView::Lit || debugView == DebugView::Lighting || debugView == DebugView::ShadowCascades;
+        std::string why = !have ? "pending: its images are made at the next frame" : "";
+        if (have && !lit) why = "off in debug views, which show raw values";
+        if (have && lit && !currentView.valid())
+            why = "off for a camera without a RenderViewId: it has no history to keep";
+        char detail[192] = "";
+        if (have) {
+            uint64_t bytes = imageBytes(temporalTargets.motion) + imageBytes(temporalTargets.reactive);
+            for (int i = 0; i < 2; ++i)
+                bytes += imageBytes(temporalTargets.color[i]) + imageBytes(temporalTargets.distance[i]);
+            std::snprintf(
+                detail, sizeof(detail), "at %ux%u before bloom, jitter cycle %u; last reset: %s (%u so far); %.1f MiB",
+                temporalTargets.motion.extent.width, temporalTargets.motion.extent.height, kTaaJitterCycle,
+                historyResetName(lastTemporalStats.reset), lastTemporalStats.resets,
+                static_cast<double>(bytes) / (1024.0 * 1024.0));
+        }
+        settings.push_back(
+            {"anti_aliasing", "taa",
+             antiAliasingName(have && lit && currentView.valid() ? AntiAliasing::Taa : AntiAliasing::None), why,
+             detail});
     }
 
     // Bloom: the chain in use, which lags the request by a frame (or two, when both slots
@@ -330,6 +354,13 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     for (const vk::Image* image : {&decalTargets.layers, &decalTargets.albedo, &decalTargets.material})
         add(GpuMemoryCategory::SurfaceBuffers, image->allocation);
     for (const vk::Image& image : aoTargets.ao) add(GpuMemoryCategory::AmbientOcclusion, image.allocation);
+    // G09, G10: motion vectors, the reactive mask and both histories.
+    add(GpuMemoryCategory::TemporalHistory, temporalTargets.motion.allocation);
+    add(GpuMemoryCategory::TemporalHistory, temporalTargets.reactive.allocation);
+    for (int i = 0; i < 2; ++i) {
+        add(GpuMemoryCategory::TemporalHistory, temporalTargets.color[i].allocation);
+        add(GpuMemoryCategory::TemporalHistory, temporalTargets.distance[i].allocation);
+    }
     add(GpuMemoryCategory::Readback, screenshotBuffer.allocation);
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);
     for (const Frame& f : frames) {

@@ -45,7 +45,7 @@ std::string list(const std::vector<const char*>& choices) {
 }
 const std::vector<const char*> kBool = {"true", "false"};
 const std::vector<const char*> kShadowChoices = {"off", "low", "medium", "high", "ultra"};
-const std::vector<const char*> kAntiAliasingChoices = {"none", "fxaa"};
+const std::vector<const char*> kAntiAliasingChoices = {"none", "fxaa", "taa"};
 const std::vector<const char*> kBloomChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kTextureQualityChoices = {"low", "medium", "high", "ultra"};
 const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
@@ -97,15 +97,14 @@ std::vector<GraphicsSettingInfo> makeInfo() {
          }});
     info.push_back(
         {"anti_aliasing", "Anti-aliasing", "Quality",
-         "Smooths jagged edges. FXAA is a fast pass after tone mapping; it never touches game UI. "
-         "TAA comes later (batch G10).",
-         "none, fxaa", kAntiAliasingChoices, GraphicsApply::Targets, true,
+         "Smooths jagged edges. FXAA is a fast pass after tone mapping. TAA jitters the camera and blends "
+         "each frame with the last ones: steadier edges and fine detail, at the cost of some softness and "
+         "ghosting on fast motion. Neither touches game UI, and they're never stacked.",
+         "none, fxaa, taa", kAntiAliasingChoices, GraphicsApply::Targets, true,
          [](const S& s) { return std::string(antiAliasingName(s.antiAliasing)); },
          [](S& s, const std::string& v, std::string& error) {
              if (choice(kAntiAliasingChoices, v, s.antiAliasing)) return true;
-             error = v == "taa" ? "anti_aliasing taa isn't available yet (it arrives with temporal anti-aliasing, "
-                                  "batch G10); use none or fxaa"
-                                : "anti_aliasing must be " + list(kAntiAliasingChoices);
+             error = "anti_aliasing must be " + list(kAntiAliasingChoices);
              return false;
          }});
     info.push_back(

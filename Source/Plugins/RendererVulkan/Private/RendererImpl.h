@@ -52,6 +52,8 @@ constexpr uint32_t kEnvironmentCubes = 3;
 // The scene renders in HDR; tonemapping to the display happens at the end of the frame.
 constexpr VkFormat kSceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 constexpr VkFormat kDepthFormat = VK_FORMAT_D32_SFLOAT;
+constexpr uint32_t kNoGraphImage = UINT32_MAX;   // a render graph image not imported this frame
+constexpr VkFormat kMotionFormat = VK_FORMAT_R16G16B16A16_SFLOAT;   // G09's motion vectors
 // The tonemapped result at output resolution: what the window or editor viewport shows.
 constexpr VkFormat kDisplayFormat = VK_FORMAT_R8G8B8A8_SRGB;
 
@@ -98,13 +100,21 @@ struct DrawData {
     // bits) and second (high 16); 0: the global environment only.
     uint32_t reflections;
     uint32_t decalLayers;   // G08: receiver layer bits; 0 for blended draws
+    // G09: last frame's unjittered view projection times its model matrix, and its vertices
+    // then (0: the same as vertexBuffer). history 0: no previous pose, no motion.
+    glm::mat4 previousMvp;
+    VkDeviceAddress previousVertexBuffer;
+    uint32_t history;
+    uint32_t pad;
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
         offsetof(DrawData, normalTexture) == 252 && offsetof(DrawData, occlusionStrength) == 272 &&
         offsetof(DrawData, uv1Buffer) == 280 && offsetof(DrawData, slots) == 288 && offsetof(DrawData, layers) == 408 &&
         offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
-        offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 && sizeof(DrawData) == 448,
+        offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 &&
+        offsetof(DrawData, previousMvp) == 448 && offsetof(DrawData, previousVertexBuffer) == 512 &&
+        offsetof(DrawData, history) == 520 && sizeof(DrawData) == 528,
     "DrawData must match the shader's scalar layout");
 constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
                    kIndirectProbes = 2u;   // DrawData::indirectSource
@@ -187,7 +197,8 @@ struct FrameData {
     VkDeviceAddress shadowViews;
     float specularLevels;   // mip levels of the prefiltered specular cube
     uint32_t aoTexture;   // bindless slot of the final ambient occlusion; 0: none this frame
-    // The screen-space contract's (G03, Renderer/ScreenSpace.h): the camera's, unmodified.
+    // The screen-space contract's (G03, Renderer/ScreenSpace.h): the camera's as rasterized
+    // (with TAA, projection is jittered: Renderer/Temporal.h).
     glm::mat4 view;
     glm::mat4 projection;
     glm::mat4 inverseProjection;
@@ -198,12 +209,13 @@ struct FrameData {
     uint32_t reflectionProbeCount;
     uint32_t decalAlbedo;   // G08: bindless slots of the decal buffers; 0: no decals this frame
     uint32_t decalMaterial;
-    uint32_t pad[3];
+    glm::vec2 jitter;   // G09: this frame's camera jitter in pixels; 0 without TAA
+    uint32_t pad;
 };
 static_assert(
     sizeof(FrameData) == 352 && offsetof(FrameData, decalAlbedo) == 332 && offsetof(FrameData, shadowViews) == 96 &&
         offsetof(FrameData, view) == 112 && offsetof(FrameData, renderSize) == 304 &&
-        offsetof(FrameData, reflectionProbes) == 320,
+        offsetof(FrameData, reflectionProbes) == 320 && offsetof(FrameData, jitter) == 340,
     "FrameData must match the shader's scalar layout (Shaders/frame.glsl)");
 // A local reflection probe as the shaders read it (G07). Must match ReflectionProbeData in
 // shaders/reflection.glsl.
@@ -513,7 +525,8 @@ struct VulkanRenderer::Impl {
     std::array<VkPipeline, 4> solidPipelines{};
     // With the surface prepass (G03): the prepass itself, and the opaque shading over it
     // (depth EQUAL, no writes, reading ambient occlusion). Indexed by prepassIndex.
-    std::array<VkPipeline, 8> prepassPipelines{};
+    // [decal layers (G08) + 2 * motion (G09)][prepassIndex]: which targets it writes besides normals.
+    std::array<std::array<VkPipeline, 8>, 4> prepassPipelines{};
     std::array<VkPipeline, 8> depthEqualPipelines{};
     static uint32_t prepassIndex(const DrawCommand& draw) {
         return (draw.data.alphaCutoff >= 0.0f ? 4 : 0) + (draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0);
@@ -689,7 +702,9 @@ struct VulkanRenderer::Impl {
     Color clearColor{0.02f, 0.02f, 0.03f, 1.0f};
     glm::mat4 viewProjection{1.0f};
     Frustum viewFrustum{glm::mat4(1.0f)};   // viewProjection's, set with it
+    // projection and viewProjection are what's rasterized: jittered while TAA runs (G10).
     glm::mat4 view{1.0f}, projection{1.0f};
+    glm::mat4 unjitteredProjection{1.0f}, unjitteredViewProjection{1.0f};
     glm::vec3 cameraPosition{0.0f};
 
     Impl(Window& w, JobSystem& j, bool vsync);
@@ -1119,7 +1134,6 @@ struct VulkanRenderer::Impl {
     VkDescriptorSetLayout decalSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout decalLayout = VK_NULL_HANDLE;
     VkPipeline decalPipeline = VK_NULL_HANDLE;
-    std::array<VkPipeline, 8> prepassDecalPipelines{};   // the prepass with the layer target
 
     void createDecalPipeline();
     void destroyDecalPipeline();
@@ -1132,6 +1146,81 @@ struct VulkanRenderer::Impl {
     void prepareDecals();   // selects this frame's decals into frameDecals
     void writeDecals(Frame& f);
     void recordDecals(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Motion vectors and temporal anti-aliasing (RendererTemporal.cpp) -------------
+    // While TAA or a temporal debug view is on, the camera is jittered, the surface prepass
+    // also writes motion vectors, blended draws and particles write a reactive mask after
+    // the scene, and Shaders/taa.comp blends the scene with its history before bloom. Off,
+    // none of it exists: no jitter, no targets, no passes.
+    struct TemporalTargets {
+        vk::Image motion;   // RGBA16F: uv motion, previous view distance, validity
+        vk::Image reactive;   // R8: how much blended drawing changed each pixel
+        vk::Image color[2];   // RGBA16F history, ping-ponged
+        vk::Image distance[2];   // R32F: each history's view distance (0 background)
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet sets[2] = {};   // sets[i] writes history i, reads the other
+    };
+    TemporalTargets temporalTargets;   // no images while it's off
+    vk::ImageState motionState, reactiveState, historyColorState[2], historyDistanceState[2];
+    uint32_t historyWrite = 0;   // the history this frame writes
+    TemporalViewState temporalView;   // last frame's, for historyReset
+    uint32_t temporalMode = 0;   // last frame's anti-aliasing and debug view, packed
+    bool cameraCut = false;   // Renderer::cutCamera this frame
+    bool jittered = false;   // setCamera jittered this frame's camera
+    glm::vec2 jitter{0.0f}, previousJitter{0.0f};
+    glm::mat4 previousViewProjection{1.0f};   // last frame's, unjittered
+    bool temporalThisFrame = false;   // motion, reactive and resolve passes run this frame
+    bool historyValid = false;   // this frame blends history
+    TemporalStats lastTemporalStats;
+    uint32_t temporalResets = 0;
+    // Where each keyed draw was last frame (RenderInstanceKey), and this frame's, swapped
+    // after each frame. Skinned poses keep their joints in a flat array beside them.
+    struct PreviousPose {
+        glm::mat4 model;
+        uint32_t firstJoint = 0, jointCount = 0;
+    };
+    struct InstanceKeyHash {
+        size_t operator()(const RenderInstanceKey& k) const {
+            uint64_t h = k.world * 0x9E3779B97F4A7C15ull;
+            h ^= (uint64_t(k.entity) << 32 | k.generation) + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+            h ^= (uint64_t(k.part) << 32 | k.meshGeneration) + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+            return static_cast<size_t>(h);
+        }
+    };
+    std::unordered_map<RenderInstanceKey, PreviousPose, InstanceKeyHash> previousPoses, currentPoses;
+    std::vector<glm::mat4> previousJoints, currentJoints;
+    // Skinned draws with a previous pose: skinned a second time with last frame's joints.
+    struct PreviousSkin {
+        uint32_t draw;   // in gatheredDraws
+        uint32_t firstJoint, jointCount;   // in previousJoints
+    };
+    std::vector<PreviousSkin> previousSkins;
+    VkSampler temporalNearestSampler = VK_NULL_HANDLE, temporalLinearSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout taaSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout taaLayout = VK_NULL_HANDLE;
+    VkPipeline taaPipeline = VK_NULL_HANDLE;
+    VkPipeline reactiveMeshPipeline = VK_NULL_HANDLE;   // blended draws' coverage, MAX blended
+    VkPipeline reactiveParticlePipeline = VK_NULL_HANDLE;
+
+    void createTemporalPipelines();
+    void destroyTemporalPipelines();
+    // TAA asked for, or a view that shows its targets.
+    bool temporalWanted() const;
+    bool temporalActive() const { return temporalTargets.motion.image != VK_NULL_HANDLE; }
+    // This frame's camera is jittered and resolved: TAA on, a lit view, a view with history.
+    bool taaThisFrame() const;
+    bool createTemporalTargets();
+    void destroyTemporalTargets(TemporalTargets& targets);
+    void updateTemporalTargets();   // at a frame boundary
+    void jitterCamera();   // from setCamera
+    void decideHistory();   // at the end of a frame: whether it keeps history, or why not
+    // After sorting the draws: gives each keyed draw its previous pose.
+    void prepareHistory();
+    void finishHistory();   // after the frame is recorded: this frame becomes the previous one
+    void recordReactive(VkCommandBuffer cmd, Frame& f);
+    void recordParticleReactive(VkCommandBuffer cmd);   // RendererParticles.cpp
+    void recordTaa(VkCommandBuffer cmd, Frame& f);
+    void recordTaaCopy(VkCommandBuffer cmd);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.

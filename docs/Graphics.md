@@ -2,7 +2,7 @@
 
 Game code and menus use `game.graphics()` (include `<Shockwave/Game.h>`). The shared
 service wraps the engine's graphics controls: render scale, shadow quality,
-anti-aliasing (FXAA), bloom quality and strength, texture quality, anisotropic filtering,
+anti-aliasing (FXAA or TAA), bloom quality and strength, texture quality, anisotropic filtering,
 mesh LOD error, VSync, frame limit and low latency. It doesn't change scene lighting,
 materials, cameras, asset import quality, or the renderer backend.
 
@@ -32,8 +32,11 @@ how it applies, and whether presets set it. Files, the schema, `--graphics-set`,
 and Arena's menu all read that table, so a new setting appears everywhere at once. A setting
 that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory.
 
-- `anti_aliasing`: `none` (the default) or `fxaa`, which smooths edges after tone mapping
-  and before game UI. `taa` is refused with a message until temporal anti-aliasing exists.
+- `anti_aliasing`: `none` (the default), `fxaa`, which smooths edges after tone mapping
+  and before game UI, or `taa`, which jitters the camera and blends each frame with the
+  last ones before bloom: steadier thin geometry and detail, a little softer, with brief
+  ghosting on fast motion (docs/TemporalAntiAliasing.md). They're never stacked; off,
+  neither costs anything. Games that teleport the camera call `game.cutCamera()`.
 - `bloom_quality`: `off`, `low` (quarter resolution, 4 levels), `medium` (half, 5) or
   `high` (half, 6, the default).
 - `bloom_scale` (0..1): the player's multiplier on the scene's authored bloom intensity.

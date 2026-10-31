@@ -73,8 +73,10 @@ void VulkanRenderer::setCamera(const glm::mat4& view, const glm::mat4& projectio
     m_impl->view = view;
     m_impl->projection = projection;
     m_impl->cameraPosition = glm::vec3(glm::inverse(view)[3]);
+    m_impl->jitterCamera();   // TAA (G10): the culling frustum stays unjittered
 }
 void VulkanRenderer::setView(RenderViewId id) { m_impl->setView(id); }
+void VulkanRenderer::cutCamera() { m_impl->cameraCut = true; }
 void VulkanRenderer::setGrid(const GridSettings& grid) { m_impl->grid = grid; }
 void VulkanRenderer::drawParticles(const ParticleDrawList& particles) { m_impl->drawParticles(particles); }
 
@@ -169,6 +171,7 @@ uint32_t VulkanRenderer::drawCount() const { return m_impl->lastDrawCount; }
 ParticleStats VulkanRenderer::particleStats() const { return m_impl->lastParticleStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 uint32_t VulkanRenderer::unkeyedDraws() const { return m_impl->lastUnkeyedDraws; }
+TemporalStats VulkanRenderer::temporalStats() const { return m_impl->lastTemporalStats; }
 RendererCapabilities VulkanRenderer::capabilities() const { return m_impl->capabilities(); }
 std::vector<EffectiveSetting> VulkanRenderer::effectiveSettings() const { return m_impl->effectiveSettings(); }
 RendererMemoryReport VulkanRenderer::memoryReport() const { return m_impl->memoryReport(); }

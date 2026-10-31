@@ -30,6 +30,18 @@ std::string quoted(const std::string& text) {
 
 double mib(uint64_t bytes) { return double(bytes) / (1024.0 * 1024.0); }
 
+// Motion vectors and TAA (G09, G10) in the last frame.
+std::string temporalJson(const shockwave::TemporalStats& t) {
+    char text[320];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"motion\": %s, \"taa\": %s, \"reset\": \"%s\", \"resets\": %u, \"history_draws\": %u, "
+        "\"new_draws\": %u, \"jitter\": [%.4f, %.4f]}",
+        t.motion ? "true" : "false", t.taa ? "true" : "false", shockwave::historyResetName(t.reset), t.resets,
+        t.historyDraws, t.newDraws, t.jitter.x, t.jitter.y);
+    return text;
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -132,7 +144,8 @@ void Player::graphicsReport() {
          << ", \"reduced\": " << residency.reduced << ", \"pending\": " << residency.pending
          << ", \"resident_bytes\": " << residency.residentBytes << ", \"full_bytes\": " << residency.fullBytes
          << ", \"retained_cpu_bytes\": " << residency.retainedBytes
-         << "},\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
+         << "},\n  \"temporal\": " << temporalJson(renderer.temporalStats())
+         << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
     out << json.str();

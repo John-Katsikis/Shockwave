@@ -61,11 +61,9 @@ void write(const fs::path& json, const std::string& text) {
     std::printf("Wrote %s\n", json.string().c_str());
 }
 
-}   // namespace
-
-int imageStats(const fs::path& image, const fs::path& json, const std::array<double, 4>& region) {
-    shockwave::Image whole = load(image);
-    // Only the region's pixels: whole pixels from its top-left corner, at least one.
+// Only the region's pixels: whole pixels from its top-left corner, at least one.
+shockwave::Image crop(const shockwave::Image& whole, const std::array<double, 4>& region) {
+    if (region == std::array<double, 4>{0, 0, 1, 1}) return whole;
     const auto x0 = std::min(uint32_t(region[0] * whole.width), whole.width - 1);
     const auto y0 = std::min(uint32_t(region[1] * whole.height), whole.height - 1);
     const auto w = std::clamp(uint32_t(std::lround(region[2] * whole.width)), 1u, whole.width - x0);
@@ -78,13 +76,21 @@ int imageStats(const fs::path& image, const fs::path& json, const std::array<dou
         std::copy_n(
             whole.rgba.data() + (size_t(y0 + y) * whole.width + x0) * 4, size_t(w) * 4,
             part.rgba.data() + size_t(y) * w * 4);
-    const Stats s = stats(part);
+    return part;
+}
+
+}   // namespace
+
+int imageStats(const fs::path& image, const fs::path& json, const std::array<double, 4>& region) {
+    const Stats s = stats(crop(load(image), region));
     write(json, statsJson(s) + "\n");
     return 0;
 }
 
-int imageDiff(const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json) {
-    const shockwave::Image a = load(reference), b = load(candidate);
+int imageDiff(
+    const fs::path& reference, const fs::path& candidate, double tolerance, const fs::path& json,
+    const std::array<double, 4>& region) {
+    const shockwave::Image a = crop(load(reference), region), b = crop(load(candidate), region);
     const Stats sa = stats(a), sb = stats(b);
     const bool sameSize = a.width == b.width && a.height == b.height;
     double squared = 0;

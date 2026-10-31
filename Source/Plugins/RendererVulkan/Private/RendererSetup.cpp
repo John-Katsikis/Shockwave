@@ -76,6 +76,8 @@ VulkanRenderer::Impl::~Impl() {
     destroyAntiAliasingPipeline();
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
+    destroyTemporalTargets(temporalTargets);
+    destroyTemporalPipelines();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);
@@ -178,8 +180,8 @@ void VulkanRenderer::Impl::createRenderTargets() {
     };
     sceneColor = createImage(
         extent, kSceneColorFormat,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-            VK_IMAGE_USAGE_STORAGE_BIT,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
     sceneDepth = createImage(
         extent, kDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -191,7 +193,8 @@ void VulkanRenderer::Impl::createRenderTargets() {
     createDisplayUiView();
     createBloomTargets();   // the GPU is idle, so a slot is free
     if (antiAliasing == AntiAliasing::Fxaa) createAaTarget();
-    if (effectiveAmbientOcclusion() != AmbientOcclusion::Off) createAoTargets();
+    if (effectiveAmbientOcclusion() != AmbientOcclusion::Off || temporalWanted()) createAoTargets();
+    if (temporalWanted()) createTemporalTargets();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
     // The tonemap pass reads the scene through the bindless table like any texture.
@@ -224,6 +227,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     destroyAaTarget(aaTarget);
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
+    destroyTemporalTargets(temporalTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

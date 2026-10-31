@@ -25,7 +25,9 @@ RenderViewId RenderViewId::create() {
     return {next.fetch_add(1, std::memory_order_relaxed)};
 }
 
-const char* antiAliasingName(AntiAliasing aa) { return aa == AntiAliasing::Fxaa ? "fxaa" : "none"; }
+const char* antiAliasingName(AntiAliasing aa) {
+    return aa == AntiAliasing::Fxaa ? "fxaa" : aa == AntiAliasing::Taa ? "taa" : "none";
+}
 
 const char* bloomQualityName(BloomQuality quality) {
     constexpr const char* names[] = {"off", "low", "medium", "high"};
@@ -778,6 +780,7 @@ void Renderer::setCamera(const glm::mat4& view, const glm::mat4& projection, Ren
     m->backend->setCamera(view, projection);
 }
 RenderViewId Renderer::currentView() const { return m->viewId; }
+void Renderer::cutCamera() { m->backend->cutCamera(); }
 const glm::mat4& Renderer::cameraView() const { return m->view; }
 const glm::mat4& Renderer::cameraProjection() const { return m->projection; }
 void Renderer::drawMesh(
@@ -884,6 +887,7 @@ uint32_t Renderer::drawCount() const { return m->backend->drawCount(); }
 uint32_t Renderer::culledDraws() const { return m->backend->culledDraws(); }
 ParticleStats Renderer::particleStats() const { return m->backend->particleStats(); }
 uint32_t Renderer::unkeyedDraws() const { return m->backend->unkeyedDraws(); }
+TemporalStats Renderer::temporalStats() const { return m->backend->temporalStats(); }
 
 RendererCapabilities Renderer::capabilities() const {
     auto caps = m->backend->capabilities();

@@ -37,7 +37,7 @@ void GraphicsMenu::bind(GameContext& game) {
         refresh(game);
     });
     ui.on("graphics_aa", [this, &game](const UIEvent&) {
-        m_draft.antiAliasing = m_draft.antiAliasing == AntiAliasing::None ? AntiAliasing::Fxaa : AntiAliasing::None;
+        m_draft.antiAliasing = static_cast<AntiAliasing>((static_cast<int>(m_draft.antiAliasing) + 1) % 3);
         refresh(game);
     });
     ui.on("graphics_bloom", [this, &game](const UIEvent&) {
@@ -106,7 +106,10 @@ void GraphicsMenu::refresh(GameContext& game) {
     std::snprintf(text, sizeof(text), "Render scale: %.0f%%", m_draft.renderScale * 100);
     label("graphics-scale", text);
     label("graphics-shadows", std::string("Shadows: ") + shadowQualityName(static_cast<int>(m_draft.shadows)));
-    label("graphics-aa", m_draft.antiAliasing == AntiAliasing::Fxaa ? "Anti-aliasing: FXAA" : "Anti-aliasing: none");
+    label(
+        "graphics-aa", m_draft.antiAliasing == AntiAliasing::Fxaa  ? "Anti-aliasing: FXAA"
+                       : m_draft.antiAliasing == AntiAliasing::Taa ? "Anti-aliasing: TAA"
+                                                                   : "Anti-aliasing: none");
     label("graphics-bloom", std::string("Bloom: ") + bloomQualityName(m_draft.bloomQuality));
     std::snprintf(text, sizeof(text), "Bloom strength: %.0f%%", m_draft.bloomScale * 100);
     label("graphics-bloom-scale", text);

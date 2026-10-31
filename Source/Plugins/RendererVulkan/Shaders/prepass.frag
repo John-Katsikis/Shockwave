@@ -10,6 +10,8 @@
 // opaque shading after it lands on exactly the same depths and tests them for EQUAL. The
 // cut of an alpha-tested surface is baseAlpha, the same as the scene's and the shadows'.
 // Normal maps aren't applied: occlusion follows the geometry, not its painted detail.
+// With motion vectors on (G09), it also writes where each surface was last frame
+// (Renderer/Temporal.h).
 #define DRAW_SAMPLING
 #include "draw.glsl"
 #include "frame.glsl"
@@ -25,11 +27,16 @@ layout(location = 1) in vec4 vUvs;
 layout(location = 2) in vec4 vColor;
 layout(location = 4) flat in float vAlphaCutoff;
 layout(location = 11) flat in uint vDraw;
+layout(location = 14) in vec4 vPreviousClip;
 
 layout(location = 0) out vec2 outNormal;   // octahedral, view space
 // The draw's decal receiver layers (G08): only written while decals are on, when the
 // prepass has this second target; without it the write goes nowhere.
 layout(location = 1) out uint outDecalLayers;
+// Motion (G09): xy current minus previous screen UV, both unjittered; z the surface's
+// positive view distance last frame; w 1 where that's known, 0 where it isn't (no previous
+// pose: TAA reprojects from depth instead). Only with the motion target attached.
+layout(location = 2) out vec4 outMotion;
 
 // As in mesh.frag: false for solid surfaces, so the GPU tests depth before shading.
 layout(constant_id = 0) const bool kAlphaTest = true;
@@ -40,4 +47,10 @@ void main() {
     n = gl_FrontFacing ? n : -n;
     outNormal = octEncode(normalize(mat3(pc.frame.view) * n));
     outDecalLayers = pc.drawBuffer.draws[vDraw].decalLayers;
+    outMotion = vec4(0.0);
+    if (vPreviousClip.w > 0.0) {
+        // gl_FragCoord is where the jittered projection put the surface; take the jitter off.
+        vec2 current = (gl_FragCoord.xy - pc.frame.jitter) / pc.frame.renderSize;
+        outMotion = vec4(current - screenUvFromClip(vPreviousClip), vPreviousClip.w, 1.0);
+    }
 }

@@ -4,7 +4,8 @@
 #extension GL_EXT_scalar_block_layout : require
 
 // Particles: texture times vertex color times the batch's tint, in linear HDR. Blending
-// (alpha, add, subtract, multiply) is fixed-function, one pipeline per mode.
+// (alpha, add, subtract, multiply) is fixed-function, one pipeline per mode. The reactive
+// variant (G09) writes how much each particle changes what's behind it instead, for TAA.
 layout(set = 0, binding = 0) uniform texture2D textures[];
 layout(set = 0, binding = 1) uniform sampler linearSampler;
 
@@ -53,6 +54,9 @@ layout(location = 5) in vec2 inParams;
 layout(location = 6) flat in uint inBatch;
 layout(location = 0) out vec4 outColor;
 
+layout(constant_id = 0) const bool kReactive = false;
+const uint kBlendOpaque = 0u, kBlendAlpha = 1u;
+
 vec4 sampleTexture(uint index, vec2 uv, bool clampUv) {
     if (clampUv) uv = clamp(uv, 0.0, 1.0);
     return texture(sampler2D(textures[nonuniformEXT(index)], linearSampler), uv);
@@ -83,5 +87,16 @@ void main() {
     }
     // Multiply blends dst * src; fade toward white (no change) as alpha drops.
     if (b.blend == kBlendMultiply) color.rgb = mix(vec3(1.0), color.rgb, color.a);
+    if (kReactive) {
+        // Opaque particles have no motion vectors, so nothing of history is kept under them;
+        // alpha blending replaces alpha of what's behind; adding and subtracting change it
+        // by up to the brightest channel; multiplying by how far from white it is.
+        float reactive = 1.0;
+        if (b.blend == kBlendAlpha) reactive = color.a;
+        else if (b.blend == kBlendMultiply) reactive = 1.0 - min(color.r, min(color.g, color.b));
+        else if (b.blend != kBlendOpaque) reactive = max(color.r, max(color.g, color.b)) * color.a;
+        outColor = vec4(clamp(reactive, 0.0, 1.0));
+        return;
+    }
     outColor = color;
 }

@@ -20,6 +20,9 @@ struct GraphicsPipelineDesc {
     // prepass's decal layers, the decal pass's second buffer (G08). Integer formats need
     // blending off.
     VkFormat secondColorFormat = VK_FORMAT_UNDEFINED;
+    // A third (location 2): the surface prepass's motion vectors (G09). With it, the second
+    // may be VK_FORMAT_UNDEFINED, an attachment the pass leaves out.
+    VkFormat thirdColorFormat = VK_FORMAT_UNDEFINED;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
@@ -32,6 +35,9 @@ struct GraphicsPipelineDesc {
     // Blending for colors that are already multiplied by their alpha (game UI): source
     // times one, destination times one minus source alpha. Never writes depth.
     bool premultipliedAlpha = false;
+    // Keeps the greater of what's there and what's drawn, per channel (the reactive mask,
+    // G09). Never writes depth.
+    bool maxBlend = false;
 };
 
 // Pipeline for dynamic rendering with vertex pulling (no vertex input state) and

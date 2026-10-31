@@ -137,6 +137,11 @@ void VulkanRenderer::Impl::drawMesh(
     // Local reflection probes (G07): up to two whose boxes these bounds touch.
     command.data.reflections = pickReflections(command.bounds);
     command.data.decalLayers = material.blend ? 0u : material.decalLayers & kDecalLayerMask;   // G08
+    // G09: filled in by prepareHistory when the draw has a previous pose.
+    command.data.previousMvp = glm::mat4(1.0f);
+    command.data.previousVertexBuffer = 0;
+    command.data.history = 0;
+    command.data.pad = 0;
 
     const uint32_t thread = JobSystem::threadIndex();
     auto add = [&](DrawList& list, uint32_t index) {
@@ -184,6 +189,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyAaTarget(aaTarget);
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
+    destroyTemporalTargets(temporalTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -239,6 +245,7 @@ bool VulkanRenderer::Impl::beginFrame() {
     updateAaTarget();
     updateAoTargets();
     updateDecalTargets();
+    updateTemporalTargets();
 
     SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
@@ -375,6 +382,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     // Reverse-Z is smaller farther away. Object-level sorting is the basic
     // transparency path; intersecting transparent surfaces need a later solution.
     std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
+    prepareHistory();   // previous poses first: skinning skins them too (G09)
     prepareSkinning(f);
     // One draw table serves the scene and every shadow map; draws with detail or second
     // layers point at their entries in the layer table.
@@ -460,6 +468,7 @@ void VulkanRenderer::Impl::endFrame() {
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vk::check(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer");
 
+    decideHistory();
     prepareDraws(f);
     prepareParticles();
     prepareDecals();
@@ -545,6 +554,7 @@ void VulkanRenderer::Impl::endFrame() {
         vk::check(result, "vkQueuePresentKHR");
     }
 
+    finishHistory();
     if (screenshotRequested) finishScreenshot();
     if (captureRequested) finishCapture();
     frameIndex = (frameIndex + 1) % kFramesInFlight;
@@ -574,6 +584,7 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     const bool decals = decalsActive() && !frameDecals.empty();
     header.decalAlbedo = decals ? decalSlots[decalTargets.pair][0] : 0u;
     header.decalMaterial = decals ? decalSlots[decalTargets.pair][1] : 0u;
+    header.jitter = jittered ? jitter : glm::vec2(0.0f);
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -618,6 +629,7 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
 
 void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapchainImage) {
     graph.reset();
+    vk::RenderGraph::ImageId motionImage = kNoGraphImage;
     using vk::ImageUse;
     const auto color =
         graph.import("scene color (HDR)", sceneColor.image, VK_IMAGE_ASPECT_COLOR_BIT, sceneColorState, true);
@@ -665,6 +677,13 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             graph.import("surface normals", aoTargets.normal.image, VK_IMAGE_ASPECT_COLOR_BIT, aoNormalState, true);
         std::vector<vk::RenderGraph::Use> prepassUses = {
             {depth, ImageUse::DepthAttachment}, {normals, ImageUse::ColorAttachment}};
+        if (temporalActive()) {
+            // Motion vectors (G09): written every frame the prepass runs, every pixel cleared.
+            const auto motion = graph.import(
+                "motion vectors", temporalTargets.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, motionState, true);
+            prepassUses.push_back({motion, ImageUse::ColorAttachment});
+            motionImage = motion;
+        }
         if (decalsActive()) {
             const auto layers = graph.import(
                 "decal layers", decalTargets.layers.image, VK_IMAGE_ASPECT_COLOR_BIT, decalLayerState, true);
@@ -714,6 +733,40 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         graph.addPass(
             "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
             [this](VkCommandBuffer cmd) { recordParticles(cmd); });
+    }
+    if (temporalThisFrame && motionImage != kNoGraphImage) {
+        // G09, G10: the reactive mask, then the resolve into this frame's history, copied back.
+        const auto reactive = graph.import(
+            "reactive mask", temporalTargets.reactive.image, VK_IMAGE_ASPECT_COLOR_BIT, reactiveState, true);
+        graph.addPass(
+            "reactive mask", {{reactive, ImageUse::ColorAttachment}, {depth, ImageUse::DepthReadOnly}},
+            [this, &f](VkCommandBuffer cmd) { recordReactive(cmd, f); });
+        const uint32_t w = historyWrite, r = historyWrite ^ 1u;
+        const auto historyIn = graph.import(
+            "history (last frame)", temporalTargets.color[r].image, VK_IMAGE_ASPECT_COLOR_BIT, historyColorState[r],
+            false);
+        const auto distanceIn = graph.import(
+            "history distance (last frame)", temporalTargets.distance[r].image, VK_IMAGE_ASPECT_COLOR_BIT,
+            historyDistanceState[r], false);
+        const auto historyOut = graph.import(
+            "history", temporalTargets.color[w].image, VK_IMAGE_ASPECT_COLOR_BIT, historyColorState[w], true);
+        const auto distanceOut = graph.import(
+            "history distance", temporalTargets.distance[w].image, VK_IMAGE_ASPECT_COLOR_BIT, historyDistanceState[w],
+            true);
+        graph.addPass(
+            "taa",
+            {{color, ImageUse::ComputeSampled},
+             {depth, ImageUse::ComputeSampled},
+             {motionImage, ImageUse::ComputeSampled},
+             {reactive, ImageUse::ComputeSampled},
+             {historyIn, ImageUse::ComputeSampled},
+             {distanceIn, ImageUse::ComputeSampled},
+             {historyOut, ImageUse::StorageWrite},
+             {distanceOut, ImageUse::StorageWrite}},
+            [this, &f](VkCommandBuffer cmd) { recordTaa(cmd, f); });
+        graph.addPass(
+            "taa resolve copy", {{historyOut, ImageUse::TransferSrc}, {color, ImageUse::TransferDst}},
+            [this](VkCommandBuffer cmd) { recordTaaCopy(cmd); });
     }
     // The bloom chain keeps its own barriers, like the lighting cubes: only this pass
     // writes it and only the tonemap reads it.
@@ -782,8 +835,9 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     }
-    // Kept when particles are drawn next, for their depth test.
-    depthAttachment.storeOp = particleDraws.empty() ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
+    // Kept when particles are drawn next, for their depth test, and for the reactive mask and TAA.
+    depthAttachment.storeOp =
+        particleDraws.empty() && !temporalThisFrame ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     VkRenderingInfo rendering{};
