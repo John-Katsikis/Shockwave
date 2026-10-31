@@ -17,6 +17,7 @@
 #include <Network/NetworkCapture.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
+#include <Engine/PostProcess.h>
 #include <Animation/AnimationWorld.h>
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
@@ -192,6 +193,7 @@ private:
     void drawOutline(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     void drawReflectionProbe(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     void drawDecalBox(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
+    void drawPostProcessVolume(shockwave::Entity e, const ImVec2& pos, const ImVec2& size, ImU32 color);
     // A Decal on the surface at point, facing out along normal (G08, A03): a material or a
     // texture, by Content path. Undoable; selects it.
     shockwave::Entity
@@ -263,6 +265,9 @@ private:
     void drawParticleEffectNotes(shockwave::Entity e);
     void drawEffectsStats();
     shockwave::Entity createParticleEffect(const std::string& effect);
+    // Colour grading, exposure and fog (PostProcessPanel.cpp, A05/A06).
+    shockwave::Entity createPostProcessVolume();
+    void drawPostProcessVolumeNotes(shockwave::Entity e);
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert
@@ -483,6 +488,9 @@ private:
     bool m_viewportActive = false;   // the viewport has the mouse or keyboard focus
     // Particle effects, the same way: before the session, whose EffectsWorld uses it.
     std::unique_ptr<shockwave::Effects> m_effects;
+    // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
+    std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
+    double m_frameDt = 1.0 / 60.0;
     bool m_showEffects = true;
     std::unique_ptr<shockwave::PlaySession> m_session;
     // Navigation while editing: the mesh last baked or loaded for this scene.

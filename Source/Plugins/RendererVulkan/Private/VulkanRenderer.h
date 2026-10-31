@@ -90,6 +90,9 @@ public:
     uint32_t drawCount() const override;
     uint32_t culledDraws() const override;
     ParticleStats particleStats() const override;
+    void setPostProcess(const PostProcessDesc& desc) override;
+    void setPostProcessSettings(const PostProcessSettings& settings) override;
+    PostProcessStats postProcessStats() const override;
     uint32_t unkeyedDraws() const override;
     TemporalStats temporalStats() const override;
 

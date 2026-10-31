@@ -630,6 +630,7 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     planShadows(used, out, count, views, header);
     header.lightCount = count;
     prepareClusters(f, header, count - header.directionalCount);
+    preparePostProcess(f, header);
     header.shadowViews = f.frameAddress + kShadowViewsOffset;
     std::memcpy(f.frameData, &header, sizeof(header));
     vk::check(
@@ -742,6 +743,19 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             {{lists, vk::BufferUse::ComputeWrite}});
         sceneReads.push_back({lists, vk::BufferUse::FragmentShaderRead});
     }
+    std::optional<vk::RenderGraph::BufferId> froxels;
+    if (froxelsThisFrame) {
+        // A06: the fog volume, from the lights, the sun's shadows and the cluster lists.
+        froxels = graph.importBuffer("fog volume", froxelBuffer.buffer, froxelState);
+        std::vector<vk::RenderGraph::Use> fogUses;
+        for (const auto& use : sceneUses)
+            if (use.use == ImageUse::Sampled && use.image != color && use.image != depth)
+                fogUses.push_back({use.image, ImageUse::ComputeSampled});
+        std::vector<vk::RenderGraph::BufferAccess> fogBuffers = {{*froxels, vk::BufferUse::ComputeWrite}};
+        if (clusterLists) fogBuffers.push_back({*clusterLists, vk::BufferUse::ComputeRead});
+        graph.addPass("fog volume", fogUses, [this, &f](VkCommandBuffer cmd) { recordFog(cmd, f); }, fogBuffers);
+        sceneReads.push_back({*froxels, vk::BufferUse::FragmentShaderRead});
+    }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, sceneReads);
     if (captureRequested) {
         // Reflection capture (G07): the HDR scene as drawn, before particles, exposure and the rest.
@@ -775,6 +789,7 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         }
         std::vector<vk::RenderGraph::BufferAccess> particleReads;
         if (clusterLists) particleReads.push_back({*clusterLists, vk::BufferUse::FragmentShaderRead});
+        if (froxels) particleReads.push_back({*froxels, vk::BufferUse::FragmentShaderRead});
         graph.addPass(
             "particles", particleUses, [this](VkCommandBuffer cmd) { recordParticles(cmd, false); }, particleReads);
     }
@@ -812,6 +827,18 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             "taa resolve copy", {{historyOut, ImageUse::TransferSrc}, {color, ImageUse::TransferDst}},
             [this](VkCommandBuffer cmd) { recordTaaCopy(cmd); });
     }
+    // A05: auto exposure meters the resolved, unexposed scene before bloom; the tonemap reads it.
+    std::vector<vk::RenderGraph::BufferAccess> tonemapReads;
+    if (exposureThisFrame) {
+        const auto state = graph.importBuffer("exposure", exposureState.buffer, exposureBufferState);
+        graph.addPass(
+            "exposure histogram", {{color, ImageUse::ComputeSampled}},
+            [this](VkCommandBuffer cmd) { recordExposureHistogram(cmd); }, {{state, vk::BufferUse::ComputeReadWrite}});
+        graph.addPass(
+            "exposure adapt", {}, [this, &f](VkCommandBuffer cmd) { recordExposureAdapt(cmd, f); },
+            {{state, vk::BufferUse::ComputeReadWrite}});
+        tonemapReads.push_back({state, vk::BufferUse::FragmentShaderRead});
+    }
     // The bloom chain keeps its own barriers, like the lighting cubes: only this pass
     // writes it and only the tonemap reads it.
     if (bloomIntensity() > 0.0f)
@@ -822,14 +849,14 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             graph.import("anti-aliasing input", aaTarget.image.image, VK_IMAGE_ASPECT_COLOR_BIT, aaState, true);
         graph.addPass(
             "tonemap", {{color, ImageUse::Sampled}, {aaInput, ImageUse::ColorAttachment}},
-            [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+            [this](VkCommandBuffer cmd) { recordTonemap(cmd); }, tonemapReads);
         graph.addPass(
             "fxaa", {{aaInput, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
             [this](VkCommandBuffer cmd) { recordFxaa(cmd); });
     } else {
         graph.addPass(
             "tonemap", {{color, ImageUse::Sampled}, {display, ImageUse::ColorAttachment}},
-            [this](VkCommandBuffer cmd) { recordTonemap(cmd); });
+            [this](VkCommandBuffer cmd) { recordTonemap(cmd); }, tonemapReads);
     }
     if (!uiCommands.empty()) {
         graph.addPass(
@@ -893,7 +920,11 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     rendering.pDepthAttachment = &depthAttachment;
     vkCmdBeginRendering(cmd, &rendering);
     setSceneViewport(cmd);
-    if (showsSky() && debugView != DebugView::AmbientOcclusion) recordSky(cmd);
+    // Without an environment map the background is the clear colour, drawn as a sky when
+    // fog (A06) has to cover it, or the fog view has to show it.
+    const bool fogged = lastPostProcessStats.fogQuality != FogQuality::Off && debugView == DebugView::Lit;
+    if ((showsSky() || fogged || debugView == DebugView::Fog) && debugView != DebugView::AmbientOcclusion)
+        recordSky(cmd, f.frameAddress);
     recordDraws(cmd, f);
     if (!captureRequested) recordGrid(cmd);   // the editor grid never goes into a reflection
     vkCmdEndRendering(cmd);
@@ -923,12 +954,12 @@ void VulkanRenderer::Impl::recordTonemap(VkCommandBuffer cmd) {
     TonemapPushConstants push{};
     push.outputSize = glm::vec2(extent.width, extent.height);
     push.sceneTexture = sceneSlot;
-    push.exposureScale = std::exp2(std::clamp(lighting.exposure, -16.0f, 16.0f));
     // Debug views show raw values: no exposure or curve.
     push.tonemapper =
         debugView == DebugView::Lit || debugView == DebugView::Lighting || debugView == DebugView::ShadowCascades
             ? static_cast<uint32_t>(lighting.tonemapper)
             : 99u;
+    gradeTonemap(push);   // A05: white balance, exposure, LUTs
     push.bloomTexture = bloom.slot;
     push.bloomIntensity = bloomIntensity();
     vkCmdPushConstants(cmd, tonemapLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);

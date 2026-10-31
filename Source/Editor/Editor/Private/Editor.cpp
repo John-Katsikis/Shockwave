@@ -49,6 +49,7 @@ void Editor::onStart() {
     m_gameUI = std::make_unique<shockwave::GameUI>(&engine());
     shockwave::registerEffectsComponents();
     m_effects = std::make_unique<shockwave::Effects>(&engine());
+    m_postProcess = std::make_unique<shockwave::PostProcessLibrary>(&engine().renderer());
     m_audioPreview = std::make_unique<shockwave::AudioMixer>();
     m_animation = std::make_unique<shockwave::AnimationWorld>(m_world, &engine().assets(), engine().jobs());
     connectConsole();
@@ -126,6 +127,7 @@ void Editor::onShutdown() {
     m_bakedLighting.release();
     m_reflections.release();
     m_effects.reset();
+    m_postProcess.reset();
     m_animation.reset();
     if (m_hasProject) {
         rememberCamera();
@@ -257,6 +259,7 @@ void Editor::onUpdate(double dt) {
 }
 
 void Editor::onFrame(double dt) {
+    m_frameDt = dt;
     pollGameCode();   // between frames, before anything looks at the world
     if (m_session) m_session->frame(dt);
     updateGameUI(dt);
@@ -296,6 +299,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets(),
         &m_bakedLighting);
+    shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     renderNavigation(renderer);
     m_effects->render(renderer);
     if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too

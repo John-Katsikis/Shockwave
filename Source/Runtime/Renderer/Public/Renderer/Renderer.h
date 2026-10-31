@@ -3,6 +3,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/PostProcess.h>
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
@@ -221,6 +222,16 @@ public:
     // particles are lit. Each is off-able; off costs nothing.
     void setParticleSettings(const ParticleSettings& settings);
     ParticleSettings particleSettings() const;
+    // Colour, exposure and fog for this view (A05, A06; Renderer/PostProcess.h), from the
+    // Engine's postprocess volumes. Kept until changed; same thread as setCamera. Without
+    // it the Environment's exposure and bloom apply, ungraded and without fog.
+    void setPostProcess(const PostProcessDesc& desc);
+    const PostProcessDesc& postProcess() const;
+    // The player's colour_grading, auto_exposure and fog_quality settings. Each off is the
+    // scene without it, with no passes or memory for it. Main thread.
+    void setPostProcessSettings(const PostProcessSettings& settings);
+    PostProcessSettings postProcessSettings() const;
+    PostProcessStats postProcessStats() const;   // the last frame's
 
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no

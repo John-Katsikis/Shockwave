@@ -51,7 +51,10 @@ static_assert(sizeof(EnvironmentFilterPushConstants) == 32, "must match environm
 // Must match the push constants in shaders/sky.vert.
 struct SkyPushConstants {
     glm::mat4 inverseViewProjection;   // of the camera's rotation alone
+    VkDeviceAddress frame;   // the frame's FrameData, for fog (A06)
+    glm::vec4 background;   // w 1: no environment map, this colour instead
 };
+static_assert(sizeof(SkyPushConstants) == 88, "must match sky.vert and sky.frag");
 
 // The cubes are rebuilt rarely, so their barriers simply order everything before and after.
 void cubeBarrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayout to) {
@@ -233,7 +236,8 @@ void VulkanRenderer::Impl::createEnvironment() {
     environmentFilterPipeline = computePipeline("environment_filter.comp");
 
     // The sky: one fullscreen triangle at the far plane, under everything the scene draws.
-    VkPushConstantRange skyRange{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(SkyPushConstants)};
+    VkPushConstantRange skyRange{
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SkyPushConstants)};
     VkPipelineLayoutCreateInfo skyLayoutInfo{};
     skyLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     skyLayoutInfo.setLayoutCount = 1;
@@ -388,12 +392,15 @@ void VulkanRenderer::Impl::recordEnvironment(VkCommandBuffer cmd) {
 
 bool VulkanRenderer::Impl::showsSky() const { return lighting.showEnvironment && environmentKey.map; }
 
-void VulkanRenderer::Impl::recordSky(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::recordSky(VkCommandBuffer cmd, VkDeviceAddress frame) {
     SkyPushConstants push;
     push.inverseViewProjection = glm::inverse(projection * glm::mat4(glm::mat3(view)));
+    push.frame = frame;
+    push.background = showsSky() ? glm::vec4(0.0f) : glm::vec4(clearColor.r, clearColor.g, clearColor.b, 1.0f);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyLayout, 0, 1, &bindlessSet, 0, nullptr);
-    vkCmdPushConstants(cmd, skyLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+    vkCmdPushConstants(
+        cmd, skyLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 

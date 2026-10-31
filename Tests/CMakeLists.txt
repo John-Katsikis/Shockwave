@@ -261,6 +261,12 @@ add_executable(particle_test ParticleTest.cpp)
 target_link_libraries(particle_test PRIVATE Shockwave::Engine)
 shockwave_warnings(particle_test)
 add_test(NAME particles COMMAND particle_test)
+# Colour, exposure and fog (A05, A06): white balance, LUTs, metering, adaptation, the fog
+# closed forms, phase and composition, froxel grids.
+add_executable(postprocess_test PostProcessTest.cpp)
+target_link_libraries(postprocess_test PRIVATE Shockwave::Engine)
+shockwave_warnings(postprocess_test)
+add_test(NAME postprocess COMMAND postprocess_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -326,6 +332,16 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsParticlesCheck.cmake)
     set_tests_properties(graphics_particles_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Colour grading, exposure and fog (A05, A06): each setting off matches the scene without
+    # its volume exactly and costs nothing; fog thickens with distance and glows round lamps;
+    # grading warms; auto exposure evens out a dark and a bright room.
+    add_test(NAME graphics_postprocess_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsPostProcess
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsPostProcessCheck.cmake)
+    set_tests_properties(graphics_postprocess_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
     # And that it's faster where it should be: 200 point lights, scene pass GPU time.
     add_test(NAME graphics_clusters_timing COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>

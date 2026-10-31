@@ -54,6 +54,7 @@ const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium
 const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kLightCullingChoices = {"auto", "clustered", "brute_force"};
 const std::vector<const char*> kParticleLightingChoices = {"simple", "scene"};
+const std::vector<const char*> kFogChoices = {"off", "analytic", "low", "medium", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -227,6 +228,36 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"color_grading", "Colour grading", "Quality",
+         "The scene's colour look from its postprocess profiles: white balance and creative LUTs. Off shows the "
+         "colours ungraded, exactly as without them.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.colorGrading ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.colorGrading, "color_grading", error);
+         }});
+    info.push_back(
+        {"auto_exposure", "Auto exposure", "Quality",
+         "Lets scenes that ask for it adjust their brightness to what the camera sees, like an eye adapting. Off "
+         "keeps each scene's fixed exposure, with no metering pass.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.autoExposure ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.autoExposure, "auto_exposure", error);
+         }});
+    info.push_back(
+        {"fog_quality", "Fog", "Quality",
+         "How scenes with fog draw it. Analytic is the cheap closed form, lit by the sun; low, medium and high add a "
+         "volume near the camera lit by every lamp, with the sun's shadows, at coarser to finer detail. Off draws "
+         "no fog, with no passes or memory for it.",
+         "off, analytic, low, medium, high", kFogChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(fogQualityName(s.fogQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kFogChoices, v, s.fogQuality)) return true;
+             error = "fog_quality must be " + list(kFogChoices);
+             return false;
+         }});
+    info.push_back(
         {"lod_error_pixels",
          "Mesh detail",
          "Quality",
@@ -371,6 +402,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = false;
         base.particleDistortion = false;
         base.particleLighting = ParticleLighting::Simple;
+        base.fogQuality = FogQuality::Analytic;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -385,6 +417,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.fogQuality = FogQuality::Low;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -399,6 +432,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.fogQuality = FogQuality::Medium;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -413,6 +447,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.fogQuality = FogQuality::High;
         break;
     }
     return base;
@@ -581,6 +616,10 @@ GraphicsSettings Graphics::current() const {
     s.softParticles = particles.softParticles;
     s.particleDistortion = particles.distortion;
     s.particleLighting = particles.lighting;
+    const PostProcessSettings post = r.postProcessSettings();
+    s.colorGrading = post.colorGrading;
+    s.autoExposure = post.autoExposure;
+    s.fogQuality = post.fog;
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -641,6 +680,9 @@ void Graphics::commit() {
     if (s.softParticles != previous.softParticles || s.particleDistortion != previous.particleDistortion ||
         s.particleLighting != previous.particleLighting)
         r.setParticleSettings({s.softParticles, s.particleDistortion, s.particleLighting});
+    if (s.colorGrading != previous.colorGrading || s.autoExposure != previous.autoExposure ||
+        s.fogQuality != previous.fogQuality)
+        r.setPostProcessSettings({s.colorGrading, s.autoExposure, s.fogQuality});
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

@@ -470,6 +470,18 @@ No fields; the component's presence is what matters.
 | `seconds` | number; range 0 to 100000 | `30` |
 | `fade` | number; range 0 to 1000 | `2` |
 
+#### PostProcessVolume
+
+| Field | Value | Default |
+|---|---|---|
+| `profile` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `unbounded` | 1 or 0 (true/false also accepted) | `0` |
+| `half_extents` | x y z; range 0.01 to 100000 | `5 5 5` |
+| `priority` | whole number; range -1000 to 1000 | `0` |
+| `blend_distance` | number; range 0 to 1000 | `1` |
+| `weight` | number; range 0 to 1 | `1` |
+
 ### UI
 
 #### UIDocument

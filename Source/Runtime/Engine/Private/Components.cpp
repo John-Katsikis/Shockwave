@@ -1,5 +1,6 @@
 #include <Engine/Components.h>
 
+#include <Engine/PostProcess.h>
 #include <Engine/Prefab.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -298,6 +299,7 @@ void registerBuiltins() {
             field("phase", &Bob::phase, 0.01f),
         },
         "Motion");
+    registerPostProcessComponents();
 }
 
 }   // namespace

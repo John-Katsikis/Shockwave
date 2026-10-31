@@ -33,4 +33,7 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/decal.frag
     Shaders/reactive.frag
     Shaders/taa.comp
+    Shaders/exposure_histogram.comp
+    Shaders/exposure_adapt.comp
+    Shaders/fog.comp
 )

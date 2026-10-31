@@ -5,6 +5,8 @@
 // the scene at the far plane (reverse-Z: depth 0), drawn before anything else.
 layout(push_constant, scalar) uniform PushConstants {
     mat4 inverseViewProjection;   // of the camera's rotation alone
+    uvec2 frame;   // read by sky.frag (fog)
+    vec4 background;   // read by sky.frag
 } pc;
 
 layout(location = 0) out vec4 vDirection;

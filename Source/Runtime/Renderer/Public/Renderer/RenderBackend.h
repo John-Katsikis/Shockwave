@@ -23,6 +23,7 @@
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Particles.h>
+#include <Renderer/PostProcess.h>
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
@@ -148,6 +149,10 @@ public:
     // A backend without soft particles, distortion or scene lighting for particles ignores
     // the settings it can't follow (and skips distortion batches).
     virtual void setParticleSettings(const ParticleSettings&) {}
+    // A05, A06: a backend without grading, metering or fog draws the scene without them.
+    virtual void setPostProcess(const PostProcessDesc&) {}
+    virtual void setPostProcessSettings(const PostProcessSettings&) {}
+    virtual PostProcessStats postProcessStats() const { return {}; }
     // Of drawCount, how many came without a RenderInstanceKey (so have no history).
     virtual uint32_t unkeyedDraws() const { return 0; }
     virtual TemporalStats temporalStats() const { return {}; }

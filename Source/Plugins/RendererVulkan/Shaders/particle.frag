@@ -16,6 +16,7 @@ layout(set = 0, binding = 1) uniform sampler linearSampler;
 
 #include "frame.glsl"
 #include "clusters.glsl"
+#include "fog.glsl"
 
 // Must match ParticleBatchData in RendererImpl.h.
 struct ParticleBatchData {
@@ -215,6 +216,15 @@ void main() {
     if ((pc.flags & kPassSoft) != 0u && pc.depthSlot != 0u && b.blend != kBlendOpaque) color.a *= softFade(b, zp);
     // Multiply blends dst * src; fade toward white (no change) as alpha drops.
     if (b.blend == kBlendMultiply) color.rgb = mix(vec3(1.0), color.rgb, color.a);
+    // Fog (A06) between the camera and the particle: what it shows becomes S + T L over the
+    // fogged scene; light it adds or takes away only dims (T E, no second S); a multiply
+    // fades toward white. Distortion shows the already fogged scene, so takes none.
+    if (!kReactive && pc.frame.fogMode != kFogNone && pc.frame.debugView == 0u && (b.flags & kDistortion) == 0u) {
+        vec4 fog = sceneFog(pc.frame, gl_FragCoord.xy, inWorldPosition);
+        if (b.blend == kBlendOpaque || b.blend == kBlendAlpha) color.rgb = fog.rgb + fog.a * color.rgb;
+        else if (b.blend == kBlendMultiply) color.rgb = mix(vec3(1.0), color.rgb, fog.a);
+        else color.rgb *= fog.a;
+    }
     if (kReactive) {
         // Opaque particles have no motion vectors, so nothing of history is kept under them;
         // alpha blending replaces alpha of what's behind (distortion too: it changes what's

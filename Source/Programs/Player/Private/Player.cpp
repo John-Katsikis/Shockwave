@@ -75,6 +75,8 @@ void Player::onStart() {
     m_ui->setContentFolder(m_project.assetFolder);
     m_effects = std::make_unique<shockwave::Effects>(&engine());
     m_effects->setContentFolder(m_project.assetFolder);
+    m_postProcess = std::make_unique<shockwave::PostProcessLibrary>(&engine().renderer());
+    m_postProcess->setContentFolder(m_project.assetFolder);
     shockwave::prefabs().setup(m_project.assetFolder, &engine().assets());
     if (m_tool.mode != Tool::Mode::Play) {
         m_exitCode = m_tool.mode == Tool::Mode::Check               ? check(importProblems)
@@ -210,6 +212,7 @@ void Player::onUpdate(double dt) {
 }
 
 void Player::onFrame(double dt) {
+    m_frameDt = dt;
     if (!m_session) return;
     for (const auto& change : m_assets->poll(dt)) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
@@ -399,6 +402,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     m_bakedLightingTime = now;
     if (m_reflectionCapture && driveReflectionCapture(renderer)) return;
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets(), &m_bakedLighting);
+    if (m_postProcess) shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     m_effects->render(renderer);
     if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
     if (m_tool.showNavMesh && m_session && m_session->navigation()) {
@@ -433,6 +437,7 @@ void Player::onShutdown() {
     if (m_instance) m_instance->shutdown();
     m_ui.reset();
     m_effects.reset();
+    m_postProcess.reset();
 }
 
 void Player::takeScreenshot() {

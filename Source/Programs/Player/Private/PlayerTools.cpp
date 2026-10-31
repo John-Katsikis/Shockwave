@@ -53,6 +53,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     });
     const bool onlySaves = !m_tool.scenes.empty() && scenes.empty();
     std::vector<std::string> checkedDocuments;   // .rml files a scene's UIDocument validated
+    std::vector<std::string> checkedProfiles;   // .swpostprocess files a scene's PostProcessVolume checked
     std::vector<std::string> checkedEffects;   // .efkefc files a scene's ParticleEffect validated
     std::vector<std::string> usedPrefabs;   // by the scenes checked
     std::vector<std::string> usedCircuits;   // .swcircuit files the scenes' Circuit components name
@@ -170,6 +171,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         checkUIDocuments(world, scene.string(), problems, checkedDocuments);
         checkParticleEffects(world, scene.string(), problems, checkedEffects);
         checkMaterialOverrides(world, scene.string(), problems);
+        checkPostProcessVolumes(world, shown, problems, checkedProfiles);
         // Decals (G08): a box that can't land, or a material that won't resolve.
         world.each<const shockwave::Decal>([&](shockwave::Entity e, const shockwave::Decal& decal) {
             const std::string where = shown + ": entity '" + entityName(e) + "': Decal ";
@@ -261,6 +263,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     }
     if (m_tool.scenes.empty()) checkUnusedEffects(checkedEffects, problems);
     if (m_tool.scenes.empty()) checkMaterialFiles();
+    if (m_tool.scenes.empty()) checkPostProcessFiles(checkedProfiles, problems);
     // Input bindings: optional, but a broken file means broken controls.
     const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
     if (fs::exists(inputFile)) {

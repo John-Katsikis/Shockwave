@@ -56,6 +56,8 @@ int main(int argc, char** argv) {
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
         std::filesystem::path effectInfo;   // --effect-info
+        std::filesystem::path postProcessSchema, postProcessInfo, lutNeutral;   // A05/A06 tools, no project
+        uint32_t lutNeutralSize = 0;
         std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project
         double imageTolerance = 1.0;   // --tolerance
         std::array<double, 4> imageRegion{0, 0, 1, 1};   // --region
@@ -233,6 +235,13 @@ int main(int argc, char** argv) {
                 if (imageRegion[2] <= 0 || imageRegion[3] <= 0 || imageRegion[0] + imageRegion[2] > 1.000001 ||
                     imageRegion[1] + imageRegion[3] > 1.000001)
                     throw player::UsageError("--region must be a non-empty part of the image");
+            } else if (arg == "--postprocess-schema" && i + 1 < argc) {
+                postProcessSchema = argv[++i];
+            } else if (arg == "--postprocess-info" && i + 1 < argc) {
+                postProcessInfo = argv[++i];
+            } else if (arg == "--lut-export-neutral" && i + 2 < argc) {
+                lutNeutralSize = uint32_t(wholeNumber(argv[++i], 65, "--lut-export-neutral"));
+                lutNeutral = argv[++i];
             } else if (arg == "--effect-info" && i + 1 < argc) {
                 effectInfo = argv[++i];
             } else if (arg == "--material-info" && i + 1 < argc) {
@@ -274,11 +283,13 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Reactive;
                 else if (view == "clusters")
                     tool.view = shockwave::DebugView::Clusters;
+                else if (view == "fog")
+                    tool.view = shockwave::DebugView::Fog;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
                     throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao, indirect, "
-                                             "reflections, decals, motion, reactive, clusters or navmesh");
+                                             "reflections, decals, motion, reactive, clusters, fog or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -459,6 +470,13 @@ int main(int argc, char** argv) {
                     "player --effect-info file.efkefc [--json file]\n"
                     "                                    each part of a particle effect and how it's drawn:\n"
                     "                                    supported, approximated or unsupported (docs/Effects.md)\n"
+                    "player --postprocess-schema file|- write the .swpostprocess reference "
+                    "(docs/PostProcessSchema.md)\n"
+                    "player --postprocess-info file.swpostprocess [--json file]\n"
+                    "                                    a grading, exposure and fog profile with its parents\n"
+                    "                                    applied, and its LUT (docs/PostProcess.md)\n"
+                    "player --lut-export-neutral 17|33|65 file.cube|-\n"
+                    "                                    an identity LUT to grade in another tool\n"
                     "player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]\n"
                     "                                    bake lightmaps and probe volumes (docs/Lighting.md)\n"
                     "player --capture-reflections [--scene file.swscene] [--size WxH]\n"
@@ -644,6 +662,9 @@ int main(int argc, char** argv) {
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
         if (!effectInfo.empty()) return player::effectInfo(effectInfo, tool.benchmarkJson);   // no project
+        if (!postProcessSchema.empty()) return player::postProcessSchema(postProcessSchema);
+        if (!postProcessInfo.empty()) return player::postProcessInfo(postProcessInfo, tool.benchmarkJson);
+        if (!lutNeutral.empty()) return player::lutExportNeutral(lutNeutralSize, lutNeutral);
         if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())
             return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson, imageRegion);
