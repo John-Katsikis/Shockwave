@@ -146,6 +146,8 @@ No fields; the component's presence is what matters.
 | `speed` | number; range 0 to 10 | `1` |
 | `scale` | number; range 0.001 to 1000 | `1` |
 | `color` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
+| `soft_distance` | number; range -1 to 100 | `-1` |
+| `sorting` | one of: whole, parts (or its number, counting from 0) | `whole` |
 
 ### Gameplay
 

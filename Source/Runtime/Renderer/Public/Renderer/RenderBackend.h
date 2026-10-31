@@ -145,6 +145,9 @@ public:
     // Of those, how many were outside the camera's view and not drawn (shadows may still be).
     virtual uint32_t culledDraws() const { return 0; }
     virtual ParticleStats particleStats() const { return {}; }
+    // A backend without soft particles, distortion or scene lighting for particles ignores
+    // the settings it can't follow (and skips distortion batches).
+    virtual void setParticleSettings(const ParticleSettings&) {}
     // Of drawCount, how many came without a RenderInstanceKey (so have no history).
     virtual uint32_t unkeyedDraws() const { return 0; }
     virtual TemporalStats temporalStats() const { return {}; }

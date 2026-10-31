@@ -3,6 +3,8 @@
 #include <Core/Log.h>
 #include <Core/Profile.h>
 
+#include <optional>
+
 namespace shockwave {
 
 void VulkanRenderer::Impl::drawMesh(
@@ -190,6 +192,7 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
+    destroyParticleBackground(particleBackground);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -729,9 +732,11 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
     std::vector<vk::RenderGraph::BufferAccess> sceneReads = vertexReads;
+    std::optional<vk::RenderGraph::BufferId> clusterLists;
     if (clustersThisFrame) {
-        // G11: each cluster's lights, then the scene's fragments read them.
+        // G11: each cluster's lights, then the scene's fragments read them (and particles, A04).
         const auto lists = graph.importBuffer("light clusters", f.clusterBuffer.buffer, f.clusterState);
+        clusterLists = lists;
         graph.addPass(
             "light clusters", {}, [this, &f](VkCommandBuffer cmd) { recordClusters(cmd, f); },
             {{lists, vk::BufferUse::ComputeWrite}});
@@ -745,9 +750,33 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         });
     }
     if (!particleDraws.empty()) {
+        // A04: opaque depth-writing batches first when the main pass keeps depth read-only
+        // (soft particles, distortion); distortion's copy of the scene; then the particles.
+        particleFrameAddress = f.frameAddress;
+        if (particleDepthPassThisFrame)
+            graph.addPass(
+                "particles (depth writing)", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
+                [this](VkCommandBuffer cmd) { recordParticles(cmd, true); });
+        std::vector<vk::RenderGraph::Use> particleUses = {{color, ImageUse::ColorAttachment}};
+        if (particleBackgroundThisFrame) {
+            const auto background = graph.import(
+                "particle background", particleBackground.image.image, VK_IMAGE_ASPECT_COLOR_BIT,
+                particleBackgroundState, true);
+            graph.addPass(
+                "particle background copy", {{color, ImageUse::TransferSrc}, {background, ImageUse::TransferDst}},
+                [this](VkCommandBuffer cmd) { recordParticleBackgroundCopy(cmd); });
+            particleUses.push_back({background, ImageUse::Sampled});
+        }
+        if (particleSoftThisFrame) {
+            particleUses.push_back({depth, ImageUse::DepthReadOnly});
+            particleUses.push_back({depth, ImageUse::DepthSampled});
+        } else {
+            particleUses.push_back({depth, ImageUse::DepthAttachment});
+        }
+        std::vector<vk::RenderGraph::BufferAccess> particleReads;
+        if (clusterLists) particleReads.push_back({*clusterLists, vk::BufferUse::FragmentShaderRead});
         graph.addPass(
-            "particles", {{color, ImageUse::ColorAttachment}, {depth, ImageUse::DepthAttachment}},
-            [this](VkCommandBuffer cmd) { recordParticles(cmd); });
+            "particles", particleUses, [this](VkCommandBuffer cmd) { recordParticles(cmd, false); }, particleReads);
     }
     if (temporalThisFrame && motionImage != kNoGraphImage) {
         // G09, G10: the reactive mask, then the resolve into this frame's history, copied back.

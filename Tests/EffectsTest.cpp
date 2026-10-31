@@ -1,7 +1,10 @@
 // Particle effects without a GPU: the sample effects load with their textures, simulate
 // on the CPU, and build valid triangles for a camera; ParticleEffect starts, stops,
 // loops and follows its entity; one-shots, problems and hot reload work; and
-// EffectsWorld (game.effects()) drives it all.
+// EffectsWorld (game.effects()) drives it all. A04: the graphics fixture's effects carry
+// soft particle distances, distortion and lighting into their batches, the support report
+// reads them (and Effekseer's own distortion example), and effects sort back to front,
+// whole or in parts.
 #include <Effects/Effects.h>
 #include <Effects/EffectsWorld.h>
 #include <Engine/Camera.h>
@@ -10,7 +13,9 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -45,6 +50,118 @@ void checkList(const ParticleDrawList& list, const std::string& what) {
             what + ": batch out of range");
 }
 
+const ParticleBatch* firstBatch(const ParticleDrawList& list, uint32_t flag) {
+    for (const ParticleBatch& b : list.batches)
+        if ((b.flags & flag) == flag) return &b;
+    return nullptr;
+}
+
+// A04 (docs/Effects.md): soft particles, distortion, lighting, sorting, the support report.
+void testParticleFeatures(const fs::path& content) {
+    Effects effects(nullptr);
+    effects.setContentFolder(content);
+    const glm::mat4 view = glm::lookAt(glm::vec3(0, 1, 8), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0));
+    const glm::mat4 projection = perspectiveReverseZ(glm::radians(60.0f), 16.0f / 9.0f, 0.1f);
+
+    // The support report, from the decoded nodes.
+    const EffectInfo haze = effects.info("effects/heat-haze.efkefc");
+    check(haze.loaded && haze.nodes == 1 && haze.features.size() == 1, "heat-haze report");
+    check(
+        haze.features[0].feature == "sprite (distortion)" && haze.features[0].status == "supported" &&
+            haze.features[0].setting == "particle_distortion",
+        "heat-haze's distortion isn't reported supported");
+    const EffectInfo soft = effects.info("effects/soft-alpha.efkefc");
+    check(
+        std::count_if(
+            soft.features.begin(), soft.features.end(),
+            [](const EffectFeature& f) { return f.feature == "soft particles" && f.setting == "soft_particles"; }) == 2,
+        "soft-alpha's two soft nodes aren't reported");
+    check(effects.validate("effects/soft-alpha.efkefc").empty(), "soft-alpha has problems");
+    // Effekseer's own distortion example (made in its editor; no textures here): its third
+    // node, a ring, is a distortion one.
+    const EffectInfo upstream = effects.info("effects/upstream/distortion.efk");
+    check(upstream.loaded && upstream.nodes >= 4, "Effekseer's distortion example didn't load");
+    check(
+        std::any_of(
+            upstream.features.begin(), upstream.features.end(),
+            [](const EffectFeature& f) {
+                return f.node == "2" && f.feature == "ring (distortion)" && f.status == "supported";
+            }),
+        "Effekseer's distortion ring isn't reported");
+
+    World world;
+    auto show = [&](const char* file, glm::vec3 at, ParticleEffect pe = {}) {
+        const Entity e = world.create();
+        world.add<Transform>(e, {at});
+        pe.effect = file;
+        world.add<ParticleEffect>(e, pe);
+        return e;
+    };
+    auto frame = [&] {
+        run(effects, world, 3);
+        return effects.build(view, projection);
+    };
+
+    // Distortion batches carry their flag, strength and a tangent; lit ones their flag.
+    Entity e = show("effects/heat-haze.efkefc", {0, 1, 0});
+    ParticleDrawList list = frame();
+    checkList(list, "heat-haze");
+    const ParticleBatch* d = firstBatch(list, kParticleDistortion);
+    check(d && std::abs(d->distortion - 0.25f) < 1e-6f && list.batches.size() == 1, "heat-haze's distortion batch");
+    for (const ParticleVertex& v : list.vertices) check(v.tangent != 0, "a distortion vertex has no tangent");
+    world.destroy(e);
+    e = show("effects/lit-smoke.efkefc", {0, 1, 0});
+    list = frame();
+    check(firstBatch(list, kParticleLit) && list.batches.size() == 1, "lit-smoke isn't lit");
+    world.destroy(e);
+
+    // Soft distances: the effect's own, or ParticleEffect's soft_distance (0 turns it off).
+    e = show("effects/soft-alpha.efkefc", {0, 0, 0});
+    list = frame();
+    check(
+        !list.batches.empty() && list.batches[0].softDistance == 1.0f && list.batches[0].softNear == 0.0f,
+        "soft-alpha's soft distance isn't 1 m");
+    world.get<ParticleEffect>(e)->softDistance = 0.0f;
+    list = frame();
+    check(!list.batches.empty() && list.batches[0].softDistance == 0.0f, "soft_distance 0 didn't turn the fade off");
+    world.get<ParticleEffect>(e)->softDistance = 0.4f;
+    list = frame();
+    check(!list.batches.empty() && list.batches[0].softDistance == 0.4f, "soft_distance 0.4 didn't replace it");
+    world.destroy(e);
+    e = show("effects/soft-near.efkefc", {0, 0, 0});
+    list = frame();
+    check(
+        !list.batches.empty() && list.batches[0].softNear == 2.0f && list.batches[0].softNearOffset == 0.5f,
+        "soft-near's near fade isn't 2 m from 0.5 m");
+    world.destroy(e);
+
+    // Sorting: two effects come back to front whatever order they're in.
+    const Entity nearFx = show("effects/soft-add.efkefc", {0, 0, 4});
+    const Entity farFx = show("effects/soft-alpha.efkefc", {0, 0, -6});
+    list = frame();
+    check(
+        list.batches.size() >= 2 && list.batches.front().blend == ParticleBlend::Alpha &&
+            list.batches.back().blend == ParticleBlend::Add && list.batches.front().depth > list.batches.back().depth,
+        "effects aren't drawn back to front");
+    world.destroy(nearFx);
+    world.destroy(farFx);
+    // Sorted whole, an effect keeps the order its parts were made in (the near alpha puff,
+    // then the far glow); sorted in parts, the far glow goes first.
+    e = show("effects/two-layers.efkefc", {0, 0, 0});
+    list = frame();
+    check(
+        list.batches.size() == 2 && list.batches[0].blend == ParticleBlend::Alpha &&
+            list.batches[1].blend == ParticleBlend::Add && list.batches[0].depth == list.batches[1].depth,
+        "two-layers sorted whole lost its order");
+    world.get<ParticleEffect>(e)->sorting = ParticleEffect::Sorting::Parts;
+    list = frame();
+    checkList(list, "two-layers in parts");
+    check(
+        list.batches.size() == 2 && list.batches[0].blend == ParticleBlend::Add &&
+            list.batches[1].blend == ParticleBlend::Alpha && list.batches[0].depth > list.batches[1].depth,
+        "two-layers sorted in parts didn't put the far glow first");
+}
+
 }   // namespace
 
 int main(int argc, char** argv) {
@@ -58,7 +175,7 @@ int main(int argc, char** argv) {
 
         registerEffectsComponents();
         const ComponentInfo* info = findComponent("ParticleEffect");
-        check(info && info->fields.size() == 6, "ParticleEffect isn't registered with its 6 fields");
+        check(info && info->fields.size() == 8, "ParticleEffect isn't registered with its 8 fields");
 
         Effects effects(nullptr);
         effects.setContentFolder(content);
@@ -199,6 +316,7 @@ int main(int argc, char** argv) {
         check(effects.build(view, projection).batches.empty(), "disabled effects still draw");
 
         fs::remove_all(content);
+        testParticleFeatures(source / "Tests/fixtures/graphics/Content");
         std::cout << "effects test passed\n";
         return 0;
     } catch (const std::exception& e) {

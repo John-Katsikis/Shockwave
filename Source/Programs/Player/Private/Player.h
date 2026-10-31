@@ -175,6 +175,8 @@ int imageDiff(
 // --material-info, --texture-info: an asset's material slots (UV sets, transforms,
 // samplers) or its textures' levels and size at each texture_quality, as JSON. No GPU.
 int materialInfo(const fs::path& asset, const fs::path& json);
+// --effect-info (PlayerEffects.cpp): an effect file's parts and how each is drawn (A04).
+int effectInfo(const fs::path& effect, const fs::path& json);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);

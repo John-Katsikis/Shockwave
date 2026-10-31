@@ -2,6 +2,10 @@
 // module, drawn in its own render graph pass after the scene, into the HDR image and
 // depth tested against it. One pipeline per blend mode; cull mode and depth test and
 // write are dynamic state, so a batch never needs a pipeline of its own.
+//
+// A04: with soft particles the pass keeps depth read-only and samples it, so batches that
+// write depth (opaque models) are drawn first, in a pass of their own. Distortion draws
+// read a copy of the scene made just before the particle pass.
 #include "RendererImpl.h"
 
 #include <Core/Profile.h>
@@ -22,8 +26,16 @@ struct ParticlePushConstants {
     glm::mat4 viewProjection;
     VkDeviceAddress vertices;
     VkDeviceAddress batches;
+    VkDeviceAddress frame;   // FrameBuffer (frame.glsl): camera, lights, clusters
+    uint32_t depthSlot;   // scene depth for soft particles and distortion; 0: don't read it
+    uint32_t backgroundSlot;   // the scene before particles, for distortion; 0: none
+    uint32_t flags;   // kParticlePass*
+    uint32_t pad;
 };
-static_assert(sizeof(ParticlePushConstants) == 80, "ParticlePushConstants must match the particle shaders");
+// ParticlePushConstants::flags, as in particle.frag.
+constexpr uint32_t kParticlePassSceneLighting = 1u << 0;   // lit batches take every light (particle_lighting scene)
+constexpr uint32_t kParticlePassSoft = 1u << 1;   // soft batches fade against scene depth (soft_particles)
+static_assert(sizeof(ParticlePushConstants) == 104, "ParticlePushConstants must match the particle shaders");
 
 void setBlend(VkPipelineColorBlendAttachmentState& state, ParticleBlend blend) {
     state.blendEnable = blend != ParticleBlend::Opaque;
@@ -177,6 +189,7 @@ void VulkanRenderer::Impl::destroyParticles() {
     reactiveParticlePipeline = VK_NULL_HANDLE;
     if (particleLayout) vkDestroyPipelineLayout(device, particleLayout, nullptr);
     particleLayout = VK_NULL_HANDLE;
+    destroyParticleBackground(particleBackground);
     for (ParticleBuffers& buffers : particleBuffers) {
         for (vk::Buffer* buffer : {&buffers.vertices, &buffers.indices, &buffers.batches})
             if (buffer->buffer) vmaDestroyBuffer(context->allocator(), buffer->buffer, buffer->allocation);
@@ -196,8 +209,13 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
     for (uint32_t index : list.indices) particleIndices.push_back(index + vertexBase);
     const glm::vec3 lightDirection =
         glm::length(list.lightDirection) > 0.0f ? glm::normalize(list.lightDirection) : glm::vec3(0, -1, 0);
+    const bool distortion = particleDistortion.load(std::memory_order_relaxed);
     for (const ParticleBatch& batch : list.batches) {
         if (batch.indexCount == 0 || batch.firstIndex + batch.indexCount > list.indices.size()) continue;
+        if ((batch.flags & kParticleDistortion) && !distortion) {
+            ++particleSkippedDistortion;   // particle_distortion off
+            continue;
+        }
         ParticleBatchData data{};
         data.tint = batch.tint;
         data.edgeColor = batch.edgeColor;
@@ -209,10 +227,16 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
         data.flags = batch.flags;
         data.emissive = batch.emissive;
         data.blend = static_cast<uint32_t>(batch.blend);
+        data.softDistance = std::max(batch.softDistance, 0.0f);
+        data.softNear = std::max(batch.softNear, 0.0f);
+        data.softNearOffset = batch.softNearOffset;
+        data.distortion = batch.distortion;
         particleBatchData.push_back(data);
+        // Opaque batches don't blend, so they have nothing to fade.
+        const bool soft = batch.blend != ParticleBlend::Opaque && (data.softDistance > 0.0f || data.softNear > 0.0f);
         particleDraws.push_back(
-            {indexBase + batch.firstIndex, batch.indexCount, batch.blend, batch.cull, batch.depthTest,
-             batch.depthWrite});
+            {indexBase + batch.firstIndex, batch.indexCount, batch.blend, batch.cull, batch.depthTest, batch.depthWrite,
+             soft, (batch.flags & kParticleDistortion) != 0});
     }
     particleGatherMs += msSince(start);
 }
@@ -223,11 +247,36 @@ void VulkanRenderer::Impl::clearParticles() {
     particleBatchData.clear();
     particleDraws.clear();
     particleGatherMs = 0;
+    particleSkippedDistortion = 0;
 }
 
 void VulkanRenderer::Impl::prepareParticles() {
     lastParticleStats = {};
+    particleSoftThisFrame = particleDepthPassThisFrame = particleBackgroundThisFrame = false;
+    // Distortion off: drawParticles left its batches out, and its copy of the scene is freed.
+    const bool distortion = particleDistortion.load(std::memory_order_relaxed);
+    lastParticleStats.skippedDistortion = particleSkippedDistortion;
+    bool anySoft = false, anyDistortion = false, anyDepthWrite = false;
+    for (const ParticleDraw& d : particleDraws) {
+        anySoft |= d.soft;
+        anyDistortion |= d.distortion;
+        anyDepthWrite |= d.depthWrite;
+    }
+    updateParticleBackground(distortion && (anyDistortion || particleBackground.image.image));
     if (particleDraws.empty()) return;
+    // Soft particles and distortion read scene depth, so the main pass can't write it.
+    particleSoftThisFrame =
+        (anySoft && softParticles.load(std::memory_order_relaxed)) || (anyDistortion && particleBackground.image.image);
+    particleBackgroundThisFrame = anyDistortion && particleBackground.image.image;
+    particleDepthPassThisFrame = particleSoftThisFrame && anyDepthWrite;
+    for (const ParticleDraw& d : particleDraws) {
+        lastParticleStats.softDraws += particleSoftThisFrame && d.soft && softParticles.load(std::memory_order_relaxed);
+        lastParticleStats.distortionDraws += d.distortion && particleBackgroundThisFrame;
+        lastParticleStats.sceneLitDraws +=
+            particleLighting.load(std::memory_order_relaxed) == ParticleLighting::Scene &&
+            (particleBatchData[&d - particleDraws.data()].flags & kParticleLit) != 0;
+    }
+    lastParticleStats.depthPass = particleDepthPassThisFrame;
     SW_PROFILE_SCOPE("Particles upload");
     const auto start = Clock::now();
     // beginFrame waited for the GPU to finish this slot's previous frame, so its buffers
@@ -271,7 +320,74 @@ void VulkanRenderer::Impl::prepareParticles() {
     lastParticleStats.draws = static_cast<uint32_t>(particleDraws.size());
 }
 
-void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
+void VulkanRenderer::Impl::destroyParticleBackground(ParticleBackground& background) {
+    destroyImage(background.image);
+    background = {};
+}
+
+void VulkanRenderer::Impl::updateParticleBackground(bool want) {
+    const VkExtent2D extent = sceneColor.extent;
+    const bool fits = particleBackground.image.image && particleBackground.image.extent.width == extent.width &&
+                      particleBackground.image.extent.height == extent.height;
+    if (want == static_cast<bool>(particleBackground.image.image) && (!want || fits)) return;
+    auto retireCurrent = [this] {
+        if (!particleBackground.image.image) return;
+        const int slot = particleBackground.slot == particleBackgroundSlots[0] ? 0 : 1;
+        particleBackgroundSlotBusy[slot] = true;
+        retire([this, old = particleBackground, slot]() mutable {
+            destroyParticleBackground(old);
+            particleBackgroundSlotBusy[slot] = false;
+        });
+        particleBackground = {};
+    };
+    if (!want) {
+        retireCurrent();
+        return;
+    }
+    // A slot no frame in flight reads; none free (both just replaced): the next frame tries again.
+    int free = -1;
+    for (int i = 0; i < 2 && free < 0; ++i)
+        if (!particleBackgroundSlotBusy[i] &&
+            !(particleBackground.image.image && particleBackgroundSlots[i] == particleBackground.slot))
+            free = i;
+    if (free < 0) return;
+    ParticleBackground next;
+    next.slot = particleBackgroundSlots[free];
+    next.image = createImage(
+        extent, kSceneColorFormat, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT, 1, true);
+    {
+        std::lock_guard lock(descriptorMutex);
+        VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE, next.image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = bindlessSet;
+        write.dstBinding = 0;
+        write.dstArrayElement = next.slot;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        write.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
+    }
+    retireCurrent();
+    particleBackground = next;
+    particleBackgroundState = {};   // a new image starts undefined
+}
+
+void VulkanRenderer::Impl::recordParticleBackgroundCopy(VkCommandBuffer cmd) {
+    VkImageCopy region{};
+    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.extent = {sceneColor.extent.width, sceneColor.extent.height, 1};
+    vkCmdCopyImage(
+        cmd, sceneColor.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, particleBackground.image.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+}
+
+void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd, bool depthPass) {
+    // The depth-writing pass (soft particles on) and the plain pass write depth; the main
+    // pass with soft particles or distortion keeps it read-only, and samples it.
+    const bool readOnly = particleSoftThisFrame && !depthPass;
     VkRenderingAttachmentInfo colorAttachment{};
     colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     colorAttachment.imageView = sceneColor.view;
@@ -281,10 +397,12 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
     VkRenderingAttachmentInfo depthAttachment{};
     depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depthAttachment.imageView = sceneDepth.view;
-    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depthAttachment.imageLayout =
+        readOnly ? VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    // Kept for the reactive mask and TAA (G09, G10).
-    depthAttachment.storeOp = temporalThisFrame ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // Kept for the main pass after the depth-writing one, and for the reactive mask and TAA (G09, G10).
+    depthAttachment.storeOp =
+        temporalThisFrame || depthPass || readOnly ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea = {{0, 0}, sceneColor.extent};
@@ -298,10 +416,19 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
     const ParticleBuffers& b = particleBuffers[frameIndex];
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleLayout, 0, 1, &bindlessSet, 0, nullptr);
     vkCmdBindIndexBuffer(cmd, b.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-    const ParticlePushConstants push{viewProjection, b.vertexAddress, b.batchAddress};
+    ParticlePushConstants push{viewProjection, b.vertexAddress, b.batchAddress, particleFrameAddress, 0, 0, 0, 0};
+    if (readOnly) push.depthSlot = sceneDepthSlot;
+    if (readOnly && softParticles.load(std::memory_order_relaxed)) push.flags |= kParticlePassSoft;
+    if (particleBackgroundThisFrame) push.backgroundSlot = particleBackground.slot;
+    if (particleLighting.load(std::memory_order_relaxed) == ParticleLighting::Scene)
+        push.flags |= kParticlePassSceneLighting;
     VkPipeline bound = VK_NULL_HANDLE;
     for (uint32_t i = 0; i < particleDraws.size(); ++i) {
         const ParticleDraw& draw = particleDraws[i];
+        // With a depth-writing pass, it draws the opaque batches that write depth and the
+        // main pass the rest; without one, every batch is drawn here.
+        const bool early = particleDepthPassThisFrame && draw.depthWrite && draw.blend == ParticleBlend::Opaque;
+        if (particleDepthPassThisFrame && early != depthPass) continue;
         const VkPipeline pipeline = particlePipelines[static_cast<size_t>(draw.blend)];
         if (pipeline != bound) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -314,7 +441,8 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
         }
         vkCmdSetCullMode(cmd, cullMode(draw.cull));
         vkCmdSetDepthTestEnable(cmd, draw.depthTest);
-        vkCmdSetDepthWriteEnable(cmd, draw.depthWrite);
+        // See-through batches that ask to write depth can't over read-only depth.
+        vkCmdSetDepthWriteEnable(cmd, draw.depthWrite && !readOnly);
         vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, i);   // instance i: its batch
     }
     vkCmdEndRendering(cmd);
@@ -322,11 +450,14 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd) {
 
 void VulkanRenderer::Impl::recordParticleReactive(VkCommandBuffer cmd) {
     // Inside the reactive pass: the same batches, depth tested as drawn but never written.
+    // No depth or scene reads: each batch's coverage, unfaded, is what TAA needs to know.
     const ParticleBuffers& b = particleBuffers[frameIndex];
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, reactiveParticlePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, particleLayout, 0, 1, &bindlessSet, 0, nullptr);
     vkCmdBindIndexBuffer(cmd, b.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-    const ParticlePushConstants push{viewProjection, b.vertexAddress, b.batchAddress};
+    ParticlePushConstants push{viewProjection, b.vertexAddress, b.batchAddress, particleFrameAddress, 0, 0, 0, 0};
+    if (particleLighting.load(std::memory_order_relaxed) == ParticleLighting::Scene)
+        push.flags |= kParticlePassSceneLighting;
     vkCmdPushConstants(
         cmd, particleLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdSetDepthWriteEnable(cmd, VK_FALSE);

@@ -38,6 +38,16 @@ struct ParticleEffect {
     float speed = 1.0f;   // 1 is the speed it was made at; 0 freezes it
     float scale = 1.0f;   // on top of the Transform's scale
     glm::vec4 color{1.0f};   // multiplies every particle's color and alpha
+    // Soft particles (A04): how far, in metres, particles fade in behind them to the scene
+    // surface they meet. Negative keeps what the effect was made with (Effekseer's
+    // "soft particle" distance); 0 turns the fade off for this effect.
+    float softDistance = -1.0f;
+    // How it's ordered among other effects' see-through particles, back to front:
+    // Whole draws the whole effect at the middle of its particles, keeping the order it
+    // was made with; Parts sorts each part (each node) on its own, for big effects like a
+    // smoke plume that other effects sit inside of.
+    enum class Sorting { Whole, Parts };
+    Sorting sorting = Sorting::Whole;
 };
 // Registers ParticleEffect for scenes, the Inspector and player --schema. The hosts call
 // it at startup, like registerAudioComponents.
@@ -50,6 +60,27 @@ struct EffectProblem {
     bool warning = false;   // it still plays; something in it is skipped
 };
 
+// One thing an effect's node uses, and what Shockwave draws for it (A04): the effect's
+// support report, for player --effect-info, --check and the editor.
+struct EffectFeature {
+    std::string node;   // where in the effect: child indices from the root, "1/2"
+    std::string feature;   // "sprite", "soft particles", "distortion", "falloff", ...
+    // "supported": drawn as made; "approximated": drawn, close but not exactly (detail
+    // says how); "unsupported": that part isn't drawn, or the feature is left out.
+    std::string status;
+    std::string detail;
+    std::string setting;   // the graphics setting that turns it off, if any ("soft_particles")
+};
+struct EffectInfo {
+    std::string file;   // inside Content
+    bool loaded = false;
+    std::vector<EffectProblem> problems;   // as validate() reports them
+    float duration = -1.0f;   // seconds; negative: never ends on its own
+    uint32_t nodes = 0;   // nodes that draw something
+    uint32_t textures = 0, models = 0, materials = 0, sounds = 0;
+    std::vector<EffectFeature> features;
+};
+
 // Per-frame cost and size, for the Stats window and tools.
 struct EffectsStats {
     uint32_t effectsLoaded = 0;   // effect files in memory
@@ -57,7 +88,7 @@ struct EffectsStats {
     uint32_t particles = 0;   // live particles (Effekseer instances)
     uint32_t batches = 0;   // draws handed to the renderer last frame
     uint32_t vertices = 0;
-    uint32_t skippedBatches = 0;   // distortion and custom materials, not drawn yet
+    uint32_t skippedBatches = 0;   // custom materials, not drawn yet
     float updateMs = 0;   // simulation, on a worker
     float buildMs = 0;   // building the triangles, on the main thread
     float waitMs = 0;   // the main thread waiting for the simulation to finish, before the build
@@ -108,6 +139,9 @@ public:
     // Problems seen loading an effect: missing file, textures or models, and features
     // it uses that aren't drawn yet (warnings). Loads it if needed.
     std::vector<EffectProblem> validate(std::string_view effect);
+    // What the effect is made of and how each part is drawn (EffectFeature). Loads it if
+    // needed.
+    EffectInfo info(std::string_view effect);
     // Loads an effect ahead of time, so its first play doesn't stall. False if it can't be.
     bool preload(std::string_view effect);
     // Every .efkefc in the Content folder, for the editor.

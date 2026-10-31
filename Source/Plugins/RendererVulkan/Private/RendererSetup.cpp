@@ -46,6 +46,9 @@ VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), job
     decalSlots[0][1] = bindlessSlots() - 12;
     decalSlots[1][0] = bindlessSlots() - 13;
     decalSlots[1][1] = bindlessSlots() - 14;
+    sceneDepthSlot = bindlessSlots() - 15;
+    particleBackgroundSlots[0] = bindlessSlots() - 16;
+    particleBackgroundSlots[1] = bindlessSlots() - 17;
     createRenderTargets();
     createShadowMaps();
     createEnvironment();
@@ -77,6 +80,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
+    destroyParticleBackground(particleBackground);
     destroyTemporalPipelines();
     destroyClusters();
     destroyDecalPipeline();
@@ -212,7 +216,25 @@ void VulkanRenderer::Impl::createRenderTargets() {
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &imageInfo;
     vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
+    writeSceneDepthSlot();
     registerGuiSceneTexture();
+}
+
+void VulkanRenderer::Impl::writeSceneDepthSlot() {
+    // Soft particles and distortion read scene depth through the bindless table, in the
+    // read-only depth layout the particle pass keeps it in. Called with descriptorMutex held.
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageView = sceneDepth.view;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = bindlessSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = sceneDepthSlot;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo = &imageInfo;
+    vkUpdateDescriptorSets(context->device(), 1, &write, 0, nullptr);
 }
 
 void VulkanRenderer::Impl::registerGuiSceneTexture() {
@@ -229,6 +251,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     destroyDecalTargets(decalTargets);
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
+    destroyParticleBackground(particleBackground);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

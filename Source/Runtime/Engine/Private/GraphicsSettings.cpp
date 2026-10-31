@@ -53,6 +53,7 @@ const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
 const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kLightCullingChoices = {"auto", "clustered", "brute_force"};
+const std::vector<const char*> kParticleLightingChoices = {"simple", "scene"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -193,6 +194,36 @@ std::vector<GraphicsSettingInfo> makeInfo() {
          [](S& s, const std::string& v, std::string& error) {
              if (choice(kLightCullingChoices, v, s.lightCulling)) return true;
              error = "light_culling must be " + list(kLightCullingChoices);
+             return false;
+         }});
+    info.push_back(
+        {"soft_particles", "Soft particles", "Quality",
+         "Smoke, dust and glows fade out where they meet walls and floors, and as they reach the camera, "
+         "instead of cutting a hard line through them. Effects choose how soft. Off draws the hard edges and "
+         "saves a depth read a particle pixel.",
+         "true, false", kBool, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(s.softParticles ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.softParticles, "soft_particles", error);
+         }});
+    info.push_back(
+        {"particle_distortion", "Heat haze", "Quality",
+         "Effects that bend the scene behind them: heat above fire, shock waves. Off skips those parts of an "
+         "effect, with no copy of the scene and no memory for it.",
+         "true, false", kBool, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(s.particleDistortion ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.particleDistortion, "particle_distortion", error);
+         }});
+    info.push_back(
+        {"particle_lighting", "Particle lighting", "Quality",
+         "How lit particles (smoke, dust) are lit. Scene lights them by every light, so a muzzle flash or a "
+         "lamp lights the smoke around it; simple uses the sun and the ambient light alone, which costs less.",
+         "simple, scene", kParticleLightingChoices, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(particleLightingName(s.particleLighting)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kParticleLightingChoices, v, s.particleLighting)) return true;
+             error = "particle_lighting must be " + list(kParticleLightingChoices);
              return false;
          }});
     info.push_back(
@@ -337,6 +368,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.materialQuality = MaterialQuality::Low;
         base.ambientOcclusion = AmbientOcclusion::Off;
         base.decals = DecalQuality::Low;
+        base.softParticles = false;
+        base.particleDistortion = false;
+        base.particleLighting = ParticleLighting::Simple;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -348,6 +382,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::Low;
         base.decals = DecalQuality::Medium;
+        base.softParticles = true;
+        base.particleDistortion = true;
+        base.particleLighting = ParticleLighting::Scene;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -359,6 +396,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::Medium;
         base.decals = DecalQuality::High;
+        base.softParticles = true;
+        base.particleDistortion = true;
+        base.particleLighting = ParticleLighting::Scene;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -370,6 +410,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.materialQuality = MaterialQuality::High;
         base.ambientOcclusion = AmbientOcclusion::High;
         base.decals = DecalQuality::High;
+        base.softParticles = true;
+        base.particleDistortion = true;
+        base.particleLighting = ParticleLighting::Scene;
         break;
     }
     return base;
@@ -534,6 +577,10 @@ GraphicsSettings Graphics::current() const {
     s.reflectionProbes = r.localReflections();
     s.decals = r.decalQuality();
     s.lightCulling = r.lightCulling();
+    const ParticleSettings particles = r.particleSettings();
+    s.softParticles = particles.softParticles;
+    s.particleDistortion = particles.distortion;
+    s.particleLighting = particles.lighting;
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -591,6 +638,9 @@ void Graphics::commit() {
     if (s.reflectionProbes != previous.reflectionProbes) r.setLocalReflections(s.reflectionProbes);
     if (s.decals != previous.decals) r.setDecalQuality(s.decals);
     if (s.lightCulling != previous.lightCulling) r.setLightCulling(s.lightCulling);
+    if (s.softParticles != previous.softParticles || s.particleDistortion != previous.particleDistortion ||
+        s.particleLighting != previous.particleLighting)
+        r.setParticleSettings({s.softParticles, s.particleDistortion, s.particleLighting});
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

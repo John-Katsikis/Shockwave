@@ -126,6 +126,7 @@ struct Renderer::State {
     bool localReflections = true;
     DecalQuality decalQuality = DecalQuality::High;
     LightCulling lightCulling = LightCulling::Auto;
+    ParticleSettings particleSettings;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -376,6 +377,7 @@ struct Renderer::State {
         backend->setLocalReflections(localReflections);
         backend->setDecalQuality(decalQuality);
         backend->setLightCulling(lightCulling);
+        backend->setParticleSettings(particleSettings);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
@@ -964,6 +966,11 @@ void Renderer::setLightCulling(LightCulling culling) {
     m->backend->setLightCulling(culling);
 }
 LightCulling Renderer::lightCulling() const { return m->lightCulling; }
+void Renderer::setParticleSettings(const ParticleSettings& settings) {
+    m->particleSettings = settings;
+    m->backend->setParticleSettings(settings);
+}
+ParticleSettings Renderer::particleSettings() const { return m->particleSettings; }
 ClusterStats Renderer::clusterStats() const {
     ClusterStats stats = m->backend->clusterStats();
     stats.requested = m->lightCulling;

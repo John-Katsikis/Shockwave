@@ -303,6 +303,27 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
              asked == LightCulling::Clustered && !c.clustered ? c.reason : "", detail});
     }
 
+    // Particles (A04): what last frame drew of soft particles, distortion and scene lighting.
+    {
+        const ParticleStats& p = lastParticleStats;
+        const bool soft = softParticles.load(std::memory_order_relaxed);
+        const bool distortion = particleDistortion.load(std::memory_order_relaxed);
+        const ParticleLighting lighting = particleLighting.load(std::memory_order_relaxed);
+        char detail[160];
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u of %u particle draws faded against scene depth%s", p.softDraws,
+            p.draws, p.depthPass ? "; depth-writing ones drawn first" : "");
+        settings.push_back({"soft_particles", onOff(soft), onOff(soft), "", detail});
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u distortion draws, %u left out; scene copy %.1f MiB",
+            p.distortionDraws, p.skippedDistortion,
+            static_cast<double>(imageBytes(particleBackground.image)) / (1024.0 * 1024.0));
+        settings.push_back({"particle_distortion", onOff(distortion), onOff(distortion), "", detail});
+        std::snprintf(detail, sizeof(detail), "last frame %u lit particle draws took every light", p.sceneLitDraws);
+        settings.push_back(
+            {"particle_lighting", particleLightingName(lighting), particleLightingName(lighting), "", detail});
+    }
+
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
     const bool synced = mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR ||
@@ -408,6 +429,7 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
              {&mesh.vertices, &mesh.indices, &mesh.lodIndices, &mesh.skin, &mesh.uv1, &mesh.lightmapUv})
             add(GpuMemoryCategory::Meshes, b->allocation);
     }
+    add(GpuMemoryCategory::Particles, particleBackground.image.allocation);   // distortion's scene copy
     {
         // Textures can be created from worker threads; their descriptor write takes this lock.
         std::lock_guard lock(const_cast<std::mutex&>(descriptorMutex));
