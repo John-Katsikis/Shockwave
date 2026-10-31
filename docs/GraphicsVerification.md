@@ -530,6 +530,10 @@ motion scene at 320x180, 40 frames: none 3.47, TAA 3.70 against its 2x render, t
 being a moving shadow on the still floor, which has no motion of its own (a known limit).
 Temporal memory is 33 bytes a pixel: 1.8 MiB at 320x180, 7.3 MiB at 640x360.
 
+Result: `capture.py --compare` with the default settings (FXAA, so no TAA) found all 52
+images identical to the baseline (RMSE 0): with TAA off nothing changed, and no baseline
+entry was re-recorded.
+
 ## Known limits
 
 - Normal-map mips are still box-filtered; Toksvig widens roughness from their length in
