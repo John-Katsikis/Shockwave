@@ -418,6 +418,7 @@ No fields; the component's presence is what matters.
 | `shadow_cascades` | whole number; range 1 to 4 | `4` |
 | `ao_radius` | number; range 0.01 to 10 | `0.3` |
 | `ao_intensity` | number; range 0 to 4 | `1` |
+| `cluster_far` | number; range 1 to 100000 | `250` |
 
 #### Light
 
