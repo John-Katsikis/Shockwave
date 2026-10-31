@@ -125,6 +125,7 @@ struct Renderer::State {
     std::atomic<bool> bakedLighting{true};
     bool localReflections = true;
     DecalQuality decalQuality = DecalQuality::High;
+    LightCulling lightCulling = LightCulling::Auto;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -374,6 +375,7 @@ struct Renderer::State {
         }
         backend->setLocalReflections(localReflections);
         backend->setDecalQuality(decalQuality);
+        backend->setLightCulling(lightCulling);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
             if (restartGuiPlatform) restartGuiPlatform();
@@ -957,6 +959,16 @@ void Renderer::setDecalQuality(DecalQuality quality) {
 }
 DecalQuality Renderer::decalQuality() const { return m->decalQuality; }
 DecalStats Renderer::decalStats() const { return m->backend->decalStats(); }
+void Renderer::setLightCulling(LightCulling culling) {
+    m->lightCulling = culling;
+    m->backend->setLightCulling(culling);
+}
+LightCulling Renderer::lightCulling() const { return m->lightCulling; }
+ClusterStats Renderer::clusterStats() const {
+    ClusterStats stats = m->backend->clusterStats();
+    stats.requested = m->lightCulling;
+    return stats;
+}
 bool Renderer::requestSceneCapture(std::string& error) { return m->backend->requestSceneCapture(error); }
 bool Renderer::sceneCapturePending() const { return m->backend->sceneCapturePending(); }
 SceneCapture Renderer::takeSceneCapture() { return m->backend->takeSceneCapture(); }

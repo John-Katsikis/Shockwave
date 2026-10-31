@@ -93,6 +93,8 @@ void renderWorld(
     lighting.shadowCascades = static_cast<uint32_t>(std::clamp(environment.shadowCascades, 1, 4));
     lighting.aoRadius = std::clamp(environment.aoRadius, 0.01f, 10.0f);
     lighting.aoIntensity = std::clamp(environment.aoIntensity, 0.0f, 4.0f);
+    lighting.clusterFar = std::isfinite(environment.clusterFar) ? std::clamp(environment.clusterFar, 1.0f, 100000.0f)
+                                                                : kDefaultClusterFar;
     renderer.setLighting(lighting);
 
     const float a = static_cast<float>(alpha);

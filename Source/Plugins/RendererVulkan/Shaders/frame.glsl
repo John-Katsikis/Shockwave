@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -58,6 +58,12 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint decalMaterial;   // premultiplied roughness (r), metallic (g), coverage (a)
     // G09: this frame's camera jitter in pixels (Renderer/Temporal.h); 0 without TAA.
     vec2 jitter;
-    uint pad0;
+    // G11: lights[0, directionalCount) are directional, the rest point and spot lights.
+    uint directionalCount;
+    // G11: the cluster lists (clusters.glsl), (0, 0): every pixel loops over every light.
+    uvec2 clusters;
+    uint clusterTile;   // pixels
+    uint clusterTilesX, clusterTilesY, clusterSlices;
+    float clusterNear, clusterFar;   // positive view distances
     LightData lights[];
 };

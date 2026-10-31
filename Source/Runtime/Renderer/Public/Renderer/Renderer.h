@@ -6,6 +6,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
 #include <Renderer/TextureData.h>
 
@@ -137,6 +138,11 @@ public:
     void setDecalQuality(DecalQuality quality);
     DecalQuality decalQuality() const;
     DecalStats decalStats() const;   // the last frame's
+    // The light_culling setting (G11, Renderer/Clusters.h): how each pixel finds its point
+    // and spot lights. Brute force has no cluster pass or buffers; the image is the same.
+    void setLightCulling(LightCulling culling);
+    LightCulling lightCulling() const;
+    ClusterStats clusterStats() const;   // the last frame's
 
     // ---- Local reflection probes (G07, Renderer/ReflectionProbes.h) ----
     // Whether the backend can make TextureShape::Cube textures (createTexture refuses them

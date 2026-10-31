@@ -34,6 +34,8 @@ public:
     void drawDecals(std::span<const DecalDesc> decals) override;
     void setDecalQuality(DecalQuality quality) override;
     DecalStats decalStats() const override;
+    void setLightCulling(LightCulling culling) override;
+    ClusterStats clusterStats() const override;
     bool requestSceneCapture(std::string& error) override;
     bool sceneCapturePending() const override;
     SceneCapture takeSceneCapture() override;

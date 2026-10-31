@@ -20,6 +20,7 @@ layout(set = 0, binding = 5) uniform textureCube irradianceCube;
 #include "frame.glsl"
 #include "screen.glsl"
 #include "reflection.glsl"
+#include "clusters.glsl"
 
 layout(push_constant, scalar) uniform PushConstants {
     DrawBuffer drawBuffer;
@@ -316,6 +317,50 @@ float maskChannel(vec4 v, uint channel) {
     return channel == 0u ? v.r : channel == 1u ? v.g : channel == 2u ? v.b : v.a;
 }
 
+// One light's direct contribution at this fragment, zero where it doesn't reach: the same
+// maths whether the light came from the loop over every light or a cluster's list (G11).
+vec3 directLight(FrameBuffer frame, uint i, vec3 n, vec3 v, float nDotV, float a, vec3 f0, vec3 diffuseColor) {
+    LightData l = frame.lights[i];
+    vec3 toLight;
+    float attenuation = 1.0;
+    float distance = 1.0;
+    if (l.type == 0u) {
+        toLight = -l.direction;
+    } else {
+        vec3 offset = l.position - vWorldPosition;
+        distance = length(offset);
+        if (distance >= l.range) return vec3(0.0);
+        toLight = offset / max(distance, 1e-4);
+        attenuation = rangeFalloff(distance, l.range);
+        if (l.type == 2u) {
+            float cosAngle = dot(-toLight, l.direction);
+            attenuation *= smoothstep(l.cosOuter, l.cosInner, cosAngle);
+        }
+    }
+    float nDotL = dot(n, toLight);
+    if (nDotL <= 0.0 || attenuation <= 0.0) return vec3(0.0);
+    if (l.shadowView != 0xFFFFFFFFu) {
+        float shadow = lightShadow(frame, l, vWorldPosition, n, toLight, distance);
+        attenuation *= mix(1.0, shadow, l.shadowStrength);
+        if (attenuation <= 0.0) return vec3(0.0);
+    }
+    vec3 h = normalize(toLight + v);
+    float nDotH = max(dot(n, h), 0.0);
+    vec3 f = fresnelSchlick(max(dot(v, h), 0.0), f0);
+    // Scaled by PI so intensity 1 lights a white surface facing the light to 1.0.
+    vec3 specular = distributionGGX(nDotH, a) * visibilitySmith(nDotV, nDotL, a) * f * PI;
+    vec3 diffuse = (1.0 - f) * diffuseColor;
+    return (diffuse + specular) * l.color * (nDotL * attenuation);
+}
+
+// The cluster view's colours (DebugView::Clusters): dark blue for no lights, then blue,
+// green, yellow and red at 32 or more.
+vec3 clusterHeat(uint lights) {
+    if (lights == 0u) return vec3(0.02, 0.02, 0.12);
+    float t = clamp(float(lights) / 32.0, 0.0, 1.0);
+    return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
+}
+
 void main() {
     SlotBinding baseBinding = pc.drawBuffer.draws[vDraw].slots[kBaseColor];
     vec4 albedo = sampleSlot(vTexture, baseBinding, slotUv(baseBinding, vUvs)) * vColor;
@@ -472,39 +517,28 @@ void main() {
     vec3 f0 = mix(vec3(0.04), albedo.rgb, metallic);
     vec3 diffuseColor = albedo.rgb * (1.0 - metallic);
 
+    // Directional lights, then point and spot lights: from this pixel's cluster when there
+    // are lists (G11), every one of them otherwise. Both add the same lights in table order.
     vec3 light = vec3(0.0);
-    for (uint i = 0u; i < frame.lightCount; ++i) {
-        LightData l = frame.lights[i];
-        vec3 toLight;
-        float attenuation = 1.0;
-        float distance = 1.0;
-        if (l.type == 0u) {
-            toLight = -l.direction;
-        } else {
-            vec3 offset = l.position - vWorldPosition;
-            distance = length(offset);
-            if (distance >= l.range) continue;
-            toLight = offset / max(distance, 1e-4);
-            attenuation = rangeFalloff(distance, l.range);
-            if (l.type == 2u) {
-                float cosAngle = dot(-toLight, l.direction);
-                attenuation *= smoothstep(l.cosOuter, l.cosInner, cosAngle);
-            }
+    for (uint i = 0u; i < frame.directionalCount; ++i) light += directLight(frame, i, n, v, nDotV, a, f0, diffuseColor);
+    uint list = clusterListStart(frame, gl_FragCoord.xy, -(frame.view * vec4(vWorldPosition, 1.0)).z);
+    ClusterLists lists = ClusterLists(frame.clusters);
+    uint listed = list != kNoCluster ? lists.words[list] : kClusterOverflow;
+    if (frame.debugView == 11u) {
+        vec3 shown = list == kNoCluster                     ? vec3(0.35)
+                     : (listed & kClusterOverflow) != 0u ? vec3(1.0, 0.0, 1.0)
+                                                         : clusterHeat(listed);
+        outColor = vec4(shown, 1.0);
+        return;
+    }
+    if ((listed & kClusterOverflow) != 0u) {
+        for (uint i = frame.directionalCount; i < frame.lightCount; ++i)
+            light += directLight(frame, i, n, v, nDotV, a, f0, diffuseColor);
+    } else {
+        for (uint k = 0u; k < listed; ++k) {
+            uint i = (lists.words[list + 1u + (k >> 2)] >> ((k & 3u) * 8u)) & 0xFFu;
+            light += directLight(frame, i, n, v, nDotV, a, f0, diffuseColor);
         }
-        float nDotL = dot(n, toLight);
-        if (nDotL <= 0.0 || attenuation <= 0.0) continue;
-        if (l.shadowView != 0xFFFFFFFFu) {
-            float shadow = lightShadow(frame, l, vWorldPosition, n, toLight, distance);
-            attenuation *= mix(1.0, shadow, l.shadowStrength);
-            if (attenuation <= 0.0) continue;
-        }
-        vec3 h = normalize(toLight + v);
-        float nDotH = max(dot(n, h), 0.0);
-        vec3 f = fresnelSchlick(max(dot(v, h), 0.0), f0);
-        // Scaled by PI so intensity 1 lights a white surface facing the light to 1.0.
-        vec3 specular = distributionGGX(nDotH, a) * visibilitySmith(nDotV, nDotL, a) * f * PI;
-        vec3 diffuse = (1.0 - f) * diffuseColor;
-        light += (diffuse + specular) * l.color * (nDotL * attenuation);
     }
 
     // Image-based lighting: light from all around (an environment map, or the sky above and

@@ -2438,6 +2438,7 @@ Every field of the entity's Environment; found is false when it has none.
 - Out `shadow_cascades` Int
 - Out `ao_radius` Float
 - Out `ao_intensity` Float
+- Out `cluster_far` Float
 
 ### Component.Environment.Get.ambient_intensity
 
@@ -2470,6 +2471,14 @@ The entity's Environment bloom_intensity.
 - Changes: presentation
 - In `target` Entity, default self
 - Out `bloom_intensity` Float
+
+### Component.Environment.Get.cluster_far
+
+The entity's Environment cluster_far.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `cluster_far` Float
 
 ### Component.Environment.Get.environment_intensity
 
@@ -2590,6 +2599,7 @@ Sets the fields given (connected or written) of the entity's Environment; the re
 - In `shadow_cascades` Int
 - In `ao_radius` Float
 - In `ao_intensity` Float
+- In `cluster_far` Float
 
 ### Component.Environment.Set.ambient_intensity
 
@@ -2630,6 +2640,16 @@ Sets the entity's Environment bloom_intensity.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `bloom_intensity` Float, required
+
+### Component.Environment.Set.cluster_far
+
+Sets the entity's Environment cluster_far.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `cluster_far` Float, required
 
 ### Component.Environment.Set.environment_intensity
 

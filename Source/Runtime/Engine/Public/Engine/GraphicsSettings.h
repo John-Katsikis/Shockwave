@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Engine/Subsystem.h>
+#include <Renderer/Clusters.h>
 #include <Renderer/Decals.h>
 #include <Renderer/RenderTypes.h>
 
@@ -37,6 +38,9 @@ struct GraphicsSettings {
     bool reflectionProbes = true;
     // Projected decals (G08): how many a frame draws, nearest first; off draws none.
     DecalQuality decals = DecalQuality::High;
+    // Clustered local lighting (G11): how pixels find their point and spot lights. The same
+    // picture every way; brute force is the reference.
+    LightCulling lightCulling = LightCulling::Auto;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

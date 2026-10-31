@@ -43,6 +43,8 @@ void VulkanRenderer::setLocalReflections(bool enabled) {
 void VulkanRenderer::drawDecals(std::span<const DecalDesc> decals) { m_impl->drawDecals(decals); }
 void VulkanRenderer::setDecalQuality(DecalQuality quality) { m_impl->decalQuality = quality; }
 DecalStats VulkanRenderer::decalStats() const { return m_impl->lastDecalStats; }
+void VulkanRenderer::setLightCulling(LightCulling culling) { m_impl->lightCulling = culling; }
+ClusterStats VulkanRenderer::clusterStats() const { return m_impl->lastClusterStats; }
 bool VulkanRenderer::requestSceneCapture(std::string&) {
     m_impl->captureRequested = true;
     return true;

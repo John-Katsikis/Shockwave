@@ -52,6 +52,7 @@ const std::vector<const char*> kAnisotropyChoices = {"1", "2", "4", "8", "16"};
 const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
 const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
+const std::vector<const char*> kLightCullingChoices = {"auto", "clustered", "brute_force"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -179,6 +180,19 @@ std::vector<GraphicsSettingInfo> makeInfo() {
          [](S& s, const std::string& v, std::string& error) {
              if (choice(kDecalChoices, v, s.decals)) return true;
              error = "decals_quality must be " + list(kDecalChoices);
+             return false;
+         }});
+    info.push_back(
+        {"light_culling", "Light culling", "Quality",
+         "How each pixel finds the point and spot lights that reach it. Clustered sorts lights into a grid of "
+         "screen tiles and distances first, so each pixel tests only those near it; brute force tests every "
+         "light everywhere. Auto clusters when a frame has 8 or more of them. The picture is the same either "
+         "way: only the cost differs.",
+         "auto, clustered, brute_force", kLightCullingChoices, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(lightCullingName(s.lightCulling)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kLightCullingChoices, v, s.lightCulling)) return true;
+             error = "light_culling must be " + list(kLightCullingChoices);
              return false;
          }});
     info.push_back(
@@ -310,7 +324,7 @@ const char* graphicsPresetName(GraphicsPreset preset) {
     return names[std::min<size_t>(size_t(preset), 3)];
 }
 GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
-    // Every preset smooths edges with FXAA: it costs little, and TAA isn't here yet.
+    // Every preset smooths edges with FXAA: it costs little. TAA (G10) stays the player's choice.
     base.antiAliasing = AntiAliasing::Fxaa;
     switch (preset) {
     case GraphicsPreset::Low:
@@ -519,6 +533,7 @@ GraphicsSettings Graphics::current() const {
     s.bakedLighting = r.bakedLighting();
     s.reflectionProbes = r.localReflections();
     s.decals = r.decalQuality();
+    s.lightCulling = r.lightCulling();
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -575,6 +590,7 @@ void Graphics::commit() {
     if (s.bakedLighting != previous.bakedLighting) r.setBakedLighting(s.bakedLighting);
     if (s.reflectionProbes != previous.reflectionProbes) r.setLocalReflections(s.reflectionProbes);
     if (s.decals != previous.decals) r.setDecalQuality(s.decals);
+    if (s.lightCulling != previous.lightCulling) r.setLightCulling(s.lightCulling);
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

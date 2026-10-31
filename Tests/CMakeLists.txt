@@ -250,6 +250,12 @@ add_executable(temporal_test TemporalTest.cpp)
 target_link_libraries(temporal_test PRIVATE Shockwave::Engine)
 shockwave_warnings(temporal_test)
 add_test(NAME temporal COMMAND temporal_test)
+# Clustered lighting (G11): the grid and its budget, depth slices, cluster boxes against
+# jittered pixels, the light sphere test and the light_culling setting. No GPU.
+add_executable(cluster_test ClusterTest.cpp)
+target_link_libraries(cluster_test PRIVATE Shockwave::Engine)
+shockwave_warnings(cluster_test)
+add_test(NAME clusters COMMAND cluster_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -297,6 +303,25 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTemporalCheck.cmake)
     set_tests_properties(graphics_temporal_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Clustered lighting (G11): the same pixels as brute force (overflow, TAA, glass, past
+    # cluster_far), the report on and off, auto by light count, and the cluster view.
+    add_test(NAME graphics_clusters_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsClusters
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsClustersCheck.cmake)
+    set_tests_properties(graphics_clusters_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # And that it's faster where it should be: 200 point lights, scene pass GPU time.
+    add_test(NAME graphics_clusters_timing COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsClustersTiming
+        -DTIMING=ON
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsClustersCheck.cmake)
+    set_tests_properties(graphics_clusters_timing PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300
+                         LABELS "gpu;timing" RUN_SERIAL TRUE)
     # The same report without a GPU: the null renderer says what it can't do, and why.
     # It plays a few frames, so like the other headless play tests it needs Xvfb.
     find_program(SHOCKWAVE_XVFB_RUN xvfb-run)

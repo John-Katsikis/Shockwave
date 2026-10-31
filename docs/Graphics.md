@@ -81,6 +81,15 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   decal pass, no decal buffers, and no surface prepass for them, pixel for pixel the
   scene without decals. `player --view decals` and the editor's *Decals* shading view
   show where they land.
+- `light_culling`: `auto` (the default), `clustered` or `brute_force`. How each pixel
+  finds the point and spot lights that reach it (docs/ClusteredLighting.md). Clustered
+  sorts lights into screen tiles and distance slices first, so a pixel tests only those
+  near it; brute force tests every light everywhere, with no cluster pass and no memory
+  for it. Auto clusters when a frame has 8 or more point and spot lights. The picture is
+  the same pixel for pixel every way: only the cost differs. Each scene's Environment
+  sets how far out clusters reach (`cluster_far`, 250 m). `player --view clusters` and
+  the editor's *Light clusters* shading view show how many lights each pixel tests.
+  Presets leave it alone.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and

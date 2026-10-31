@@ -123,6 +123,10 @@ struct Environment {
     // and how strongly that darkens it (0 none, 1 as measured, more darker).
     float aoRadius = 0.3f;
     float aoIntensity = 1.0f;
+    // Clustered lighting (G11): out to how many meters point and spot lights are sorted into
+    // clusters so each pixel tests only those near it. Beyond it every light is tested, so
+    // nothing goes missing; keep it around the farthest local light worth seeing.
+    float clusterFar = 250.0f;
 };
 
 // A light source, placed and aimed by the entity's Transform: directional and spot

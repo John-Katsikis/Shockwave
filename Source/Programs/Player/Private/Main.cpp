@@ -269,11 +269,13 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Motion;
                 else if (view == "reactive")
                     tool.view = shockwave::DebugView::Reactive;
+                else if (view == "clusters")
+                    tool.view = shockwave::DebugView::Clusters;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
                     throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao, indirect, "
-                                             "reflections, decals, motion, reactive or navmesh");
+                                             "reflections, decals, motion, reactive, clusters or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");
@@ -425,7 +427,8 @@ int main(int argc, char** argv) {
                     "player --new-project folder [--name display-name] [--module module_id]\n"
                     "                                    create an independent C++ starter in an empty folder\n"
                     "       [--size WxH] [--view "
-                    "lit|unlit|normals|lighting|cascades|ao|indirect|reflections|decals|motion|reactive|navmesh] "
+                    "lit|unlit|normals|lighting|cascades|ao|indirect|reflections|decals|motion|reactive|clusters|"
+                    "navmesh] "
                     "[--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
