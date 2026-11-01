@@ -184,6 +184,8 @@ void VulkanRenderer::setPostProcessSettings(const PostProcessSettings& settings)
     m_impl->postProcessSettings = settings;
 }
 PostProcessStats VulkanRenderer::postProcessStats() const { return m_impl->lastPostProcessStats; }
+void VulkanRenderer::setShadingSettings(const ShadingSettings& settings) { m_impl->setShadingSettings(settings); }
+ShadingStats VulkanRenderer::shadingStats() const { return m_impl->lastShadingStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 uint32_t VulkanRenderer::unkeyedDraws() const { return m_impl->lastUnkeyedDraws; }
 TemporalStats VulkanRenderer::temporalStats() const { return m_impl->lastTemporalStats; }

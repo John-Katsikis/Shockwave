@@ -49,10 +49,10 @@ const char* textureWrapName(TextureWrap wrap) {
 }
 const char* textureFilterName(TextureFilter filter) { return filter == TextureFilter::Nearest ? "nearest" : "linear"; }
 const char* materialSlotName(MaterialSlot slot) {
-    constexpr const char* names[] = {"base_color",       "normal",       "metallic_roughness",
-                                     "emissive",         "occlusion",    "detail_color",
-                                     "detail_normal",    "detail_mask",  "layer_mask",
-                                     "layer_base_color", "layer_normal", "layer_metallic_roughness"};
+    constexpr const char* names[] = {"base_color", "normal",           "metallic_roughness", "emissive",
+                                     "occlusion",  "detail_color",     "detail_normal",      "detail_mask",
+                                     "layer_mask", "layer_base_color", "layer_normal",       "layer_metallic_roughness",
+                                     "clearcoat",  "clearcoat_normal", "transmission"};
     static_assert(std::size(names) == kAllMaterialSlots);
     return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kAllMaterialSlots - 1)];
 }
@@ -95,6 +95,8 @@ const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
     case GpuMemoryCategory::Hzb: return "depth pyramid";
     case GpuMemoryCategory::Fog: return "fog";
     case GpuMemoryCategory::Exposure: return "exposure";
+    case GpuMemoryCategory::Transmission: return "transmission";
+    case GpuMemoryCategory::Skin: return "skin";
     case GpuMemoryCategory::Count: break;
     }
     return "?";
@@ -131,6 +133,7 @@ struct Renderer::State {
     ParticleSettings particleSettings;
     PostProcessDesc postProcess;
     PostProcessSettings postProcessSettings;
+    ShadingSettings shadingSettings;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -383,6 +386,7 @@ struct Renderer::State {
         backend->setLightCulling(lightCulling);
         backend->setParticleSettings(particleSettings);
         backend->setPostProcessSettings(postProcessSettings);
+        backend->setShadingSettings(shadingSettings);
         backend->setPostProcess(postProcess);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
@@ -989,6 +993,12 @@ void Renderer::setPostProcessSettings(const PostProcessSettings& settings) {
 }
 PostProcessSettings Renderer::postProcessSettings() const { return m->postProcessSettings; }
 PostProcessStats Renderer::postProcessStats() const { return m->backend->postProcessStats(); }
+void Renderer::setShadingSettings(const ShadingSettings& settings) {
+    m->shadingSettings = settings;
+    m->backend->setShadingSettings(settings);
+}
+ShadingSettings Renderer::shadingSettings() const { return m->shadingSettings; }
+ShadingStats Renderer::shadingStats() const { return m->backend->shadingStats(); }
 ClusterStats Renderer::clusterStats() const {
     ClusterStats stats = m->backend->clusterStats();
     stats.requested = m->lightCulling;

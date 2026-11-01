@@ -80,6 +80,43 @@ const uint kLayerDetailDerivativeTangents = 4u, kLayerSecondDerivativeTangents =
 const uint kDetailColor = 0u, kDetailNormal = 1u, kDetailMask = 2u, kLayerMaskSlot = 3u;
 const uint kLayerBaseColor = 4u, kLayerNormal = 5u, kLayerMetallicRoughness = 6u;
 
+// A draw's shading family (A07-A09, Renderer/Shading.h): clearcoat, transmission, skin,
+// hair cards. Must match ShadingData in RendererImpl.h.
+struct ShadingData {
+    uint family;   // 0 standard, 1 skin, 2 hair card, 3 transmission
+    uint flags;   // kShading*
+    float clearcoat;
+    float clearcoatRoughness;   // perceptual
+    float clearcoatNormalScale;
+    uint clearcoatTexture;   // bindless slots; 0: the white texture (clearcoatNormalTexture: none)
+    uint clearcoatNormalTexture;
+    uint transmissionTexture;
+    float transmission;
+    float ior;
+    float thickness;   // metres in the world (the object's scale applied)
+    float hairAnisotropy;
+    vec3 absorption;   // sigma per metre, per channel
+    uint hairDirection;   // root to tip: 0 +u, 1 +v
+    vec3 skinRadius;   // metres per channel, times the strength
+    float skinMaxPixels;
+    uint skinReceiver;   // 1..255 in the skin pass; 0: none
+    float pad0, pad1, pad2;
+    SlotBinding slots[3];   // MaterialSlot::Clearcoat onwards
+};
+layout(buffer_reference, scalar) readonly buffer ShadingBuffer {
+    ShadingData shading;
+};
+// ShadingData::flags
+const uint kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u;
+const uint kShadingThin = 4u;   // transmission: a sheet, nothing bends
+const uint kShadingAnisotropic = 8u;   // hair: the stretched highlight
+const uint kShadingSkinDiffusion = 16u;   // skin: the scene leaves its diffuse light to the skin pass
+const uint kShadingRefract = 32u;   // transmission medium and high: solid glass bends the background
+const uint kShadingRoughTaps = 64u;   // transmission high: four more taps for rough glass
+const uint kShadingSimplifiedGlass = 128u;   // transmission off (or no pass this frame): blended stand-in
+// ShadingData::slots
+const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u;
+
 // One entry per draw in the frame's draw table. Must match DrawData in RendererImpl.h.
 struct DrawData {
     mat4 mvp;
@@ -118,6 +155,7 @@ struct DrawData {
     uvec2 previousVertexBuffer;
     uint history;
     uint pad;
+    uvec2 shading;   // a ShadingBuffer (A07-A09); 0: standard without a coat
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {

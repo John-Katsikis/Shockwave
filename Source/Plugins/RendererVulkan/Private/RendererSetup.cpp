@@ -84,6 +84,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyTemporalPipelines();
     destroyClusters();
     destroyPostProcess();
+    destroyShadingPipelines();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);
@@ -119,6 +120,7 @@ VulkanRenderer::Impl::~Impl() {
         vmaDestroyBuffer(allocator, f.drawBuffer.buffer, f.drawBuffer.allocation);
         if (f.layerBuffer.buffer) vmaDestroyBuffer(allocator, f.layerBuffer.buffer, f.layerBuffer.allocation);
         if (f.probeBuffer.buffer) vmaDestroyBuffer(allocator, f.probeBuffer.buffer, f.probeBuffer.allocation);
+        if (f.shadingBuffer.buffer) vmaDestroyBuffer(allocator, f.shadingBuffer.buffer, f.shadingBuffer.allocation);
         vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
         vkDestroySemaphore(device, f.imageAcquired, nullptr);
         vkDestroyQueryPool(device, f.timestamps, nullptr);
@@ -253,6 +255,8 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
     destroyParticleBackground(particleBackground);
+    destroyTransmissionBackground(transmissionBackground);
+    destroySkinTargets(skinTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

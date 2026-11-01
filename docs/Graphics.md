@@ -112,6 +112,19 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   detail. Off draws no fog, with no passes or memory. `player --view fog` and the
   editor's *Fog transmittance* shading view show how much the fog lets through. Scenes
   without fog cost nothing either way.
+- `clearcoat`: `true` (the default) or `false`. The varnish layer on clear-coated
+  materials (docs/Shading.md). False draws the surface under it, exactly as without the
+  coat. Presets leave it on.
+- `transmission_quality`: `off`, `low`, `medium` (the default) or `high`. Glass: low
+  looks straight through (blurred by rough glass), medium also bends the view through
+  solid glass, high blurs rough glass more smoothly. Off draws simplified tinted glass,
+  with no copy of the scene and no memory for it. `player --view transmission` shows
+  where the light through each pixel came from. Low uses low.
+- `skin_quality`: `off`, `low` or `high` (the default). Light spreading under skin. Off
+  draws skin as an ordinary opaque surface, with no pass and no memory. Low turns it off.
+- `hair_quality`: `low` or `high` (the default). High draws hair cards' highlight as a
+  band across the strands; low draws an ordinary round one. Low uses low.
+  Scenes without glass, skin or hair cost nothing for any of these.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
@@ -119,7 +132,8 @@ sets bloom quality low, medium or high, texture quality to its own name, anisotr
 4, 8, 16 and 16, material quality low for Low and high for the rest, ambient
 occlusion off, low, medium and high, decals low, medium, high and high, and soft
 particles, heat haze and scene-lit particles off (simple) for Low and on for the rest,
-and fog analytic, low, medium and high.
+and fog analytic, low, medium and high, glass low, medium, medium and high, skin off,
+low, high and high, and hair low for Low and high for the rest.
 `matchingGraphicsPreset` names the preset the quality settings match, or none ("Custom").
 Medium, High and Ultra are also available. These are starting points, not hardware detection or a performance guarantee. LOD quality only
 helps meshes that have imported LODs. In headless tests, the service keeps settings in

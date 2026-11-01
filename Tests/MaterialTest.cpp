@@ -56,8 +56,9 @@ void parserChecks() {
     const auto& detail = file.slots[size_t(MaterialSlot::DetailNormal)];
     check(detail.hasTexture && detail.texture == "textures/ridges.png", "detail texture");
     check(detail.hasTransform && near(detail.transform.scale.x, 8.0f), "detail transform");
-    check(detail.hasSampler && detail.sampler.wrapV == TextureWrap::Mirror && detail.sampler.maxAnisotropy == 8,
-          "detail sampler");
+    check(
+        detail.hasSampler && detail.sampler.wrapV == TextureWrap::Mirror && detail.sampler.maxAnisotropy == 8,
+        "detail sampler");
 
     // Canonical: schema order, comments gone, and it reads back as the same file.
     const std::string written = writeMaterial(file);
@@ -86,7 +87,7 @@ void parserChecks() {
         {"swmaterial 1\nroughness 0.5 extra\n", "line 2"},
         {"swmaterial 1\nroughness 0,5\n", "line 2"},
         {"swmaterial 1\nalpha_mode cutout\n", "line 2"},
-        {"swmaterial 1\nfamily skin\n", "line 2"},
+        {"swmaterial 1\nfamily cloth\n", "line 2"},
         {"swmaterial 1\ntexture sheen \"t.png\"\n", "line 2"},
         {"swmaterial 1\ntexture normal \"../outside.png\"\n", "line 2"},
         {"swmaterial 1\ntexture normal \"C:\\\\t.png\"\n", "line 2"},
@@ -99,11 +100,13 @@ void parserChecks() {
     };
     for (const auto& [source, says] : bad) {
         const bool ok = parses(source, file, error);
-        check(!ok && error.find(says) != std::string::npos,
-              std::string("rejects ") + source + " mentioning '" + says + "' (got: " + error + ")");
+        check(
+            !ok && error.find(says) != std::string::npos,
+            std::string("rejects ") + source + " mentioning '" + says + "' (got: " + error + ")");
     }
-    check(!materialSchemaMarkdown().empty() && materialSchemaMarkdown().find("detail_fade") != std::string::npos,
-          "the schema lists every key");
+    check(
+        !materialSchemaMarkdown().empty() && materialSchemaMarkdown().find("detail_fade") != std::string::npos,
+        "the schema lists every key");
 }
 
 // An in-memory Content folder for resolve.
@@ -163,8 +166,9 @@ void resolveChecks() {
     std::string error;
     check(resolveMaterial("child.swmaterial", files.lookup(), desc, error) == MaterialProblem::None, error);
     check(near(desc.params.roughness, 0.8f) && near(desc.params.metallic, 1.0f), "child overrides, parent fills in");
-    check(desc.chain.size() == 2 && desc.chain[0] == "child.swmaterial" && desc.chain[1] == "base.swmaterial",
-          "chain lists the material first");
+    check(
+        desc.chain.size() == 2 && desc.chain[0] == "child.swmaterial" && desc.chain[1] == "base.swmaterial",
+        "chain lists the material first");
     MaterialDesc again;
     resolveMaterial("child.swmaterial", files.lookup(), again, error);
     check(again == desc, "resolving is deterministic");
@@ -179,47 +183,122 @@ void resolveChecks() {
     check(first == reordered, "reordered source materials resolve the same");
     check(near(first.params.roughness, 0.6f) && near(first.params.metallic, 0.5f), "imported values inherited");
     check(first.params.alphaMode == int(MaterialAlpha::Mask) && near(first.params.alphaCutoff, 0.4f), "imported alpha");
-    check(first.slots[size_t(MaterialSlot::BaseColor)].texture.asset == "rock.glb" &&
-              first.slots[size_t(MaterialSlot::BaseColor)].texture.modelTexture == 0,
-          "imported texture stays the model's");
+    check(
+        first.slots[size_t(MaterialSlot::BaseColor)].texture.asset == "rock.glb" &&
+            first.slots[size_t(MaterialSlot::BaseColor)].texture.modelTexture == 0,
+        "imported texture stays the model's");
     check((first.features & kMaterialAlphaMask) != 0, "mask feature");
 
     // Missing names are reference problems; loops, depth and parse errors are file problems.
     files.materials["orphan.swmaterial"] = "swmaterial 1\nparent \"gone.swmaterial\"\n";
-    check(resolveMaterial("orphan.swmaterial", files.lookup(), desc, error) == MaterialProblem::Reference,
-          "missing parent is a reference problem: " + error);
+    check(
+        resolveMaterial("orphan.swmaterial", files.lookup(), desc, error) == MaterialProblem::Reference,
+        "missing parent is a reference problem: " + error);
     files.materials["wrong.swmaterial"] = "swmaterial 1\nparent \"rock.glb\" \"Granite\"\n";
-    check(resolveMaterial("wrong.swmaterial", files.lookup(), desc, error) == MaterialProblem::Reference &&
-              error.find("Granite") != std::string::npos,
-          "missing source material named: " + error);
+    check(
+        resolveMaterial("wrong.swmaterial", files.lookup(), desc, error) == MaterialProblem::Reference &&
+            error.find("Granite") != std::string::npos,
+        "missing source material named: " + error);
     files.materials["a.swmaterial"] = "swmaterial 1\nparent \"b.swmaterial\"\n";
     files.materials["b.swmaterial"] = "swmaterial 1\nparent \"a.swmaterial\"\n";
     check(resolveMaterial("a.swmaterial", files.lookup(), desc, error) == MaterialProblem::File, "loops are refused");
     files.materials["broken.swmaterial"] = "swmaterial 1\nroughness 9\n";
-    check(resolveMaterial("broken.swmaterial", files.lookup(), desc, error) == MaterialProblem::File,
-          "a parse error is a file problem");
+    check(
+        resolveMaterial("broken.swmaterial", files.lookup(), desc, error) == MaterialProblem::File,
+        "a parse error is a file problem");
     for (size_t i = 0; i < kMaxMaterialDepth + 1; ++i)
         files.materials["d" + std::to_string(i) + ".swmaterial"] =
             "swmaterial 1\n" + (i ? "parent \"d" + std::to_string(i - 1) + ".swmaterial\"\n" : std::string());
-    check(resolveMaterial("d15.swmaterial", files.lookup(), desc, error) == MaterialProblem::None,
-          "16 files deep is allowed: " + error);
-    check(resolveMaterial("d16.swmaterial", files.lookup(), desc, error) == MaterialProblem::File,
-          "17 files deep is refused");
+    check(
+        resolveMaterial("d15.swmaterial", files.lookup(), desc, error) == MaterialProblem::None,
+        "16 files deep is allowed: " + error);
+    check(
+        resolveMaterial("d16.swmaterial", files.lookup(), desc, error) == MaterialProblem::File,
+        "17 files deep is refused");
 
     // Detail and layers switch on with their textures; low quality names what it drops.
     files.materials["detail.swmaterial"] =
         "swmaterial 1\ntexture detail_normal \"n.png\"\ntexture layer_mask \"m.png\"\n";
     check(resolveMaterial("detail.swmaterial", files.lookup(), desc, error) == MaterialProblem::None, error);
-    check((desc.features & kMaterialDetail) && (desc.features & kMaterialDetailNormal) &&
-              (desc.features & kMaterialLayer),
-          "detail and layer features");
+    check(
+        (desc.features & kMaterialDetail) && (desc.features & kMaterialDetailNormal) &&
+            (desc.features & kMaterialLayer),
+        "detail and layer features");
     const auto omitted = materialLowQualityOmissions(desc);
     check(omitted.size() == 1 && omitted[0] == "detail_normal", "low quality omits only the detail normal");
     // A value that does nothing says so.
     files.materials["idle.swmaterial"] = "swmaterial 1\ndetail_strength 0.5\n";
-    check(resolveMaterial("idle.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
-              !desc.warnings.empty(),
-          "a detail value without a detail texture warns");
+    check(
+        resolveMaterial("idle.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            !desc.warnings.empty(),
+        "a detail value without a detail texture warns");
+
+    // Shading families (A07-A09): each switches on its feature, says what it draws as with
+    // each setting, and warns about another family's values.
+    ShadingSettings all;
+    all.transmission = TransmissionQuality::High;
+    all.skin = SkinQuality::High;
+    all.hair = HairQuality::High;
+    ShadingSettings off;
+    off.clearcoat = false;
+    off.transmission = TransmissionQuality::Off;
+    off.skin = SkinQuality::Off;
+    off.hair = HairQuality::Low;
+    files.materials["plain.swmaterial"] = "swmaterial 1\nroughness 0.4\n";
+    check(
+        resolveMaterial("plain.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            materialEffectiveShading(desc, all) == "standard" && materialShadingCost(desc, all).empty(),
+        "a plain material draws as standard with nothing extra: " + materialEffectiveShading(desc, all));
+    files.materials["coat.swmaterial"] = "swmaterial 1\nclearcoat 1\n";
+    check(
+        resolveMaterial("coat.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            (desc.features & kMaterialClearcoat) && desc.warnings.empty(),
+        "clearcoat feature: " + error);
+    check(materialEffectiveShading(desc, off) == "standard (clearcoat off)", "clearcoat off draws standard");
+    files.materials["nocoat.swmaterial"] = "swmaterial 1\nclearcoat 0\n";
+    check(
+        resolveMaterial("nocoat.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            !(desc.features & kMaterialClearcoat),
+        "clearcoat 0 is plain standard");
+    files.materials["glass.swmaterial"] =
+        "swmaterial 1\nfamily transmission\ntransmission_mode solid\nior 1.5\nthickness 0.02\n";
+    check(
+        resolveMaterial("glass.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            (desc.features & kMaterialTransmission) && !(desc.features & kMaterialAlphaBlend),
+        "transmission feature, not blended: " + error);
+    check(materialEffectiveShading(desc, all).find("refracted") != std::string::npos, "solid glass refracts on high");
+    check(
+        materialEffectiveShading(desc, off).find("simplified glass") != std::string::npos,
+        "transmission off is simplified glass");
+    check(
+        !materialShadingCost(desc, all).empty() && materialShadingCost(desc, off).empty(),
+        "glass costs a pass only when it runs");
+    files.materials["skin.swmaterial"] = "swmaterial 1\nfamily skin\nskin_radius 0.004 0.002 0.001\n";
+    check(
+        resolveMaterial("skin.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            (desc.features & kMaterialSkin),
+        "skin feature: " + error);
+    check(
+        materialEffectiveShading(desc, off) == "skin without diffusion (opaque)" &&
+            materialShadingCost(desc, off).empty(),
+        "skin_quality off: no pass");
+    files.materials["hair.swmaterial"] = "swmaterial 1\nfamily hair_card\nalpha_mode mask\n";
+    check(
+        resolveMaterial("hair.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            (desc.features & kMaterialHairCard) &&
+            materialEffectiveShading(desc, all) == "hair card, anisotropic highlight" &&
+            materialEffectiveShading(desc, off) == "hair card, round highlight",
+        "hair card feature and quality: " + error);
+    files.materials["mixed.swmaterial"] = "swmaterial 1\nfamily skin\nior 1.4\nclearcoat 1\n";
+    check(
+        resolveMaterial("mixed.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            desc.warnings.size() >= 2 && !(desc.features & kMaterialClearcoat),
+        "another family's values warn and do nothing");
+    check(
+        materialFamilyUses(int(MaterialFamily::Standard), "clearcoat") &&
+            !materialFamilyUses(int(MaterialFamily::Skin), "clearcoat") &&
+            materialFamilyUses(int(MaterialFamily::Skin), "surface"),
+        "family groups");
 }
 
 void shadingChecks() {
@@ -287,12 +366,14 @@ void coverageChecks() {
     check(kept.bytes[kept.levels[1].offset + 1] == plain.bytes[plain.levels[1].offset + 1], "colour unchanged");
 
     const std::vector<uint8_t> bytes = {1, 2, 3};
-    check(textureCacheKey(bytes, TextureCompression::High, true, 0.5f) !=
-              textureCacheKey(bytes, TextureCompression::High, true),
-          "the cache key includes the coverage cutoff");
-    check(textureCacheKey(bytes, TextureCompression::High, true, 0.5f) !=
-              textureCacheKey(bytes, TextureCompression::High, true, 0.4f),
-          "and its value");
+    check(
+        textureCacheKey(bytes, TextureCompression::High, true, 0.5f) !=
+            textureCacheKey(bytes, TextureCompression::High, true),
+        "the cache key includes the coverage cutoff");
+    check(
+        textureCacheKey(bytes, TextureCompression::High, true, 0.5f) !=
+            textureCacheKey(bytes, TextureCompression::High, true, 0.4f),
+        "and its value");
 }
 
 void sceneChecks() {
@@ -318,8 +399,9 @@ void sceneChecks() {
     std::ostringstream out;
     writeScene(out, world, assets);
     const std::string text = out.str();
-    check(text.find("    material ") != std::string::npos && text.find("materials/stone.swmaterial") != std::string::npos,
-          "material field written");
+    check(
+        text.find("    material ") != std::string::npos && text.find("materials/stone.swmaterial") != std::string::npos,
+        "material field written");
     size_t count = 0;
     for (size_t at = text.find("    material "); at != std::string::npos; at = text.find("    material ", at + 1))
         ++count;
@@ -333,15 +415,18 @@ void sceneChecks() {
     const auto* m = loaded.get<MeshRenderer>(loaded.entityAt(0));
     const auto* r = loaded.get<ModelRenderer>(loaded.entityAt(1));
     check(m && m->material == stone, "MeshRenderer material round trip");
-    check(r && r->materials.size() == 2 && findMaterialOverride(r->materials, "Rock \"wet\"") &&
-              findMaterialOverride(r->materials, "Rock \"wet\"")->material == moss,
-          "per-part overrides round trip, quotes and all");
+    check(
+        r && r->materials.size() == 2 && findMaterialOverride(r->materials, "Rock \"wet\"") &&
+            findMaterialOverride(r->materials, "Rock \"wet\"")->material == moss,
+        "per-part overrides round trip, quotes and all");
     check(!loaded.get<MeshRenderer>(loaded.entityAt(2))->material.valid(), "unset stays unset");
 
-    std::istringstream unknown("shockwave_scene 2\nentity \"A\"\n  MeshRenderer\n    material \"nope.swmaterial\"\nend\n");
+    std::istringstream unknown(
+        "shockwave_scene 2\nentity \"A\"\n  MeshRenderer\n    material \"nope.swmaterial\"\nend\n");
     warnings.clear();
-    check(readScene(loaded, assets, unknown, "test", error, {}, &warnings) && !warnings.empty(),
-          "an unknown material warns");
+    check(
+        readScene(loaded, assets, unknown, "test", error, {}, &warnings) && !warnings.empty(),
+        "an unknown material warns");
 }
 
 void write(const fs::path& path, const std::string& text) {
@@ -385,8 +470,9 @@ void hotReloadChecks(Engine& engine) {
     touchLater(root / "child.swmaterial");
     folder.refresh(true);
     child = current("child.swmaterial");
-    check(child && child->fallback && child->error.find("gone.swmaterial") != std::string::npos,
-          "a missing parent falls back to magenta");
+    check(
+        child && child->fallback && child->error.find("gone.swmaterial") != std::string::npos,
+        "a missing parent falls back to magenta");
     check(child && near(child->baseColor.g, 0.0f) && child->baseColor.r > 0.5f, "magenta");
 
     // Fixed again: back to normal, same handle.
@@ -395,8 +481,9 @@ void hotReloadChecks(Engine& engine) {
     touchLater(root / "child.swmaterial");
     folder.refresh(true);
     child = current("child.swmaterial");
-    check(child && !child->fallback && engine.assets().findMaterial("child.swmaterial") == handle,
-          "fixing it recovers, keeping the handle");
+    check(
+        child && !child->fallback && engine.assets().findMaterial("child.swmaterial") == handle,
+        "fixing it recovers, keeping the handle");
     fs::remove_all(root);
 }
 

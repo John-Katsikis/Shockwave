@@ -116,10 +116,9 @@ std::string stringArray(const std::vector<std::string>& items) {
 }
 std::string bindingJson(const shockwave::ModelTextureBinding& b) {
     using namespace shockwave;
-    return "\"uv_set\": " + std::to_string(b.uvSet) + ", \"transform\": {\"offset\": [" +
-           number(b.transform.offset.x) + ", " + number(b.transform.offset.y) + "], \"scale\": [" +
-           number(b.transform.scale.x) + ", " + number(b.transform.scale.y) +
-           "], \"rotation\": " + number(b.transform.rotation) +
+    return "\"uv_set\": " + std::to_string(b.uvSet) + ", \"transform\": {\"offset\": [" + number(b.transform.offset.x) +
+           ", " + number(b.transform.offset.y) + "], \"scale\": [" + number(b.transform.scale.x) + ", " +
+           number(b.transform.scale.y) + "], \"rotation\": " + number(b.transform.rotation) +
            "}, \"sampler\": {\"wrap_u\": " + jsonQuote(textureWrapName(b.sampler.wrapU)) +
            ", \"wrap_v\": " + jsonQuote(textureWrapName(b.sampler.wrapV)) +
            ", \"mag_filter\": " + jsonQuote(textureFilterName(b.sampler.magFilter)) +
@@ -165,6 +164,28 @@ fs::path contentRoot(const fs::path& asset) {
     return asset.parent_path().empty() ? fs::path(".") : asset.parent_path();
 }
 
+// A07-A09: the family, what it draws as at each quality, and what that costs.
+std::string shadingJson(const shockwave::MaterialDesc& desc) {
+    using namespace shockwave;
+    const char* families[] = {"standard", "skin", "hair_card", "transmission"};
+    std::string out = "{\"family\": " + jsonQuote(families[std::clamp(desc.params.family, 0, 3)]);
+    const ShadingSettings defaults;
+    ShadingSettings off;
+    off.clearcoat = false;
+    off.transmission = TransmissionQuality::Off;
+    off.skin = SkinQuality::Off;
+    off.hair = HairQuality::Low;
+    ShadingSettings low = off;
+    low.clearcoat = true;
+    low.transmission = TransmissionQuality::Low;
+    out += ", \"draws_as\": " + jsonQuote(materialEffectiveShading(desc, defaults));
+    out += ", \"draws_as_low\": " + jsonQuote(materialEffectiveShading(desc, low));
+    out += ", \"fallback\": " + jsonQuote(materialEffectiveShading(desc, off));
+    const std::string cost = materialShadingCost(desc, defaults);
+    out += ", \"passes\": " + jsonQuote(cost.empty() ? "none beyond the scene's" : cost) + "}";
+    return out;
+}
+
 // --material-info for a .swmaterial: the chain it resolves through and the result.
 int swmaterialInfo(const fs::path& asset, const fs::path& json) {
     using namespace shockwave;
@@ -185,10 +206,10 @@ int swmaterialInfo(const fs::path& asset, const fs::path& json) {
         std::vector<std::string> features;
         for (uint32_t bit = 0; bit < kMaterialFeatureCount; ++bit)
             if (desc.features & (1u << bit)) features.push_back(materialFeatureName(1u << bit));
-        out += ",\n \"chain\": " + stringArray(desc.chain) + ",\n \"dependencies\": " +
-               stringArray(desc.dependencies) + ",\n \"features\": " + stringArray(features) +
+        out += ",\n \"chain\": " + stringArray(desc.chain) + ",\n \"dependencies\": " + stringArray(desc.dependencies) +
+               ",\n \"features\": " + stringArray(features) +
                ",\n \"low_quality_omits\": " + stringArray(materialLowQualityOmissions(desc)) +
-               ",\n \"values\": {";
+               ",\n \"shading\": " + shadingJson(desc) + ",\n \"values\": {";
         bool first = true;
         for (const auto& info : materialParams()) {
             out += std::string(first ? "" : ",") + "\n  " + jsonQuote(info.key) + ": " + paramJson(desc.params, info);
@@ -200,12 +221,11 @@ int swmaterialInfo(const fs::path& asset, const fs::path& json) {
             const ResolvedSlot& r = desc.slots[slot];
             if (r.texture.empty()) continue;
             const MaterialSlotInfo& info = materialSlotInfo(MaterialSlot(slot));
-            out += std::string(first ? "" : ",") +
-                   "\n  {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
-                   ", \"texture\": " + jsonQuote(r.texture.asset) +
-                   (r.texture.modelTexture >= 0 ? ", \"model_texture\": " + std::to_string(r.texture.modelTexture) : "") +
-                   ", \"color_space\": " + jsonQuote(info.srgb ? "srgb" : "linear") + ", " + bindingJson(r.binding) +
-                   "}";
+            out +=
+                std::string(first ? "" : ",") + "\n  {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
+                ", \"texture\": " + jsonQuote(r.texture.asset) +
+                (r.texture.modelTexture >= 0 ? ", \"model_texture\": " + std::to_string(r.texture.modelTexture) : "") +
+                ", \"color_space\": " + jsonQuote(info.srgb ? "srgb" : "linear") + ", " + bindingJson(r.binding) + "}";
             first = false;
         }
         out += first ? "]" : "\n ]";
@@ -240,12 +260,11 @@ int materialInfo(const fs::path& asset, const fs::path& json) {
             for (const auto& mesh : model.meshes)
                 if (mesh.material == m && !mesh.data.indices.empty() && b.uvSet == 1 && mesh.data.uv1.empty())
                     available = false;
-            out +=
-                std::string(firstSlot ? "" : ",") +
-                "\n    {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
-                ", \"texture\": " + jsonQuote(texture.source) +
-                ", \"color_space\": " + jsonQuote(texture.srgb ? "srgb" : "linear") +
-                ", \"uv_available\": " + (available ? "true" : "false") + ", " + bindingJson(b) + "}";
+            out += std::string(firstSlot ? "" : ",") +
+                   "\n    {\"slot\": " + jsonQuote(materialSlotName(MaterialSlot(slot))) +
+                   ", \"texture\": " + jsonQuote(texture.source) +
+                   ", \"color_space\": " + jsonQuote(texture.srgb ? "srgb" : "linear") +
+                   ", \"uv_available\": " + (available ? "true" : "false") + ", " + bindingJson(b) + "}";
             firstSlot = false;
         }
         out += firstSlot ? "]}" : "\n  ]}";

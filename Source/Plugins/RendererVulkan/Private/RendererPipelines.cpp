@@ -349,6 +349,7 @@ void VulkanRenderer::Impl::createPipelines() {
     createTemporalPipelines();
     createClusterPipeline();
     createPostProcessPipelines();
+    createShadingPipelines();
 
     createUiPipeline();
 }

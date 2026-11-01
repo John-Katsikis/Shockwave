@@ -182,6 +182,9 @@ fast as it can, unless VSync or a frame limit slows it down:
    graph:
    - the fog volume, when the camera is in fog (see [Fog](Fog.md));
    - the scene pass, in HDR (high dynamic range), fogged per surface;
+   - when skin or glass is on screen, the skin pass and its blurs, then a copy of the
+     opaque scene that glass refracts, then the see-through surfaces (see
+     [Shading families](Shading.md));
    - particle effects, blended into the HDR scene (see [Particle effects](Effects.md));
    - exposure metering, when a postprocess profile asks for auto exposure;
    - tonemapping, which maps HDR colors to the screen, with white balance and colour

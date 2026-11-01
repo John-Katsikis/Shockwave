@@ -89,6 +89,23 @@ std::string postProcessJson(const shockwave::PostProcessSettings& s, const shock
     return text;
 }
 
+// Character and specialized shading (A07-A09) in the last frame.
+std::string shadingJson(const shockwave::ShadingSettings& s, const shockwave::ShadingStats& p) {
+    char text[640];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"clearcoat\": %s, \"transmission_quality\": \"%s\", \"skin_quality\": \"%s\", \"hair_quality\": \"%s\", "
+        "\"coat_draws\": %u, \"transmission_draws\": %u, \"simplified_glass_draws\": %u, \"skin_draws\": %u, "
+        "\"hair_draws\": %u, \"anisotropic_hair\": %s, \"transmission_pass\": %s, \"skin_pass\": %s, "
+        "\"transmission_bytes\": %llu, \"skin_bytes\": %llu}",
+        s.clearcoat ? "true" : "false", shockwave::transmissionQualityName(s.transmission),
+        shockwave::skinQualityName(s.skin), shockwave::hairQualityName(s.hair), p.coatDraws, p.transmissionDraws,
+        p.simplifiedGlassDraws, p.skinDraws, p.hairDraws, p.anisotropicHair ? "true" : "false",
+        p.transmissionPass ? "true" : "false", p.skinPass ? "true" : "false",
+        static_cast<unsigned long long>(p.transmissionBytes), static_cast<unsigned long long>(p.skinBytes));
+    return text;
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -195,6 +212,7 @@ void Player::graphicsReport() {
          << ",\n  \"clusters\": " << clustersJson(renderer.clusterStats())
          << ",\n  \"particles\": " << particlesJson(renderer.particleSettings(), renderer.particleStats())
          << ",\n  \"postprocess\": " << postProcessJson(renderer.postProcessSettings(), renderer.postProcessStats())
+         << ",\n  \"shading\": " << shadingJson(renderer.shadingSettings(), renderer.shadingStats())
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

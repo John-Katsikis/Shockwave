@@ -55,6 +55,9 @@ const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kLightCullingChoices = {"auto", "clustered", "brute_force"};
 const std::vector<const char*> kParticleLightingChoices = {"simple", "scene"};
 const std::vector<const char*> kFogChoices = {"off", "analytic", "low", "medium", "high"};
+const std::vector<const char*> kTransmissionChoices = {"off", "low", "medium", "high"};
+const std::vector<const char*> kSkinChoices = {"off", "low", "high"};
+const std::vector<const char*> kHairChoices = {"low", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -258,6 +261,47 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"clearcoat", "Clear coats", "Quality",
+         "The clear varnish layer on materials that have one (car paint, lacquered wood): a second, sharper "
+         "highlight over the surface. Off draws the surface under it, exactly as without the coat.",
+         "true, false", kBool, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(s.clearcoat ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) { return boolean(v, s.clearcoat, "clearcoat", error); }});
+    info.push_back(
+        {"transmission_quality", "Glass", "Quality",
+         "How glass and other see-through materials show what's behind them. Low blurs it through rough glass; "
+         "medium also bends it through thick glass; high blurs rough glass more smoothly. Off draws simplified "
+         "tinted glass, with no copy of the scene and no memory for it.",
+         "off, low, medium, high", kTransmissionChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(transmissionQualityName(s.transmissionQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kTransmissionChoices, v, s.transmissionQuality)) return true;
+             error = "transmission_quality must be " + list(kTransmissionChoices);
+             return false;
+         }});
+    info.push_back(
+        {"skin_quality", "Skin", "Quality",
+         "Light spreading softly under skin, so faces don't look like plastic. Low blurs it with fewer samples. "
+         "Off draws skin as an ordinary opaque surface, with no pass and no memory for it.",
+         "off, low, high", kSkinChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(skinQualityName(s.skinQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kSkinChoices, v, s.skinQuality)) return true;
+             error = "skin_quality must be " + list(kSkinChoices);
+             return false;
+         }});
+    info.push_back(
+        {"hair_quality", "Hair", "Quality",
+         "Hair cards' highlight. High draws it as a band across the strands, the way hair shines; low draws the round "
+         "highlight of an ordinary surface.",
+         "low, high", kHairChoices, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(hairQualityName(s.hairQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kHairChoices, v, s.hairQuality)) return true;
+             error = "hair_quality must be " + list(kHairChoices);
+             return false;
+         }});
+    info.push_back(
         {"lod_error_pixels",
          "Mesh detail",
          "Quality",
@@ -403,6 +447,10 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.particleDistortion = false;
         base.particleLighting = ParticleLighting::Simple;
         base.fogQuality = FogQuality::Analytic;
+        base.clearcoat = true;   // one more lobe, no pass
+        base.transmissionQuality = TransmissionQuality::Low;
+        base.skinQuality = SkinQuality::Off;
+        base.hairQuality = HairQuality::Low;
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 0.85f;
@@ -418,6 +466,10 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
         base.fogQuality = FogQuality::Low;
+        base.clearcoat = true;
+        base.transmissionQuality = TransmissionQuality::Medium;
+        base.skinQuality = SkinQuality::Low;
+        base.hairQuality = HairQuality::High;
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -433,6 +485,10 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
         base.fogQuality = FogQuality::Medium;
+        base.clearcoat = true;
+        base.transmissionQuality = TransmissionQuality::Medium;
+        base.skinQuality = SkinQuality::High;
+        base.hairQuality = HairQuality::High;
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -448,6 +504,10 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
         base.fogQuality = FogQuality::High;
+        base.clearcoat = true;
+        base.transmissionQuality = TransmissionQuality::High;
+        base.skinQuality = SkinQuality::High;
+        base.hairQuality = HairQuality::High;
         break;
     }
     return base;
@@ -620,6 +680,11 @@ GraphicsSettings Graphics::current() const {
     s.colorGrading = post.colorGrading;
     s.autoExposure = post.autoExposure;
     s.fogQuality = post.fog;
+    const ShadingSettings shading = r.shadingSettings();
+    s.clearcoat = shading.clearcoat;
+    s.transmissionQuality = shading.transmission;
+    s.skinQuality = shading.skin;
+    s.hairQuality = shading.hair;
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -683,6 +748,9 @@ void Graphics::commit() {
     if (s.colorGrading != previous.colorGrading || s.autoExposure != previous.autoExposure ||
         s.fogQuality != previous.fogQuality)
         r.setPostProcessSettings({s.colorGrading, s.autoExposure, s.fogQuality});
+    if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
+        s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality)
+        r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality});
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

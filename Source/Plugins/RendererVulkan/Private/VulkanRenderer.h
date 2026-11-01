@@ -93,6 +93,8 @@ public:
     void setPostProcess(const PostProcessDesc& desc) override;
     void setPostProcessSettings(const PostProcessSettings& settings) override;
     PostProcessStats postProcessStats() const override;
+    void setShadingSettings(const ShadingSettings& settings) override;
+    ShadingStats shadingStats() const override;
     uint32_t unkeyedDraws() const override;
     TemporalStats temporalStats() const override;
 

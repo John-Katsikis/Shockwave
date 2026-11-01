@@ -328,7 +328,9 @@ void Editor::drawViewportToolbar() {
             "Motion vectors",
             "Reactive mask",
             "Light clusters",
-            "Fog transmittance"};
+            "Fog transmittance",
+            "Glass (transmission)",
+            "Shading families"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

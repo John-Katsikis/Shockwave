@@ -24,7 +24,7 @@ the reason in the editor and `player --check`.
 
 | Key | Values | Default | Range | Meaning |
 |---|---|---|---|---|
-| `family` | `standard` | standard | - | Shading family. standard is glTF's metallic-roughness; coat, skin and hair come later |
+| `family` | `standard`, `skin`, `hair_card`, `transmission` | standard | - | Shading family (docs/Shading.md): standard is glTF's metallic-roughness (with an optional clearcoat); skin diffuses its light under the surface; hair_card stretches the highlight along the strands; transmission is glass and other see-through dielectrics |
 | `base_color` | r g b a | 1 1 1 1 | 0..1 | Linear RGB and alpha, multiplying the base_color texture |
 | `metallic` | number | 0 | 0..1 | 0 plastic, wood, stone .. 1 bare metal; multiplies the metallic_roughness texture's blue |
 | `roughness` | number | 0.5 | 0..1 | Perceptual roughness (not smoothness): 0 mirror .. 1 matte; multiplies the texture's green. 0 is kept as written; the shader never goes below 0.03 |
@@ -45,6 +45,20 @@ the reason in the editor and `player --check`.
 | `layer_metallic` | number | 0 | 0..1 | As metallic |
 | `layer_roughness` | number | 0.5 | 0..1 | As roughness |
 | `layer_normal_scale` | number | 1 | 0..4 | As normal_scale |
+| `clearcoat` | number | 0 | 0..1 | family standard: a clear varnish over the surface (car paint, lacquered wood), 0 none .. 1 full; multiplies the clearcoat texture's red. IOR 1.5 (4% reflection head-on) |
+| `clearcoat_roughness` | number | 0 | 0..1 | The coat's perceptual roughness, separate from the surface's; multiplies the clearcoat texture's green |
+| `clearcoat_normal_scale` | number | 1 | 0..4 | How strongly the clearcoat_normal map tilts the coat (without one the coat is smooth over the bumps) |
+| `transmission` | number | 1 | 0..1 | family transmission: how much light goes through instead of being diffused, 0 (an ordinary surface) .. 1 (clear glass); multiplies the transmission texture's red |
+| `ior` | number | 1.5 | 1..2.5 | Index of refraction: 1 air (no bending, no reflection), 1.33 water, 1.5 glass, 2.4 diamond |
+| `thickness` | number | 0.01 | 0..10 | Metres the light travels inside, in the object's own space (its scale applies once); multiplies the transmission texture's green. Solid glass refracts this far; both absorb along it |
+| `transmission_mode` | `thin`, `solid` | thin | - | thin: a sheet (window panes, bottles' walls), light leaves where it entered; solid: a closed volume (a glass block, a gem), light bends through thickness |
+| `attenuation_color` | r g b | 1 1 1 | 0..1 | The colour white light has after attenuation_distance inside (tinted glass, water) |
+| `attenuation_distance` | number | 0 | 0..10000 | Metres for the light to become attenuation_color; 0 absorbs nothing |
+| `skin_radius` | r g b | 3.7 1.4 1.1 | 0..20 | family skin: how far light spreads under the surface, millimetres per channel (red furthest) |
+| `skin_strength` | number | 1 | 0..1 | 0 no spreading (the opaque skin look) .. 1 full |
+| `skin_max_pixels` | number | 24 | 1..64 | The spread's largest radius on screen, in pixels, however close the camera gets |
+| `hair_anisotropy` | number | 0.8 | -1..1 | family hair_card: how much the highlight stretches across the strands, 0 round .. 1 a thin band (the look of hair); negative stretches it along them instead |
+| `hair_direction` | `u`, `v` | v | - | Which way the strands run on the card's texture, root to tip: u (left to right) or v (top to bottom) |
 
 ## Texture slots
 
@@ -58,18 +72,21 @@ the reason in the editor and `player --check`.
 
 | Slot | Decoded as | Holds |
 |---|---|---|
-| `base_color` | colour (sRGB) | Colour and alpha (sRGB) |
-| `normal` | data (linear) | Tangent-space normals, green up (linear) |
-| `metallic_roughness` | data (linear) | Green roughness, blue metallic (linear, glTF's packing) |
-| `emissive` | colour (sRGB) | Emitted colour (sRGB) |
-| `occlusion` | data (linear) | Red darkens ambient light only (linear) |
-| `detail_color` | colour (sRGB) | Multiplies the base colour around neutral white: 1 1 1 changes nothing (sRGB) |
-| `detail_normal` | data (linear) | Fine normals composed on top (linear) |
-| `detail_mask` | data (linear) | Where the detail shows; detail_mask_channel (linear) |
-| `layer_mask` | data (linear) | Where the second layer shows; layer_mask (linear) |
-| `layer_base_color` | colour (sRGB) | The second layer's colour (sRGB) |
-| `layer_normal` | data (linear) | The second layer's normals (linear) |
-| `layer_metallic_roughness` | data (linear) | The second layer's roughness and metallic (linear) |
+| `base_color` | colour (sRGB) | Colour and alpha |
+| `normal` | data (linear) | Tangent-space normals, green up |
+| `metallic_roughness` | data (linear) | Green roughness, blue metallic (glTF's packing) |
+| `emissive` | colour (sRGB) | Emitted colour |
+| `occlusion` | data (linear) | Red darkens ambient light only |
+| `detail_color` | colour (sRGB) | Multiplies the base colour around neutral white: 1 1 1 changes nothing |
+| `detail_normal` | data (linear) | Fine normals composed on top |
+| `detail_mask` | data (linear) | Where the detail shows, from detail_mask_channel |
+| `layer_mask` | data (linear) | Where the second layer shows, from the layer_mask value |
+| `layer_base_color` | colour (sRGB) | The second layer's colour |
+| `layer_normal` | data (linear) | The second layer's normals |
+| `layer_metallic_roughness` | data (linear) | The second layer's roughness and metallic |
+| `clearcoat` | data (linear) | Red scales clearcoat, green clearcoat_roughness (glTF's) |
+| `clearcoat_normal` | data (linear) | The coat's own normals |
+| `transmission` | data (linear) | Red scales transmission, green thickness |
 
 A texture is decoded the way its slot says, whatever another material does with the same
 image: one used as colour by one material and as data by another is kept twice.
@@ -81,3 +98,20 @@ The detail layer is on when `detail_color` or `detail_normal` has a texture and
 eight times). The second layer is on when `layer_mask` reads the vertex colours, or the
 `layer_mask` slot has a texture. At `material_quality low` the detail layer is left out;
 masks, second layers and alpha never are.
+
+## Shading families
+
+Each family reads its own group of values; values of another family's group do
+nothing (`player --check` warns). The graphics settings can turn each one down or off
+(docs/Shading.md):
+
+| Family | Reads | Off or low |
+|---|---|---|
+| `standard` | surface, detail, layer, clearcoat | `clearcoat off`: the surface without its coat |
+| `transmission` | surface, transmission | `transmission_quality off`: simplified see-through glass, blended, tinted by base_color |
+| `skin` | surface, skin | `skin_quality off`: the opaque skin surface, no diffusion pass or memory |
+| `hair_card` | surface, hair | `hair_quality low`: the round (isotropic) highlight |
+
+Transmission draws its own see-through, so it ignores `alpha_mode blend` (mask still
+cuts out). `transmission 0` draws exactly as standard. Eyes are made of these: an opaque
+iris and sclera (standard, optionally coated) under a thin transmission cornea.

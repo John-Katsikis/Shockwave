@@ -9,6 +9,8 @@ target_compile_definitions(renderer_vulkan PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK)
 shockwave_compile_shaders(renderer_vulkan
     Shaders/mesh.vert
     Shaders/mesh.frag
+    Shaders/mesh_skin.frag
+    Shaders/skin.frag
     Shaders/grid.vert
     Shaders/grid.frag
     Shaders/tonemap.vert

@@ -105,8 +105,8 @@ struct UvTransform {
 };
 // The texture slots of a material, in this order everywhere. The first kMaterialSlots are
 // glTF's, which every material has (ModelMaterial, DrawMaterial::bindings); the rest are the
-// detail layer's and the second layer's (A02, MaterialLayers::bindings), which only
-// .swmaterial files set.
+// detail layer's and the second layer's (A02, MaterialLayers::bindings), then the shading
+// families' (A07-A09, MaterialShading::bindings), which only .swmaterial files set.
 enum class MaterialSlot : uint8_t {
     BaseColor,
     Normal,
@@ -120,12 +120,16 @@ enum class MaterialSlot : uint8_t {
     LayerBaseColor,
     LayerNormal,
     LayerMetallicRoughness,
+    Clearcoat,
+    ClearcoatNormal,
+    Transmission,
     Count
 };
 inline constexpr size_t kMaterialSlots = 5;   // base color .. occlusion
 inline constexpr size_t kAllMaterialSlots = size_t(MaterialSlot::Count);
-inline constexpr size_t kLayerSlots = kAllMaterialSlots - kMaterialSlots;   // detail color .. layer metallic-roughness
-const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "layer_metallic_roughness"
+inline constexpr size_t kLayerSlots = 7;   // detail color .. layer metallic-roughness
+// Then clearcoat, clearcoat normal and transmission: Renderer/Shading.h's kShadingSlots.
+const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "transmission"
 // How one slot reads its texture: which UV set, transformed how, sampled how.
 struct TextureBinding {
     uint32_t uvSet = 0;   // 0: TEXCOORD_0, 1: TEXCOORD_1 (Vertex::uv, then MeshData::uv1)
@@ -214,6 +218,8 @@ struct IndirectLighting {
     std::array<glm::vec3, 9> sh{};
 };
 
+struct MaterialShading;   // Renderer/Shading.h
+
 struct DrawMaterial {
     float alphaCutoff = -1.0f;   // negative: opaque/blended, otherwise alpha test
     bool doubleSided = false;
@@ -240,6 +246,10 @@ struct DrawMaterial {
     // Baked diffuse light in place of the environment's (G05, G06); null: the environment.
     // Read during the draw call only, like layers.
     const IndirectLighting* indirect = nullptr;
+    // The shading family and its values (A07-A09, Renderer/Shading.h): clearcoat,
+    // transmission, skin, hair cards. Null: standard without a coat. Read during the draw
+    // call only, like layers.
+    const MaterialShading* shading = nullptr;
     // Decal receiver layers (G08, Renderer/Decals.h): the bits decals' receiverMask must
     // share to land on this surface. 0 takes no decals; blended surfaces never take them.
     uint32_t decalLayers = 1;
@@ -326,7 +336,16 @@ enum class DebugView : uint32_t {
     Clusters,
     // A06: the fog's transmittance from the camera to each pixel, white for clear air, black
     // where the fog hides everything behind it. White everywhere with fog_quality off.
-    Fog
+    Fog,
+    // A07b: where the light through glass came from: green the scene behind it, red the
+    // environment (the refracted ray left the screen), blue straight through (something in
+    // front of the glass covered that spot); magenta simplified glass (transmission_quality
+    // off). Everything else dimmed.
+    Transmission,
+    // A07-A09: which shading each surface gets as drawn: coats yellow; skin orange with
+    // diffusion, brown without; hair cyan with the stretched highlight, blue with the round
+    // one; glass green through the transmission pass, magenta simplified; the rest dimmed.
+    ShadingFamilies
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
@@ -439,6 +458,8 @@ enum class GpuMemoryCategory : uint32_t {
     Hzb,
     Fog,   // A06: the froxel volume
     Exposure,   // A05: the exposure histogram, state and readbacks
+    Transmission,   // A07b: the transmission pass's copy of the scene
+    Skin,   // A08: the skin diffusion targets
     Count
 };
 const char* gpuMemoryCategoryName(GpuMemoryCategory category);   // "render targets", ...

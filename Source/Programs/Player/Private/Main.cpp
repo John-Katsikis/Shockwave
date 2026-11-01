@@ -285,11 +285,16 @@ int main(int argc, char** argv) {
                     tool.view = shockwave::DebugView::Clusters;
                 else if (view == "fog")
                     tool.view = shockwave::DebugView::Fog;
+                else if (view == "transmission")
+                    tool.view = shockwave::DebugView::Transmission;
+                else if (view == "shading")
+                    tool.view = shockwave::DebugView::ShadingFamilies;
                 else if (view == "navmesh")
                     tool.showNavMesh = true;
                 else
                     throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao, indirect, "
-                                             "reflections, decals, motion, reactive, clusters, fog or navmesh");
+                                             "reflections, decals, motion, reactive, clusters, fog, transmission, "
+                                             "shading or navmesh");
             } else if (arg == "--shadows" && i + 1 < argc) {
                 tool.shadows = shockwave::parseShadowQuality(argv[++i]);
                 if (tool.shadows < 0) throw std::runtime_error("--shadows takes off, low, medium, high or ultra");

@@ -24,48 +24,267 @@ namespace fs = std::filesystem;
 namespace {
 #define SW_PARAM(member) offsetof(MaterialParams, member)
 const std::vector<MaterialParamInfo> kParams = {
-    {"family", MaterialValueType::Enum, SW_PARAM(family), 0, 0, {"standard"}, "surface",
-     "Shading family. standard is glTF's metallic-roughness; coat, skin and hair come later"},
-    {"base_color", MaterialValueType::Color4, SW_PARAM(baseColor), 0, 1, {}, "surface",
+    {"family",
+     MaterialValueType::Enum,
+     SW_PARAM(family),
+     0,
+     0,
+     {"standard", "skin", "hair_card", "transmission"},
+     "surface",
+     "Shading family (docs/Shading.md): standard is glTF's metallic-roughness (with an optional clearcoat); skin "
+     "diffuses its light under the surface; hair_card stretches the highlight along the strands; transmission is "
+     "glass and other see-through dielectrics"},
+    {"base_color",
+     MaterialValueType::Color4,
+     SW_PARAM(baseColor),
+     0,
+     1,
+     {},
+     "surface",
      "Linear RGB and alpha, multiplying the base_color texture"},
-    {"metallic", MaterialValueType::Float, SW_PARAM(metallic), 0, 1, {}, "surface",
+    {"metallic",
+     MaterialValueType::Float,
+     SW_PARAM(metallic),
+     0,
+     1,
+     {},
+     "surface",
      "0 plastic, wood, stone .. 1 bare metal; multiplies the metallic_roughness texture's blue"},
-    {"roughness", MaterialValueType::Float, SW_PARAM(roughness), 0, 1, {}, "surface",
+    {"roughness",
+     MaterialValueType::Float,
+     SW_PARAM(roughness),
+     0,
+     1,
+     {},
+     "surface",
      "Perceptual roughness (not smoothness): 0 mirror .. 1 matte; multiplies the texture's green. 0 is kept as "
      "written; the shader never goes below 0.03"},
-    {"normal_scale", MaterialValueType::Float, SW_PARAM(normalScale), 0, 4, {}, "surface",
+    {"normal_scale",
+     MaterialValueType::Float,
+     SW_PARAM(normalScale),
+     0,
+     4,
+     {},
+     "surface",
      "How strongly the normal map tilts the surface"},
-    {"occlusion_strength", MaterialValueType::Float, SW_PARAM(occlusionStrength), 0, 1, {}, "surface",
+    {"occlusion_strength",
+     MaterialValueType::Float,
+     SW_PARAM(occlusionStrength),
+     0,
+     1,
+     {},
+     "surface",
      "0 ignores the occlusion map .. 1 full"},
-    {"emissive", MaterialValueType::Color3, SW_PARAM(emissive), 0, kMaxEmissive, {}, "surface",
+    {"emissive",
+     MaterialValueType::Color3,
+     SW_PARAM(emissive),
+     0,
+     kMaxEmissive,
+     {},
+     "surface",
      "Light the surface gives off, linear RGB (above 1 for bright glows); multiplies the emissive texture"},
-    {"alpha_mode", MaterialValueType::Enum, SW_PARAM(alphaMode), 0, 0, {"opaque", "mask", "blend"}, "alpha",
+    {"alpha_mode",
+     MaterialValueType::Enum,
+     SW_PARAM(alphaMode),
+     0,
+     0,
+     {"opaque", "mask", "blend"},
+     "alpha",
      "opaque ignores alpha; mask cuts out below alpha_cutoff (in every pass, shadows included); blend is see-through"},
     {"alpha_cutoff", MaterialValueType::Float, SW_PARAM(alphaCutoff), 0, 1, {}, "alpha", "mask's threshold"},
-    {"double_sided", MaterialValueType::Bool, SW_PARAM(doubleSided), 0, 0, {}, "alpha",
+    {"double_sided",
+     MaterialValueType::Bool,
+     SW_PARAM(doubleSided),
+     0,
+     0,
+     {},
+     "alpha",
      "Draw back faces too (leaves, cloth, glass panes)"},
-    {"detail_strength", MaterialValueType::Float, SW_PARAM(detailStrength), 0, 1, {}, "detail",
+    {"detail_strength",
+     MaterialValueType::Float,
+     SW_PARAM(detailStrength),
+     0,
+     1,
+     {},
+     "detail",
      "How much of the detail layer shows, times detail_mask and the fade"},
-    {"detail_normal_scale", MaterialValueType::Float, SW_PARAM(detailNormalScale), 0, 4, {}, "detail",
+    {"detail_normal_scale",
+     MaterialValueType::Float,
+     SW_PARAM(detailNormalScale),
+     0,
+     4,
+     {},
+     "detail",
      "How strongly the detail normal map tilts the surface"},
-    {"detail_roughness", MaterialValueType::Float, SW_PARAM(detailRoughness), 0, 1, {}, "detail",
+    {"detail_roughness",
+     MaterialValueType::Float,
+     SW_PARAM(detailRoughness),
+     0,
+     1,
+     {},
+     "detail",
      "The roughness the detail layer moves the surface towards..."},
-    {"detail_roughness_strength", MaterialValueType::Float, SW_PARAM(detailRoughnessStrength), 0, 1, {}, "detail",
+    {"detail_roughness_strength",
+     MaterialValueType::Float,
+     SW_PARAM(detailRoughnessStrength),
+     0,
+     1,
+     {},
+     "detail",
      "...and how far (0 leaves roughness alone)"},
-    {"detail_mask_channel", MaterialValueType::Enum, SW_PARAM(detailMaskChannel), 0, 0, {"r", "g", "b", "a"},
-     "detail", "Which channel of the detail_mask texture limits the detail"},
-    {"detail_fade", MaterialValueType::Vec2, SW_PARAM(detailFade), 0, 100000, {}, "detail",
+    {"detail_mask_channel",
+     MaterialValueType::Enum,
+     SW_PARAM(detailMaskChannel),
+     0,
+     0,
+     {"r", "g", "b", "a"},
+     "detail",
+     "Which channel of the detail_mask texture limits the detail"},
+    {"detail_fade",
+     MaterialValueType::Vec2,
+     SW_PARAM(detailFade),
+     0,
+     100000,
+     {},
+     "detail",
      "Metres from the camera where the detail starts and finishes fading out, smoothly; 0 0 never fades"},
-    {"layer_mask", MaterialValueType::Enum, SW_PARAM(layerMask), 0, 0,
-     {"texture_r", "texture_g", "texture_b", "texture_a", "vertex_r", "vertex_g", "vertex_b"}, "layer",
+    {"layer_mask",
+     MaterialValueType::Enum,
+     SW_PARAM(layerMask),
+     0,
+     0,
+     {"texture_r", "texture_g", "texture_b", "texture_a", "vertex_r", "vertex_g", "vertex_b"},
+     "layer",
      "Where the second layer shows: a channel of the layer_mask texture, or a colour channel of the vertices (whose "
      "colours then don't tint the surface)"},
-    {"layer_base_color", MaterialValueType::Color4, SW_PARAM(layerBaseColor), 0, 1, {}, "layer",
+    {"layer_base_color",
+     MaterialValueType::Color4,
+     SW_PARAM(layerBaseColor),
+     0,
+     1,
+     {},
+     "layer",
      "The second layer's linear RGB (alpha unused: cut-outs follow the first layer)"},
     {"layer_metallic", MaterialValueType::Float, SW_PARAM(layerMetallic), 0, 1, {}, "layer", "As metallic"},
     {"layer_roughness", MaterialValueType::Float, SW_PARAM(layerRoughness), 0, 1, {}, "layer", "As roughness"},
-    {"layer_normal_scale", MaterialValueType::Float, SW_PARAM(layerNormalScale), 0, 4, {}, "layer",
-     "As normal_scale"},
+    {"layer_normal_scale", MaterialValueType::Float, SW_PARAM(layerNormalScale), 0, 4, {}, "layer", "As normal_scale"},
+    {"clearcoat",
+     MaterialValueType::Float,
+     SW_PARAM(clearcoat),
+     0,
+     1,
+     {},
+     "clearcoat",
+     "family standard: a clear varnish over the surface (car paint, lacquered wood), 0 none .. 1 full; multiplies "
+     "the clearcoat texture's red. IOR 1.5 (4% reflection head-on)"},
+    {"clearcoat_roughness",
+     MaterialValueType::Float,
+     SW_PARAM(clearcoatRoughness),
+     0,
+     1,
+     {},
+     "clearcoat",
+     "The coat's perceptual roughness, separate from the surface's; multiplies the clearcoat texture's green"},
+    {"clearcoat_normal_scale",
+     MaterialValueType::Float,
+     SW_PARAM(clearcoatNormalScale),
+     0,
+     4,
+     {},
+     "clearcoat",
+     "How strongly the clearcoat_normal map tilts the coat (without one the coat is smooth over the bumps)"},
+    {"transmission",
+     MaterialValueType::Float,
+     SW_PARAM(transmission),
+     0,
+     1,
+     {},
+     "transmission",
+     "family transmission: how much light goes through instead of being diffused, 0 (an ordinary surface) .. 1 "
+     "(clear glass); multiplies the transmission texture's red"},
+    {"ior",
+     MaterialValueType::Float,
+     SW_PARAM(ior),
+     1,
+     2.5f,
+     {},
+     "transmission",
+     "Index of refraction: 1 air (no bending, no reflection), 1.33 water, 1.5 glass, 2.4 diamond"},
+    {"thickness",
+     MaterialValueType::Float,
+     SW_PARAM(thickness),
+     0,
+     10,
+     {},
+     "transmission",
+     "Metres the light travels inside, in the object's own space (its scale applies once); multiplies the "
+     "transmission texture's green. Solid glass refracts this far; both absorb along it"},
+    {"transmission_mode",
+     MaterialValueType::Enum,
+     SW_PARAM(transmissionMode),
+     0,
+     0,
+     {"thin", "solid"},
+     "transmission",
+     "thin: a sheet (window panes, bottles' walls), light leaves where it entered; solid: a closed volume (a glass "
+     "block, a gem), light bends through thickness"},
+    {"attenuation_color",
+     MaterialValueType::Color3,
+     SW_PARAM(attenuationColor),
+     0,
+     1,
+     {},
+     "transmission",
+     "The colour white light has after attenuation_distance inside (tinted glass, water)"},
+    {"attenuation_distance",
+     MaterialValueType::Float,
+     SW_PARAM(attenuationDistance),
+     0,
+     10000,
+     {},
+     "transmission",
+     "Metres for the light to become attenuation_color; 0 absorbs nothing"},
+    {"skin_radius",
+     MaterialValueType::Color3,
+     SW_PARAM(skinRadius),
+     0,
+     20,
+     {},
+     "skin",
+     "family skin: how far light spreads under the surface, millimetres per channel (red furthest)"},
+    {"skin_strength",
+     MaterialValueType::Float,
+     SW_PARAM(skinStrength),
+     0,
+     1,
+     {},
+     "skin",
+     "0 no spreading (the opaque skin look) .. 1 full"},
+    {"skin_max_pixels",
+     MaterialValueType::Float,
+     SW_PARAM(skinMaxPixels),
+     1,
+     64,
+     {},
+     "skin",
+     "The spread's largest radius on screen, in pixels, however close the camera gets"},
+    {"hair_anisotropy",
+     MaterialValueType::Float,
+     SW_PARAM(hairAnisotropy),
+     -1,
+     1,
+     {},
+     "hair",
+     "family hair_card: how much the highlight stretches across the strands, 0 round .. 1 a thin band "
+     "(the look of hair); negative stretches it along them instead"},
+    {"hair_direction",
+     MaterialValueType::Enum,
+     SW_PARAM(hairDirection),
+     0,
+     0,
+     {"u", "v"},
+     "hair",
+     "Which way the strands run on the card's texture, root to tip: u (left to right) or v (top to bottom)"},
 };
 #undef SW_PARAM
 static_assert(sizeof(int) == 4);
@@ -84,6 +303,9 @@ const std::array<MaterialSlotInfo, kAllMaterialSlots> kSlots = {{
     {MaterialSlot::LayerBaseColor, true, false, "layer", "The second layer's colour"},
     {MaterialSlot::LayerNormal, false, true, "layer", "The second layer's normals"},
     {MaterialSlot::LayerMetallicRoughness, false, false, "layer", "The second layer's roughness and metallic"},
+    {MaterialSlot::Clearcoat, false, false, "clearcoat", "Red scales clearcoat, green clearcoat_roughness (glTF's)"},
+    {MaterialSlot::ClearcoatNormal, false, true, "clearcoat", "The coat's own normals"},
+    {MaterialSlot::Transmission, false, false, "transmission", "Red scales transmission, green thickness"},
 }};
 
 template <class T>
@@ -200,8 +422,7 @@ bool validAssetName(std::string_view name, std::string& error) {
         error = "an empty path";
         return false;
     }
-    if (name.find('\\') != std::string_view::npos || name.front() == '/' ||
-        (name.size() > 1 && name[1] == ':')) {
+    if (name.find('\\') != std::string_view::npos || name.front() == '/' || (name.size() > 1 && name[1] == ':')) {
         error = "'" + std::string(name) + "' must be a path inside Content with forward slashes";
         return false;
     }
@@ -256,8 +477,9 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
         if (key.quoted) return fail("a record starts with its key, not a string");
         auto expect = [&](size_t count, const char* syntax) {
             if (tokens.size() == count) return true;
-            fail(std::string(tokens.size() < count ? "too few values" : "unexpected '" + tokens[count].text + "'") +
-                 "; expected " + syntax);
+            fail(
+                std::string(tokens.size() < count ? "too few values" : "unexpected '" + tokens[count].text + "'") +
+                "; expected " + syntax);
             return false;
         };
         if (!versionSeen) {
@@ -284,8 +506,8 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
                 if (tokens[2].text.empty()) return fail("the source material's name is empty");
                 file.parentMaterial = tokens[2].text;
             } else if (!isMaterialFile(file.parent)) {
-                return fail("a model parent needs the material's name too: parent \"" + file.parent +
-                            "\" \"Material name\"");
+                return fail(
+                    "a model parent needs the material's name too: parent \"" + file.parent + "\" \"Material name\"");
             }
             continue;
         }
@@ -304,11 +526,7 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
             case MaterialValueType::Enum: {
                 if (!expect(2, optionList(info->options).c_str())) return false;
                 const int value = optionIndex(info->options, tokens[1]);
-                if (value < 0) {
-                    if (key.text == "family" && !tokens[1].quoted)
-                        return fail("family " + tokens[1].text + " isn't supported yet; only standard is");
-                    return fail(key.text + " is " + optionList(info->options));
-                }
+                if (value < 0) return fail(key.text + " is " + optionList(info->options));
                 member<int>(file.values, *info) = value;
                 break;
             }
@@ -340,14 +558,17 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
         if (!slotRecord) return fail("unknown key '" + key.text + "'");
         MaterialSlot slot{};
         if (tokens.size() < 2 || tokens[1].quoted || !parseMaterialSlot(tokens[1].text, slot))
-            return fail(key.text + " needs a slot: base_color, normal, metallic_roughness, emissive, occlusion, "
-                                   "detail_color, detail_normal, detail_mask, layer_mask, layer_base_color, "
-                                   "layer_normal or layer_metallic_roughness");
+            return fail(
+                key.text + " needs a slot: base_color, normal, metallic_roughness, emissive, occlusion, "
+                           "detail_color, detail_normal, detail_mask, layer_mask, layer_base_color, "
+                           "layer_normal, layer_metallic_roughness, clearcoat, clearcoat_normal or "
+                           "transmission");
         const std::string kind = key.text == "clear_texture" ? "texture" : key.text;
         if (!records.insert(kind + " " + tokens[1].text).second)
-            return fail(key.text == "texture" || key.text == "clear_texture"
-                            ? "slot " + tokens[1].text + " has more than one texture or clear_texture record"
-                            : "duplicate record '" + key.text + " " + tokens[1].text + "'");
+            return fail(
+                key.text == "texture" || key.text == "clear_texture"
+                    ? "slot " + tokens[1].text + " has more than one texture or clear_texture record"
+                    : "duplicate record '" + key.text + " " + tokens[1].text + "'");
         MaterialSlotOverride& o = file.slots[size_t(slot)];
         if (key.text == "texture") {
             if (!expect(3, "texture <slot> \"path\"")) return false;
@@ -452,7 +673,8 @@ std::string writeMaterial(const MaterialFile& file) {
         const MaterialSlotOverride& o = file.slots[s];
         const std::string slot = materialSlotName(MaterialSlot(s));
         if (o.hasTexture)
-            out += o.texture.empty() ? "clear_texture " + slot + "\n" : "texture " + slot + " " + quote(o.texture) + "\n";
+            out +=
+                o.texture.empty() ? "clear_texture " + slot + "\n" : "texture " + slot + " " + quote(o.texture) + "\n";
         if (o.hasUvSet) out += "uv_set " + slot + " " + std::to_string(o.uvSet) + "\n";
         if (o.hasTransform) {
             const UvTransform& t = o.transform;
@@ -548,8 +770,8 @@ std::string materialSchemaMarkdown() {
             if (info.min < info.max) range = number(info.min) + ".." + number(info.max);
         }
         }
-        out << "| `" << info.key << "` | " << values << " | " << initial << " | " << range << " | "
-            << info.description << " |\n";
+        out << "| `" << info.key << "` | " << values << " | " << initial << " | " << range << " | " << info.description
+            << " |\n";
     }
     out << "\n## Texture slots\n\n"
            "| Record | Meaning |\n|---|---|\n"
@@ -571,7 +793,20 @@ std::string materialSchemaMarkdown() {
            "`detail_strength` is above 0; it tiles with its own `uv_transform` (scale 8 8 repeats it\n"
            "eight times). The second layer is on when `layer_mask` reads the vertex colours, or the\n"
            "`layer_mask` slot has a texture. At `material_quality low` the detail layer is left out;\n"
-           "masks, second layers and alpha never are.\n";
+           "masks, second layers and alpha never are.\n\n"
+           "## Shading families\n\n"
+           "Each family reads its own group of values; values of another family's group do\n"
+           "nothing (`player --check` warns). The graphics settings can turn each one down or off\n"
+           "(docs/Shading.md):\n\n"
+           "| Family | Reads | Off or low |\n|---|---|---|\n"
+           "| `standard` | surface, detail, layer, clearcoat | `clearcoat off`: the surface without its coat |\n"
+           "| `transmission` | surface, transmission | `transmission_quality off`: simplified see-through glass, "
+           "blended, tinted by base_color |\n"
+           "| `skin` | surface, skin | `skin_quality off`: the opaque skin surface, no diffusion pass or memory |\n"
+           "| `hair_card` | surface, hair | `hair_quality low`: the round (isotropic) highlight |\n\n"
+           "Transmission draws its own see-through, so it ignores `alpha_mode blend` (mask still\n"
+           "cuts out). `transmission 0` draws exactly as standard. Eyes are made of these: an opaque\n"
+           "iris and sclera (standard, optionally coated) under a thin transmission cornea.\n";
     return out.str();
 }
 
@@ -586,6 +821,10 @@ const char* materialFeatureName(uint32_t feature) {
     case kMaterialDetailNormal: return "detail_normal";
     case kMaterialLayer: return "layer";
     case kMaterialDoubleSided: return "double_sided";
+    case kMaterialClearcoat: return "clearcoat";
+    case kMaterialTransmission: return "transmission";
+    case kMaterialSkin: return "skin";
+    case kMaterialHairCard: return "hair_card";
     }
     return "unknown";
 }
@@ -603,7 +842,59 @@ uint32_t materialFeatures(const MaterialDesc& desc) {
     }
     if (p.layerMask >= int(LayerMaskSource::VertexR) || has(MaterialSlot::LayerMask)) features |= kMaterialLayer;
     if (p.doubleSided) features |= kMaterialDoubleSided;
+    switch (MaterialFamily(p.family)) {
+    case MaterialFamily::Standard:
+        if (p.clearcoat > 0.0f) features |= kMaterialClearcoat;
+        break;
+    case MaterialFamily::Transmission:
+        if (p.transmission > 0.0f || has(MaterialSlot::Transmission)) {
+            features |= kMaterialTransmission;
+            features &= ~kMaterialAlphaBlend;   // it draws its own see-through
+        }
+        break;
+    case MaterialFamily::Skin: features |= kMaterialSkin; break;
+    case MaterialFamily::HairCard: features |= kMaterialHairCard; break;
+    }
     return features;
+}
+
+bool materialFamilyUses(int family, std::string_view group) {
+    if (group == "clearcoat") return family == int(MaterialFamily::Standard);
+    if (group == "transmission") return family == int(MaterialFamily::Transmission);
+    if (group == "skin") return family == int(MaterialFamily::Skin);
+    if (group == "hair") return family == int(MaterialFamily::HairCard);
+    return true;
+}
+
+std::string materialEffectiveShading(const MaterialDesc& desc, const ShadingSettings& settings) {
+    const uint32_t f = desc.features;
+    if (f & kMaterialClearcoat) return settings.clearcoat ? "standard with clearcoat" : "standard (clearcoat off)";
+    if (f & kMaterialTransmission) {
+        if (settings.transmission == TransmissionQuality::Off) return "simplified glass (transmission_quality off)";
+        const bool solid = desc.params.transmissionMode == 1 && settings.transmission != TransmissionQuality::Low;
+        return std::string("transmission, ") + (solid ? "refracted" : "thin") + " (" +
+               transmissionQualityName(settings.transmission) + ")";
+    }
+    if (desc.params.family == int(MaterialFamily::Transmission)) return "standard (transmission 0)";
+    if (f & kMaterialSkin) {
+        if (settings.skin == SkinQuality::Off || desc.params.skinStrength <= 0.0f)
+            return "skin without diffusion (opaque)";
+        return std::string("skin with diffusion (") + skinQualityName(settings.skin) + ")";
+    }
+    if (f & kMaterialHairCard) {
+        const bool anisotropic = settings.hair == HairQuality::High && desc.params.hairAnisotropy != 0.0f;
+        return anisotropic ? "hair card, anisotropic highlight" : "hair card, round highlight";
+    }
+    return "standard";
+}
+
+std::string materialShadingCost(const MaterialDesc& desc, const ShadingSettings& settings) {
+    const uint32_t f = desc.features;
+    if ((f & kMaterialTransmission) && settings.transmission != TransmissionQuality::Off)
+        return "transmission pass; a copy of the opaque scene with mips (about 1.33x the scene colour's memory)";
+    if ((f & kMaterialSkin) && settings.skin != SkinQuality::Off && desc.params.skinStrength > 0.0f)
+        return "skin pass and two blurs; three skin targets (20 bytes a pixel), only while skin is on screen";
+    return {};
 }
 
 std::vector<std::string> materialLowQualityOmissions(const MaterialDesc& desc) {
@@ -626,9 +917,10 @@ MaterialDesc importedMaterial(const ModelData& model, std::string_view modelName
     p.normalScale = m.normalScale;
     p.occlusionStrength = m.occlusionStrength;
     p.emissive = m.emissive;
-    p.alphaMode = int(m.alpha == ModelMaterial::Alpha::Mask    ? MaterialAlpha::Mask
-                      : m.alpha == ModelMaterial::Alpha::Blend ? MaterialAlpha::Blend
-                                                               : MaterialAlpha::Opaque);
+    p.alphaMode =
+        int(m.alpha == ModelMaterial::Alpha::Mask    ? MaterialAlpha::Mask
+            : m.alpha == ModelMaterial::Alpha::Blend ? MaterialAlpha::Blend
+                                                     : MaterialAlpha::Opaque);
     p.alphaCutoff = m.alphaCutoff;
     p.doubleSided = m.doubleSided;
     const auto textures = materialTextures(m);
@@ -693,8 +985,8 @@ MaterialLookup folderMaterialLookup(const fs::path& root) {
     return lookup;
 }
 
-MaterialProblem resolveMaterial(
-    std::string_view name, const MaterialLookup& lookup, MaterialDesc& out, std::string& error) {
+MaterialProblem
+resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDesc& out, std::string& error) {
     error.clear();
     // The chain of files, the material first.
     std::vector<std::pair<std::string, MaterialFile>> files;
@@ -751,7 +1043,7 @@ MaterialProblem resolveMaterial(
                         ", which contradicts its parent's";
                 return MaterialProblem::File;
             }
-            const size_t size = info.type == MaterialValueType::Bool ? sizeof(bool)
+            const size_t size = info.type == MaterialValueType::Bool   ? sizeof(bool)
                                 : info.type == MaterialValueType::Enum ? sizeof(int)
                                                                        : sizeof(float) * componentCount(info.type);
             std::memcpy(
@@ -770,8 +1062,7 @@ MaterialProblem resolveMaterial(
                     error = it->first + ": texture " + o.texture + " isn't in Content (or isn't an image)";
                     return MaterialProblem::Reference;
                 }
-                if (std::find(desc.dependencies.begin(), desc.dependencies.end(), o.texture) ==
-                    desc.dependencies.end())
+                if (std::find(desc.dependencies.begin(), desc.dependencies.end(), o.texture) == desc.dependencies.end())
                     desc.dependencies.push_back(o.texture);
             }
         }
@@ -805,6 +1096,42 @@ MaterialProblem resolveMaterial(
         desc.warnings.push_back("detail_mask has a texture but there's no detail_color or detail_normal to mask");
     if (p.layerMask >= int(LayerMaskSource::VertexR) && has(MaterialSlot::LayerMask))
         desc.warnings.push_back("layer_mask reads the vertex colours, so the layer_mask texture is unused");
+    // Another family's values (A07-A09).
+    const char* family = kParams[0].options[size_t(std::clamp(p.family, 0, 3))];
+    for (const char* group : {"clearcoat", "transmission", "skin", "hair"}) {
+        if (materialFamilyUses(p.family, group)) continue;
+        const bool set = std::any_of(files.begin(), files.end(), [&](const auto& f) {
+            for (size_t i = 0; i < kParams.size(); ++i)
+                if (((f.second.set >> i) & 1u) && std::string_view(kParams[i].group) == group) return true;
+            for (size_t s = kMaterialSlots; s < kAllMaterialSlots; ++s)
+                if (std::string_view(kSlots[s].group) == group && f.second.slots[s].hasTexture &&
+                    !f.second.slots[s].texture.empty())
+                    return true;
+            return false;
+        });
+        if (set)
+            desc.warnings.push_back(
+                std::string(group) + " values are set but family " + family + " doesn't read them, so they do nothing");
+    }
+    if (p.family == int(MaterialFamily::Transmission)) {
+        if (p.alphaMode == int(MaterialAlpha::Blend) && (desc.features & kMaterialTransmission))
+            desc.warnings.push_back("family transmission draws its own see-through, so alpha_mode blend is ignored");
+        if (!(desc.features & kMaterialTransmission))
+            desc.warnings.push_back("transmission is 0, so this draws as a standard material");
+        if (p.transmissionMode == 1 && p.doubleSided)
+            desc.warnings.push_back("transmission_mode solid assumes closed geometry seen from outside; "
+                                    "double_sided shades its inside faces too");
+        if (p.attenuationDistance > 0.0f && p.attenuationColor == glm::vec3(1.0f))
+            desc.warnings.push_back("attenuation_distance is set but attenuation_color is white, so nothing is "
+                                    "absorbed");
+    }
+    if (p.family == int(MaterialFamily::Skin) && p.alphaMode == int(MaterialAlpha::Blend))
+        desc.warnings.push_back("skin diffusion needs opaque or masked skin; blended skin draws without it");
+    if (p.family == int(MaterialFamily::HairCard) && p.alphaMode == int(MaterialAlpha::Opaque))
+        desc.warnings.push_back("hair cards usually cut out their strands: alpha_mode mask keeps the shadows "
+                                "strand-shaped too");
+    if (p.family == int(MaterialFamily::Standard) && p.clearcoat <= 0.0f && has(MaterialSlot::ClearcoatNormal))
+        desc.warnings.push_back("clearcoat_normal has a texture but clearcoat is 0");
     out = std::move(desc);
     return MaterialProblem::None;
 }
@@ -863,9 +1190,45 @@ void buildDrawMaterial(
     l.layerMetallic = p.layerMetallic;
     l.layerRoughness = p.layerRoughness;
     l.layerNormalScale = p.layerNormalScale;
-    for (size_t slot = kMaterialSlots; slot < kAllMaterialSlots; ++slot)
+    for (size_t slot = kMaterialSlots; slot < kMaterialSlots + kLayerSlots; ++slot)
         l.bindings[slot - kMaterialSlots] = binding(MaterialSlot(slot));
     d.layers = l.detail || l.layer ? &asset.layers : nullptr;
+
+    // Shading families (A07-A09). Standard without a coat draws exactly as before.
+    MaterialShading& sh = asset.shading;
+    sh = {};
+    sh.family = ShadingFamily(std::clamp(p.family, 0, 3));
+    if (sh.family == ShadingFamily::Standard && (features & kMaterialClearcoat)) {
+        sh.clearcoat = p.clearcoat;
+        sh.clearcoatRoughness = p.clearcoatRoughness;
+        sh.clearcoatNormalScale = p.clearcoatNormalScale;
+        sh.clearcoatTexture = texture(MaterialSlot::Clearcoat);
+        sh.clearcoatNormalTexture = texture(MaterialSlot::ClearcoatNormal);
+    }
+    if (sh.family == ShadingFamily::Transmission && !(features & kMaterialTransmission))
+        sh.family = ShadingFamily::Standard;   // transmission 0: the standard material
+    if (sh.family == ShadingFamily::Transmission) {
+        sh.transmission = p.transmission;
+        sh.ior = p.ior;
+        sh.thickness = p.thickness;
+        sh.thin = p.transmissionMode == 0;
+        sh.attenuationColor = p.attenuationColor;
+        sh.attenuationDistance = p.attenuationDistance;
+        sh.transmissionTexture = texture(MaterialSlot::Transmission);
+        d.blend = false;   // the renderer draws it see-through itself
+    }
+    if (sh.family == ShadingFamily::Skin) {
+        sh.skinRadius = p.skinRadius;
+        sh.skinStrength = p.skinStrength;
+        sh.skinMaxPixels = p.skinMaxPixels;
+    }
+    if (sh.family == ShadingFamily::HairCard) {
+        sh.hairAnisotropy = p.hairAnisotropy;
+        sh.hairDirection = uint32_t(p.hairDirection);
+    }
+    for (size_t slot = 0; slot < kShadingSlots; ++slot)
+        sh.bindings[slot] = binding(MaterialSlot(kMaterialSlots + kLayerSlots + slot));
+    d.shading = sh.family != ShadingFamily::Standard || sh.clearcoat > 0.0f ? &asset.shading : nullptr;
 }
 
 DrawMaterial modelDrawMaterial(const ModelAsset& model, uint32_t material) {
@@ -877,7 +1240,8 @@ DrawMaterial modelDrawMaterial(const ModelAsset& model, uint32_t material) {
     std::array<SamplerHandle, kAllMaterialSlots> samplers{};
     const auto maps = materialTextures(model.data.materials[material]);
     for (size_t slot = 0; slot < kMaterialSlots; ++slot) {
-        if (maps[slot] >= 0 && size_t(maps[slot]) < model.textures.size()) textures[slot] = model.textures[size_t(maps[slot])];
+        if (maps[slot] >= 0 && size_t(maps[slot]) < model.textures.size())
+            textures[slot] = model.textures[size_t(maps[slot])];
         if (material < model.samplers.size()) samplers[slot] = model.samplers[material][slot];
     }
     buildDrawMaterial(drawn, textures, samplers);
