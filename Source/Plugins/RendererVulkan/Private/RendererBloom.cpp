@@ -89,7 +89,7 @@ void VulkanRenderer::Impl::createBloomPipeline() {
     info.stage.module = module;
     info.stage.pName = "main";
     info.layout = bloomLayout;
-    const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &bloomPipeline);
+    const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &bloomPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
 }

@@ -2,6 +2,7 @@
 
 #include <Engine/Subsystem.h>
 #include <Renderer/Clusters.h>
+#include <Renderer/Culling.h>
 #include <Renderer/Decals.h>
 #include <Renderer/Particles.h>
 #include <Renderer/PostProcess.h>
@@ -61,6 +62,10 @@ struct GraphicsSettings {
     TransmissionQuality transmissionQuality = TransmissionQuality::Medium;
     SkinQuality skinQuality = SkinQuality::High;
     HairQuality hairQuality = HairQuality::High;
+    // Drawing (G12, docs/Drawing.md): copies of a mesh in one call, and skipping what the
+    // depth prepass proves hidden. The same picture either way: only the cost differs.
+    bool instancing = true;
+    OcclusionCulling occlusionCulling = OcclusionCulling::On;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

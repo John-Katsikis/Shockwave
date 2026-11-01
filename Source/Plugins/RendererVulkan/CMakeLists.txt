@@ -11,6 +11,8 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/mesh.frag
     Shaders/mesh_skin.frag
     Shaders/skin.frag
+    Shaders/hzb.comp
+    Shaders/cull.comp
     Shaders/grid.vert
     Shaders/grid.frag
     Shaders/tonemap.vert

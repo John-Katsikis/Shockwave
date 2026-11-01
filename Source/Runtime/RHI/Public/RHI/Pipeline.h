@@ -8,6 +8,12 @@ namespace shockwave::vk {
 
 VkShaderModule loadShaderModule(VkDevice device, const std::string& path);
 
+// The pipeline cache pipelines are created through (G12): createGraphicsPipeline and every
+// vkCreate*Pipelines call pass it. VK_NULL_HANDLE (the default) for none. The renderer that
+// owns one sets it once its device exists and clears it before destroying it.
+void setPipelineCache(VkPipelineCache cache);
+VkPipelineCache pipelineCache();
+
 struct GraphicsPipelineDesc {
     bool alphaBlend = false;   // standard "over" blending; never writes depth
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;

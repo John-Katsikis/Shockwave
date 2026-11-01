@@ -28,7 +28,7 @@ void VulkanRenderer::Impl::createSkinningPipeline() {
     info.stage.module = module;
     info.stage.pName = "main";
     info.layout = skinningLayout;
-    const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &skinningPipeline);
+    const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &skinningPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
 }

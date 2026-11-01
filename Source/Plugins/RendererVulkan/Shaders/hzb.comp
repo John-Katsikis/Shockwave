@@ -1,0 +1,28 @@
+#version 460
+
+// The occlusion depth pyramid (G12, RendererCulling.cpp, Renderer/Culling.h buildHzb): one
+// level a dispatch, each texel the farthest (smallest, reverse-Z) depth of the up to 2 x 2
+// texels it covers in the level below; level 0 halves the prepass's depth. Keeping the
+// farthest makes the test conservative: one sky pixel (0) keeps everything behind it drawn.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;   // the depth, or the level below (nearest)
+layout(set = 0, binding = 1, r32f) uniform writeonly image2D target;
+
+// Must match HzbPushConstants in RendererCulling.cpp.
+layout(push_constant) uniform PushConstants {
+    uvec2 sourceSize;
+    uvec2 targetSize;
+} pc;
+
+void main() {
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(p, pc.targetSize))) return;
+    float least = 1.0;
+    for (uint dy = 0u; dy < 2u; ++dy)
+        for (uint dx = 0u; dx < 2u; ++dx) {
+            uvec2 c = 2u * p + uvec2(dx, dy);
+            if (all(lessThan(c, pc.sourceSize))) least = min(least, texelFetch(source, ivec2(c), 0).r);
+        }
+    imageStore(target, ivec2(p), vec4(least));
+}

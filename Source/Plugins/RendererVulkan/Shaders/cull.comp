@@ -1,0 +1,92 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+
+// Occlusion culling (G12, RendererCulling.cpp; the maths is Renderer/Culling.h's
+// projectBounds and hzbOccluded): one thread per opaque draw the camera sees. It writes
+// that draw's indirect command, with one instance when it may show and none when every
+// texel of the depth pyramid under its bounds is nearer than its nearest corner. Anything
+// it can't judge (crossing the near plane, behind the camera) is drawn.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D hzb;   // every level (nearest)
+
+// Must match CullDraw in RendererCulling.cpp.
+struct CullDraw {
+    vec4 sphere;   // world space: centre, radius
+    uint drawIndex;
+    uint indexCount;
+    uint firstIndex;
+    uint pad;
+};
+layout(buffer_reference, scalar) readonly buffer CullDraws { CullDraw draws[]; };
+struct Command {   // VkDrawIndexedIndirectCommand
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(buffer_reference, scalar) writeonly buffer Commands { Command commands[]; };
+layout(buffer_reference, scalar) buffer Counters { uint tested; uint occluded; };
+
+// Must match CullPushConstants in RendererCulling.cpp.
+layout(push_constant, scalar) uniform PushConstants {
+    mat4 viewProjection;   // the jittered one the prepass drew with
+    CullDraws draws;
+    Commands commands;
+    Counters counters;
+    uvec2 depthSize;   // the prepass's depth, in pixels
+    uint count;
+    uint levels;
+    uvec2 hzbSize;   // level 0's texels; power-of-two sides, so level L is hzbSize >> L
+} pc;
+
+const float kBias = 1e-6;   // Renderer/Culling.h kHzbBias
+
+bool occluded(vec4 sphere) {
+    vec2 lo = vec2(1e30), hi = vec2(-1e30);
+    float nearest = 0.0;
+    for (int i = 0; i < 8; ++i) {
+        vec3 corner = sphere.xyz + vec3((i & 1) != 0 ? sphere.w : -sphere.w, (i & 2) != 0 ? sphere.w : -sphere.w,
+                                        (i & 4) != 0 ? sphere.w : -sphere.w);
+        vec4 clip = pc.viewProjection * vec4(corner, 1.0);
+        if (!(clip.w > 1e-6)) return false;
+        vec3 ndc = clip.xyz / clip.w;
+        if (!(ndc.z <= 1.0)) return false;
+        vec2 pixel = vec2((ndc.x * 0.5 + 0.5) * float(pc.depthSize.x), (0.5 - ndc.y * 0.5) * float(pc.depthSize.y));
+        lo = min(lo, pixel);
+        hi = max(hi, pixel);
+        nearest = max(nearest, ndc.z);
+    }
+    // A pixel's margin for rasterization rounding.
+    lo -= 1.0;
+    hi += 1.0;
+    // The pyramid is padded to a power of two (RendererCulling.cpp): clamp to the real screen.
+    vec2 screen = vec2(pc.depthSize);
+    vec2 a = max(lo, vec2(0.0)), b = min(hi, screen - 1.0);
+    if (a.x > b.x || a.y > b.y) return false;
+    float span = max(max(hi.x - lo.x, hi.y - lo.y), 1.0);
+    uint level = uint(max(int(ceil(log2(span / 4.0))) - 1, 0));
+    level = min(level, pc.levels - 1u);
+    // Not textureSize: with a level that differs between invocations, some drivers
+    // (lavapipe) answer every invocation with one level's size.
+    ivec2 size = ivec2(max(pc.hzbSize >> level, uvec2(1u)));
+    float texel = float(2u << level);
+    ivec2 t0 = min(ivec2(a / texel), size - 1), t1 = min(ivec2(b / texel), size - 1);
+    float least = 1.0;
+    for (int y = t0.y; y <= t1.y; ++y)
+        for (int x = t0.x; x <= t1.x; ++x) least = min(least, texelFetch(hzb, ivec2(x, y), int(level)).r);
+    return nearest < least - kBias;
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) return;
+    CullDraw draw = pc.draws.draws[i];
+    bool hidden = occluded(draw.sphere);
+    pc.commands.commands[i] = Command(draw.indexCount, hidden ? 0u : 1u, draw.firstIndex, 0, draw.drawIndex);
+    atomicAdd(pc.counters.tested, 1u);
+    if (hidden) atomicAdd(pc.counters.occluded, 1u);
+}

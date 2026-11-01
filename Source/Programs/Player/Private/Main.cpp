@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
         std::filesystem::path gameModuleFile;   // --game-module
         std::filesystem::path graphicsFile, graphicsSchema, materialSchema;
         bool graphicsInfo = false, noUserGraphics = false;
+        bool noPipelineCache = false, clearPipelineCache = false;
         float renderScaleOverride = -1;
         std::vector<std::pair<std::string, std::string>> graphicsSets;   // --graphics-set key=value, --anti-aliasing
         bool listGpus = false;   // --gpus
@@ -91,6 +92,10 @@ int main(int argc, char** argv) {
                 graphicsInfo = true;
             else if (arg == "--no-user-graphics")
                 noUserGraphics = true;
+            else if (arg == "--no-pipeline-cache")
+                noPipelineCache = true;
+            else if (arg == "--clear-pipeline-cache")
+                clearPipelineCache = true;
             else if (arg == "--graphics-set" && i + 1 < argc) {
                 const std::string value = argv[++i];
                 const auto equals = value.find('=');
@@ -455,6 +460,9 @@ int main(int argc, char** argv) {
                     "                                    any setting in docs/GraphicsSchema.md, for this run\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
+                    "       [--no-pipeline-cache] [--clear-pipeline-cache]\n"
+                    "                                    don't keep compiled pipelines this run; or delete\n"
+                    "                                    the saved ones first (docs/Drawing.md)\n"
                     "player --gpus [--json file]          list the GPUs, which one renders and why, and any\n"
                     "                                    warnings (like rendering on a GPU the screen isn't on)\n"
                     "player --renderers                  list the renderer plugins that can be loaded\n"
@@ -875,6 +883,13 @@ int main(int argc, char** argv) {
         config.renderer = !renderer.empty()                                ? renderer
                           : tool.mode != Tool::Mode::Play || tool.optimise ? std::string("null")
                                                                            : project.renderer;
+        config.pipelineCache = !noPipelineCache;
+        if (clearPipelineCache) {
+            const std::string folder = shockwave::Engine::pipelineCacheFolder(config.window.title);
+            std::error_code ec;
+            if (!folder.empty()) std::filesystem::remove_all(folder, ec);
+            if (ec) throw std::runtime_error("couldn't delete " + folder + ": " + ec.message());
+        }
         shockwave::Engine engine(config);
         engine.setMasterVolume(audioVolume);
         Player player(std::move(project), std::move(tool), gameModule->module());

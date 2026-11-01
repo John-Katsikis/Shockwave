@@ -159,7 +159,7 @@ void VulkanRenderer::Impl::createParticlePipelines() {
     VkResult result = VK_SUCCESS;
     for (size_t i = 0; i < particlePipelines.size() && result == VK_SUCCESS; ++i) {
         setBlend(blendAttachment, static_cast<ParticleBlend>(i));
-        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &particlePipelines[i]);
+        result = vkCreateGraphicsPipelines(device, vk::pipelineCache(), 1, &info, nullptr, &particlePipelines[i]);
     }
     // The reactive mask's (G09): one channel, the greatest of what each particle writes.
     const VkBool32 reactive = VK_TRUE;
@@ -173,7 +173,7 @@ void VulkanRenderer::Impl::createParticlePipelines() {
     const VkFormat reactiveFormat = VK_FORMAT_R8_UNORM;
     rendering.pColorAttachmentFormats = &reactiveFormat;
     if (result == VK_SUCCESS)
-        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &reactiveParticlePipeline);
+        result = vkCreateGraphicsPipelines(device, vk::pipelineCache(), 1, &info, nullptr, &reactiveParticlePipeline);
     vkDestroyShaderModule(device, frag, nullptr);
     vkDestroyShaderModule(device, vert, nullptr);
     vk::check(result, "vkCreateGraphicsPipelines");

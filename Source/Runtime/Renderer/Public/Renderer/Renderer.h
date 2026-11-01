@@ -7,6 +7,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Culling.h>
 #include <Renderer/Shading.h>
 #include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
@@ -34,6 +35,9 @@ struct RendererOptions {
     // Keep a CPU copy of every mesh and texture so the backend can be swapped or reloaded
     // while running. The editor turns this on; it costs memory equal to the asset data.
     bool swappable = false;
+    // Where compiled pipelines are kept between runs, so the next start compiles fewer
+    // (docs/Drawing.md). Empty: none, every start compiles them all.
+    std::string pipelineCacheFolder;
 };
 
 // Public face of the renderer. The drawing itself is done by a backend plugin (Vulkan by
@@ -239,6 +243,10 @@ public:
     void setShadingSettings(const ShadingSettings& settings);
     ShadingSettings shadingSettings() const;
     ShadingStats shadingStats() const;   // the last frame's
+    // Instancing and occlusion culling (G12, Renderer/Culling.h).
+    void setDrawSettings(const DrawSettings& settings);
+    DrawSettings drawSettings() const;
+    DrawStats drawStats() const;   // the last frame's
 
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no

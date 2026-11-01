@@ -5,6 +5,13 @@
 
 namespace shockwave::vk {
 
+namespace {
+VkPipelineCache g_pipelineCache = VK_NULL_HANDLE;
+}
+
+void setPipelineCache(VkPipelineCache cache) { g_pipelineCache = cache; }
+VkPipelineCache pipelineCache() { return g_pipelineCache; }
+
 VkShaderModule loadShaderModule(VkDevice device, const std::string& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
@@ -142,7 +149,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     info.layout = desc.layout;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
+    VkResult result = vkCreateGraphicsPipelines(device, g_pipelineCache, 1, &info, nullptr, &pipeline);
 
     if (frag) vkDestroyShaderModule(device, frag, nullptr);
     vkDestroyShaderModule(device, vert, nullptr);

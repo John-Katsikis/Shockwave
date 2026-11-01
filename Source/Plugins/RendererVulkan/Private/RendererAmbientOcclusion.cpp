@@ -86,7 +86,7 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
     info.stage.module = module;
     info.stage.pName = "main";
     info.layout = aoLayout;
-    const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &aoPipeline);
+    const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &aoPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
 
@@ -293,20 +293,10 @@ void VulkanRenderer::Impl::recordPrepass(VkCommandBuffer cmd, Frame& f) {
         DrawPushConstants push{f.drawAddress, f.frameAddress};
         vkCmdPushConstants(
             cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-        VkBuffer boundIndices = VK_NULL_HANDLE;
-        VkPipeline boundPipeline = VK_NULL_HANDLE;
+        DrawBatcher batch(cmd, instancingActive(), drawStats);
         for (const DrawCommand& draw : gatheredDraws) {
             if (!draw.visible || draw.blend) continue;   // blended surfaces aren't in it
-            const VkPipeline pipeline = pipelines[prepassIndex(draw)];
-            if (pipeline != boundPipeline) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                boundPipeline = pipeline;
-            }
-            if (draw.indexBuffer != boundIndices) {
-                vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                boundIndices = draw.indexBuffer;
-            }
-            vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
+            batch.add(pipelines[prepassIndex(draw)], draw);
         }
     }
     vkCmdEndRendering(cmd);

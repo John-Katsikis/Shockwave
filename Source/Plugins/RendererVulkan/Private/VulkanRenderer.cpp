@@ -4,8 +4,8 @@
 
 namespace shockwave {
 
-VulkanRenderer::VulkanRenderer(Window& window, JobSystem& jobs, bool vsync)
-    : m_impl(std::make_unique<Impl>(window, jobs, vsync)) {}
+VulkanRenderer::VulkanRenderer(Window& window, JobSystem& jobs, bool vsync, const std::string& pipelineCacheFolder)
+    : m_impl(std::make_unique<Impl>(window, jobs, vsync, pipelineCacheFolder)) {}
 VulkanRenderer::~VulkanRenderer() = default;
 
 uint32_t VulkanRenderer::maxMeshes() const { return kMaxMeshes; }
@@ -186,6 +186,8 @@ void VulkanRenderer::setPostProcessSettings(const PostProcessSettings& settings)
 PostProcessStats VulkanRenderer::postProcessStats() const { return m_impl->lastPostProcessStats; }
 void VulkanRenderer::setShadingSettings(const ShadingSettings& settings) { m_impl->setShadingSettings(settings); }
 ShadingStats VulkanRenderer::shadingStats() const { return m_impl->lastShadingStats; }
+void VulkanRenderer::setDrawSettings(const DrawSettings& settings) { m_impl->drawSettings = settings; }
+DrawStats VulkanRenderer::drawStats() const { return m_impl->lastDrawStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }
 uint32_t VulkanRenderer::unkeyedDraws() const { return m_impl->lastUnkeyedDraws; }
 TemporalStats VulkanRenderer::temporalStats() const { return m_impl->lastTemporalStats; }
@@ -208,7 +210,7 @@ void VulkanRenderer::drawUi(const UiDrawList& list) { m_impl->drawUi(list); }
 
 namespace {
 std::unique_ptr<RenderBackend> create(const RenderBackendDesc& desc) {
-    return std::make_unique<VulkanRenderer>(desc.window, desc.jobs, desc.vsync);
+    return std::make_unique<VulkanRenderer>(desc.window, desc.jobs, desc.vsync, desc.pipelineCacheFolder);
 }
 const RendererPluginApi api{.flags = kRendererDrawsGui | kRendererPresents, .create = create};
 const PluginDesc plugin{

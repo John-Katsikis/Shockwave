@@ -11,7 +11,7 @@ namespace shockwave {
 
 class VulkanRenderer final : public RenderBackend {
 public:
-    VulkanRenderer(Window& window, JobSystem& jobs, bool vsync);
+    VulkanRenderer(Window& window, JobSystem& jobs, bool vsync, const std::string& pipelineCacheFolder = {});
     ~VulkanRenderer() override;
 
     uint32_t maxMeshes() const override;
@@ -95,6 +95,8 @@ public:
     PostProcessStats postProcessStats() const override;
     void setShadingSettings(const ShadingSettings& settings) override;
     ShadingStats shadingStats() const override;
+    void setDrawSettings(const DrawSettings& settings) override;
+    DrawStats drawStats() const override;
     uint32_t unkeyedDraws() const override;
     TemporalStats temporalStats() const override;
 

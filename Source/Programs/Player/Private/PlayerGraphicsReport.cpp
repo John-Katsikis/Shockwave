@@ -106,6 +106,25 @@ std::string shadingJson(const shockwave::ShadingSettings& s, const shockwave::Sh
     return text;
 }
 
+// Batching and occlusion culling (G12) in the last frame.
+std::string drawingJson(const shockwave::DrawSettings& s, const shockwave::DrawStats& d) {
+    std::string reason;
+    for (const char* c = d.occlusionReason; c && *c; ++c) reason += *c == '"' ? '\'' : *c;
+    char text[768];
+    std::snprintf(
+        text, sizeof(text),
+        "{\"instancing\": %s, \"occlusion_culling\": \"%s\", \"objects\": %u, \"calls\": %u, "
+        "\"instanced\": %u, \"occlusion_active\": %s, \"occlusion_reason\": \"%s\", "
+        "\"multi_draw_indirect\": %s, \"tested\": %u, \"occluded\": %u, \"hzb_bytes\": %llu, ",
+        s.instancing ? "true" : "false", shockwave::occlusionCullingName(s.occlusion), d.objects, d.calls, d.instanced,
+        d.occlusionActive ? "true" : "false", reason.c_str(), d.multiDrawIndirect ? "true" : "false", d.tested,
+        d.occluded, static_cast<unsigned long long>(d.hzbBytes));
+    std::ostringstream json;
+    json << text << "\"pipeline_cache\": {\"file\": " << quoted(d.pipelineCacheFile)
+         << ", \"loaded_bytes\": " << d.pipelineCacheBytes << ", \"state\": " << quoted(d.pipelineCacheState) << "}}";
+    return json.str();
+}
+
 }   // namespace
 
 std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const fs::path& userFile) {
@@ -213,6 +232,7 @@ void Player::graphicsReport() {
          << ",\n  \"particles\": " << particlesJson(renderer.particleSettings(), renderer.particleStats())
          << ",\n  \"postprocess\": " << postProcessJson(renderer.postProcessSettings(), renderer.postProcessStats())
          << ",\n  \"shading\": " << shadingJson(renderer.shadingSettings(), renderer.shadingStats())
+         << ",\n  \"drawing\": " << drawingJson(renderer.drawSettings(), renderer.drawStats())
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
