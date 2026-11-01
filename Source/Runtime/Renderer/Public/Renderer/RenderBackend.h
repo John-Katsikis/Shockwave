@@ -27,6 +27,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Culling.h>
 #include <Renderer/Shading.h>
 #include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
@@ -157,6 +158,8 @@ public:
     // A07-A09: a backend without a family draws its stand-in (standard, simplified glass).
     virtual void setShadingSettings(const ShadingSettings&) {}
     virtual ShadingStats shadingStats() const { return {}; }
+    virtual void setDrawSettings(const DrawSettings&) {}
+    virtual DrawStats drawStats() const { return {}; }
     // Of drawCount, how many came without a RenderInstanceKey (so have no history).
     virtual uint32_t unkeyedDraws() const { return 0; }
     virtual TemporalStats temporalStats() const { return {}; }
@@ -234,6 +237,8 @@ struct RenderBackendDesc {
     Window& window;
     JobSystem& jobs;
     bool vsync = true;
+    // Where the backend keeps its compiled pipelines between runs (G12); empty: nowhere.
+    std::string pipelineCacheFolder;
 };
 
 struct RendererPluginApi {

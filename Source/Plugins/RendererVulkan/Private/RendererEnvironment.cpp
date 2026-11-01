@@ -227,7 +227,7 @@ void VulkanRenderer::Impl::createEnvironment() {
         info.stage.pName = "main";
         info.layout = environmentLayout;
         VkPipeline pipeline = VK_NULL_HANDLE;
-        const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline);
+        const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &pipeline);
         vkDestroyShaderModule(device, module, nullptr);
         vk::check(result, "vkCreateComputePipelines");
         return pipeline;

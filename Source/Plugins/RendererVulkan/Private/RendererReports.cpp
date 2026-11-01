@@ -354,6 +354,26 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         settings.push_back({"hair_quality", hairQualityName(hair), hairQualityName(hair), "", detail});
     }
 
+    // Drawing (G12): what last frame merged and culled.
+    {
+        const DrawStats& d = lastDrawStats;
+        char detail[256];
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u objects in %u draw calls, %u sharing a call", d.objects, d.calls,
+            d.instanced);
+        settings.push_back(
+            {"instancing", drawSettings.instancing ? "true" : "false", drawSettings.instancing ? "true" : "false", "",
+             detail});
+        const bool asked = drawSettings.occlusion == OcclusionCulling::On;
+        std::snprintf(
+            detail, sizeof(detail), "%u of %u opaque draws occluded (an earlier frame's count), %s; pyramid %.1f MiB",
+            d.occluded, d.tested, d.multiDrawIndirect ? "multi-draw indirect" : "one indirect call per draw",
+            static_cast<double>(d.hzbBytes) / (1024.0 * 1024.0));
+        settings.push_back(
+            {"occlusion_culling", occlusionCullingName(drawSettings.occlusion), d.occlusionActive ? "on" : "off",
+             asked && !d.occlusionActive ? d.occlusionReason : "", d.occlusionActive ? detail : ""});
+    }
+
     // Colour grading, exposure and fog (A05, A06): what last frame applied.
     {
         const PostProcessStats& p = lastPostProcessStats;
@@ -518,6 +538,10 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::Transmission, transmissionBackground.image.allocation);   // A07b
     for (const vk::Image* image : {&skinTargets.light, &skinTargets.skin, &skinTargets.scratch})
         add(GpuMemoryCategory::Skin, image->allocation);   // A08
+    add(GpuMemoryCategory::Hzb, hzb.image.allocation);   // G12: the occlusion depth pyramid...
+    for (const Frame& f : frames)
+        for (const vk::Buffer* b : {&f.cullInput, &f.cullCommands, &f.cullCounters})
+            add(GpuMemoryCategory::Hzb, b->allocation);   // ...and each frame's culled draws
     {
         // Textures can be created from worker threads; their descriptor write takes this lock.
         std::lock_guard lock(const_cast<std::mutex&>(descriptorMutex));

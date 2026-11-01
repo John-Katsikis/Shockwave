@@ -64,7 +64,11 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     m_renderer = std::make_unique<Renderer>(
         *m_window, *m_jobs,
         RendererOptions{
-            .backend = m_config.renderer, .vsync = m_config.window.vsync, .swappable = m_config.swappableRenderer});
+            .backend = m_config.renderer,
+            .vsync = m_config.window.vsync,
+            .swappable = m_config.swappableRenderer,
+            .pipelineCacheFolder =
+                m_config.pipelineCache ? pipelineCacheFolder(m_config.window.title) : std::string()});
     if (m_config.gui && !(m_renderer->backendFlags() & kRendererDrawsGui))
         throw std::runtime_error("the " + m_config.renderer + " renderer can't draw the editor's interface");
     m_input = std::make_unique<Input>(m_window.get());
@@ -75,6 +79,15 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     SW_LOG(
         LogEngine, Info, "rendering with {} on {}, {} worker threads", m_renderer->backendName(), m_renderer->gpuName(),
         m_jobs->workerCount());
+}
+
+std::string Engine::pipelineCacheFolder(const std::string& title) {
+    std::string folder;
+    if (char* pref = SDL_GetPrefPath("Shockwave", title.c_str())) {
+        folder = std::string(pref) + "pipeline-cache/";
+        SDL_free(pref);
+    }
+    return folder;
 }
 
 Engine::~Engine() {

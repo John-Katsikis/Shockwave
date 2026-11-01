@@ -273,6 +273,11 @@ add_executable(shading_test ShadingTest.cpp)
 target_link_libraries(shading_test PRIVATE Shockwave::Engine)
 shockwave_warnings(shading_test)
 add_test(NAME shading COMMAND shading_test)
+# Occlusion culling (G12): the hierarchical depth, projected bounds, conservative tests.
+add_executable(culling_test CullingTest.cpp)
+target_link_libraries(culling_test PRIVATE Shockwave::Engine)
+shockwave_warnings(culling_test)
+add_test(NAME culling COMMAND culling_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -357,6 +362,15 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsShadingCheck.cmake)
     set_tests_properties(graphics_shading_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Batching, occlusion culling and indirect drawing (G12): the same pictures with each on
+    # and off, and the report's counts.
+    add_test(NAME graphics_drawing_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsDrawing
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsDrawingCheck.cmake)
+    set_tests_properties(graphics_drawing_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 900 LABELS gpu)
     # And that it's faster where it should be: 200 point lights, scene pass GPU time.
     add_test(NAME graphics_clusters_timing COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>

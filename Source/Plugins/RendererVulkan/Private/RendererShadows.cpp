@@ -338,19 +338,14 @@ void VulkanRenderer::Impl::recordShadows(
         ShadowPushConstants push{f.drawAddress, 0, pass.viewProjection};
         vkCmdPushConstants(
             cmd, shadowLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-        VkBuffer boundIndices = VK_NULL_HANDLE;
+        // Each shadow map has its own casters: the camera's view (and its occlusion
+        // culling) never decides them.
+        DrawBatcher batch(cmd, instancingActive(), drawStats, boundPipeline);
         for (uint32_t i : pass.draws) {
             const DrawCommand& draw = gatheredDraws[i];
             const VkPipeline pipeline = draw.data.alphaCutoff >= 0.0f ? shadowPipeline : shadowDepthOnlyPipeline;
-            if (pipeline != boundPipeline) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                boundPipeline = pipeline;
-            }
-            if (draw.indexBuffer != boundIndices) {
-                vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-                boundIndices = draw.indexBuffer;
-            }
-            vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
+            batch.add(pipeline, draw);
+            boundPipeline = pipeline;
         }
     }
     vkCmdEndRendering(cmd);

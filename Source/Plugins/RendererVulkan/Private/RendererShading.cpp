@@ -525,20 +525,10 @@ void VulkanRenderer::Impl::recordSkin(VkCommandBuffer cmd, Frame& f) {
     DrawPushConstants push{f.drawAddress, f.frameAddress};
     vkCmdPushConstants(
         cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-    VkPipeline bound = VK_NULL_HANDLE;
-    VkBuffer boundIndices = VK_NULL_HANDLE;
-    for (const DrawCommand& draw : gatheredDraws) {
-        if (!draw.skinDiffusion) continue;   // prepareShading left only the diffusing ones
-        const VkPipeline pipeline = skinPipelines[prepassIndex(draw)];
-        if (pipeline != bound) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            bound = pipeline;
-        }
-        if (draw.indexBuffer != boundIndices) {
-            vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            boundIndices = draw.indexBuffer;
-        }
-        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
+    {
+        DrawBatcher batch(cmd, instancingActive(), drawStats);
+        for (const DrawCommand& draw : gatheredDraws)
+            if (draw.skinDiffusion) batch.add(skinPipelines[prepassIndex(draw)], draw);   // the diffusing ones
     }
     vkCmdEndRendering(cmd);
 }

@@ -53,6 +53,7 @@ const std::vector<const char*> kMaterialQualityChoices = {"low", "high"};
 const std::vector<const char*> kAmbientOcclusionChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kDecalChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kLightCullingChoices = {"auto", "clustered", "brute_force"};
+const std::vector<const char*> kOcclusionChoices = {"off", "on"};
 const std::vector<const char*> kParticleLightingChoices = {"simple", "scene"};
 const std::vector<const char*> kFogChoices = {"off", "analytic", "low", "medium", "high"};
 const std::vector<const char*> kTransmissionChoices = {"off", "low", "medium", "high"};
@@ -198,6 +199,25 @@ std::vector<GraphicsSettingInfo> makeInfo() {
          [](S& s, const std::string& v, std::string& error) {
              if (choice(kLightCullingChoices, v, s.lightCulling)) return true;
              error = "light_culling must be " + list(kLightCullingChoices);
+             return false;
+         }});
+    info.push_back(
+        {"instancing", "Instancing", "Quality",
+         "Draws copies of the same mesh with the same material in one call instead of one each, which saves the "
+         "processor time spent issuing them. The picture is the same either way.",
+         "true, false", kBool, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(s.instancing ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) { return boolean(v, s.instancing, "instancing", error); }});
+    info.push_back(
+        {"occlusion_culling", "Occlusion culling", "Quality",
+         "Skips objects the depth prepass proves are hidden behind others, deciding on the graphics card. It runs "
+         "only when the prepass already does (ambient occlusion, TAA or decals on) and never hides anything that "
+         "could show: the picture is the same either way.",
+         "off, on", kOcclusionChoices, GraphicsApply::Uniform, false,
+         [](const S& s) { return std::string(occlusionCullingName(s.occlusionCulling)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kOcclusionChoices, v, s.occlusionCulling)) return true;
+             error = "occlusion_culling must be " + list(kOcclusionChoices);
              return false;
          }});
     info.push_back(
@@ -685,6 +705,9 @@ GraphicsSettings Graphics::current() const {
     s.transmissionQuality = shading.transmission;
     s.skinQuality = shading.skin;
     s.hairQuality = shading.hair;
+    const DrawSettings drawing = r.drawSettings();
+    s.instancing = drawing.instancing;
+    s.occlusionCulling = drawing.occlusion;
     return s;
 }
 GraphicsSettings Graphics::requested() const { return m_pending.value_or(current()); }
@@ -751,6 +774,8 @@ void Graphics::commit() {
     if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
         s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality)
         r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality});
+    if (s.instancing != previous.instancing || s.occlusionCulling != previous.occlusionCulling)
+        r.setDrawSettings({s.instancing, s.occlusionCulling});
     if (s.lodErrorPixels != previous.lodErrorPixels) {
         auto lod = r.lodSettings();
         lod.maxErrorPixels = s.lodErrorPixels;

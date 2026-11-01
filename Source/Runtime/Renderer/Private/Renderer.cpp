@@ -133,11 +133,13 @@ struct Renderer::State {
     ParticleSettings particleSettings;
     PostProcessDesc postProcess;
     PostProcessSettings postProcessSettings;
+    DrawSettings drawSettings;
     ShadingSettings shadingSettings;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
     bool vsync = true;
+    std::string pipelineCacheFolder;
     bool lowLatency = false;
     bool gui = false;
     std::function<void()> restartGuiPlatform;
@@ -335,7 +337,7 @@ struct Renderer::State {
     void start(Plugin& from) {
         const auto& api = from.api<RendererPluginApi>();
         if (!api.create) throw std::runtime_error(std::string(from.desc().name) + " has no create function");
-        backend = api.create(RenderBackendDesc{window, jobs, vsync});
+        backend = api.create(RenderBackendDesc{window, jobs, vsync, pipelineCacheFolder});
         if (nextMesh > backend->maxMeshes() || nextTexture > backend->maxTextures())
             throw std::runtime_error(std::string(from.desc().name) + " can't hold this many meshes and textures");
         backend->setClearColor(clearColor);
@@ -387,6 +389,7 @@ struct Renderer::State {
         backend->setParticleSettings(particleSettings);
         backend->setPostProcessSettings(postProcessSettings);
         backend->setShadingSettings(shadingSettings);
+        backend->setDrawSettings(drawSettings);
         backend->setPostProcess(postProcess);
         backend->setReflectionProbes(reflectionProbes);
         if (gui) {
@@ -407,6 +410,7 @@ Renderer::Renderer(Window& window, JobSystem& jobs, const RendererOptions& optio
     : m(std::make_unique<State>(window, jobs)) {
     m->swappable = options.swappable;
     m->vsync = options.vsync;
+    m->pipelineCacheFolder = options.pipelineCacheFolder;
     std::string error;
     m->plugin = loadPlugin("renderer", options.backend, error);
     if (!m->plugin) throw std::runtime_error(error);
@@ -999,6 +1003,12 @@ void Renderer::setShadingSettings(const ShadingSettings& settings) {
 }
 ShadingSettings Renderer::shadingSettings() const { return m->shadingSettings; }
 ShadingStats Renderer::shadingStats() const { return m->backend->shadingStats(); }
+void Renderer::setDrawSettings(const DrawSettings& settings) {
+    m->drawSettings = settings;
+    m->backend->setDrawSettings(settings);
+}
+DrawSettings Renderer::drawSettings() const { return m->drawSettings; }
+DrawStats Renderer::drawStats() const { return m->backend->drawStats(); }
 ClusterStats Renderer::clusterStats() const {
     ClusterStats stats = m->backend->clusterStats();
     stats.requested = m->lightCulling;

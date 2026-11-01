@@ -93,7 +93,7 @@ void VulkanRenderer::Impl::createTemporalPipelines() {
     info.stage.module = module;
     info.stage.pName = "main";
     info.layout = taaLayout;
-    const VkResult result = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &taaPipeline);
+    const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &taaPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
 
@@ -345,23 +345,22 @@ void VulkanRenderer::Impl::recordReactive(VkCommandBuffer cmd, Frame& f) {
 
     // Blended draws: their coverage.
     bool bound = false;
-    VkBuffer boundIndices = VK_NULL_HANDLE;
-    for (const DrawCommand& draw : gatheredDraws) {
-        if (!draw.visible || !draw.blend) continue;
-        if (!bound) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, reactiveMeshPipeline);
-            vkCmdBindDescriptorSets(
-                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
-            DrawPushConstants push{f.drawAddress, f.frameAddress};
-            vkCmdPushConstants(
-                cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
-            bound = true;
+    {
+        DrawBatcher batch(cmd, instancingActive(), drawStats, reactiveMeshPipeline);
+        for (const DrawCommand& draw : gatheredDraws) {
+            if (!draw.visible || !draw.blend) continue;
+            if (!bound) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, reactiveMeshPipeline);
+                vkCmdBindDescriptorSets(
+                    cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
+                DrawPushConstants push{f.drawAddress, f.frameAddress};
+                vkCmdPushConstants(
+                    cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push),
+                    &push);
+                bound = true;
+            }
+            batch.add(reactiveMeshPipeline, draw);
         }
-        if (draw.indexBuffer != boundIndices) {
-            vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            boundIndices = draw.indexBuffer;
-        }
-        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
     }
     // Particles: how much each changes what's behind it (shaders/particle.frag).
     if (!particleDraws.empty()) recordParticleReactive(cmd);

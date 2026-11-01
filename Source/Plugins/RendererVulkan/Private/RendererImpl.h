@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -379,6 +380,13 @@ constexpr VkFormat kUiTargetFormat = VK_FORMAT_R8G8B8A8_UNORM;
 // The Vulkan format a portable texture format uploads as (RendererOptimisation.cpp).
 VkFormat vulkanFormat(TextureFormat format, bool srgb);
 
+inline constexpr uint32_t kNoCull = ~0u;
+// One draw occlusion culling tests (G12). Must match CullDraw in shaders/cull.comp.
+struct CullDraw {
+    glm::vec4 sphere;   // world space
+    uint32_t drawIndex, indexCount, firstIndex, pad;
+};
+static_assert(sizeof(CullDraw) == 32, "CullDraw must match shaders/cull.comp");
 struct DrawCommand {
     DrawData data;
     glm::vec4 bounds;   // world-space bounding sphere: center, radius
@@ -402,9 +410,45 @@ struct DrawCommand {
     // shadows into the view.
     bool visible = true;
     float depth = 0.0f;
+    // Its indirect command in this frame's occlusion culling (G12); kNoCull: drawn directly.
+    uint32_t cullSlot = kNoCull;
     // Which object this is across frames (RenderTypes.h). drawIndex is only its place in
     // this frame's sorted table: per-object history must be found by key, never by index.
     RenderInstanceKey key;
+};
+
+// Records a pass's draws (G12). Consecutive draws that are neighbours in the frame's draw
+// table and draw the same index range with the same pipeline go out as one instanced call:
+// the shaders find each instance's DrawData by gl_InstanceIndex, which counts from
+// firstInstance, so every merged draw keeps its own transform, material and vertices.
+// merge false issues one call per draw, as before G12.
+class DrawBatcher {
+public:
+    // bound: the pipeline already bound, if any; add() with VK_NULL_HANDLE keeps it.
+    DrawBatcher(VkCommandBuffer cmd, bool merge, DrawStats& stats, VkPipeline bound = VK_NULL_HANDLE)
+        : m_cmd(cmd), m_merge(merge), m_stats(stats), m_boundPipeline(bound) {}
+    ~DrawBatcher() { flush(); }
+    DrawBatcher(const DrawBatcher&) = delete;
+    DrawBatcher& operator=(const DrawBatcher&) = delete;
+    void add(VkPipeline pipeline, const DrawCommand& draw);
+    void flush();
+    // Someone else bound a pipeline and index buffer since: forget what's bound.
+    void rebind(VkPipeline bound) {
+        flush();
+        m_boundPipeline = bound;
+        m_boundIndices = VK_NULL_HANDLE;
+    }
+
+private:
+    VkCommandBuffer m_cmd;
+    bool m_merge;
+    DrawStats& m_stats;
+    VkPipeline m_boundPipeline;
+    VkBuffer m_boundIndices = VK_NULL_HANDLE;
+    // The call being gathered.
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkBuffer m_indices = VK_NULL_HANDLE;
+    uint32_t m_firstIndex = 0, m_indexCount = 0, m_firstInstance = 0, m_count = 0;
 };
 
 // One shadow map to draw this frame: where in which atlas, from where, and which draws.
@@ -587,6 +631,16 @@ struct VulkanRenderer::Impl {
         const ExposureReadback* exposureData = nullptr;
         VkDeviceAddress exposureReadbackAddress = 0;
         bool exposurePending = false;
+        // Occlusion culling (RendererCulling.cpp): the draws to test (written here), their
+        // indirect commands (written by cull.comp, read by the scene pass) and the GPU's
+        // counts, read once this slot's frame finished.
+        vk::Buffer cullInput, cullCommands, cullCounters;
+        CullDraw* cullData = nullptr;
+        uint32_t* cullCounterData = nullptr;
+        VkDeviceAddress cullInputAddress = 0, cullCommandsAddress = 0, cullCountersAddress = 0;
+        uint32_t cullCapacity = 0;   // draws
+        vk::BufferState cullCommandsState;
+        bool cullCountersPending = false;
     };
 
     Window& window;
@@ -809,7 +863,7 @@ struct VulkanRenderer::Impl {
     glm::mat4 unjitteredProjection{1.0f}, unjitteredViewProjection{1.0f};
     glm::vec3 cameraPosition{0.0f};
 
-    Impl(Window& w, JobSystem& j, bool vsync);
+    Impl(Window& w, JobSystem& j, bool vsync, const std::string& pipelineCacheFolder);
 
     ~Impl();
 
@@ -1410,6 +1464,50 @@ struct VulkanRenderer::Impl {
     // The tonemap pass's grading and exposure fields.
     void gradeTonemap(TonemapPushConstants& push) const;
     float authoredBloom() const;   // the scene's, or the postprocess volumes' override
+
+    // ---- Drawing (G12; RendererCulling.cpp, Renderer/Culling.h) ---------------------------
+    DrawSettings drawSettings;
+    DrawStats drawStats;   // this frame's, as passes record
+    DrawStats lastDrawStats;   // the last finished frame's, for the report
+    bool instancingActive() const { return drawSettings.instancing; }
+    // Occlusion culling: the depth pyramid (R32F, every level down to 1 x 1), kept in
+    // GENERAL with its own barriers like bloom's chain: only the culling pass touches it.
+    struct Hzb {
+        vk::Image image;
+        VkExtent2D extent{};   // level 0
+        uint32_t levels = 0;
+        std::vector<VkImageView> levelViews;
+        VkImageView allView = VK_NULL_HANDLE;
+        VkImageView depthView = VK_NULL_HANDLE;   // the scene depth its first set reads
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> levelSets;   // source -> level
+        VkDescriptorSet cullSet = VK_NULL_HANDLE;   // every level, for cull.comp
+    };
+    Hzb hzb;
+    VkSampler hzbSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout cullSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout hzbLayout = VK_NULL_HANDLE, cullLayout = VK_NULL_HANDLE;
+    VkPipeline hzbPipeline = VK_NULL_HANDLE, cullPipeline = VK_NULL_HANDLE;
+    bool occlusionThisFrame = false;
+    const char* occlusionReason = "";
+    uint32_t cullCount = 0;   // this frame's tested draws
+    uint32_t lastTested = 0, lastOccluded = 0;   // from the most recent finished frame
+    void createCullingPipelines();
+    void destroyCullingPipelines();
+    void updateHzb(bool want);
+    void destroyHzb(Hzb& pyramid);
+    // prepareDraws, after the draw table: decides the culling and fills its draws.
+    void prepareOcclusion(Frame& f);
+    void recordOcclusion(VkCommandBuffer cmd, Frame& f);
+    DrawStats finishDrawStats(Frame& f);
+    // The pipeline cache (RendererPipelineCache.cpp): loaded before any pipeline is made,
+    // saved when the renderer shuts down, keyed to the GPU, its driver and the shaders.
+    VkPipelineCache pipelineCacheHandle = VK_NULL_HANDLE;
+    std::filesystem::path pipelineCacheFile;
+    uint64_t pipelineCacheLoadedBytes = 0;
+    const char* pipelineCacheState = "off";
+    void openPipelineCache(const std::string& folder);
+    void closePipelineCache();
 
     // ---- Character and specialized shading (A07-A09; RendererShading.cpp, Renderer/Shading.h)
     // Clearcoat and hair are more maths in mesh.frag, nothing else. Glass with

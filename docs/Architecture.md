@@ -181,6 +181,8 @@ fast as it can, unless VSync or a frame limit slows it down:
    positions between ticks so motion looks smooth. The Renderer then builds a render
    graph:
    - the fog volume, when the camera is in fog (see [Fog](Fog.md));
+   - the surface prepass, when ambient occlusion, TAA or decals need its depth, then
+     occlusion culling from that depth (see [Drawing](Drawing.md));
    - the scene pass, in HDR (high dynamic range), fogged per surface;
    - when skin or glass is on screen, the skin pass and its blurs, then a copy of the
      opaque scene that glass refracts, then the see-through surfaces (see

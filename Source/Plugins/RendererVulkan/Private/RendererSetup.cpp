@@ -2,8 +2,10 @@
 
 namespace shockwave {
 
-VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync) : window(w), jobs(j) {
+VulkanRenderer::Impl::Impl(Window& w, JobSystem& j, bool vsync, const std::string& pipelineCacheFolder)
+    : window(w), jobs(j) {
     context = std::make_unique<vk::Context>(window.handle());
+    openPipelineCache(pipelineCacheFolder);   // before the first pipeline
     swapchain = std::make_unique<vk::Swapchain>(*context, window.pixelWidth(), window.pixelHeight(), vsync);
     drawLists.resize(jobs.threadCount());
     textures = std::make_unique<vk::Image[]>(context->maxBindlessTextures());
@@ -58,6 +60,7 @@ VulkanRenderer::Impl::~Impl() {
     VkDevice device = context->device();
     VmaAllocator allocator = context->allocator();
     vkDeviceWaitIdle(device);
+    closePipelineCache();   // saves what this run compiled; the pipelines made from it stay valid
     if (guiEnabled) shutdownGui();
     for (uint32_t i = 0; i < kMaxMeshes; ++i) {
         if (!meshReady[i].load()) continue;
@@ -85,6 +88,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyClusters();
     destroyPostProcess();
     destroyShadingPipelines();
+    destroyCullingPipelines();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
     destroyImage(sceneColor);
@@ -257,6 +261,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     destroyParticleBackground(particleBackground);
     destroyTransmissionBackground(transmissionBackground);
     destroySkinTargets(skinTargets);
+    destroyHzb(hzb);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

@@ -390,10 +390,24 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     // Opaque draws by pipeline, then nearest first, so nearer surfaces fill the depth buffer
     // first and hidden ones fail the early depth test instead of being shaded (reverse-Z:
     // greater depth is nearer).
-    std::sort(draws.begin(), transparent, [this](const auto& a, const auto& b) {
-        const VkPipeline pa = meshPipelineFor(a), pb = meshPipelineFor(b);
-        return pa != pb ? pa < pb : a.depth > b.depth;
-    });
+    // With instancing (G12), copies of a mesh sit next to each other within a pipeline, the
+    // ones in view first, so their calls merge (DrawBatcher): the depth prepass, when there
+    // is one, has already settled what each pixel shows.
+    if (instancingActive())
+        std::sort(draws.begin(), transparent, [this](const auto& a, const auto& b) {
+            const VkPipeline pa = meshPipelineFor(a), pb = meshPipelineFor(b);
+            if (pa != pb) return pa < pb;
+            if (a.indexBuffer != b.indexBuffer) return a.indexBuffer < b.indexBuffer;
+            if (a.firstIndex != b.firstIndex) return a.firstIndex < b.firstIndex;
+            if (a.indexCount != b.indexCount) return a.indexCount < b.indexCount;
+            if (a.visible != b.visible) return a.visible;
+            return a.depth > b.depth;
+        });
+    else
+        std::sort(draws.begin(), transparent, [this](const auto& a, const auto& b) {
+            const VkPipeline pa = meshPipelineFor(a), pb = meshPipelineFor(b);
+            return pa != pb ? pa < pb : a.depth > b.depth;
+        });
     // Reverse-Z is smaller farther away. Object-level sorting is the basic
     // transparency path; intersecting transparent surfaces need a later solution.
     std::stable_sort(transparent, draws.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
@@ -434,6 +448,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         ++nextLayer;
     }
     prepareShading(f);   // the glass and skin passes, and the draws' last shading fields
+    prepareOcclusion(f);   // G12: which opaque draws the culling pass tests
     vk::check(
         vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0, sizeof(DrawData) * draws.size()),
         "vmaFlushAllocation");
@@ -459,6 +474,40 @@ VkPipeline VulkanRenderer::Impl::meshPipelineFor(const DrawCommand& draw) const 
                          : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
 }
 
+void DrawBatcher::add(VkPipeline pipeline, const DrawCommand& draw) {
+    if (!pipeline) pipeline = m_pipeline ? m_pipeline : m_boundPipeline;
+    ++m_stats.objects;
+    if (m_count && m_merge && pipeline == m_pipeline && draw.indexBuffer == m_indices &&
+        draw.firstIndex == m_firstIndex && draw.indexCount == m_indexCount &&
+        draw.drawIndex == m_firstInstance + m_count) {
+        ++m_count;
+        ++m_stats.instanced;
+        return;
+    }
+    flush();
+    m_pipeline = pipeline;
+    m_indices = draw.indexBuffer;
+    m_firstIndex = draw.firstIndex;
+    m_indexCount = draw.indexCount;
+    m_firstInstance = draw.drawIndex;
+    m_count = 1;
+}
+
+void DrawBatcher::flush() {
+    if (!m_count) return;
+    if (m_pipeline && m_pipeline != m_boundPipeline) {
+        vkCmdBindPipeline(m_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        m_boundPipeline = m_pipeline;
+    }
+    if (m_indices != m_boundIndices) {
+        vkCmdBindIndexBuffer(m_cmd, m_indices, 0, VK_INDEX_TYPE_UINT32);
+        m_boundIndices = m_indices;
+    }
+    vkCmdDrawIndexed(m_cmd, m_indexCount, m_count, m_firstIndex, 0, m_firstInstance);
+    ++m_stats.calls;
+    m_count = 0;
+}
+
 void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter filter) {
     if (gatheredDraws.empty()) return;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
@@ -467,8 +516,33 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter
     vkCmdPushConstants(
         cmd, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
 
-    VkBuffer boundIndices = VK_NULL_HANDLE;
-    VkPipeline boundPipeline = meshPipeline;
+    DrawBatcher batch(cmd, instancingActive(), drawStats, meshPipeline);
+    // Occlusion culling (G12): opaque draws it tested go out indirectly, in runs that share
+    // a pipeline and index buffer, one call a run where multi-draw indirect is supported.
+    const bool indirect = occlusionThisFrame && filter != DrawFilter::SeeThrough;
+    const bool multiDraw = context->multiDrawIndirect();
+    const uint32_t maxRun =
+        multiDraw ? std::max(context->vkbDevice().physical_device.properties.limits.maxDrawIndirectCount, 1u) : 1u;
+    VkPipeline runPipeline = VK_NULL_HANDLE;
+    VkBuffer runIndices = VK_NULL_HANDLE;
+    uint32_t runFirst = 0, runCount = 0;
+    VkPipeline boundIndirectPipeline = VK_NULL_HANDLE;
+    auto flushRun = [&] {
+        if (!runCount) return;
+        if (runPipeline != boundIndirectPipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, runPipeline);
+            boundIndirectPipeline = runPipeline;
+        }
+        vkCmdBindIndexBuffer(cmd, runIndices, 0, VK_INDEX_TYPE_UINT32);
+        constexpr uint32_t stride = sizeof(VkDrawIndexedIndirectCommand);
+        for (uint32_t done = 0; done < runCount;) {
+            const uint32_t n = std::min(runCount - done, maxRun);
+            vkCmdDrawIndexedIndirect(cmd, f.cullCommands.buffer, VkDeviceSize(runFirst + done) * stride, n, stride);
+            ++drawStats.calls;
+            done += n;
+        }
+        runCount = 0;
+    };
     for (const auto& draw : gatheredDraws) {
         if (!draw.visible) continue;
         if ((filter == DrawFilter::Opaque && draw.blend) || (filter == DrawFilter::SeeThrough && !draw.blend)) continue;
@@ -478,16 +552,26 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter
                                         ? transmissionPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
                                     : prepassActive() && !draw.blend ? depthEqualPipelines[prepassIndex(draw)]
                                                                      : meshPipelineFor(draw);
-        if (pipeline != boundPipeline) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            boundPipeline = pipeline;
+        if (indirect && draw.cullSlot != kNoCull) {
+            batch.flush();
+            ++drawStats.objects;
+            if (runCount && (pipeline != runPipeline || draw.indexBuffer != runIndices ||
+                             draw.cullSlot != runFirst + runCount || !multiDraw))
+                flushRun();
+            if (!runCount) {
+                runPipeline = pipeline;
+                runIndices = draw.indexBuffer;
+                runFirst = draw.cullSlot;
+            }
+            ++runCount;
+            continue;
         }
-        if (draw.indexBuffer != boundIndices) {
-            vkCmdBindIndexBuffer(cmd, draw.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            boundIndices = draw.indexBuffer;
-        }
-        vkCmdDrawIndexed(cmd, draw.indexCount, 1, draw.firstIndex, 0, draw.drawIndex);
+        flushRun();
+        if (boundIndirectPipeline) batch.rebind(boundIndirectPipeline);
+        boundIndirectPipeline = VK_NULL_HANDLE;
+        batch.add(pipeline, draw);
     }
+    flushRun();
 }
 
 void VulkanRenderer::Impl::endFrame() {
@@ -508,7 +592,9 @@ void VulkanRenderer::Impl::endFrame() {
     writeFrameData(f);
     buildGraph(cmd, f, image);
     graph.setTimestampPool(f.timestamps);
+    drawStats = finishDrawStats(f);   // keeps this frame's occlusion fields; passes count draws as they record
     graph.execute(cmd);
+    lastDrawStats = drawStats;
     f.timedPasses = graph.timedPasses();
     frameGraphText = "view " + std::to_string(currentView.value) + (currentView.valid() ? "" : " (none: no history)") +
                      ", " + std::to_string(lastUnkeyedDraws) + " of " + std::to_string(lastDrawCount) +
@@ -767,6 +853,15 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
     std::vector<vk::RenderGraph::BufferAccess> sceneReads = vertexReads;
+    if (occlusionThisFrame) {
+        // G12: the depth pyramid from the prepass, then each opaque draw's indirect command.
+        // The pyramid keeps its own barriers, like bloom's chain.
+        const auto commands = graph.importBuffer("occlusion draw commands", f.cullCommands.buffer, f.cullCommandsState);
+        graph.addPass(
+            "occlusion culling", {{depth, ImageUse::ComputeSampled}},
+            [this, &f](VkCommandBuffer cmd) { recordOcclusion(cmd, f); }, {{commands, vk::BufferUse::ComputeWrite}});
+        sceneReads.push_back({commands, vk::BufferUse::IndirectRead});
+    }
     std::optional<vk::RenderGraph::BufferId> clusterLists;
     if (clustersThisFrame) {
         // G11: each cluster's lights, then the scene's fragments read them (and particles, A04).

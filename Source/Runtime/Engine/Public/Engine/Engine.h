@@ -97,12 +97,20 @@ struct EngineConfig {
     // Where simulation time comes from (Engine/SimulationClock.h). Smoothed is the offline
     // behaviour; network play switches to Monotonic with Engine::setSimulationTime.
     SimulationTime simulationTime = SimulationTime::Smoothed;
+    // Keep compiled pipelines on disk between runs, so later starts compile less
+    // (Engine::pipelineCacheFolder; docs/Drawing.md). Off compiles everything every start.
+    bool pipelineCache = true;
 };
 
 class Engine {
 public:
     explicit Engine(const EngineConfig& config);
     ~Engine();
+
+    // Where the pipeline cache for a window title lives: the user's config folder plus
+    // "pipeline-cache/" (~/.local/share/Shockwave/<title>/pipeline-cache/ on Linux). Empty
+    // when there's no such folder.
+    static std::string pipelineCacheFolder(const std::string& title);
 
     void run(Application& app);
     void quit() { m_running = false; }

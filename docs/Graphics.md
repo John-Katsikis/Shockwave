@@ -125,6 +125,16 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `hair_quality`: `low` or `high` (the default). High draws hair cards' highlight as a
   band across the strands; low draws an ordinary round one. Low uses low.
   Scenes without glass, skin or hair cost nothing for any of these.
+- `instancing`: `true` (the default) or `false`. Neighbouring draws of the same mesh with
+  the same pipeline go out as one instanced draw call (docs/Drawing.md). False issues one
+  call per object. The picture is the same pixel for pixel either way. Presets leave it on.
+- `occlusion_culling`: `on` (the default) or `off`. On frames that already draw the depth
+  prepass (ambient occlusion, TAA or decals on), the GPU skips opaque objects the prepass
+  proves hidden, and draws the rest indirectly (docs/Drawing.md). It never adds a
+  prepass, never culls shadows, glass or skinned meshes, and draws anything it can't
+  judge. The picture is the same pixel for pixel either way; off has no culling pass and
+  no depth pyramid. The graphics report says why it didn't run on a frame it didn't.
+  Presets leave it on.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and
