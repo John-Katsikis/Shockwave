@@ -1,9 +1,13 @@
 #include <Engine/GraphicsSettings.h>
 
 #include <Engine/Engine.h>
+#include <Engine/GraphicsBudget.h>
+#include <Core/Log.h>
 #include <Projects/Project.h>
 
+#include <algorithm>
 #include <charconv>
+#include <cstdio>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -219,6 +223,26 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              if (choice(kOcclusionChoices, v, s.occlusionCulling)) return true;
              error = "occlusion_culling must be " + list(kOcclusionChoices);
              return false;
+         }});
+    info.push_back(
+        {"graphics_memory_budget_mb",
+         "Graphics memory budget",
+         "Quality",
+         "The most memory optional effects may take, in megabytes (MiB). Over it, effects are turned down one at a "
+         "time, TAA's history first, until they fit; your settings stay as you chose them. 0 means no budget.",
+         "0 (no budget) or 16..65536",
+         {},
+         GraphicsApply::Uniform,
+         false,
+         [](const S& s) { return std::to_string(s.memoryBudgetMb); },
+         [](S& s, const std::string& v, std::string& error) {
+             double x = 0;
+             if (!number(v, x) || x != double(uint32_t(x)) || (x != 0 && (x < 16 || x > 65536))) {
+                 error = "graphics_memory_budget_mb must be 0 (no budget) or a whole number in 16..65536";
+                 return false;
+             }
+             s.memoryBudgetMb = uint32_t(x);
+             return true;
          }});
     info.push_back(
         {"soft_particles", "Soft particles", "Quality",
@@ -673,6 +697,17 @@ bool projectGraphicsSettings(const Project& project, GraphicsSettings& out, std:
 }
 GraphicsSettings Graphics::current() const {
     if (!m_engine) return m_headless;
+    // What the renderer runs, with the player's own values back where the memory budget
+    // turned something down: menus and saved files show what was chosen.
+    GraphicsSettings s = running();
+    s.memoryBudgetMb = m_wanted.memoryBudgetMb;
+    std::string error;
+    for (const EffectiveSetting& drop : m_drops)
+        if (const GraphicsSettingInfo* info = findGraphicsSetting(drop.name)) info->set(s, drop.requested, error);
+    return s;
+}
+GraphicsSettings Graphics::running() const {
+    if (!m_engine) return m_headless;
     const auto& r = m_engine->renderer();
     GraphicsSettings s;
     s.renderScale = r.renderScale();
@@ -734,6 +769,7 @@ Graphics::Status Graphics::status() const {
         if (setting.reason.rfind("pending", 0) == 0) status.state = State::Pending;
         status.fallbacks.push_back(std::move(setting));
     }
+    for (const EffectiveSetting& drop : m_drops) status.fallbacks.push_back(drop);
     if (status.state != State::Pending && !status.fallbacks.empty()) status.state = State::AppliedWithFallback;
     return status;
 }
@@ -750,7 +786,15 @@ void Graphics::commit() {
     if (!m_pending || !m_engine) return;
     const auto s = *m_pending;
     m_pending.reset();
-    const auto previous = current();
+    const auto previous = running();
+    // A new choice starts the budget over: everything as asked, then fitted again.
+    m_wanted = s;
+    m_drops.clear();
+    m_overBudget = false;
+    m_budgetWait = 1;
+    push(s, previous);
+}
+void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous) {
     auto& r = m_engine->renderer();
     if (s.renderScale != previous.renderScale) r.setRenderScale(s.renderScale);
     if (s.shadows != previous.shadows) r.setShadowQuality(s.shadows);
@@ -785,5 +829,64 @@ void Graphics::commit() {
     // Refresh the smoother's period when VSync changes too.
     if (s.frameLimit != previous.frameLimit || s.vsync != previous.vsync) m_engine->setFrameLimit(s.frameLimit);
     if (s.lowLatency != previous.lowLatency) m_engine->setLowLatency(s.lowLatency);
+}
+
+void Graphics::afterFrame() {
+    if (!m_engine || m_pending || m_wanted.memoryBudgetMb == 0) return;
+    Renderer& r = m_engine->renderer();
+    // The window's size changes what every effect costs: start over at the new size.
+    const auto extent = std::pair(m_engine->window().pixelWidth(), m_engine->window().pixelHeight());
+    if (extent != m_budgetExtent) {
+        m_budgetExtent = extent;
+        if (!m_drops.empty() || m_overBudget) {
+            m_drops.clear();
+            m_overBudget = false;
+            push(m_wanted, running());
+            m_budgetWait = 1;
+            return;
+        }
+    }
+    // Wait for the last change's images to be made and the old ones freed, then measure.
+    // Once fitted, look again now and then: a scene can bring glass or skin in later.
+    if (m_budgetWait > 0) {
+        --m_budgetWait;
+        return;
+    }
+    for (const EffectiveSetting& setting : r.effectiveSettings())
+        if (setting.reason.rfind("pending", 0) == 0) return;
+    const RendererMemoryReport memory = r.memoryReport();
+    m_budgetedBytes = budgetedMemoryBytes(memory);
+    const uint64_t budget = uint64_t(m_wanted.memoryBudgetMb) << 20;
+    if (m_budgetedBytes <= budget || m_overBudget) {
+        m_budgetWait = 60;
+        return;
+    }
+    const GraphicsSettings now = running();
+    GraphicsSettings lowered;
+    const auto step = nextMemoryBudgetStep(now, memory, lowered);
+    char reason[160];
+    if (!step) {
+        m_overBudget = true;
+        std::snprintf(
+            reason, sizeof(reason), "%.1f MiB with every optional effect at its lowest, over the %u MiB budget",
+            double(m_budgetedBytes) / (1 << 20), m_wanted.memoryBudgetMb);
+        SW_LOG(LogEngine, Warning, "graphics memory budget: {}", reason);
+        m_budgetWait = 60;
+        return;
+    }
+    const GraphicsSettingInfo* info = findGraphicsSetting(step->key);
+    std::snprintf(
+        reason, sizeof(reason), "memory budget: optional effects took %.1f MiB of %u",
+        double(m_budgetedBytes) / (1 << 20), m_wanted.memoryBudgetMb);
+    // One entry a setting: a second step on the same one updates it.
+    auto drop =
+        std::find_if(m_drops.begin(), m_drops.end(), [&](const EffectiveSetting& d) { return d.name == step->key; });
+    if (drop == m_drops.end()) drop = m_drops.insert(m_drops.end(), {step->key, info->get(m_wanted), "", "", ""});
+    drop->effective = step->value;
+    drop->reason = reason;
+    SW_LOG(
+        LogEngine, Info, "graphics memory budget: {} {} -> {} ({})", step->key, drop->requested, step->value, reason);
+    push(lowered, now);
+    m_budgetWait = 1;
 }
 }   // namespace shockwave

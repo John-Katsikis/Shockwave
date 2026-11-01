@@ -135,6 +135,11 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   judge. The picture is the same pixel for pixel either way; off has no culling pass and
   no depth pyramid. The graphics report says why it didn't run on a frame it didn't.
   Presets leave it on.
+- `graphics_memory_budget_mb`: `0` (the default, no budget) or 16..65536. The most GPU
+  memory optional effects may take, in MiB. Over it, effects are turned down one at a time,
+  TAA's history first, until they fit (docs/GraphicsBudget.md). Only effects that hold
+  memory in the scene are turned down. Your settings stay as you chose them: the steps show
+  as fallbacks with the reason. Presets leave it alone.
 
 `graphicsPreset(GraphicsPreset::Low, settings)` selects a quality preset while retaining
 VSync, the FPS cap, low-latency mode and bloom strength. Every preset turns on FXAA, and

@@ -383,6 +383,7 @@ void Engine::run(Application& app) {
                 SW_PROFILE_SCOPE("Record and submit");
                 m_renderer->endFrame();
             }
+            m_graphics.afterFrame();   // the memory budget, when there is one
             if (m_config.gui) {
                 SW_PROFILE_SCOPE("Detached GUI windows");
                 m_renderer->renderGuiWindows();

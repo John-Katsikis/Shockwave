@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
         std::filesystem::path graphicsFile, graphicsSchema, materialSchema;
         bool graphicsInfo = false, noUserGraphics = false;
         bool noPipelineCache = false, clearPipelineCache = false;
+        std::string graphicsPresetArg;   // --graphics-preset low|medium|high|ultra
         float renderScaleOverride = -1;
         std::vector<std::pair<std::string, std::string>> graphicsSets;   // --graphics-set key=value, --anti-aliasing
         bool listGpus = false;   // --gpus
@@ -92,6 +93,8 @@ int main(int argc, char** argv) {
                 graphicsInfo = true;
             else if (arg == "--no-user-graphics")
                 noUserGraphics = true;
+            else if (arg == "--graphics-preset" && i + 1 < argc)
+                graphicsPresetArg = argv[++i];
             else if (arg == "--no-pipeline-cache")
                 noPipelineCache = true;
             else if (arg == "--clear-pipeline-cache")
@@ -456,7 +459,8 @@ int main(int argc, char** argv) {
                     "[--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
-                    "       [--graphics-set key=value]... [--anti-aliasing none|fxaa|taa]\n"
+                    "       [--graphics-preset low|medium|high|ultra] [--graphics-set key=value]...\n"
+                    "       [--anti-aliasing none|fxaa|taa]\n"
                     "                                    any setting in docs/GraphicsSchema.md, for this run\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
                     "       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]\n"
@@ -775,6 +779,18 @@ int main(int argc, char** argv) {
                     !shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
                     SW_LOG(shockwave::LogEngine, Warning, "Ignoring user graphics settings: {}", error);
             }
+        }
+        if (!graphicsPresetArg.empty()) {
+            // Before the other overrides, so --graphics-set can change one setting of a preset.
+            bool found = false;
+            for (auto preset :
+                 {shockwave::GraphicsPreset::Low, shockwave::GraphicsPreset::Medium, shockwave::GraphicsPreset::High,
+                  shockwave::GraphicsPreset::Ultra})
+                if (graphicsPresetArg == shockwave::graphicsPresetName(preset)) {
+                    tool.graphics = shockwave::graphicsPreset(preset, tool.graphics);
+                    found = true;
+                }
+            if (!found) throw std::runtime_error("--graphics-preset takes low, medium, high or ultra");
         }
         if (fpsOverride >= 0) tool.graphics.frameLimit = fpsOverride;
         if (vsyncOverride >= 0) tool.graphics.vsync = vsyncOverride == 1;

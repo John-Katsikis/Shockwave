@@ -4,8 +4,11 @@
 
 #include "Player.h"
 
+#include <Engine/GraphicsBudget.h>
+
 #include <Renderer/Renderer.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -151,7 +154,18 @@ std::string graphicsInfoJson(const shockwave::GraphicsSettings& settings, const 
 void Player::graphicsReport() {
     const shockwave::Renderer& renderer = engine().renderer();
     const shockwave::RendererCapabilities caps = renderer.capabilities();
-    const auto settings = renderer.effectiveSettings();
+    auto settings = renderer.effectiveSettings();
+    // Settings the memory budget turned down: requested is the player's choice, not the step.
+    const shockwave::Graphics& graphics = engine().graphics();
+    for (const shockwave::EffectiveSetting& drop : graphics.budgetDrops()) {
+        auto row = std::find_if(settings.begin(), settings.end(), [&](const auto& r) { return r.name == drop.name; });
+        if (row == settings.end()) {
+            settings.push_back(drop);
+            continue;
+        }
+        row->requested = drop.requested;
+        row->reason = row->reason.empty() ? drop.reason : drop.reason + "; " + row->reason;
+    }
     const shockwave::RendererMemoryReport memory = renderer.memoryReport();
     const shockwave::TextureResidencyStats residency = renderer.textureResidency();
 
@@ -233,6 +247,10 @@ void Player::graphicsReport() {
          << ",\n  \"postprocess\": " << postProcessJson(renderer.postProcessSettings(), renderer.postProcessStats())
          << ",\n  \"shading\": " << shadingJson(renderer.shadingSettings(), renderer.shadingStats())
          << ",\n  \"drawing\": " << drawingJson(renderer.drawSettings(), renderer.drawStats())
+         << ",\n  \"memory_budget\": {\"budget_mb\": " << graphics.current().memoryBudgetMb
+         << ", \"budgeted_bytes\": " << shockwave::budgetedMemoryBytes(memory)
+         << ", \"turned_down\": " << graphics.budgetDrops().size()
+         << ", \"over_budget\": " << (graphics.overBudget() ? "true" : "false") << "}"
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
