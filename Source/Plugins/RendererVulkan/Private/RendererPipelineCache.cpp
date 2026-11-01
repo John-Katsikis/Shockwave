@@ -11,6 +11,8 @@
 
 #include <Core/Log.h>
 
+#include <random>
+
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -131,7 +133,8 @@ void VulkanRenderer::Impl::closePipelineCache() {
     CacheHeader header = headerFor(props, shaderHash());
     header.dataSize = data.size();
     std::filesystem::path temporary = pipelineCacheFile;
-    temporary += "." + std::to_string(uint64_t(SDL_GetTicksNS())) + ".tmp";
+    // Unique to this run: two games closing at once must never share a temporary file.
+    temporary += "." + std::to_string(std::random_device{}()) + std::to_string(uint64_t(SDL_GetTicksNS())) + ".tmp";
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         out.write(reinterpret_cast<const char*>(&header), sizeof(header));

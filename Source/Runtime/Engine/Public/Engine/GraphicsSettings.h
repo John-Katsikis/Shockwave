@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace shockwave {
@@ -66,6 +67,9 @@ struct GraphicsSettings {
     // depth prepass proves hidden. The same picture either way: only the cost differs.
     bool instancing = true;
     OcclusionCulling occlusionCulling = OcclusionCulling::On;
+    // The memory budget for optional effects, in MiB (G13, docs/GraphicsBudget.md). Over it,
+    // effects are turned down in a fixed order until they fit. 0: no budget.
+    uint32_t memoryBudgetMb = 0;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };
@@ -142,14 +146,30 @@ public:
     };
     Status status() const;
 
+    // The memory budget (graphics_memory_budget_mb, docs/GraphicsBudget.md): what optional
+    // effects took when last measured, the settings it turned down (as in status()), and
+    // whether they're still over with everything optional at its lowest.
+    uint64_t budgetedBytes() const { return m_budgetedBytes; }
+    const std::vector<EffectiveSetting>& budgetDrops() const { return m_drops; }
+    bool overBudget() const { return m_overBudget; }
+
 private:
     friend class Engine;
     struct Project;
     void commit();
+    void afterFrame();   // the memory budget: measure, and turn one effect down if over
+    void push(const GraphicsSettings& settings, const GraphicsSettings& previous);
+    GraphicsSettings running() const;   // what the renderer runs, budget steps included
     Engine* m_engine;
     GraphicsSettings m_defaults, m_headless;
     std::optional<GraphicsSettings> m_pending;
     std::filesystem::path m_file;
     uint64_t m_generation = 0;
+    GraphicsSettings m_wanted;   // the last settings applied, before the memory budget
+    std::vector<EffectiveSetting> m_drops;
+    bool m_overBudget = false;
+    int m_budgetWait = 0;
+    uint64_t m_budgetedBytes = 0;
+    std::pair<int, int> m_budgetExtent{0, 0};
 };
 }   // namespace shockwave

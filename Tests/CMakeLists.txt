@@ -28,6 +28,17 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageCheck.cmake)
     set_tests_properties(package_cli PROPERTIES TIMEOUT 120 LABELS gpu)
 endif()
+# The graphics overhaul packaged (G13/A10): baked, captured, packaged, then the packaged game
+# must render every graphics feature exactly as the project does.
+if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
+    add_test(NAME graphics_package_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsPackage
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsPackageCheck.cmake)
+    set_tests_properties(graphics_package_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+endif()
 
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)

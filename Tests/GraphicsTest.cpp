@@ -1,4 +1,5 @@
 #include <Engine/Engine.h>
+#include <Engine/GraphicsBudget.h>
 #include <Engine/GraphicsSettings.h>
 
 #include <chrono>
@@ -53,6 +54,42 @@ int main() {
     fs::create_directories(temp);
     try {
         std::string error;
+        {
+            // The memory budget (G13): the setting's range, and the order effects go down in.
+            GraphicsSettings b;
+            check(b.memoryBudgetMb == 0, "no memory budget by default");
+            check(
+                setGraphicsSetting(b, "graphics_memory_budget_mb", "128", error) && b.memoryBudgetMb == 128,
+                "budget in MiB");
+            check(
+                !setGraphicsSetting(b, "graphics_memory_budget_mb", "8", error) && b.memoryBudgetMb == 128,
+                "budgets under 16 MiB are refused");
+            check(!setGraphicsSetting(b, "graphics_memory_budget_mb", "64.5", error), "whole MiB only");
+            check(
+                setGraphicsSetting(b, "graphics_memory_budget_mb", "0", error) && b.memoryBudgetMb == 0,
+                "0 turns the budget off");
+            GraphicsSettings high = graphicsPreset(GraphicsPreset::High);
+            high.antiAliasing = AntiAliasing::Taa;
+            high.ambientOcclusion = AmbientOcclusion::High;
+            RendererMemoryReport memory;
+            memory.gpu[size_t(GpuMemoryCategory::TemporalHistory)].bytes = 64 << 20;
+            memory.gpu[size_t(GpuMemoryCategory::AmbientOcclusion)].bytes = 8 << 20;
+            memory.gpu[size_t(GpuMemoryCategory::RenderTargets)].bytes = 32 << 20;
+            memory.gpu[size_t(GpuMemoryCategory::ShadowMaps)].bytes = 128 << 20;
+            check(budgetedMemoryBytes(memory) == (72u << 20), "the budget counts optional effects only");
+            GraphicsSettings lowered;
+            auto step = nextMemoryBudgetStep(high, memory, lowered);
+            check(step && lowered.antiAliasing == AntiAliasing::Fxaa, "TAA's history goes first");
+            step = nextMemoryBudgetStep(lowered, memory, lowered);
+            // No skin, glass or fog memory in use: those steps are skipped, AO comes next.
+            check(step && lowered.ambientOcclusion == AmbientOcclusion::Low, "unused effects are left alone");
+            step = nextMemoryBudgetStep(lowered, memory, lowered);
+            check(step && lowered.ambientOcclusion == AmbientOcclusion::Off, "then ambient occlusion off");
+            check(!nextMemoryBudgetStep(lowered, memory, lowered), "nothing else holds memory: no more steps");
+            check(
+                lowered.skinQuality == high.skinQuality && lowered.fogQuality == high.fogQuality,
+                "settings without memory keep their values");
+        }
         Graphics api;
         auto initial = api.current();
         auto low = graphicsPreset(GraphicsPreset::Low, initial);
