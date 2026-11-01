@@ -74,7 +74,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     depth.depthTestEnable = desc.depthFormat != VK_FORMAT_UNDEFINED;
     // Blended surfaces test depth but never write it, so what's behind still shows.
     depth.depthWriteEnable = desc.depthFormat != VK_FORMAT_UNDEFINED && desc.depthWrite && !desc.alphaBlend &&
-                             !desc.premultipliedAlpha && !desc.maxBlend;
+                             !desc.premultipliedAlpha && !desc.maxBlend && !desc.additiveBlend;
     depth.depthCompareOp = desc.depthCompare;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
@@ -93,6 +93,13 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
         blendAttachment.srcColorBlendFactor = blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachment.srcAlphaBlendFactor = blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         blendAttachment.colorBlendOp = blendAttachment.alphaBlendOp = VK_BLEND_OP_MAX;
+    }
+    if (desc.additiveBlend) {
+        blendAttachment.blendEnable = VK_TRUE;
+        blendAttachment.srcColorBlendFactor = blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachment.colorBlendOp = blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     }
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

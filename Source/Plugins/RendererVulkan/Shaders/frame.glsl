@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters, 12 fog
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters, 12 fog, 13 transmission, 14 shading families
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -74,5 +74,11 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint froxelTile, froxelTilesX, froxelTilesY, froxelSlices;
     float froxelNear;
     uvec2 froxels;   // FroxelCells
+    // A07b: the transmission pass's copy of the opaque scene (with mips) and the scene's
+    // depth, bindless slots; 0: no transmission pass this frame.
+    uint transmissionBackground;
+    uint sceneDepth;
+    float transmissionLevels;   // mips of the copy
+    uint shadingPad;
     LightData lights[];
 };

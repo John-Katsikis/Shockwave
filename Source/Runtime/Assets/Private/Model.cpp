@@ -597,6 +597,20 @@ bool loadModel(
                         MaterialSlot(slot), model.warnings);
             src.Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), m.normalScale);
             m.occlusionStrength = std::clamp(m.occlusionStrength, 0.0f, 1.0f);
+            // Extensions the engine has a family for but doesn't import (A07): said, not
+            // dropped silently. A .swmaterial with this material as its parent adds them.
+            float clearcoat = 0, transmission = 0;
+            if (src.Get(AI_MATKEY_CLEARCOAT_FACTOR, clearcoat) == AI_SUCCESS && clearcoat > 0.0f)
+                model.warnings.push_back(
+                    "material '" + m.name +
+                    "' has a clearcoat (KHR_materials_clearcoat), which isn't imported: make a "
+                    ".swmaterial with it as the parent and set clearcoat " +
+                    std::to_string(clearcoat));
+            if (src.Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission) == AI_SUCCESS && transmission > 0.0f)
+                model.warnings.push_back(
+                    "material '" + m.name +
+                    "' is transmissive (KHR_materials_transmission), which isn't imported: "
+                    "make a .swmaterial with it as the parent and family transmission");
             model.materials[i] = std::move(m);
         }
         if (model.materials.empty()) model.materials.emplace_back();

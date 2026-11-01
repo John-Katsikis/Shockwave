@@ -6,6 +6,7 @@
 #include <Renderer/Particles.h>
 #include <Renderer/PostProcess.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Shading.h>
 
 #include <filesystem>
 #include <optional>
@@ -54,6 +55,12 @@ struct GraphicsSettings {
     bool colorGrading = true;
     bool autoExposure = true;
     FogQuality fogQuality = FogQuality::Medium;
+    // Character and specialized shading (A07-A09, docs/Shading.md): coats, glass, skin and
+    // hair. Each off or low draws its documented stand-in, with no pass or memory for it.
+    bool clearcoat = true;
+    TransmissionQuality transmissionQuality = TransmissionQuality::Medium;
+    SkinQuality skinQuality = SkinQuality::High;
+    HairQuality hairQuality = HairQuality::High;
     bool operator==(const GraphicsSettings&) const = default;
 };
 enum class GraphicsPreset { Low, Medium, High, Ultra };

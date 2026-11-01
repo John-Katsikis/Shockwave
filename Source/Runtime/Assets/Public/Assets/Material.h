@@ -20,6 +20,7 @@
 // schema order, comments dropped.
 
 #include <Assets/Model.h>
+#include <Renderer/Shading.h>
 
 #include <array>
 #include <cstdint>
@@ -37,9 +38,9 @@ struct MaterialHandle {
     bool operator==(const MaterialHandle&) const = default;
 };
 
-// Shading families. Only standard (glTF metallic-roughness) for now; clearcoat, skin and
-// hair arrive with A07-A09 and are refused until then.
-enum class MaterialFamily : int { Standard };
+// Shading families (A07-A09, docs/Shading.md), in ShadingFamily's order: standard (glTF
+// metallic-roughness, optionally with a clearcoat), skin, hair cards and transmission.
+enum class MaterialFamily : int { Standard, Skin, HairCard, Transmission };
 enum class MaterialAlpha : int { Opaque, Mask, Blend };
 // Which channel of a mask texture is read.
 enum class MaskChannel : int { R, G, B, A };
@@ -74,6 +75,24 @@ struct MaterialParams {
     float layerMetallic = 0.0f;
     float layerRoughness = 0.5f;
     float layerNormalScale = 1.0f;
+    // Clearcoat (A07a), family standard: a dielectric coat over the base.
+    float clearcoat = 0.0f;
+    float clearcoatRoughness = 0.0f;
+    float clearcoatNormalScale = 1.0f;
+    // Transmission (A07b), family transmission.
+    float transmission = 1.0f;
+    float ior = 1.5f;
+    float thickness = 0.01f;   // metres, object space
+    int transmissionMode = 0;   // 0 thin, 1 solid
+    glm::vec3 attenuationColor{1.0f};
+    float attenuationDistance = 0.0f;   // metres; 0: no absorption
+    // Skin (A08), family skin.
+    glm::vec3 skinRadius{3.7f, 1.4f, 1.1f};   // millimetres per channel
+    float skinStrength = 1.0f;
+    float skinMaxPixels = 24.0f;
+    // Hair cards (A09), family hair_card.
+    float hairAnisotropy = 0.8f;
+    int hairDirection = 1;   // 0 u, 1 v: root to tip
     bool operator==(const MaterialParams&) const = default;
 };
 
@@ -86,7 +105,7 @@ struct MaterialParamInfo {
     size_t offset;   // in MaterialParams
     float min, max;   // per component; min == max: any finite value
     std::vector<const char*> options;   // Enum: the names, in value order
-    const char* group;   // "surface", "alpha", "detail", "layer"
+    const char* group;   // "surface", "alpha", "detail", "layer", "clearcoat", "transmission", "skin", "hair"
     const char* description;
 };
 const std::vector<MaterialParamInfo>& materialParams();
@@ -161,8 +180,12 @@ enum MaterialFeature : uint32_t {
     kMaterialDetailNormal = 1u << 4,
     kMaterialLayer = 1u << 5,
     kMaterialDoubleSided = 1u << 6,
+    kMaterialClearcoat = 1u << 7,   // standard with a coat above 0
+    kMaterialTransmission = 1u << 8,   // transmission with transmission above 0 (or its texture)
+    kMaterialSkin = 1u << 9,
+    kMaterialHairCard = 1u << 10,
 };
-inline constexpr uint32_t kMaterialFeatureCount = 7;
+inline constexpr uint32_t kMaterialFeatureCount = 11;
 const char* materialFeatureName(uint32_t feature);   // "alpha_mask", ...
 struct MaterialDesc {
     MaterialParams params;
@@ -176,6 +199,16 @@ struct MaterialDesc {
     bool operator==(const MaterialDesc&) const = default;
 };
 uint32_t materialFeatures(const MaterialDesc& desc);
+// Which groups of values the family reads ("clearcoat" for standard, "transmission", ...):
+// the editor hides the others, --check warns about values set for another family.
+bool materialFamilyUses(int family, std::string_view group);
+// What the material draws as with the given shading settings, for --material-info and the
+// editor: "standard", "standard with clearcoat", "simplified glass", "skin without
+// diffusion", ...
+std::string materialEffectiveShading(const MaterialDesc& desc, const ShadingSettings& settings);
+// The passes and memory the family needs ("transmission pass, scene copy with mips"), or
+// empty for none beyond the scene's.
+std::string materialShadingCost(const MaterialDesc& desc, const ShadingSettings& settings);
 // What material_quality low leaves out of this material ("detail_color", ...); empty when
 // nothing is.
 std::vector<std::string> materialLowQualityOmissions(const MaterialDesc& desc);
@@ -199,8 +232,8 @@ MaterialLookup folderMaterialLookup(const std::filesystem::path& root);
 enum class MaterialProblem { None, File, Reference };
 // File: the material or a parent doesn't parse (or is a cycle, or too deep); Reference: a
 // parent, model, source material or texture it names isn't there.
-MaterialProblem resolveMaterial(
-    std::string_view name, const MaterialLookup& lookup, MaterialDesc& desc, std::string& error);
+MaterialProblem
+resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDesc& desc, std::string& error);
 
 // What the renderer draws a resolved material with: textures and samplers already made,
 // per slot (MaterialSlot order). layers points into the result's own storage, so keep it
@@ -211,6 +244,7 @@ struct MaterialAsset {
     glm::vec4 baseColor{1.0f};
     DrawMaterial draw;
     MaterialLayers layers;
+    MaterialShading shading;   // DrawMaterial::shading points here (A07-A09)
     std::array<TextureHandle, kAllMaterialSlots> textures{};   // per slot, what draw uses
     std::array<SamplerHandle, kAllMaterialSlots> samplers{};
     bool fallback = false;   // couldn't be resolved: drawn magenta, see error

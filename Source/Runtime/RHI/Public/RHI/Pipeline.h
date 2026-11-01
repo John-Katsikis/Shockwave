@@ -38,6 +38,8 @@ struct GraphicsPipelineDesc {
     // Keeps the greater of what's there and what's drawn, per channel (the reactive mask,
     // G09). Never writes depth.
     bool maxBlend = false;
+    // Adds what's drawn to what's there (the skin pass's diffuse light, A08). Never writes depth.
+    bool additiveBlend = false;
 };
 
 // Pipeline for dynamic rendering with vertex pulling (no vertex input state) and

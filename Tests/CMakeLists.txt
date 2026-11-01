@@ -267,6 +267,12 @@ add_executable(postprocess_test PostProcessTest.cpp)
 target_link_libraries(postprocess_test PRIVATE Shockwave::Engine)
 shockwave_warnings(postprocess_test)
 add_test(NAME postprocess COMMAND postprocess_test)
+# Character and specialized shading (A07-A09): clearcoat energy, Snell and Fresnel,
+# absorption, anisotropic GGX, the skin kernel.
+add_executable(shading_test ShadingTest.cpp)
+target_link_libraries(shading_test PRIVATE Shockwave::Engine)
+shockwave_warnings(shading_test)
+add_test(NAME shading COMMAND shading_test)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -304,7 +310,7 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFixtures
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 900 LABELS gpu)
     # Motion vectors and TAA (G09, G10) on the fixtures: the debug views' values, TAA against
     # a supersampled image, determinism, and nothing temporal when it's off.
     add_test(NAME graphics_temporal_render COMMAND ${CMAKE_COMMAND}
@@ -341,6 +347,15 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsPostProcess
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsPostProcessCheck.cmake)
     set_tests_properties(graphics_postprocess_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Character and specialized shading (A07-A09): clearcoat, glass, skin and hair cards, each
+    # setting off matching its fallback exactly and costing nothing.
+    add_test(NAME graphics_shading_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsShading
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsShadingCheck.cmake)
+    set_tests_properties(graphics_shading_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
     # And that it's faster where it should be: 200 point lights, scene pass GPU time.
     add_test(NAME graphics_clusters_timing COMMAND ${CMAKE_COMMAND}

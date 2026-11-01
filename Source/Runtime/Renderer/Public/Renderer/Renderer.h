@@ -7,6 +7,7 @@
 #include <Renderer/Decals.h>
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/Shading.h>
 #include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
 #include <Renderer/TextureData.h>
@@ -232,6 +233,12 @@ public:
     void setPostProcessSettings(const PostProcessSettings& settings);
     PostProcessSettings postProcessSettings() const;
     PostProcessStats postProcessStats() const;   // the last frame's
+    // The player's clearcoat, transmission_quality, skin_quality and hair_quality settings
+    // (A07-A09, Renderer/Shading.h). Each off or low draws the documented stand-in, with no
+    // pass or memory for what it leaves out. Main thread.
+    void setShadingSettings(const ShadingSettings& settings);
+    ShadingSettings shadingSettings() const;
+    ShadingStats shadingStats() const;   // the last frame's
 
     // Lights for this frame; cleared after each frame. Same thread as setCamera. Up to
     // kMaxLights are used, the rest are dropped (and counted in droppedLights()). With no

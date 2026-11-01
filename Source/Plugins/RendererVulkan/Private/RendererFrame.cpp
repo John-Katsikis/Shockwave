@@ -130,6 +130,10 @@ void VulkanRenderer::Impl::drawMesh(
         {glm::dot(glm::vec3(transform[0]), glm::vec3(transform[0])),
          glm::dot(glm::vec3(transform[1]), glm::vec3(transform[1])),
          glm::dot(glm::vec3(transform[2]), glm::vec3(transform[2]))}));
+    // Shading families and coats (A07-A09): glass becomes see-through here.
+    command.data.shading = 0;
+    ShadingData shade{};
+    const bool shaded = material.shading && fillShading(material, scale, command, shade, vertexTangents);
     if (!mesh.skinAddress) joints = {};
     const glm::vec4 bounds = joints.empty() ? mesh.bounds : skinnedBounds(mesh, joints);
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
@@ -138,7 +142,7 @@ void VulkanRenderer::Impl::drawMesh(
     command.visible = viewFrustum.intersects(command.bounds);
     // Local reflection probes (G07): up to two whose boxes these bounds touch.
     command.data.reflections = pickReflections(command.bounds);
-    command.data.decalLayers = material.blend ? 0u : material.decalLayers & kDecalLayerMask;   // G08
+    command.data.decalLayers = command.blend ? 0u : material.decalLayers & kDecalLayerMask;   // G08
     // G09: filled in by prepareHistory when the draw has a previous pose.
     command.data.previousMvp = glm::mat4(1.0f);
     command.data.previousVertexBuffer = 0;
@@ -155,6 +159,10 @@ void VulkanRenderer::Impl::drawMesh(
         if (command.data.indirectSource == kIndirectProbes) {
             command.probes = static_cast<uint32_t>(list.probes.size());
             list.probes.push_back(probe);
+        }
+        if (shaded) {
+            command.shading = static_cast<uint32_t>(list.shading.size());
+            list.shading.push_back(shade);
         }
         addDraw(list, index, command, handle.id, joints);
     };
@@ -173,6 +181,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
         list.joints.clear();
         list.layers.clear();
         list.probes.clear();
+        list.shading.clear();
     }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
@@ -180,6 +189,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
     foreignDraws.joints.clear();
     foreignDraws.layers.clear();
     foreignDraws.probes.clear();
+    foreignDraws.shading.clear();
     skinDispatches.clear();
 }
 
@@ -193,6 +203,8 @@ void VulkanRenderer::Impl::recreateSwapchain() {
     destroyAoTargets(aoTargets);
     destroyTemporalTargets(temporalTargets);
     destroyParticleBackground(particleBackground);
+    destroyTransmissionBackground(transmissionBackground);
+    destroySkinTargets(skinTargets);
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();
@@ -396,7 +408,11 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     uint32_t probeCount = 0;
     for (const DrawCommand& draw : draws) probeCount += draw.probes != kNoLayers;
     if (probeCount) ensureProbeCapacity(f, probeCount);
-    uint32_t nextLayer = 0, nextProbe = 0;
+    // And shading families (A07-A09).
+    uint32_t shadingCount = 0;
+    for (const DrawCommand& draw : draws) shadingCount += draw.shading != kNoLayers;
+    if (shadingCount) ensureShadingCapacity(f, shadingCount);
+    uint32_t nextLayer = 0, nextProbe = 0, nextShading = 0;
     std::lock_guard lock(foreignDrawMutex);
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
@@ -407,14 +423,24 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
             f.drawData[i].probes = f.probeAddress + VkDeviceAddress(nextProbe) * sizeof(ProbeData);
             ++nextProbe;
         }
+        if (draws[i].shading != kNoLayers) {
+            f.shadingData[nextShading] = list.shading[draws[i].shading];
+            f.drawData[i].shading = f.shadingAddress + VkDeviceAddress(nextShading) * sizeof(ShadingData);
+            draws[i].shading = nextShading++;   // from here on, its entry in the frame's table
+        }
         if (draws[i].layers == kNoLayers) continue;
         f.layerData[nextLayer] = list.layers[draws[i].layers];
         f.drawData[i].layers = f.layerAddress + VkDeviceAddress(nextLayer) * sizeof(LayerData);
         ++nextLayer;
     }
+    prepareShading(f);   // the glass and skin passes, and the draws' last shading fields
     vk::check(
         vmaFlushAllocation(context->allocator(), f.drawBuffer.allocation, 0, sizeof(DrawData) * draws.size()),
         "vmaFlushAllocation");
+    if (shadingCount)
+        vk::check(
+            vmaFlushAllocation(context->allocator(), f.shadingBuffer.allocation, 0, sizeof(ShadingData) * shadingCount),
+            "vmaFlushAllocation");
     if (layerCount)
         vk::check(
             vmaFlushAllocation(context->allocator(), f.layerBuffer.allocation, 0, sizeof(LayerData) * layerCount),
@@ -433,7 +459,7 @@ VkPipeline VulkanRenderer::Impl::meshPipelineFor(const DrawCommand& draw) const 
                          : (draw.doubleSided ? meshDoubleSidedPipeline : meshPipeline);
 }
 
-void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
+void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter filter) {
     if (gatheredDraws.empty()) return;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &bindlessSet, 0, nullptr);
@@ -445,9 +471,13 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f) {
     VkPipeline boundPipeline = meshPipeline;
     for (const auto& draw : gatheredDraws) {
         if (!draw.visible) continue;
+        if ((filter == DrawFilter::Opaque && draw.blend) || (filter == DrawFilter::SeeThrough && !draw.blend)) continue;
         // Over the surface prepass, opaque surfaces shade where its depth is EQUAL to theirs.
-        const VkPipeline pipeline =
-            prepassActive() && !draw.blend ? depthEqualPipelines[prepassIndex(draw)] : meshPipelineFor(draw);
+        // Glass with its pass this frame draws over the copy of the scene (A07b).
+        const VkPipeline pipeline = draw.transmission && transmissionThisFrame
+                                        ? transmissionPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
+                                    : prepassActive() && !draw.blend ? depthEqualPipelines[prepassIndex(draw)]
+                                                                     : meshPipelineFor(draw);
         if (pipeline != boundPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             boundPipeline = pipeline;
@@ -588,6 +618,10 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     header.decalAlbedo = decals ? decalSlots[decalTargets.pair][0] : 0u;
     header.decalMaterial = decals ? decalSlots[decalTargets.pair][1] : 0u;
     header.jitter = jittered ? jitter : glm::vec2(0.0f);
+    // A07b: what glass reads in its pass.
+    header.transmissionBackground = transmissionThisFrame ? transmissionBackground.slot : 0u;
+    header.sceneDepth = transmissionThisFrame ? sceneDepthSlot : 0u;
+    header.transmissionLevels = transmissionThisFrame ? static_cast<float>(transmissionBackground.levels) : 0.0f;
     auto* out = reinterpret_cast<LightData*>(f.frameData + sizeof(FrameData));
     auto* views = reinterpret_cast<ShadowView*>(f.frameData + kShadowViewsOffset);
     std::vector<LightDesc> used;
@@ -757,6 +791,54 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         sceneReads.push_back({*froxels, vk::BufferUse::FragmentShaderRead});
     }
     graph.addPass("scene", sceneUses, [this, &f](VkCommandBuffer cmd) { recordScene(cmd, f); }, sceneReads);
+    // A07b, A08: skin's diffusion and glass's copy of the scene split the scene after its
+    // opaque surfaces; then glass and the other see-through surfaces.
+    std::vector<vk::RenderGraph::Use> shadedUses;   // what shading reads besides the scene's own targets
+    for (const auto& use : sceneUses)
+        if (use.use == ImageUse::Sampled) shadedUses.push_back(use);
+    if (skinThisFrame) {
+        const auto light =
+            graph.import("skin light", skinTargets.light.image, VK_IMAGE_ASPECT_COLOR_BIT, skinLightState, true);
+        const auto skin = graph.import("skin", skinTargets.skin.image, VK_IMAGE_ASPECT_COLOR_BIT, skinState, true);
+        const auto scratch =
+            graph.import("skin blur", skinTargets.scratch.image, VK_IMAGE_ASPECT_COLOR_BIT, skinScratchState, true);
+        std::vector<vk::RenderGraph::Use> skinUses = shadedUses;
+        skinUses.push_back({light, ImageUse::ColorAttachment});
+        skinUses.push_back({skin, ImageUse::ColorAttachment});
+        skinUses.push_back({depth, ImageUse::DepthReadOnly});
+        graph.addPass("skin", skinUses, [this, &f](VkCommandBuffer cmd) { recordSkin(cmd, f); }, sceneReads);
+        graph.addPass(
+            "skin blur across",
+            {{light, ImageUse::Sampled},
+             {skin, ImageUse::Sampled},
+             {depth, ImageUse::DepthSampled},
+             {scratch, ImageUse::ColorAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordSkinBlur(cmd, f, 0); });
+        graph.addPass(
+            "skin blur down",
+            {{scratch, ImageUse::Sampled},
+             {skin, ImageUse::Sampled},
+             {depth, ImageUse::DepthSampled},
+             {light, ImageUse::ColorAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordSkinBlur(cmd, f, 1); });
+        graph.addPass(
+            "skin composite",
+            {{light, ImageUse::Sampled}, {skin, ImageUse::Sampled}, {color, ImageUse::ColorAttachment}},
+            [this, &f](VkCommandBuffer cmd) { recordSkinBlur(cmd, f, 2); });
+    }
+    if (transmissionThisFrame)
+        graph.addPass("transmission background copy", {{color, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
+            recordTransmissionCopy(cmd);
+        });
+    if (skinThisFrame || transmissionThisFrame) {
+        std::vector<vk::RenderGraph::Use> seeThroughUses = shadedUses;
+        seeThroughUses.push_back({color, ImageUse::ColorAttachment});
+        seeThroughUses.push_back({depth, ImageUse::DepthReadOnly});
+        if (transmissionThisFrame) seeThroughUses.push_back({depth, ImageUse::DepthSampled});
+        graph.addPass(
+            "scene (see-through)", seeThroughUses, [this, &f](VkCommandBuffer cmd) { recordSeeThrough(cmd, f); },
+            sceneReads);
+    }
     if (captureRequested) {
         // Reflection capture (G07): the HDR scene as drawn, before particles, exposure and the rest.
         graph.addPass("reflection capture readback", {{color, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
@@ -906,9 +988,11 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     }
-    // Kept when particles are drawn next, for their depth test, and for the reactive mask and TAA.
-    depthAttachment.storeOp =
-        particleDraws.empty() && !temporalThisFrame ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE;
+    // Kept when particles are drawn next, for their depth test, and for the reactive mask and
+    // TAA; and for skin and glass (A07b, A08) when they split the scene.
+    const bool split = transmissionThisFrame || skinThisFrame;
+    depthAttachment.storeOp = particleDraws.empty() && !temporalThisFrame && !split ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                                                                    : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     VkRenderingInfo rendering{};
@@ -925,8 +1009,39 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     const bool fogged = lastPostProcessStats.fogQuality != FogQuality::Off && debugView == DebugView::Lit;
     if ((showsSky() || fogged || debugView == DebugView::Fog) && debugView != DebugView::AmbientOcclusion)
         recordSky(cmd, f.frameAddress);
-    recordDraws(cmd, f);
-    if (!captureRequested) recordGrid(cmd);   // the editor grid never goes into a reflection
+    if (split) {
+        recordDraws(cmd, f, DrawFilter::Opaque);   // the rest after skin and glass's passes
+    } else {
+        recordDraws(cmd, f);
+        if (!captureRequested) recordGrid(cmd);   // the editor grid never goes into a reflection
+    }
+    vkCmdEndRendering(cmd);
+}
+
+void VulkanRenderer::Impl::recordSeeThrough(VkCommandBuffer cmd, Frame& f) {
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView = sceneColor.view;
+    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingAttachmentInfo depthAttachment{};
+    depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.imageView = sceneDepth.view;
+    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;   // tested; glass also samples it
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingInfo rendering{};
+    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rendering.renderArea = {{0, 0}, sceneColor.extent};
+    rendering.layerCount = 1;
+    rendering.colorAttachmentCount = 1;
+    rendering.pColorAttachments = &colorAttachment;
+    rendering.pDepthAttachment = &depthAttachment;
+    vkCmdBeginRendering(cmd, &rendering);
+    setSceneViewport(cmd);
+    recordDraws(cmd, f, DrawFilter::SeeThrough);
+    if (!captureRequested) recordGrid(cmd);
     vkCmdEndRendering(cmd);
 }
 

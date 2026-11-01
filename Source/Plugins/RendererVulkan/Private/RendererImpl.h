@@ -38,7 +38,8 @@ constexpr uint32_t kMaxMeshes = 65536;
 // Scene color, BRDF table, two for bloom: a new bloom chain takes the
 // slot the old one isn't using, so it can be made while frames still read the old one.
 // Shadow atlases likewise have two pairs of slots, and ambient occlusion two slots.
-constexpr uint32_t kInternalTextureSlots = 17;
+// A07-A09: two for the transmission pass's copy of the scene, six for the skin targets.
+constexpr uint32_t kInternalTextureSlots = 25;
 // Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
 // goes into a spare while frames in flight still read the old slot, which becomes a spare
 // once they finish. Below the internal slots.
@@ -106,6 +107,7 @@ struct DrawData {
     VkDeviceAddress previousVertexBuffer;
     uint32_t history;
     uint32_t pad;
+    VkDeviceAddress shading;   // A07-A09: this draw's ShadingData; 0: standard without a coat
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
@@ -114,7 +116,7 @@ static_assert(
         offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
         offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 &&
         offsetof(DrawData, previousMvp) == 448 && offsetof(DrawData, previousVertexBuffer) == 512 &&
-        offsetof(DrawData, history) == 520 && sizeof(DrawData) == 528,
+        offsetof(DrawData, history) == 520 && offsetof(DrawData, shading) == 528 && sizeof(DrawData) == 536,
     "DrawData must match the shader's scalar layout");
 constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
                    kIndirectProbes = 2u;   // DrawData::indirectSource
@@ -146,6 +148,37 @@ static_assert(
         offsetof(LayerData, slots) == 96 && sizeof(LayerData) == 264,
     "LayerData must match the shader's scalar layout");
 constexpr uint32_t kNoLayers = 0xFFFFFFFFu;
+
+// A draw's shading family (A07-A09), in a table of its own like LayerData. Must match
+// ShadingData in shaders/draw.glsl.
+constexpr uint32_t kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u, kShadingThin = 4u, kShadingAnisotropic = 8u,
+                   kShadingSkinDiffusion = 16u, kShadingRefract = 32u, kShadingRoughTaps = 64u,
+                   kShadingSimplifiedGlass = 128u;
+struct ShadingData {
+    uint32_t family;   // ShadingFamily
+    uint32_t flags;
+    float clearcoat, clearcoatRoughness, clearcoatNormalScale;
+    uint32_t clearcoatTexture, clearcoatNormalTexture, transmissionTexture;   // bindless slots
+    float transmission, ior, thickness, hairAnisotropy;
+    glm::vec3 absorption;
+    uint32_t hairDirection;
+    glm::vec3 skinRadius;   // metres, times the strength
+    float skinMaxPixels;
+    uint32_t skinReceiver;
+    float pad[3];
+    SlotBinding slots[kShadingSlots];
+};
+static_assert(
+    offsetof(ShadingData, absorption) == 48 && offsetof(ShadingData, skinRadius) == 64 &&
+        offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, slots) == 96 && sizeof(ShadingData) == 168,
+    "ShadingData must match the shader's scalar layout");
+// The skin blur's per-receiver spread (shaders/skin.frag), receiver ids 1..255.
+struct SkinProfile {
+    glm::vec3 radius;   // metres per channel
+    float maxPixels;
+};
+static_assert(sizeof(SkinProfile) == 16, "SkinProfile must match shaders/skin.frag");
+constexpr uint32_t kMaxSkinReceivers = 255;
 
 // Shadow maps hold reverse-Z depth, like the scene: cleared to 0, closer is greater.
 constexpr VkFormat kShadowFormat = VK_FORMAT_D32_SFLOAT;
@@ -226,9 +259,15 @@ struct FrameData {
     uint32_t froxelTile, froxelTilesX, froxelTilesY, froxelSlices;
     float froxelNear;
     VkDeviceAddress froxels;
+    // A07b: the transmission pass's copy of the scene and the scene's depth; 0: no pass.
+    uint32_t transmissionBackground;
+    uint32_t sceneDepth;
+    float transmissionLevels;
+    uint32_t shadingPad;
 };
 static_assert(
-    sizeof(FrameData) == 464 && offsetof(FrameData, fogMode) == 384 && offsetof(FrameData, froxels) == 456 &&
+    sizeof(FrameData) == 480 && offsetof(FrameData, transmissionBackground) == 464 &&
+        offsetof(FrameData, fogMode) == 384 && offsetof(FrameData, froxels) == 456 &&
         offsetof(FrameData, fogColor) == 404 && offsetof(FrameData, decalAlbedo) == 332 &&
         offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
         offsetof(FrameData, renderSize) == 304 && offsetof(FrameData, reflectionProbes) == 320 &&
@@ -271,7 +310,8 @@ static_assert(sizeof(DecalData) == 192, "DecalData must match the shader's scala
 // The most decals a frame draws: decals_quality high's budget.
 constexpr uint32_t kMaxDrawnDecals = 1024;
 constexpr VkDeviceSize kDecalsOffset = kReflectionProbesOffset + sizeof(ReflectionProbeData) * kMaxReflectionProbes;
-constexpr VkDeviceSize kFrameDataSize = kDecalsOffset + sizeof(DecalData) * kMaxDrawnDecals;
+constexpr VkDeviceSize kSkinProfilesOffset = kDecalsOffset + sizeof(DecalData) * kMaxDrawnDecals;
+constexpr VkDeviceSize kFrameDataSize = kSkinProfilesOffset + sizeof(SkinProfile) * (kMaxSkinReceivers + 1);
 
 // Must match the push constants in shaders/shadow.vert and shadow.frag.
 struct ShadowPushConstants {
@@ -353,7 +393,11 @@ struct DrawCommand {
     uint32_t layers = kNoLayers;
     // Draws lit by probes: which ProbeData in the same DrawList.
     uint32_t probes = kNoLayers;
+    // Draws with a shading family or a coat (A07-A09): which ShadingData in the same DrawList.
+    uint32_t shading = kNoLayers;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
+    // Glass (drawn see-through: blend is set too), and skin that may diffuse (A07b, A08).
+    bool transmission = false, skinDiffusion = false;
     // In the camera's view. Draws outside it stay in the draw table: they may still cast
     // shadows into the view.
     bool visible = true;
@@ -419,6 +463,7 @@ struct alignas(64) DrawList {
     std::vector<glm::mat4> joints;
     std::vector<LayerData> layers;
     std::vector<ProbeData> probes;
+    std::vector<ShadingData> shading;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -502,6 +547,10 @@ struct VulkanRenderer::Impl {
         LayerData* layerData = nullptr;
         VkDeviceAddress layerAddress = 0;
         uint32_t layerCapacity = 0;
+        vk::Buffer shadingBuffer;   // this frame's ShadingData (A07-A09), persistently mapped
+        ShadingData* shadingData = nullptr;
+        VkDeviceAddress shadingAddress = 0;
+        uint32_t shadingCapacity = 0;
         vk::Buffer probeBuffer;   // this frame's ProbeData, persistently mapped
         ProbeData* probeData = nullptr;
         VkDeviceAddress probeAddress = 0;
@@ -887,8 +936,10 @@ struct VulkanRenderer::Impl {
 
     // Gathers every thread's draws into this frame's GPU draw table, sorted for drawing.
     void prepareDraws(Frame& f);
-    // Records the gathered draws into the scene.
-    void recordDraws(VkCommandBuffer cmd, Frame& f);
+    // Records the gathered draws into the scene: all of them, or (when glass or skin split the
+    // scene, A07-A09) the opaque ones or the see-through ones.
+    enum class DrawFilter { All, Opaque, SeeThrough };
+    void recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter filter = DrawFilter::All);
 
     // ---- Skinning (RendererSkinning.cpp) -----------------------------------------------
     // Skinned draws are skinned by a compute pass at the start of the frame into a
@@ -1359,6 +1410,69 @@ struct VulkanRenderer::Impl {
     // The tonemap pass's grading and exposure fields.
     void gradeTonemap(TonemapPushConstants& push) const;
     float authoredBloom() const;   // the scene's, or the postprocess volumes' override
+
+    // ---- Character and specialized shading (A07-A09; RendererShading.cpp, Renderer/Shading.h)
+    // Clearcoat and hair are more maths in mesh.frag, nothing else. Glass with
+    // transmission_quality above off draws in a pass of its own after the opaque scene,
+    // over a copy of it with mips; skin with skin_quality above off draws its diffuse light
+    // into three targets of its own, blurred and added back. Neither has images, pipelines
+    // in use or passes while it's off, or while none of it is on screen.
+    std::atomic<bool> shadingClearcoat{true};
+    std::atomic<TransmissionQuality> shadingTransmission{TransmissionQuality::Medium};
+    std::atomic<SkinQuality> shadingSkin{SkinQuality::High};
+    std::atomic<HairQuality> shadingHair{HairQuality::High};
+    ShadingStats lastShadingStats;
+    std::array<VkPipeline, 4> transmissionPipelines{};   // + 1 double-sided, + 2 mirrored
+    std::array<VkPipeline, 8> skinPipelines{};   // indexed by prepassIndex
+    VkPipelineLayout skinBlurLayout = VK_NULL_HANDLE;
+    VkPipeline skinBlurPipeline = VK_NULL_HANDLE, skinCompositePipeline = VK_NULL_HANDLE;
+    // The transmission pass's copy of the opaque scene, with mips (rough glass reads the
+    // blurrier ones). Two slots, as the particles' copy.
+    struct TransmissionBackground {
+        vk::Image image;
+        uint32_t slot = 0;
+        uint32_t levels = 0;
+    };
+    TransmissionBackground transmissionBackground;
+    uint32_t transmissionSlots[2] = {0, 0};
+    bool transmissionSlotBusy[2] = {false, false};
+    // The skin targets: light (diffuse light, fog transmittance), skin (colour, receiver)
+    // and the blur's scratch; a pair of slot triples, as above.
+    struct SkinTargets {
+        vk::Image light, skin, scratch;
+        uint32_t slots[3] = {0, 0, 0};
+        int pair = 0;
+    };
+    SkinTargets skinTargets;
+    vk::ImageState skinLightState, skinState, skinScratchState;
+    uint32_t skinSlots[2][3] = {};
+    bool skinSlotBusy[2] = {false, false};
+    // Decided by prepareShading for this frame.
+    bool transmissionThisFrame = false, skinThisFrame = false;
+    VkRect2D skinRect{};   // where on screen skin can diffuse to this frame
+    uint32_t idleTransmissionFrames = 0, idleSkinFrames = 0;   // frames without any, to free the images
+    void setShadingSettings(const ShadingSettings& settings);
+    // drawMesh: the draw's ShadingData, and whether it has one.
+    bool fillShading(
+        const DrawMaterial& material, float scale, DrawCommand& command, ShadingData& out,
+        const std::function<bool(const TextureBinding&)>& vertexTangents);
+    // prepareDraws, after sorting: decides the passes and finishes the draws' ShadingData.
+    void prepareShading(Frame& f);
+    void ensureShadingCapacity(Frame& f, uint32_t count);
+    void createShadingPipelines();
+    void ensureTransmissionPipelines();   // the first frame with glass in its pass
+    void ensureSkinPipelines();   // the first frame with skin diffusion
+    void destroyShadingPipelines();
+    void updateTransmissionBackground(bool want);
+    void destroyTransmissionBackground(TransmissionBackground& background);
+    void updateSkinTargets(bool want);
+    void destroySkinTargets(SkinTargets& targets);
+    void recordTransmissionCopy(VkCommandBuffer cmd);
+    void recordSkin(VkCommandBuffer cmd, Frame& f);
+    void recordSkinBlur(VkCommandBuffer cmd, Frame& f, uint32_t mode);
+    // The scene after its opaque part, when glass or skin split it: glass and the other
+    // see-through surfaces, back to front, and the grid.
+    void recordSeeThrough(VkCommandBuffer cmd, Frame& f);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.

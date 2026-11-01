@@ -111,16 +111,18 @@ bool Editor::applyMaterial(shockwave::Entity e, const std::string& material, con
         return !source.name.empty() && (part.empty() || source.name == part);
     };
     if (std::none_of(model->data.materials.begin(), model->data.materials.end(), replaces)) {
-        warn("No named material on " + displayName(e) + " to replace" + (part.empty() ? "" : " (" + part + ")") +
-             "; unnamed materials can't be overridden, name them in the modelling tool");
+        warn(
+            "No named material on " + displayName(e) + " to replace" + (part.empty() ? "" : " (" + part + ")") +
+            "; unnamed materials can't be overridden, name them in the modelling tool");
         return false;
     }
     pushUndo(m_world);
     for (const auto& source : model->data.materials) {
         if (!replaces(source)) continue;
         auto& overrides = instance->materials;
-        const auto it = std::find_if(
-            overrides.begin(), overrides.end(), [&](const shockwave::MaterialOverride& o) { return o.part == source.name; });
+        const auto it = std::find_if(overrides.begin(), overrides.end(), [&](const shockwave::MaterialOverride& o) {
+            return o.part == source.name;
+        });
         if (it != overrides.end())
             it->material = handle;
         else
@@ -229,6 +231,9 @@ void Editor::drawMaterialWindow() {
             if (asset->desc.features & (1u << bit))
                 features += (features.empty() ? "" : ", ") + std::string(shockwave::materialFeatureName(1u << bit));
         ImGui::TextDisabled("Features: %s", features.empty() ? "plain" : features.c_str());
+        const std::string draws =
+            shockwave::materialEffectiveShading(asset->desc, engine().renderer().shadingSettings());
+        ImGui::TextDisabled("Draws as: %s", draws.c_str());
         const auto omitted = shockwave::materialLowQualityOmissions(asset->desc);
         if (!omitted.empty()) {
             std::string list;
@@ -267,10 +272,12 @@ void Editor::drawMaterialWindow() {
         // A model parent: which of its materials.
         const auto model = engine().assets().model(engine().assets().findModel(edit.parent));
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::BeginCombo("##source", edit.parentMaterial.empty() ? "pick its material" : edit.parentMaterial.c_str())) {
+        if (ImGui::BeginCombo(
+                "##source", edit.parentMaterial.empty() ? "pick its material" : edit.parentMaterial.c_str())) {
             if (model)
                 for (const auto& source : model->data.materials)
-                    if (!source.name.empty() && ImGui::Selectable(source.name.c_str(), source.name == edit.parentMaterial)) {
+                    if (!source.name.empty() &&
+                        ImGui::Selectable(source.name.c_str(), source.name == edit.parentMaterial)) {
                         edit.parentMaterial = source.name;
                         commit = true;
                     }
@@ -279,9 +286,14 @@ void Editor::drawMaterialWindow() {
     }
 
     // Values, by group, in schema order.
-    const std::pair<const char*, const char*> groups[] = {
-        {"surface", "Surface"}, {"alpha", "Alpha"}, {"detail", "Detail layer"}, {"layer", "Second layer"}};
+    const std::pair<const char*, const char*> groups[] = {{"surface", "Surface"},     {"alpha", "Alpha"},
+                                                          {"detail", "Detail layer"}, {"layer", "Second layer"},
+                                                          {"clearcoat", "Clearcoat"}, {"transmission", "Transmission"},
+                                                          {"skin", "Skin"},           {"hair", "Hair"}};
+    // The family's own groups only (docs/Shading.md): another family's values do nothing.
+    const int family = edit.isSet("family") ? edit.values.family : effective.family;
     for (const auto& [group, title] : groups) {
+        if (!shockwave::materialFamilyUses(family, group)) continue;
         ImGui::SeparatorText(title);
         if (!gui::beginPropertyGrid(group)) continue;
         for (const MaterialParamInfo& info : shockwave::materialParams()) {
@@ -292,37 +304,41 @@ void Editor::drawMaterialWindow() {
             ImGui::SetNextItemWidth(set ? -inheritWidth : -1.0f);
             // Inherited values start from what the parent gives.
             shockwave::MaterialParams& values = edit.values;
-            if (!set) std::memcpy(
-                reinterpret_cast<char*>(&values) + info.offset, reinterpret_cast<const char*>(&effective) + info.offset,
-                info.type == MaterialValueType::Bool ? sizeof(bool)
-                : info.type == MaterialValueType::Enum ? sizeof(int)
-                : info.type == MaterialValueType::Vec2 ? sizeof(float) * 2
-                : info.type == MaterialValueType::Color3 ? sizeof(float) * 3
-                : info.type == MaterialValueType::Color4 ? sizeof(float) * 4
-                                                          : sizeof(float));
+            if (!set)
+                std::memcpy(
+                    reinterpret_cast<char*>(&values) + info.offset,
+                    reinterpret_cast<const char*>(&effective) + info.offset,
+                    info.type == MaterialValueType::Bool     ? sizeof(bool)
+                    : info.type == MaterialValueType::Enum   ? sizeof(int)
+                    : info.type == MaterialValueType::Vec2   ? sizeof(float) * 2
+                    : info.type == MaterialValueType::Color3 ? sizeof(float) * 3
+                    : info.type == MaterialValueType::Color4 ? sizeof(float) * 4
+                                                             : sizeof(float));
             bool changed = false;
             const float lo = info.min, hi = info.max;
             switch (info.type) {
             case MaterialValueType::Float:
-                changed = ImGui::DragFloat("##v", &member<float>(values, info), 0.005f * (hi - lo), lo, hi, "%.3f",
-                                           ImGuiSliderFlags_AlwaysClamp);
+                changed = ImGui::DragFloat(
+                    "##v", &member<float>(values, info), 0.005f * (hi - lo), lo, hi, "%.3f",
+                    ImGuiSliderFlags_AlwaysClamp);
                 break;
             case MaterialValueType::Vec2:
-                changed = ImGui::DragFloat2("##v", &member<float>(values, info), 0.1f, lo, hi, "%.2f",
-                                            ImGuiSliderFlags_AlwaysClamp);
+                changed = ImGui::DragFloat2(
+                    "##v", &member<float>(values, info), 0.1f, lo, hi, "%.2f", ImGuiSliderFlags_AlwaysClamp);
                 break;
             case MaterialValueType::Color3:
-                changed = ImGui::ColorEdit3("##v", &member<float>(values, info),
-                                            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+                changed = ImGui::ColorEdit3(
+                    "##v", &member<float>(values, info), ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
                 break;
             case MaterialValueType::Color4:
-                changed = ImGui::ColorEdit4("##v", &member<float>(values, info),
-                                            ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_AlphaBar);
+                changed = ImGui::ColorEdit4(
+                    "##v", &member<float>(values, info), ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_AlphaBar);
                 break;
             case MaterialValueType::Bool: changed = ImGui::Checkbox("##v", &member<bool>(values, info)); break;
             case MaterialValueType::Enum: {
                 int& value = member<int>(values, info);
-                if (ImGui::BeginCombo("##v", info.options[size_t(std::clamp(value, 0, int(info.options.size()) - 1))])) {
+                if (ImGui::BeginCombo(
+                        "##v", info.options[size_t(std::clamp(value, 0, int(info.options.size()) - 1))])) {
                     for (size_t i = 0; i < info.options.size(); ++i)
                         if (ImGui::Selectable(info.options[i], value == int(i)) && value != int(i)) {
                             value = int(i);
@@ -356,16 +372,18 @@ void Editor::drawMaterialWindow() {
     if (gui::beginPropertyGrid("material_slots")) {
         for (size_t s = 0; s < shockwave::kAllMaterialSlots; ++s) {
             const auto slot = MaterialSlot(s);
+            if (!shockwave::materialFamilyUses(family, shockwave::materialSlotInfo(slot).group)) continue;
             ImGui::PushID(static_cast<int>(s));
             shockwave::MaterialSlotOverride& o = edit.slots[s];
-            const shockwave::ResolvedSlot inherited = asset && !asset->fallback ? asset->desc.slots[s]
-                                                                                 : shockwave::ResolvedSlot{};
+            const shockwave::ResolvedSlot inherited =
+                asset && !asset->fallback ? asset->desc.slots[s] : shockwave::ResolvedSlot{};
             overrideLabel(pretty(shockwave::materialSlotName(slot)).c_str(), !o.empty());
             std::string preview;
             if (o.hasTexture)
                 preview = o.texture.empty() ? "none (cleared)" : o.texture;
             else if (!inherited.texture.empty())
-                preview = (inherited.texture.modelTexture >= 0 ? inherited.texture.asset + "'s own" : inherited.texture.asset) +
+                preview = (inherited.texture.modelTexture >= 0 ? inherited.texture.asset + "'s own"
+                                                               : inherited.texture.asset) +
                           " (inherited)";
             else
                 preview = "none";
@@ -403,15 +421,18 @@ void Editor::drawMaterialWindow() {
                 }
             }
             // How it's read, for slots with a texture.
-            if ((o.hasTexture && !o.texture.empty()) || (!o.hasTexture && !inherited.texture.empty()) ||
-                o.hasUvSet || o.hasTransform || o.hasSampler) {
+            if ((o.hasTexture && !o.texture.empty()) || (!o.hasTexture && !inherited.texture.empty()) || o.hasUvSet ||
+                o.hasTransform || o.hasSampler) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(1);
-                if (ImGui::TreeNode("##reading", "UV and sampler%s",
-                                    o.hasUvSet || o.hasTransform || o.hasSampler ? " *" : "")) {
+                if (ImGui::TreeNode(
+                        "##reading", "UV and sampler%s", o.hasUvSet || o.hasTransform || o.hasSampler ? " *" : "")) {
                     int uvSet = int(o.hasUvSet ? o.uvSet : inherited.binding.uvSet);
                     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
-                    if (ImGui::Combo("UV set", &uvSet, "0\0" "1\0")) {
+                    if (ImGui::Combo(
+                            "UV set", &uvSet,
+                            "0\0"
+                            "1\0")) {
                         o.hasUvSet = true;
                         o.uvSet = uint32_t(uvSet);
                         commit = true;
@@ -433,7 +454,8 @@ void Editor::drawMaterialWindow() {
                         o.hasTransform = true;
                         o.transform = t;
                     }
-                    if (o.hasTransform && ImGui::SmallButton("Inherit##transform")) o.hasTransform = false, commit = true;
+                    if (o.hasTransform && ImGui::SmallButton("Inherit##transform"))
+                        o.hasTransform = false, commit = true;
                     shockwave::SamplerDesc d = o.hasSampler ? o.sampler : inherited.binding.sampler;
                     int wrapU = int(d.wrapU), wrapV = int(d.wrapV), mag = int(d.magFilter), min = int(d.minFilter);
                     int mip = d.mipmaps ? (d.mipFilter == shockwave::TextureFilter::Nearest ? 1 : 2) : 0;

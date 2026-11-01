@@ -324,6 +324,36 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
             {"particle_lighting", particleLightingName(lighting), particleLightingName(lighting), "", detail});
     }
 
+    // Character and specialized shading (A07-A09): what last frame drew.
+    {
+        const ShadingStats& st = lastShadingStats;
+        const bool coat = shadingClearcoat.load(std::memory_order_relaxed);
+        const TransmissionQuality glass = shadingTransmission.load(std::memory_order_relaxed);
+        const SkinQuality skin = shadingSkin.load(std::memory_order_relaxed);
+        const HairQuality hair = shadingHair.load(std::memory_order_relaxed);
+        char detail[200];
+        std::snprintf(detail, sizeof(detail), "last frame %u coated draws", st.coatDraws);
+        settings.push_back({"clearcoat", onOff(coat), onOff(coat), "", detail});
+        std::snprintf(
+            detail, sizeof(detail),
+            "last frame %u glass draws through the transmission pass, %u simplified; copy %.1f MiB",
+            st.transmissionDraws, st.simplifiedGlassDraws,
+            static_cast<double>(st.transmissionBytes) / (1024.0 * 1024.0));
+        settings.push_back(
+            {"transmission_quality", transmissionQualityName(glass), transmissionQualityName(glass), "", detail});
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u skin draws diffused (%u taps); targets %.1f MiB", st.skinDraws,
+            skinBlurTaps(skin), static_cast<double>(st.skinBytes) / (1024.0 * 1024.0));
+        const bool skinView = debugView == DebugView::Lit || debugView == DebugView::Lighting;
+        settings.push_back(
+            {"skin_quality", skinQualityName(skin), skinView ? skinQualityName(skin) : "off",
+             skin != SkinQuality::Off && !skinView ? "off in debug views other than lit and lighting" : "", detail});
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u hair card draws%s", st.hairDraws,
+            st.anisotropicHair ? ", with the stretched highlight" : "");
+        settings.push_back({"hair_quality", hairQualityName(hair), hairQualityName(hair), "", detail});
+    }
+
     // Colour grading, exposure and fog (A05, A06): what last frame applied.
     {
         const PostProcessStats& p = lastPostProcessStats;
@@ -468,7 +498,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);
     for (const Frame& f : frames) {
         for (const vk::Buffer* b :
-             {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
+             {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.shadingBuffer, &f.frameBuffer, &f.jointBuffer,
+              &f.skinnedBuffer})
             add(GpuMemoryCategory::FrameData, b->allocation);
         add(GpuMemoryCategory::GameUi, f.uiVertexBuffer.allocation);
         add(GpuMemoryCategory::GameUi, f.uiIndexBuffer.allocation);
@@ -484,6 +515,9 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
             add(GpuMemoryCategory::Meshes, b->allocation);
     }
     add(GpuMemoryCategory::Particles, particleBackground.image.allocation);   // distortion's scene copy
+    add(GpuMemoryCategory::Transmission, transmissionBackground.image.allocation);   // A07b
+    for (const vk::Image* image : {&skinTargets.light, &skinTargets.skin, &skinTargets.scratch})
+        add(GpuMemoryCategory::Skin, image->allocation);   // A08
     {
         // Textures can be created from worker threads; their descriptor write takes this lock.
         std::lock_guard lock(const_cast<std::mutex&>(descriptorMutex));
