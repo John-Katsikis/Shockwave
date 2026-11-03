@@ -8,7 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       SDL_AUDIO_DRIVER: dummy
       CMAKE_GENERATOR: Ninja
