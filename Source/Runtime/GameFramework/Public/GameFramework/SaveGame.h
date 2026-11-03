@@ -67,6 +67,24 @@ bool readSaveInfo(const std::filesystem::path& file, SaveInfo& info, std::string
 // Every .swsave in folder, newest first. Files that aren't save games are left out.
 std::vector<SaveInfo> listSaveGames(const std::filesystem::path& folder);
 
+// Copying save games from an older location into a profile (docs/UserPaths.md): each slot
+// is checked first, copied (never moved), and never written over one the profile already
+// has. preview reports what would happen and changes nothing.
+struct SaveImport {
+    enum class Action { Copy, Keep, Fail };
+    struct Entry {
+        std::string slot;
+        Action action = Action::Copy;
+        std::string reason;   // why it was kept or failed
+    };
+    std::vector<Entry> entries;   // by slot name
+    size_t copied = 0, kept = 0, failed = 0;
+};
+// False, with error, only when `from` isn't a folder, is `to`, or `to` can't be made.
+bool importSaveGames(
+    const std::filesystem::path& from, const std::filesystem::path& to, bool preview, SaveImport& result,
+    std::string& error);
+
 // What save(), load(), loadFile() and remove() fail with during network play.
 inline constexpr const char* kUnavailableDuringNetworkPlay =
     "UnavailableDuringNetworkPlay: saving and loading are off during network play";

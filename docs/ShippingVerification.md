@@ -12,7 +12,8 @@ section says:
 | Batch | Status | Evidence |
 | --- | --- | --- |
 | S00 release contract | done | [below](#s00-release-contract) |
-| S01-S15 | not started | none |
+| S01 per-user paths | done | [below](#s01-per-user-paths) |
+| S02-S15 | not started | none |
 
 ## S00: release contract
 
@@ -152,7 +153,7 @@ The S00 machine gates:
 
 Every other gate is `unverified` until its batch brings the evidence:
 
-- `user_paths` (S01);
+- `user_paths` (S01, measured since S01);
 - `level_catalog` (S02);
 - `level_travel` and `acceptance_scenario` (S05);
 - `saves` (S06);
@@ -172,3 +173,81 @@ Three things the plan allows are not in S00:
   measured hardware to key them by (S10).
 - `--check` gained no JSON output of its own. Machine-readable diagnostics are in
   `--release-info --json`. The older check rules still produce plain text.
+
+## S01: per-user paths
+
+### What was built
+
+- `Platform/UserPaths.h` works out where a game writes ([UserPaths.md](UserPaths.md)). It
+  has three sources: installed (the OS per-user folder plus the application ID),
+  `--user-dir`, and the project's `Saved/` when run from source. Each profile gets its own
+  config and saves. Nothing is created until it's written.
+- The player now sends saves, graphics settings, window layout and the pipeline cache
+  there. Before, an installed game wrote saves into its own `Game/Saved/` and the rest into
+  SDL's preferences folder.
+- New player options:
+  - `--user-paths [--json]` shows the folders;
+  - `--profile` picks a player profile;
+  - `--user-dir` puts everything somewhere else;
+  - `--import-legacy-saves [--preview]` copies older saves in. It checks each one, copies
+    rather than moves, and never writes over a slot.
+- `projectApplicationId` names the folders by the contract's `application_id`, or
+  `shockwave.<module>` without a contract, never by the display name.
+- The `user_paths` release gate is measured now. It passes when the installed folders
+  resolve for the contract's ID outside the game, and fails with the reason otherwise.
+- In the editor, **Project > Release readiness** has a **Player data** section. It shows
+  both locations, has an Open button for each, and has **Import development saves**.
+- Every test that runs a packaged game passes `--user-dir`: `package_cli`,
+  `graphics_package_render` and `package_steam`.
+
+Run from source, nothing changes: saves stay in `<project>/Saved/SaveGames`, and
+`save_games_cli` passes unchanged.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `user_paths` | unit | see below |
+| `user_paths_cli` | integration | see below |
+| `release` | unit | adds the `user_paths` gate (passed, wrong ID, no folder) and the application ID rules |
+| `release_cli` | integration | the gate passes for a good contract, and `--user-paths` uses its ID |
+
+`user_paths` uses an injected environment, so it never reads the real `HOME`. It checks:
+
+- the OS base folder, with `XDG_DATA_HOME` used when absolute and ignored when relative;
+- missing and relative bases fail clearly;
+- every folder in the installed and development layouts;
+- a second profile keeps separate config and saves;
+- profile and application ID rules;
+- `--user-dir` inside the install is refused, however it's spelled, but a sibling folder is
+  allowed;
+- `ensure()` creates only the folder asked for, works with spaces and accented names, and
+  reports a file sitting where a folder should be.
+
+`user_paths_cli` packages Sample into `Install dir é`, then runs it from an unrelated
+folder with a test `HOME` (`home ü`). It checks:
+
+- it resolves as `installed` under `HOME/.local/share/shockwave.sample` and creates nothing;
+- without `HOME` it exits 1 with the reason and writes nowhere;
+- a save lands in `profiles/default/Saves`, and the package's file hashes don't change;
+- profile `p2` sees no saves, and a bad profile is exit 2;
+- the package, once moved, still lists the save;
+- `--user-dir` inside the package is refused;
+- import with `--preview` copies nothing;
+- import copies new slots, keeps existing ones, skips a broken file, never changes the
+  original, and a second run copies 0;
+- a renamed copy of the project keeps the ID `shockwave.sample`.
+
+### Still unverified
+
+- **Permission errors.** This machine runs tests as root, so a read-only folder can't be
+  simulated. The unit test covers the error path with a file in the folder's place.
+- **Windows and macOS.** The `%APPDATA%` and `Application Support` branches compile in CI
+  on Windows, but no Windows install was run here. Clean-machine runs are S13.
+- **Profiles from accounts.** Profiles are chosen with `--profile`. Tying a profile to a
+  Steam account comes with the online work.
+- **Logs and crash reports.** The folders are resolved, but nothing writes there yet. Log
+  files and crash reports come with S12.
+- **Old saves.** Saves from before S01 are not moved automatically, by design. The player
+  imports them with `--import-legacy-saves`.
+

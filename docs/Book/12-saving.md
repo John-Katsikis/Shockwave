@@ -62,7 +62,8 @@ jump back to where they were and the score goes back too.
 `m_player` still works after a load. Entities come back with the same IDs they were
 saved with, so an `EntityRef` you found in `beginPlay` still points at the player.
 
-Saves go in the project's `Saved/SaveGames/` folder. **Window > Save Games** in the
+Saves go in the project's `Saved/SaveGames/` folder. Once the game is installed they go in
+the player's own folder instead ([UserPaths.md](../UserPaths.md)). **Window > Save Games** in the
 editor lists them, and can load one or start Play from one. From a terminal:
 
 ```sh

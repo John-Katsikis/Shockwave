@@ -73,14 +73,14 @@ endif()
 get_filename_component(executable "${CMAKE_MATCH_1}" NAME)
 set(game "${moved}/Binaries/${executable}")
 file(MAKE_DIRECTORY "${TEMP}/elsewhere")
-execute_process(COMMAND "${game}" --check WORKING_DIRECTORY "${TEMP}/elsewhere"
+execute_process(COMMAND "${game}" --check --user-dir "${TEMP}/user" WORKING_DIRECTORY "${TEMP}/elsewhere"
                 RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT result EQUAL 0 OR NOT out MATCHES "0 problems")
     message(FATAL_ERROR "The moved package's --check failed (${result}):\n${out}\n${err}")
 endif()
 if(NOT STEAMWORKS)
     # Online play in an SDK-off package says why it can't, and nothing starts.
-    execute_process(COMMAND "${game}" --host --renderer null WORKING_DIRECTORY "${TEMP}/elsewhere"
+    execute_process(COMMAND "${game}" --host --renderer null --user-dir "${TEMP}/user" WORKING_DIRECTORY "${TEMP}/elsewhere"
                     RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
     if(NOT result EQUAL 1 OR NOT "${out}${err}" MATCHES "this build has no Steamworks SDK")
         message(FATAL_ERROR "The SDK-off package's --host should fail with the reason (${result}):\n${out}\n${err}")

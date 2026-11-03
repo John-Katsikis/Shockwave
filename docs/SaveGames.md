@@ -128,8 +128,11 @@ file, pass it: `player --check Games/Sample/Saved/SaveGames/slot1.swsave`.
 
 ## Where saves live
 
-Saves are `<project>/Saved/SaveGames/<slot>.swsave`. The `Saved` folder is per user and
-isn't in version control.
+Run from source (player or editor Play), saves are `<project>/Saved/SaveGames/<slot>.swsave`.
+The `Saved` folder is per user and isn't in version control. An installed game keeps them in
+the player's own folder instead: `~/.local/share/<application id>/profiles/default/Saves/`
+on Linux, with `%APPDATA%` on Windows and `~/Library/Application Support` on macOS. See
+[UserPaths.md](UserPaths.md) for profiles, `--user-dir` and `--import-legacy-saves`.
 
 Slot names use letters, digits, spaces, `-` and `_`, up to 64 characters.
 

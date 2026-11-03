@@ -72,8 +72,10 @@ without waiting for them.
 ## Pipeline cache
 
 Compiling pipelines is most of a cold start's GPU work. The Vulkan renderer keeps a
-`VkPipelineCache` in the user's config folder, in `pipeline-cache/` (on Linux,
-`~/.local/share/Shockwave/<game>/pipeline-cache/`). The file is named after the GPU's vendor
+`VkPipelineCache` in the game's per-user cache folder, in `pipeline-cache/`
+([UserPaths.md](UserPaths.md); installed on Linux,
+`~/.local/share/<application id>/Cache/pipeline-cache/`). The editor keeps its own in SDL's
+preferences folder. The file is named after the GPU's vendor
 and device.
 
 - **Loading.** The cache is loaded at start. It's replaced when any of these change: the

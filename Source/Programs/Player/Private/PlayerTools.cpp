@@ -463,9 +463,8 @@ int listDevices(double seconds) {
     return code;
 }
 
-int listSaves(const shockwave::Project& project, const fs::path& jsonFile) {
-    const fs::path folder = project.statePath() / "SaveGames";
-    const auto saves = shockwave::listSaveGames(folder);
+int listSaves(const shockwave::Project& project, const fs::path& folder, const fs::path& jsonFile) {
+    const auto saves = folder.empty() ? std::vector<shockwave::SaveInfo>{} : shockwave::listSaveGames(folder);
     if (saves.empty()) std::printf("No save games in %s\n", project.relative(folder).c_str());
     for (const shockwave::SaveInfo& save : saves) {
         std::printf(

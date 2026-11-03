@@ -468,4 +468,54 @@ bool SaveGames::getBool(std::string_view key, bool fallback) const {
     return fallback;
 }
 
+bool importSaveGames(
+    const std::filesystem::path& from, const std::filesystem::path& to, bool preview, SaveImport& result,
+    std::string& error) {
+    namespace fs = std::filesystem;
+    result = {};
+    std::error_code ec;
+    if (!fs::is_directory(from, ec)) return error = from.string() + " isn't a folder of save games", false;
+    if (fs::equivalent(from, to, ec)) return error = from.string() + " is already the profile's save folder", false;
+    std::vector<fs::path> files;
+    for (const auto& entry : fs::directory_iterator(from, ec))
+        if (entry.is_regular_file(ec) && entry.path().extension() == ".swsave") files.push_back(entry.path());
+    std::sort(files.begin(), files.end());
+    if (!preview && !files.empty()) {
+        fs::create_directories(to, ec);
+        if (!fs::is_directory(to, ec))
+            return error = "can't create " + to.string() + (ec ? ": " + ec.message() : std::string()), false;
+    }
+    for (const fs::path& file : files) {
+        SaveImport::Entry entry;
+        entry.slot = file.stem().string();
+        SaveInfo info;
+        std::string why;
+        const fs::path target = to / file.filename();
+        if (!validSaveSlot(entry.slot)) {
+            entry.action = SaveImport::Action::Fail;
+            entry.reason = "not a slot name";
+        } else if (!readSaveInfo(file, info, why)) {
+            entry.action = SaveImport::Action::Fail;
+            entry.reason = why;
+        } else if (fs::exists(target, ec)) {
+            // Never over a slot already in the profile: it may well be newer.
+            entry.action = SaveImport::Action::Keep;
+            entry.reason = "the profile already has this slot";
+        } else if (!preview) {
+            // Copied, never moved: the original stays where it was.
+            fs::copy_file(file, target, fs::copy_options::none, ec);
+            if (ec) {
+                entry.action = SaveImport::Action::Fail;
+                entry.reason = ec.message();
+            }
+        }
+        ++(entry.action == SaveImport::Action::Copy   ? result.copied
+           : entry.action == SaveImport::Action::Keep ? result.kept
+                                                      : result.failed);
+        result.entries.push_back(std::move(entry));
+    }
+    error.clear();
+    return true;
+}
+
 }   // namespace shockwave

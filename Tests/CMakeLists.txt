@@ -27,6 +27,13 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
         -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageCheck.cmake)
     set_tests_properties(package_cli PROPERTIES TIMEOUT 120 LABELS gpu)
+    # Per-user folders for an installed game (S01, docs/UserPaths.md); no GPU needed.
+    add_test(NAME user_paths_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/UserPathsCLI
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/UserPathsCheck.cmake)
+    set_tests_properties(user_paths_cli PROPERTIES TIMEOUT 180 LABELS integration)
 endif()
 # The graphics overhaul packaged (G13/A10): baked, captured, packaged, then the packaged game
 # must render every graphics feature exactly as the project does.
@@ -46,6 +53,13 @@ target_link_libraries(release_test PRIVATE Shockwave::Projects)
 shockwave_warnings(release_test)
 add_test(NAME release COMMAND release_test)
 set_tests_properties(release PROPERTIES TIMEOUT 60 LABELS unit)
+
+# Per-user folders (S01, docs/UserPaths.md): where installed games write.
+add_executable(user_paths_test UserPathsTest.cpp)
+target_link_libraries(user_paths_test PRIVATE Shockwave::Platform)
+shockwave_warnings(user_paths_test)
+add_test(NAME user_paths COMMAND user_paths_test)
+set_tests_properties(user_paths PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)

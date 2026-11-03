@@ -161,8 +161,10 @@ lists every key and range. The player resolves settings in this order:
 
 1. Project manifest (`vsync`, `frame_limit`, `low_latency`, `shadow_quality`, `lod_error_pixels`).
 2. Optional `<project>/Config/Graphics.swgraphics`, shipped with the game.
-3. The player's `Graphics.swgraphics` in SDL's OS preferences folder, keyed by game module
-   ID. On Linux this is normally `~/.local/share/Shockwave/<game_module>/Graphics.swgraphics`.
+3. The player's `Graphics.swgraphics` in their profile's config folder
+   ([UserPaths.md](UserPaths.md)). Installed on Linux, that's
+   `~/.local/share/<application id>/profiles/default/Config/Graphics.swgraphics`; run from
+   source, it's `<project>/Saved/Config/Graphics.swgraphics`.
 4. Explicit command-line overrides (`--fps`, `--vsync`, `--low-latency`, `--shadows`, `--render-scale`,
    `--anti-aliasing`, and `--graphics-set key=value` for any key, repeatable).
 

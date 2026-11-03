@@ -115,6 +115,12 @@ bool writeRelease(const std::filesystem::path& file, const ReleaseSettings& sett
 // Config/Release.swrelease under the project root.
 std::filesystem::path releasePath(const Project& project);
 
+// The ID an installed game's per-user folders are named by (docs/UserPaths.md): the
+// contract's application_id, or, without a readable contract, "shockwave.<game module>"
+// (lowercase). Never the display name, so renaming the game doesn't move its players' data.
+std::string fallbackApplicationId(const Project& project);
+std::string projectApplicationId(const Project& project);
+
 // ---- Validation -------------------------------------------------------------------------
 
 // What the rest of the project says, for the rules a contract shares with other settings.
@@ -139,6 +145,13 @@ struct ReleaseInputs {
     bool acceptanceScenarioExists = false;
     // The build this engine is ("Release", "Debug", ... from CMake), for the build gate.
     std::string buildConfig;
+    // Where the installed game writes (S01, docs/UserPaths.md): the per-user root its
+    // application ID resolves to on this machine, or why it doesn't. Unchecked leaves the
+    // user_paths gate unverified.
+    bool userPathsChecked = false;
+    std::string userPathsApplicationId;
+    std::string userPathsRoot;
+    std::string userPathsProblem;
 };
 
 // Everything wrong with a contract: its own rules, then (with inputs) the rules it shares

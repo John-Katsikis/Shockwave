@@ -47,7 +47,7 @@ ticked by hand. A release is qualified only when every gate that applies has pas
 | `project_settings` | S00 | it matches the project, package, network and graphics settings |
 | `release_build` | S00 | the engine is a Release, RelWithDebInfo or MinSizeRel build |
 | `steam_app_id` | S00 | online over Steam with the game's own AppID (not 480) |
-| `user_paths` | S01 | evidence of saves, settings and logs in per-user folders, never beside the game |
+| `user_paths` | S01 | installed, saves, settings, logs and caches go to per-user folders named by `application_id`, outside the game |
 | `level_catalog` | S02 | the level catalog checks out |
 | `level_travel` | S05 | evidence of a real level change (menu, level A, level B, menu) through GameFlow |
 | `acceptance_scenario` | S05 | the acceptance scenario plays the game from start to finish |
