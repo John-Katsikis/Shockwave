@@ -115,6 +115,20 @@ build/bin/player --package --project <file.swproject> [--output folder] [--no-bu
 It exits with 1 on any problem and prints `package`, `archive` and `run` lines with the
 paths it made.
 
+## Release contract
+
+Shipping is built in batches from `docs/ShippingImplementation.md`; record each batch's
+evidence in `docs/ShippingVerification.md`. What a project promises to ship lives in
+`Config/Release.swrelease` (`docs/Release.md`, `docs/ReleaseSchema.md`). `--check` checks
+it against the project's other settings, and `--release-info` reports every release gate.
+A gate is passed, failed or unverified, and is never ticked by hand. After changing its
+fields, gates or codes, regenerate the schema:
+
+```sh
+build/bin/player --release-schema docs/ReleaseSchema.md
+build/bin/player --project <file.swproject> --release-info [--json out.json]
+```
+
 ## Networking
 
 Multiplayer is built in batches from `docs/SteamMultiplayerImplementation.md`; record

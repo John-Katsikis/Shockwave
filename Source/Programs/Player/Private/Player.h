@@ -137,6 +137,13 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
 fs::path packagedProjectFile();
 // --check: problems in Config/Package.swpackage, when the project has one.
 void checkPackageSettings(const shockwave::Project& project, std::vector<std::string>& problems);
+// The release contract (PlayerRelease.cpp, docs/Release.md). --release-info prints the
+// contract and every release gate worked out from the project (with --json, as JSON); exit 1
+// when the contract has errors. --release-schema writes docs/ReleaseSchema.md ("-" for
+// stdout). --check reports the contract's problems, against the project's other settings.
+int releaseInfo(const shockwave::Project& project, const fs::path& json);
+int releaseSchema(const fs::path& file);
+void checkRelease(const shockwave::Project& project, std::vector<std::string>& problems);
 // Multiplayer (PlayerNetwork.cpp, docs/Networking.md). --network-schema writes
 // docs/NetworkSchema.md for the game's registered types ("-" for stdout); --network-info
 // prints the project's network settings, digests and problems (with --json, as JSON).

@@ -52,6 +52,8 @@ int main(int argc, char** argv) {
         bool listGpus = false;   // --gpus
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
+        bool releaseInfo = false;   // --release-info
+        std::filesystem::path releaseSchema;   // --release-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
@@ -389,6 +391,10 @@ int main(int argc, char** argv) {
                 networkInfo = true;
             } else if (arg == "--network-schema" && i + 1 < argc) {
                 networkSchema = argv[++i];
+            } else if (arg == "--release-info") {
+                releaseInfo = true;
+            } else if (arg == "--release-schema" && i + 1 < argc) {
+                releaseSchema = argv[++i];
             } else if (arg == "--steam-status") {
                 steamStatus = 1;
                 if (i + 1 < argc &&
@@ -540,6 +546,9 @@ int main(int argc, char** argv) {
                     "player --audio-mix out.wav [--seconds N] [--scene file]\n"
                     "                                    play the scene N seconds (default 3) with no audio\n"
                     "                                    device, write the mix and print per-channel levels\n"
+                    "player --release-info [--json file] the release contract and each release gate: passed,\n"
+                    "                                    failed or unverified (docs/Release.md)\n"
+                    "player --release-schema file.md     write the release contract reference (- for stdout)\n"
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
@@ -623,6 +632,8 @@ int main(int argc, char** argv) {
             mode(tool.listSaves, "--saves");
             mode(networkInfo, "--network-info");
             mode(!networkSchema.empty(), "--network-schema");
+            mode(releaseInfo, "--release-info");
+            mode(!releaseSchema.empty(), "--release-schema");
             mode(steamStatus != 0, "--steam-status");
             mode(netTest.requested, "--net-test");
             mode(!netDump.empty(), "--net-dump");
@@ -636,10 +647,11 @@ int main(int argc, char** argv) {
             mode(tool.online == Tool::Online::JoinDirect, "--join-steam");
             // Only the network and online modes are strict: older tools keep combining as before.
             static const std::vector<std::string> strict = {
-                "--package",        "--network-info",     "--network-schema",     "--steam-status",
-                "--net-test",       "--net-dump",         "--net-encode",         "--net-preview",
-                "--host",           "--join-lobby",       "--join-steam",         "--run-circuit",
-                "--circuit --dump", "--network-manifest", "--assign-network-keys"};
+                "--package",        "--network-info",     "--network-schema",      "--steam-status",
+                "--net-test",       "--net-dump",         "--net-encode",          "--net-preview",
+                "--host",           "--join-lobby",       "--join-steam",          "--run-circuit",
+                "--circuit --dump", "--network-manifest", "--assign-network-keys", "--release-info",
+                "--release-schema"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -688,6 +700,7 @@ int main(int argc, char** argv) {
         if (!netDump.empty()) return player::netDump(netDump, tool.benchmarkJson);   // no project
         if (!netEncode.empty()) return player::netEncode(netEncode, output);
         if (!materialSchema.empty()) return player::materialSchema(materialSchema);   // no project
+        if (!releaseSchema.empty()) return player::releaseSchema(releaseSchema);
         if (!lightingSchema.empty()) return player::lightingSchema(lightingSchema);
         if (!lightingExport.empty()) return player::lightingExport(lightingExport, output);
         if (!lightingImport.empty()) return player::lightingImport(lightingImport, output);
@@ -832,6 +845,7 @@ int main(int argc, char** argv) {
         if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
         if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
+        if (releaseInfo) return player::releaseInfo(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
         if (package.requested) return player::packageGame(project, package);

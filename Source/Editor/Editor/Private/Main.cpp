@@ -27,6 +27,7 @@
 //   --graphics-guide       show the graphics implementation guide on startup
 //   --network              show the Network window on startup
 //   --lighting             show the Lighting (bake) window on startup
+//   --release              show Project > Release readiness on startup
 //   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
@@ -76,6 +77,8 @@ int main(int argc, char** argv) {
                 options.showGraphicsGuide = true;
             else if (arg == "--network")
                 options.showNetwork = true;
+            else if (arg == "--release")
+                options.showRelease = true;
             else if (arg == "--lighting")
                 options.showLighting = true;
             else if (arg == "--graphics-guide-path") {

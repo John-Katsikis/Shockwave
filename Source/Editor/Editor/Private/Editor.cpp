@@ -93,6 +93,7 @@ void Editor::onStart() {
     m_showGraphicsGuide = m_options.showGraphicsGuide;
     m_showNetwork = m_options.showNetwork;
     m_showLighting = m_options.showLighting;
+    m_release.open = m_options.showRelease && m_hasProject;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -231,6 +232,7 @@ void Editor::onGui() {
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
+    m_release.draw(m_project, playing());
     if (m_showControls) drawControlsWindow();
     if (m_showAbout) drawAboutWindow();
     if (m_showGraphicsGuide) drawGraphicsGuide(m_showGraphicsGuide);

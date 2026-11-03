@@ -207,6 +207,9 @@ const char* packagePlatform() {
 #endif
 }
 
+const char* engineBuildConfig() { return SHOCKWAVE_BUILD_CONFIG; }
+const char* engineVersion() { return SHOCKWAVE_VERSION; }
+
 std::string packageFolderName(const Project& project, const PackageSettings& settings) {
     return settings.executableName(project) + "-" + settings.version + "-" + packagePlatform();
 }

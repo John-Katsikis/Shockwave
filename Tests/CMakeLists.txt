@@ -40,6 +40,13 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
 endif()
 
+# The release contract (S00, docs/Release.md): Config/Release.swrelease and its gates.
+add_executable(release_test ReleaseTest.cpp)
+target_link_libraries(release_test PRIVATE Shockwave::Projects)
+shockwave_warnings(release_test)
+add_test(NAME release COMMAND release_test)
+set_tests_properties(release PROPERTIES TIMEOUT 60 LABELS unit)
+
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
 add_test(NAME project COMMAND project_test ${CMAKE_SOURCE_DIR}/Templates/Blank

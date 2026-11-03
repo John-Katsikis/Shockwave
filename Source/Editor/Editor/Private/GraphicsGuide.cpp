@@ -80,6 +80,18 @@ std::filesystem::path graphicsGuidePath() {
     return {};
 }
 
+void openShippingGuide() {
+    const auto index = graphicsGuidePath();
+    const auto path = index.empty() ? index : index.parent_path().parent_path() / "ShippingImplementation.md";
+    std::error_code ec;
+    if (path.empty() || !std::filesystem::is_regular_file(path, ec)) {
+        SW_LOG(LogDocumentation, Error, "The shipping implementation guide is missing; rebuild the editor target");
+        return;
+    }
+    if (!SDL_OpenURL(fileUrl(path).c_str()))
+        SW_LOG(LogDocumentation, Error, "Couldn't open {}: {}", path.string(), SDL_GetError());
+}
+
 void drawGraphicsGuide(bool& open) {
     namespace gui = shockwave::gui;
     ImGui::SetNextWindowSize(ImVec2(760, 600), ImGuiCond_FirstUseEver);

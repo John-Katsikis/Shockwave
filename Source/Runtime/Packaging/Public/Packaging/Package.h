@@ -66,6 +66,10 @@ std::vector<std::string> validatePackageSettings(const Project& project, const P
 
 // The platform packages are made for: the one the engine was built for, "linux-x86_64".
 const char* packagePlatform();
+// How this engine was built: CMake's configuration ("Release", "Debug", ...; empty when
+// none was chosen) and the engine's version.
+const char* engineBuildConfig();
+const char* engineVersion();
 // The package's folder name: "<executable>-<version>-<platform>".
 std::string packageFolderName(const Project& project, const PackageSettings& settings);
 
