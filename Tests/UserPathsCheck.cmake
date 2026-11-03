@@ -1,6 +1,6 @@
 # Per-user folders for an installed game (S01, docs/UserPaths.md), end to end on a packaged
 # Sample in a folder with a space and a non-ASCII name:
-#   - installed, it resolves under HOME by its application ID, and fails clearly without HOME;
+#   - installed, it resolves under HOME (Linux and macOS layouts) by its application ID, and fails clearly without HOME;
 #   - a save from another directory lands in the profile, and the package doesn't change;
 #   - another profile sees none of it; the package moved still finds it;
 #   - --user-dir inside the package is refused;
@@ -18,7 +18,12 @@ if(NOT result EQUAL 0 OR NOT output MATCHES "\npackage ([^\n]+)\n")
 endif()
 set(package "${CMAKE_MATCH_1}")
 set(home "${TEMP}/home ü")
-set(root "${home}/.local/share/shockwave.sample")
+# The OS's per-user data folder (docs/UserPaths.md).
+if(CMAKE_HOST_APPLE)
+    set(root "${home}/Library/Application Support/shockwave.sample")
+else()
+    set(root "${home}/.local/share/shockwave.sample")
+endif()
 file(MAKE_DIRECTORY "${TEMP}/elsewhere")
 
 # Runs the packaged game from an unrelated directory with HOME pointing at the test's home.
