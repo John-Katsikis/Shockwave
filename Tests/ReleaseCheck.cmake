@@ -63,9 +63,11 @@ run(0 "warning Config/Release.swrelease:16: acceptance_scenario.*ok Config/Relea
 file(MAKE_DIRECTORY "${TEMP}/Arena/Tests")
 file(WRITE "${TEMP}/Arena/Tests/complete_game.json" "{}")
 run(0 "ok Config/Release.swrelease" --check)
-run(0 "gate release_contract passed.*gate project_settings passed.*gate steam_app_id not_applicable.*gate user_paths unverified \\(S01\\).*gate platform:windows-x86_64 unverified \\(S13\\).*qualified no"
+run(0 "gate release_contract passed.*gate project_settings passed.*gate steam_app_id not_applicable.*gate user_paths passed \\(S01\\): installed, it writes under [^\n]*com.shockwave.arena.*gate platform:windows-x86_64 unverified \\(S13\\).*qualified no"
     --release-info)
 
+# The contract's application_id names the per-user folders (S01, docs/UserPaths.md).
+run(0 "application_id com.shockwave.arena" --user-paths)
 run(0 "Wrote" --release-info --json "${TEMP}/good.json")
 file(READ "${TEMP}/good.json" json)
 string(JSON id GET "${json}" contract application_id)

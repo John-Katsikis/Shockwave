@@ -559,6 +559,27 @@ bool writeRelease(const std::filesystem::path& file, const ReleaseSettings& sett
 
 std::filesystem::path releasePath(const Project& project) { return project.root / "Config" / "Release.swrelease"; }
 
+std::string fallbackApplicationId(const Project& project) {
+    std::string part;
+    for (const char c : project.gameModule) {
+        const char lower = (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c;
+        if ((lower >= 'a' && lower <= 'z') || (lower >= '0' && lower <= '9') || lower == '-' || lower == '_')
+            part += lower;
+    }
+    return "shockwave." + (part.empty() ? std::string("game") : part);
+}
+
+std::string projectApplicationId(const Project& project) {
+    const std::filesystem::path contract = releasePath(project);
+    std::error_code ec;
+    ReleaseFile file;
+    Diagnostic error;
+    if (std::filesystem::exists(contract, ec) && readRelease(contract, project.relative(contract), file, error) &&
+        !file.settings.applicationId.empty())
+        return file.settings.applicationId;
+    return fallbackApplicationId(project);
+}
+
 // ---- Validation -------------------------------------------------------------------------
 
 void validateRelease(
@@ -701,7 +722,6 @@ struct PendingGate {
 };
 
 constexpr PendingGate kPendingGates[] = {
-    {"user_paths", "S01", "saves, settings and logs in per-user folders, never beside the game", false},
     {"level_travel", "S05", "a real level change (menu, level A, level B, menu) through GameFlow", false},
     {"saves", "S06", "versioned saves that continue across levels and survive interrupted writes", false},
     {"player_settings", "S08", "display, input, audio, accessibility and language settings that persist", false},
@@ -771,6 +791,20 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                                    : "Steam AppID 480 is Valve's test app; a release needs the game's own");
     else
         gate("steam_app_id", GateStatus::Passed, "S00", "Steam AppID " + std::to_string(inputs.steamAppId));
+
+    // Saves, settings, logs and caches in per-user folders named by the application ID,
+    // never beside the game (S01).
+    if (!inputs.userPathsChecked)
+        gate("user_paths", GateStatus::Unverified, "S01", "the per-user folders weren't checked");
+    else if (!inputs.userPathsProblem.empty())
+        gate("user_paths", GateStatus::Failed, "S01", inputs.userPathsProblem);
+    else if (inputs.userPathsApplicationId != s.applicationId)
+        gate(
+            "user_paths", GateStatus::Failed, "S01",
+            "the per-user folders are named \"" + inputs.userPathsApplicationId + "\", not the contract's \"" +
+                s.applicationId + "\"");
+    else
+        gate("user_paths", GateStatus::Passed, "S01", "installed, it writes under " + inputs.userPathsRoot);
 
     // In batch order, with the catalog (S02) and the acceptance scenario (S05) in their places.
     for (const PendingGate& pending : kPendingGates) {
@@ -957,7 +991,9 @@ std::string releaseSchema() {
            "| `release_contract` | S00 | the contract reads, with every key in range |\n"
            "| `project_settings` | S00 | it matches the project, package, network and graphics settings |\n"
            "| `release_build` | S00 | the engine is a Release, RelWithDebInfo or MinSizeRel build |\n"
-           "| `steam_app_id` | S00 | online over Steam with the game's own AppID (not 480) |\n";
+           "| `steam_app_id` | S00 | online over Steam with the game's own AppID (not 480) |\n"
+           "| `user_paths` | S01 | installed, saves, settings, logs and caches go to per-user folders named by "
+           "`application_id`, outside the game |\n";
     for (const PendingGate& pending : kPendingGates) {
         const std::string_view id = pending.id;
         if (id == "level_travel") out += "| `level_catalog` | S02 | the level catalog checks out |\n";

@@ -52,8 +52,8 @@ Nothing is clamped. A failed read changes nothing, and saving goes through a tem
 file.
 
 - **`application_id`** names the game permanently. It's reverse-domain style, in lowercase.
-  Saves and settings will be found by it (S01), so it never changes, even when the game's
-  display name does.
+  The player's saves and settings are found by it ([UserPaths.md](UserPaths.md)), so it
+  never changes, even when the game's display name does.
 - **`max_players`** is 1 for an offline-only game. With `mode online`, it's an even number
   from 2 (1v1) to 64 (32v32).
 - **`shared_budget_mib`** is for unified memory, where the CPU and GPU share one pool. It

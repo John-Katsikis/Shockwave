@@ -32,7 +32,7 @@ if(texture_count EQUAL 0 OR shipped_saved)
 endif()
 # Started from elsewhere, the packaged player still finds its own project.
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
-        "${package}/Binaries/ShockwaveSample" --check
+        "${package}/Binaries/ShockwaveSample" --check --user-dir "${TEMP}/user"
     WORKING_DIRECTORY "${TEMP}" RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE errors)
 if(NOT result EQUAL 0 OR NOT output MATCHES "0 problems")
     message(FATAL_ERROR "The packaged game's --check failed (${result}):\n${output}\n${errors}")

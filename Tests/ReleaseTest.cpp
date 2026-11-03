@@ -374,6 +374,26 @@ void testGates() {
     // In batch order.
     CHECK(report.gates[4].id == "user_paths" && report.gates[5].id == "level_catalog");
 
+    // user_paths (S01) is measured once the caller checks the per-user folders.
+    {
+        ReleaseInputs paths = agreeing();
+        paths.userPathsChecked = true;
+        paths.userPathsApplicationId = good().applicationId;
+        paths.userPathsRoot = "/home/player/.local/share/" + good().applicationId;
+        ReleaseReport measured = reportFor(good(), paths);
+        CHECK(findGate(measured, "user_paths")->status == GateStatus::Passed);
+        CHECK(findGate(measured, "user_paths")->reason.find(paths.userPathsRoot) != std::string::npos);
+        paths.userPathsApplicationId = "shockwave.other";
+        measured = reportFor(good(), paths);
+        CHECK(findGate(measured, "user_paths")->status == GateStatus::Failed);
+        CHECK(findGate(measured, "user_paths")->reason.find("shockwave.other") != std::string::npos);
+        paths.userPathsApplicationId = good().applicationId;
+        paths.userPathsProblem = "there's no per-user data folder (HOME isn't set)";
+        measured = reportFor(good(), paths);
+        CHECK(findGate(measured, "user_paths")->status == GateStatus::Failed);
+        CHECK(findGate(measured, "user_paths")->reason == paths.userPathsProblem);
+    }
+
     // A shared rule fails project_settings, not the contract.
     in.packageVersion = "9.9";
     report = reportFor(good(), in);
@@ -421,6 +441,17 @@ void testProjects() {
     Project project;
     std::string error;
     CHECK(createProject(dir, "Release Test", "sample", project, error));
+    // Without a contract the per-user folders are named after the game module, never the
+    // display name; with one, after its application_id.
+    CHECK(fallbackApplicationId(project) == "shockwave.sample");
+    CHECK(projectApplicationId(project) == "shockwave.sample");
+    project.name = "Renamed Game";
+    CHECK(projectApplicationId(project) == "shockwave.sample");
+    Project odd = project;
+    odd.gameModule = "My Game!";
+    CHECK(fallbackApplicationId(odd) == "shockwave.mygame");
+    odd.gameModule = "!!";
+    CHECK(fallbackApplicationId(odd) == "shockwave.game");
     // A legacy project without a contract: reported as such, never an error.
     ReleaseReport report = releaseReport(project, agreeing());
     CHECK(!report.present && !report.readable && report.diagnostics.empty());
@@ -430,6 +461,7 @@ void testProjects() {
     // A contract on disk, checked against the project; the scenario's file is looked for.
     fs::create_directories(releasePath(project).parent_path());
     std::ofstream(releasePath(project)) << kGood;
+    CHECK(projectApplicationId(project) == "com.example.game");
     ReleaseInputs in = agreeing();
     in.acceptanceScenarioExists = true;   // replaced by what's on disk
     report = releaseReport(project, in);

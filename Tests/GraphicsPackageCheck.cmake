@@ -51,6 +51,7 @@ foreach(scene room-doorway-baked reflection-rooms material-layers postprocess-ch
         --screenshot "${TEMP}/images/${scene}-project.png")
     run("${scene} from the package" "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
         "${package}/Binaries/Graphicsfixtures" --scene "${package}/Game/Scenes/${scene}.swscene" ${common}
+        --user-dir "${TEMP}/user"
         --screenshot "${TEMP}/images/${scene}-package.png")
     execute_process(COMMAND "${PLAYER}" --image-diff "${TEMP}/images/${scene}-project.png"
         "${TEMP}/images/${scene}-package.png" --tolerance 255 --json "${TEMP}/diff.json" OUTPUT_QUIET)

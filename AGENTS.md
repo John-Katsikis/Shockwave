@@ -115,6 +115,16 @@ build/bin/player --package --project <file.swproject> [--output folder] [--no-bu
 It exits with 1 on any problem and prints `package`, `archive` and `run` lines with the
 paths it made.
 
+## Player data
+
+An installed game writes only to per-user folders named by its application ID, never beside
+itself (`docs/UserPaths.md`). Run from source, it uses the project's `Saved/`. Tests that
+run a packaged game must pass `--user-dir <temp>`, so they never touch real player data:
+
+```sh
+build/bin/player --project <file.swproject> --user-paths [--json -]
+```
+
 ## Release contract
 
 Shipping is built in batches from `docs/ShippingImplementation.md`; record each batch's

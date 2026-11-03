@@ -67,8 +67,10 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
             .backend = m_config.renderer,
             .vsync = m_config.window.vsync,
             .swappable = m_config.swappableRenderer,
-            .pipelineCacheFolder =
-                m_config.pipelineCache ? pipelineCacheFolder(m_config.window.title) : std::string()});
+            .pipelineCacheFolder = !m_config.pipelineCache ? std::string()
+                                   : !m_config.pipelineCacheFolder.empty()
+                                       ? m_config.pipelineCacheFolder
+                                       : pipelineCacheFolder(m_config.window.title)});
     if (m_config.gui && !(m_renderer->backendFlags() & kRendererDrawsGui))
         throw std::runtime_error("the " + m_config.renderer + " renderer can't draw the editor's interface");
     m_input = std::make_unique<Input>(m_window.get());
@@ -113,7 +115,13 @@ void Engine::initGui() {
     // Layout and window state persist in the user's config folder
     // (~/.local/share/Shockwave/<app>/ on Linux), not wherever the app was started from.
     static std::string iniPath;
-    if (char* pref = SDL_GetPrefPath("Shockwave", m_config.window.title.c_str())) {
+    if (!m_config.guiSettingsFile.empty()) {
+        iniPath = m_config.guiSettingsFile;
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::path(iniPath).parent_path(), ec);
+        io.IniFilename = ec ? nullptr : iniPath.c_str();
+        if (ec) SW_LOG(LogEngine, Warning, "Window layout won't be kept: {}", ec.message());
+    } else if (char* pref = SDL_GetPrefPath("Shockwave", m_config.window.title.c_str())) {
         iniPath = std::string(pref) + "imgui.ini";
         SDL_free(pref);
         io.IniFilename = iniPath.c_str();

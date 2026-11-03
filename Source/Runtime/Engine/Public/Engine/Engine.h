@@ -100,6 +100,12 @@ struct EngineConfig {
     // Keep compiled pipelines on disk between runs, so later starts compile less
     // (Engine::pipelineCacheFolder; docs/Drawing.md). Off compiles everything every start.
     bool pipelineCache = true;
+    // Where it's kept; empty uses Engine::pipelineCacheFolder(window title). The player
+    // passes its per-user cache folder (docs/UserPaths.md).
+    std::string pipelineCacheFolder;
+    // Where window layout (imgui.ini) is kept; empty uses the OS preferences folder for the
+    // window title. The player passes its profile's config folder (docs/UserPaths.md).
+    std::string guiSettingsFile;
 };
 
 class Engine {

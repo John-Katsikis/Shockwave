@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
         bool releaseInfo = false;   // --release-info
+        player::UserPathsCommand userPathsCommand;   // --user-dir, --profile, --user-paths, --import-legacy-saves
         std::filesystem::path releaseSchema;   // --release-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
@@ -391,6 +392,16 @@ int main(int argc, char** argv) {
                 networkInfo = true;
             } else if (arg == "--network-schema" && i + 1 < argc) {
                 networkSchema = argv[++i];
+            } else if (arg == "--user-dir" && i + 1 < argc) {
+                userPathsCommand.userDir = argv[++i];
+            } else if (arg == "--profile" && i + 1 < argc) {
+                userPathsCommand.profile = argv[++i];
+            } else if (arg == "--user-paths") {
+                userPathsCommand.info = true;
+            } else if (arg == "--import-legacy-saves" && i + 1 < argc) {
+                userPathsCommand.importLegacy = argv[++i];
+            } else if (arg == "--preview") {
+                userPathsCommand.preview = true;
             } else if (arg == "--release-info") {
                 releaseInfo = true;
             } else if (arg == "--release-schema" && i + 1 < argc) {
@@ -546,6 +557,12 @@ int main(int argc, char** argv) {
                     "player --audio-mix out.wav [--seconds N] [--scene file]\n"
                     "                                    play the scene N seconds (default 3) with no audio\n"
                     "                                    device, write the mix and print per-channel levels\n"
+                    "player --user-paths [--json file]   the per-user folders this run writes to\n"
+                    "player --user-dir folder            write saves, settings and caches there this run\n"
+                    "player --profile id                 the player profile (default: default)\n"
+                    "player --import-legacy-saves folder [--preview]\n"
+                    "                                    copy old save games into the profile, never over\n"
+                    "                                    a slot it already has (docs/UserPaths.md)\n"
                     "player --release-info [--json file] the release contract and each release gate: passed,\n"
                     "                                    failed or unverified (docs/Release.md)\n"
                     "player --release-schema file.md     write the release contract reference (- for stdout)\n"
@@ -633,6 +650,8 @@ int main(int argc, char** argv) {
             mode(networkInfo, "--network-info");
             mode(!networkSchema.empty(), "--network-schema");
             mode(releaseInfo, "--release-info");
+            mode(userPathsCommand.info, "--user-paths");
+            mode(!userPathsCommand.importLegacy.empty(), "--import-legacy-saves");
             mode(!releaseSchema.empty(), "--release-schema");
             mode(steamStatus != 0, "--steam-status");
             mode(netTest.requested, "--net-test");
@@ -651,7 +670,7 @@ int main(int argc, char** argv) {
                 "--net-test",       "--net-dump",         "--net-encode",          "--net-preview",
                 "--host",           "--join-lobby",       "--join-steam",          "--run-circuit",
                 "--circuit --dump", "--network-manifest", "--assign-network-keys", "--release-info",
-                "--release-schema"};
+                "--release-schema", "--user-paths", "--import-legacy-saves"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -686,6 +705,10 @@ int main(int argc, char** argv) {
                                          "--lighting-import");
             if ((package.development || package.noBuild || package.noArchive) && !package.requested)
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
+            if (userPathsCommand.preview && userPathsCommand.importLegacy.empty())
+                throw player::UsageError("--preview goes with --import-legacy-saves");
+            if (std::string why; !shockwave::validUserProfile(userPathsCommand.profile, why))
+                throw player::UsageError("--profile: " + why);
             package.output = tool.output = output;
         }
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
@@ -775,6 +798,25 @@ int main(int argc, char** argv) {
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
         if (!shockwave::projectGraphicsSettings(project, tool.graphicsDefaults, error)) throw std::runtime_error(error);
         tool.graphics = tool.graphicsDefaults;
+        {
+            // Where this run writes. A run that writes (play, save) needs it; tools that
+            // only read carry on without, and report it.
+            shockwave::UserPaths paths;
+            std::string pathsError;
+            const bool resolved = player::resolveUserPaths(project, userPathsCommand, paths, pathsError);
+            if (resolved) tool.userPaths = paths;
+            if (userPathsCommand.info)
+                return player::userPathsInfo(
+                    project, userPathsCommand, resolved ? &paths : nullptr, pathsError, tool.benchmarkJson);
+            if (!resolved) {
+                if (!userPathsCommand.importLegacy.empty() ||
+                    (tool.mode == Tool::Mode::Play && !package.requested && !tool.listSaves))
+                    throw std::runtime_error(pathsError);
+                SW_LOG(shockwave::LogEngine, Warning, "No per-user folder: {}", pathsError);
+            }
+            if (!userPathsCommand.importLegacy.empty())
+                return player::importLegacySaves(userPathsCommand.importLegacy, paths, userPathsCommand.preview);
+        }
         // Reproducible tools ignore local user preferences. Explicit --graphics still
         // loads (and --check validates) the file, without a window or GPU.
         if (!graphicsFile.empty()) {
@@ -785,9 +827,9 @@ int main(int argc, char** argv) {
             !noUserGraphics && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
             tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested &&
             !tool.captureReflections) {
-            if (char* pref = SDL_GetPrefPath("Shockwave", project.gameModule.c_str())) {
-                tool.graphicsFile = std::filesystem::path(pref) / "Graphics.swgraphics";
-                SDL_free(pref);
+            // The player's own settings, in their profile's config folder.
+            if (tool.userPaths) {
+                tool.graphicsFile = tool.userPaths->config() / "Graphics.swgraphics";
                 if (std::filesystem::exists(tool.graphicsFile) &&
                     !shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
                     SW_LOG(shockwave::LogEngine, Warning, "Ignoring user graphics settings: {}", error);
@@ -844,7 +886,9 @@ int main(int argc, char** argv) {
             return 0;
         if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
-        if (tool.listSaves) return player::listSaves(project, tool.benchmarkJson);   // only reads files
+        if (tool.listSaves)
+            return player::listSaves(
+                project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(), tool.benchmarkJson);   // only reads files
         if (releaseInfo) return player::releaseInfo(project, tool.benchmarkJson);   // only reads files
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
@@ -914,8 +958,14 @@ int main(int argc, char** argv) {
                           : tool.mode != Tool::Mode::Play || tool.optimise ? std::string("null")
                                                                            : project.renderer;
         config.pipelineCache = !noPipelineCache;
+        if (tool.userPaths) {
+            config.pipelineCacheFolder = (tool.userPaths->cache() / "pipeline-cache").string() + "/";
+            config.guiSettingsFile = (tool.userPaths->config() / "imgui.ini").string();
+        }
         if (clearPipelineCache) {
-            const std::string folder = shockwave::Engine::pipelineCacheFolder(config.window.title);
+            const std::string folder = !config.pipelineCacheFolder.empty()
+                                           ? config.pipelineCacheFolder
+                                           : shockwave::Engine::pipelineCacheFolder(config.window.title);
             std::error_code ec;
             if (!folder.empty()) std::filesystem::remove_all(folder, ec);
             if (ec) throw std::runtime_error("couldn't delete " + folder + ": " + ec.message());

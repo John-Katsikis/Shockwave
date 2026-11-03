@@ -21,11 +21,13 @@
 #include <Network/OnlineServices.h>
 #include <SteamServices/SteamServices.h>
 #include <Navigation/Navigation.h>
+#include <Platform/UserPaths.h>
 #include <Projects/Project.h>
 
 #include <array>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -77,6 +79,9 @@ struct Tool {
     bool showNavMesh = false;   // --view navmesh: the lit scene with the navigation mesh and agents' paths
     shockwave::GraphicsSettings graphics, graphicsDefaults;
     fs::path graphicsFile;
+    // Where this run writes (PlayerUserPaths.cpp, docs/UserPaths.md): saves, settings,
+    // caches. Empty when no per-user folder could be found; tools then only read.
+    std::optional<shockwave::UserPaths> userPaths;
     int shadows = -1;   // --shadows: a ShadowQuality; -1 uses the project's shadow_quality
     bool printFrame = false;   // --print-frame: the render graph, at exit
     double benchmarkSeconds = 0;   // --benchmark: measure this long after a warm-up, report, quit
@@ -122,7 +127,7 @@ int writeInputSchema(const fs::path& out);   // docs/InputSchema.md; "-" for std
 // binding text that would bind it ("pad south", "joy \"G29\" axis 2 full").
 int listDevices(double seconds);
 // --saves: the project's save games, newest first; json, when set, gets them as JSON too.
-int listSaves(const shockwave::Project& project, const fs::path& json);
+int listSaves(const shockwave::Project& project, const fs::path& folder, const fs::path& json);
 
 // --package: makes a game folder for players (Packaging/Package.h). --output, --no-build
 // and --no-archive override Config/Package.swpackage for this run.
@@ -137,6 +142,26 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
 fs::path packagedProjectFile();
 // --check: problems in Config/Package.swpackage, when the project has one.
 void checkPackageSettings(const shockwave::Project& project, std::vector<std::string>& problems);
+// Per-user folders (PlayerUserPaths.cpp, docs/UserPaths.md). The application ID is the
+// release contract's application_id, or "shockwave.<game module>" without one. An installed
+// game writes to the OS's per-user folder; a project run from source writes to its own
+// Saved/ folder; --user-dir picks a folder for this run (tests and CI always do).
+struct UserPathsCommand {
+    fs::path userDir;   // --user-dir
+    std::string profile = "default";   // --profile
+    bool info = false;   // --user-paths [--json file]
+    fs::path importLegacy;   // --import-legacy-saves folder
+    bool preview = false;   // --preview: what an import would do, copying nothing
+};
+std::string applicationIdFor(const shockwave::Project& project);
+bool resolveUserPaths(
+    const shockwave::Project& project, const UserPathsCommand& command, shockwave::UserPaths& out, std::string& error);
+int userPathsInfo(
+    const shockwave::Project& project, const UserPathsCommand& command, const shockwave::UserPaths* paths,
+    const std::string& error, const fs::path& json);
+// Copies legacy save games (a project's old Saved/SaveGames, say) into the profile's saves:
+// readable .swsave files only, never over a slot that's already there. Exit 1 if any failed.
+int importLegacySaves(const fs::path& from, const shockwave::UserPaths& paths, bool preview);
 // The release contract (PlayerRelease.cpp, docs/Release.md). --release-info prints the
 // contract and every release gate worked out from the project (with --json, as JSON); exit 1
 // when the contract has errors. --release-schema writes docs/ReleaseSchema.md ("-" for
@@ -235,7 +260,7 @@ private:
     void saveAndQuit();
     // --graphics-report: capabilities, requested and effective settings, memory by category.
     void graphicsReport();
-    fs::path saveFolder() const { return m_project.statePath() / "SaveGames"; }
+    fs::path saveFolder() const { return m_tool.userPaths ? m_tool.userPaths->saves() : fs::path(); }
 
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);

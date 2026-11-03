@@ -3,8 +3,10 @@
 
 #include <Core/Log.h>
 #include <Engine/GraphicsSettings.h>
+#include <GameFramework/SaveGame.h>
 #include <Multiplayer/NetworkSettings.h>
 #include <Packaging/Package.h>
+#include <Platform/UserPaths.h>
 #include <UI/Gui.h>
 
 #include <imgui.h>
@@ -79,7 +81,27 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     if (shockwave::projectGraphicsSettings(project, graphics, error))
         inputs.graphicsMemoryBudgetMb = graphics.memoryBudgetMb;
     inputs.levelCatalogPresent = fs::exists(project.root / "Config" / "Levels.swlevels", ec);
+    userPathsInputs(project, shockwave::projectApplicationId(project), inputs);
     return inputs;
+}
+
+void userPathsInputs(
+    const shockwave::Project& project, const std::string& applicationId, shockwave::ReleaseInputs& inputs) {
+    // The installed layout for this application ID on this machine, kept out of the
+    // project (which is what gets packaged).
+    inputs.userPathsChecked = true;
+    shockwave::UserPathsRequest request;
+    request.applicationId = applicationId;
+    request.installRoot = project.root;
+    shockwave::UserPaths paths;
+    std::string error;
+    inputs.userPathsApplicationId = applicationId;
+    inputs.userPathsProblem.clear();
+    inputs.userPathsRoot.clear();
+    if (shockwave::UserPaths::resolve(request, paths, error))
+        inputs.userPathsRoot = paths.root().string();
+    else
+        inputs.userPathsProblem = error;
 }
 
 // ---- The file -----------------------------------------------------------------------
@@ -194,6 +216,8 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
         std::error_code ec;
         inputs.acceptanceScenarioExists =
             !m_edit.acceptanceScenario.empty() && fs::is_regular_file(project.root / m_edit.acceptanceScenario, ec);
+        // The ID as edited, so the folders shown follow what's typed.
+        userPathsInputs(project, m_edit.applicationId, inputs);
         // The same rules --check applies, against the project's saved settings.
         shockwave::validateRelease(m_edit, &inputs, shown, nullptr, report.diagnostics);
         for (const shockwave::Diagnostic& d : report.diagnostics)
@@ -216,6 +240,7 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
     }
     if (!m_present) shockwave::releaseGates(report, m_inputs);
     drawGates(report);
+    drawPlayerData(project, m_present ? m_edit.applicationId : shockwave::fallbackApplicationId(project));
     ImGui::End();
 }
 
@@ -316,6 +341,78 @@ void ReleaseWindow::drawGates(const shockwave::ReleaseReport& report) {
         ImGui::TextWrapped("%s", gate.reason.c_str());
     }
     ImGui::EndTable();
+}
+
+// Where the game writes (S01, docs/UserPaths.md): the installed per-user folders for the
+// application ID, the project's own Saved/ that Play uses, and a way to bring saves made
+// during development into the installed default profile.
+void ReleaseWindow::drawPlayerData(const shockwave::Project& project, const std::string& applicationId) {
+    ImGui::SeparatorText("Player data");
+    const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
+    auto openButton = [](const char* id, const fs::path& folder) {
+        std::error_code ec;
+        const bool exists = fs::is_directory(folder, ec);
+        ImGui::PushID(id);
+        ImGui::BeginDisabled(!exists);
+        if (gui::button("Open")) SDL_OpenURL(("file://" + folder.generic_string()).c_str());
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(exists ? "Show this folder" : "Nothing has been written here yet");
+        ImGui::PopID();
+    };
+
+    shockwave::UserPathsRequest installedRequest;
+    installedRequest.applicationId = applicationId;
+    installedRequest.installRoot = project.root;
+    shockwave::UserPaths installed;
+    std::string error;
+    const bool installedOk = shockwave::UserPaths::resolve(installedRequest, installed, error);
+    ImGui::TextUnformatted("Installed game");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%s, profile default)", applicationId.c_str());
+    if (installedOk) {
+        ImGui::TextWrapped("%s", installed.root().string().c_str());
+        ImGui::SameLine();
+        openButton("installed", installed.root());
+    } else {
+        ImGui::TextColored(errorColor, "%s", error.c_str());
+    }
+
+    shockwave::UserPathsRequest devRequest;
+    devRequest.applicationId = applicationId;
+    devRequest.developmentProject = project.root;
+    shockwave::UserPaths development;
+    if (shockwave::UserPaths::resolve(devRequest, development, error)) {
+        ImGui::TextUnformatted("Play in the editor");
+        ImGui::TextWrapped("%s", development.root().string().c_str());
+        ImGui::SameLine();
+        openButton("development", development.root());
+    }
+    ImGui::TextDisabled("Changing application_id moves where installed players' data goes.");
+
+    std::error_code ec;
+    const bool haveDevSaves = fs::is_directory(development.saves(), ec);
+    ImGui::BeginDisabled(!installedOk || !haveDevSaves);
+    if (gui::button("Import development saves")) {
+        shockwave::SaveImport result;
+        if (!shockwave::importSaveGames(development.saves(), installed.saves(), false, result, error)) {
+            m_importResult = error;
+            m_importFailed = true;
+        } else {
+            m_importResult = "Copied " + std::to_string(result.copied) + ", kept " + std::to_string(result.kept) +
+                             " already there, " + std::to_string(result.failed) + " failed";
+            for (const auto& entry : result.entries)
+                if (entry.action == shockwave::SaveImport::Action::Fail)
+                    m_importResult += "\n" + entry.slot + ": " + entry.reason;
+            m_importFailed = result.failed != 0;
+        }
+        SW_LOG(LogRelease, Info, "Import development saves: {}", m_importResult);
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(
+        "Copy Saved/SaveGames into the installed game's default profile. Never moves or writes over a save.");
+    if (!m_importResult.empty())
+        ImGui::TextColored(
+            m_importFailed ? errorColor : gui::semanticColor(gui::currentTheme().text), "%s", m_importResult.c_str());
 }
 
 }   // namespace editor

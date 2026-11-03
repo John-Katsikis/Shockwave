@@ -47,6 +47,21 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     if (shockwave::projectGraphicsSettings(project, graphics, error))
         inputs.graphicsMemoryBudgetMb = graphics.memoryBudgetMb;
     inputs.levelCatalogPresent = fs::exists(project.root / "Config" / "Levels.swlevels", ec);
+
+    // Where this game writes once installed (S01): the installed layout for its application
+    // ID on this machine, kept out of the game's own folder (the project, from source).
+    inputs.userPathsChecked = true;
+    shockwave::UserPathsRequest request;
+    request.applicationId = shockwave::projectApplicationId(project);
+    request.installRoot = packagedProjectFile().empty() ? project.root : project.root.parent_path();
+    shockwave::UserPaths paths;
+    if (shockwave::UserPaths::resolve(request, paths, error)) {
+        inputs.userPathsApplicationId = paths.applicationId();
+        inputs.userPathsRoot = paths.root().string();
+    } else {
+        inputs.userPathsApplicationId = request.applicationId;
+        inputs.userPathsProblem = error;
+    }
     return inputs;
 }
 
