@@ -289,6 +289,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
     }
     checkPackageSettings(m_project, problems);
+    checkRelease(m_project, problems);
     for (const std::string& problem : problems) std::printf("%s\n", problem.c_str());
     std::printf(
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),

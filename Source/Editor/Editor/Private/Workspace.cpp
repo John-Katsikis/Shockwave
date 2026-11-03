@@ -2,6 +2,7 @@
 // smaller windows (preferences, project settings, stats, controls, about, prompts).
 #include "Editor.h"
 #include "GpuPanel.h"
+#include "GraphicsGuide.h"
 
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -183,6 +184,18 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Look through scene camera", "F8", &m_viewThroughCamera);
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Project")) {
+            if (ImGui::MenuItem("Settings...")) {
+                m_projectEdit = m_project;
+                m_networkEdit.loaded = false;
+                m_showProjectSettings = true;
+            }
+            ImGui::MenuItem("Release readiness", nullptr, &m_release.open);
+            ImGui::SetItemTooltip(
+                "What the project promises to ship (Config/Release.swrelease) and each release gate:\n"
+                "passed, failed or still unverified (the same as: player --release-info)");
+            ImGui::EndMenu();
+        }
         drawBuildMenu();
         if (ImGui::BeginMenu("Window")) {
             ImGui::MenuItem("Hierarchy", nullptr, &m_showHierarchy);
@@ -204,6 +217,8 @@ void Editor::drawMenuBar() {
     }
     if (ImGui::BeginMenu("Help")) {
         ImGui::MenuItem("Graphics implementation guide", nullptr, &m_showGraphicsGuide);
+        if (ImGui::MenuItem("Shipping implementation guide")) openShippingGuide();
+        ImGui::SetItemTooltip("docs/ShippingImplementation.md: the plan from a project to a finished, installed game");
         ImGui::MenuItem("Controls", "F1", &m_showControls);
         ImGui::MenuItem("About Shockwave", nullptr, &m_showAbout);
         ImGui::Separator();

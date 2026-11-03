@@ -2,6 +2,7 @@
 
 #include "PackageWindow.h"
 #include "Preferences.h"
+#include "ReleaseWindow.h"
 #include "SceneTemplates.h"
 
 #include <Assets/AssetFolder.h>
@@ -65,6 +66,7 @@ struct EditorOptions {
     bool showGraphicsGuide = false;   // --graphics-guide: open the implementation guide
     bool showNetwork = false;   // --network: open the Network window
     bool showLighting = false;   // --lighting: open the Lighting window
+    bool showRelease = false;   // --release: open Project > Release readiness
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -647,6 +649,7 @@ private:
     std::string m_iniPath;   // ImGui layout, next to the preferences
 
     PackageWindow m_package;   // Build > Package game
+    ReleaseWindow m_release;   // Project > Release readiness
 };
 
 }   // namespace editor
