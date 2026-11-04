@@ -2,8 +2,6 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
-#include <cstdlib>
-
 #include <Animation/AnimationWorld.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
@@ -415,50 +413,30 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
 }
 
 void Player::onShutdown() {
-    const bool trace = std::getenv("SW_SHUTDOWN_TRACE") != nullptr;   // TEMP diagnostic
-    int step = 0;
     m_navOverlay.release(engine().renderer());
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_bakedLighting.release();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_reflections.release();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (session()) SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", session()->ticks());
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (m_levels) m_levels->stop();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_levels.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     writeLoadReport();   // after Stop, so it shows what stayed resident (nothing should)
-    if (trace) { std::fprintf(stderr, "shutdown step %d (report written)\n", ++step); std::fflush(stderr); }
     if (m_previewHost) m_previewHost->stop();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_previewHost.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     // The session's transport and auth sessions were Steam's: Steam goes after them.
     m_match.leave();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (m_steam) m_steam->shutdown();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_steam.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (m_capture) {
         std::printf(
             "net capture: %llu records in %s\n", static_cast<unsigned long long>(m_capture->recordsWritten()),
             m_tool.netCapture.string().c_str());
         m_capture->close();
     }
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     if (m_instance) m_instance->shutdown();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_ui.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_effects.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
     m_postProcess.reset();
-    if (trace) { std::fprintf(stderr, "shutdown step %d\n", ++step); std::fflush(stderr); }
 }
 
 void Player::takeScreenshot() {
