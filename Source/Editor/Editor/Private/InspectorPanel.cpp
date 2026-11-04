@@ -7,6 +7,7 @@
 
 #include <Circuits/Circuit.h>
 #include <Engine/BakedLighting.h>
+#include <Engine/Levels.h>
 #include <Multiplayer/NetworkComponents.h>
 #include <Physics/Physics.h>
 #include <UI/Gui.h>
@@ -170,6 +171,9 @@ void Editor::drawAddComponentPopup(Entity e) {
             v->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
         if (auto* r = m_world.get<shockwave::ReflectionProbe>(e); r && r->bindingId.empty())
             r->bindingId = shockwave::formatBindingId(shockwave::newBindingId());
+        // A persistent identity is made once, here (docs/Levels.md), so saves can find it.
+        if (auto* p = m_world.get<shockwave::PersistentIdentity>(e); p && p->id.empty())
+            p->id = shockwave::newPersistentId();
         log("Added " + chosen->name + " to " + displayName(e));
         ImGui::CloseCurrentPopup();
     }

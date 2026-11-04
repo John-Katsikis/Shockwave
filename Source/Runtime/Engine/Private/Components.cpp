@@ -1,4 +1,5 @@
 #include <Engine/Components.h>
+#include <Engine/Levels.h>
 
 #include <Engine/PostProcess.h>
 #include <Engine/Prefab.h>
@@ -284,6 +285,24 @@ void registerBuiltins() {
             field("fade", &DecalLifetime::fade, 0.05f, 0.0f, 1000.0f),
         },
         "Rendering");
+    // Levels (S02, docs/Levels.md).
+    registerComponent<LevelSpawn>(
+        "LevelSpawn", {field("id", &LevelSpawn::id), field("team", &LevelSpawn::team, 1.0f, -1.0f, 255.0f)},
+        "Levels");
+    registerComponent<LevelExit>(
+        "LevelExit",
+        {
+            field("destination", &LevelExit::destination),
+            field("spawn", &LevelExit::spawn),
+            field("enabled", &LevelExit::enabled),
+            field("one_shot", &LevelExit::oneShot),
+        },
+        "Levels");
+    registerComponent<Checkpoint>(
+        "Checkpoint",
+        {field("id", &Checkpoint::id), field("spawn", &Checkpoint::spawn), field("enabled", &Checkpoint::enabled)},
+        "Levels");
+    registerComponent<PersistentIdentity>("PersistentIdentity", {field("id", &PersistentIdentity::id)}, "Levels");
     registerComponent<Spin>(
         "Spin",
         {

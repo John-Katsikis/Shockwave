@@ -2,6 +2,7 @@
 
 #include "PackageWindow.h"
 #include "Preferences.h"
+#include "LevelsPanel.h"
 #include "ReleaseWindow.h"
 #include "SceneTemplates.h"
 
@@ -67,6 +68,7 @@ struct EditorOptions {
     bool showNetwork = false;   // --network: open the Network window
     bool showLighting = false;   // --lighting: open the Lighting window
     bool showRelease = false;   // --release: open Project > Release readiness
+    bool showLevels = false;   // --levels: open Project > Levels
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -650,6 +652,7 @@ private:
 
     PackageWindow m_package;   // Build > Package game
     ReleaseWindow m_release;   // Project > Release readiness
+    LevelsPanel m_levels;   // Project > Levels
 };
 
 }   // namespace editor

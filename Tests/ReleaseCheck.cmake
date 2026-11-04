@@ -78,9 +78,19 @@ string(JSON firstStatus GET "${json}" gates 0 status)
 string(JSON failed GET "${json}" summary failed)
 string(JSON unverified GET "${json}" summary unverified)
 if(NOT id STREQUAL "com.shockwave.arena" OR NOT platforms EQUAL 2 OR NOT first STREQUAL "release_contract" OR
-   NOT firstStatus STREQUAL "passed" OR NOT failed EQUAL 0 OR unverified LESS 10 OR gates LESS 14)
+   NOT firstStatus STREQUAL "passed" OR NOT failed EQUAL 1 OR unverified LESS 9 OR gates LESS 14)
     message(FATAL_ERROR "--release-info --json is missing fields:\n${json}")
 endif()
+# The one failure: Arena has no level catalog (S02, docs/Levels.md). With one listing its
+# arena, the gate follows the scene and passes; a broken link fails it.
+run(0 "gate level_catalog failed \\(S02\\): no level catalog" --release-info)
+file(APPEND "${project}" "levels \"Config/Levels.swlevels\"\n")
+file(WRITE "${TEMP}/Arena/Config/Levels.swlevels" "shockwave_levels 1\nentry \"arena\"\nlevel \"arena\"\n  scene \"Scenes/arena.swscene\"\n  kind gameplay\nend\n")
+run(0 "gate level_catalog passed \\(S02\\): 1 level from entry arena" --release-info)
+run(0 "ok Config/Levels.swlevels \\(1 level\\)" --check)
+file(WRITE "${TEMP}/Arena/Config/Levels.swlevels" "shockwave_levels 1\nentry \"arena\"\nlevel \"arena\"\n  scene \"Scenes/arena.swscene\"\n  kind gameplay\n  default_spawn \"nowhere\"\nend\n")
+run(0 "gate level_catalog failed \\(S02\\): Config/Levels.swlevels:6: level \"arena\": default_spawn \"nowhere\"" --release-info)
+file(WRITE "${TEMP}/Arena/Config/Levels.swlevels" "shockwave_levels 1\nentry \"arena\"\nlevel \"arena\"\n  scene \"Scenes/arena.swscene\"\n  kind gameplay\nend\n")
 # Every gate is passed, failed, unverified or not_applicable, with a batch and a reason.
 math(EXPR last "${gates} - 1")
 foreach(i RANGE ${last})

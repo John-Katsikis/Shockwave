@@ -15,7 +15,8 @@ namespace player {
 
 namespace net = shockwave::net;
 
-shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
+shockwave::ReleaseInputs releaseInputs(
+    const shockwave::Project& project, const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
     shockwave::ReleaseInputs inputs;
     inputs.projectTickRate = project.tickRate;
     inputs.buildConfig = shockwave::engineBuildConfig();
@@ -46,7 +47,7 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     shockwave::GraphicsSettings graphics;
     if (shockwave::projectGraphicsSettings(project, graphics, error))
         inputs.graphicsMemoryBudgetMb = graphics.memoryBudgetMb;
-    inputs.levelCatalogPresent = fs::exists(project.root / "Config" / "Levels.swlevels", ec);
+    shockwave::levelReleaseInputs(project, inputs, levelFacts);
 
     // Where this game writes once installed (S01): the installed layout for its application
     // ID on this machine, kept out of the game's own folder (the project, from source).
@@ -65,8 +66,10 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     return inputs;
 }
 
-int releaseInfo(const shockwave::Project& project, const fs::path& json) {
-    const shockwave::ReleaseReport report = shockwave::releaseReport(project, releaseInputs(project));
+int releaseInfo(
+    const shockwave::Project& project, const fs::path& json,
+    const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
+    const shockwave::ReleaseReport report = shockwave::releaseReport(project, releaseInputs(project, levelFacts));
     if (json.empty()) {
         std::fputs(shockwave::releaseReportText(report).c_str(), stdout);
     } else {
@@ -105,8 +108,10 @@ int releaseSchema(const fs::path& file) {
     return 0;
 }
 
-void checkRelease(const shockwave::Project& project, std::vector<std::string>& problems) {
-    const shockwave::ReleaseReport report = shockwave::releaseReport(project, releaseInputs(project));
+void checkRelease(
+    const shockwave::Project& project, std::vector<std::string>& problems,
+    const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
+    const shockwave::ReleaseReport report = shockwave::releaseReport(project, releaseInputs(project, levelFacts));
     if (!report.present) return;   // a development project
     const size_t before = problems.size();
     for (const shockwave::Diagnostic& diagnostic : report.diagnostics) {

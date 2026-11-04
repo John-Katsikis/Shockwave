@@ -1,0 +1,20 @@
+shockwave_levels 1
+entry "menu"
+level "menu"
+  scene "Scenes/menu.swscene"
+  kind menu
+  next "a"
+end
+level "a"
+  scene "Scenes/a.swscene"
+  kind gameplay
+  default_spawn "start"
+  next "b"
+  preload "Content/UI/loading.rml"
+end
+level "b"
+  scene "Scenes/b.swscene"
+  kind gameplay
+  default_spawn "entrance"
+  next "menu"
+end

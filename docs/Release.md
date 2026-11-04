@@ -95,10 +95,13 @@ measured:
 - the contract itself;
 - its agreement with the project's settings;
 - whether the engine is an optimised build;
-- whether an online Steam game has its own AppID.
+- whether an online Steam game has its own AppID;
+- where the installed game writes (S01, [UserPaths.md](UserPaths.md));
+- the level catalog and the links between its scenes (S02, [Levels.md](Levels.md)).
+  `--release-info` loads every level's scene to measure it.
 
-The gates for later batches stay `unverified` until their evidence exists. That covers user
-folders, the level catalog, level travel, saves, settings, cooking, performance, online
+The gates for later batches stay `unverified` until their evidence exists. That covers
+level travel, saves, settings, cooking, performance, online
 lifecycle, crash recovery and each platform. So for now no project qualifies, and the
 report says exactly why.
 

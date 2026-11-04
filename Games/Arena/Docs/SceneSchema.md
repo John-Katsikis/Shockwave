@@ -177,6 +177,8 @@ No fields; the component's presence is what matters.
 | `speed` | number; range 0 to 10 | `1` |
 | `scale` | number; range 0.001 to 1000 | `1` |
 | `color` | r g b [a], linear 0..1, alpha optional | `1 1 1 1` |
+| `soft_distance` | number; range -1 to 100 | `-1` |
+| `sorting` | one of: whole, parts (or its number, counting from 0) | `whole` |
 
 ### Gameplay
 
@@ -193,6 +195,38 @@ No fields; the component's presence is what matters.
 | Field | Value | Default |
 |---|---|---|
 | `values` | quoted text | `""` |
+
+### Levels
+
+#### LevelSpawn
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `"start"` |
+| `team` | whole number; range -1 to 255 | `-1` |
+
+#### LevelExit
+
+| Field | Value | Default |
+|---|---|---|
+| `destination` | quoted text | `""` |
+| `spawn` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `one_shot` | 1 or 0 (true/false also accepted) | `1` |
+
+#### Checkpoint
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `""` |
+| `spawn` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### PersistentIdentity
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `""` |
 
 ### Lighting
 
@@ -431,6 +465,7 @@ No fields; the component's presence is what matters.
 | `shadow_cascades` | whole number; range 1 to 4 | `4` |
 | `ao_radius` | number; range 0.01 to 10 | `0.3` |
 | `ao_intensity` | number; range 0 to 4 | `1` |
+| `cluster_far` | number; range 1 to 100000 | `250` |
 
 #### Light
 
@@ -479,6 +514,18 @@ No fields; the component's presence is what matters.
 |---|---|---|
 | `seconds` | number; range 0 to 100000 | `30` |
 | `fade` | number; range 0 to 1000 | `2` |
+
+#### PostProcessVolume
+
+| Field | Value | Default |
+|---|---|---|
+| `profile` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `unbounded` | 1 or 0 (true/false also accepted) | `0` |
+| `half_extents` | x y z; range 0.01 to 100000 | `5 5 5` |
+| `priority` | whole number; range -1000 to 1000 | `0` |
+| `blend_distance` | number; range 0 to 1000 | `1` |
+| `weight` | number; range 0 to 1 | `1` |
 
 ### UI
 

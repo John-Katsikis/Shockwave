@@ -22,9 +22,12 @@
 #include <SteamServices/SteamServices.h>
 #include <Navigation/Navigation.h>
 #include <Platform/UserPaths.h>
+#include <Projects/LevelCatalog.h>
 #include <Projects/Project.h>
+#include <Projects/ReleaseSettings.h>
 
 #include <array>
+#include <map>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -53,7 +56,9 @@ struct Tool {
         AssignNetworkKeys,
         LightingInfo,
         LightingAssignIds,
-        BakeLighting
+        BakeLighting,
+        Levels,   // --levels: the level catalog and every level's links (docs/Levels.md)
+        ReleaseInfo   // --release-info, which loads every level to follow its links
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
@@ -69,6 +74,7 @@ struct Tool {
     int saveFrame = 30;
     // Playing, these make runs reproducible and checkable without a person watching.
     fs::path scene;   // --scene: instead of the project's startup scene
+    std::string level;   // --level: start in this catalog level (docs/Levels.md)
     fs::path screenshot;   // --screenshot: save frame N as a PNG, then quit
     bool optimise = false;   // --optimise: compress every texture now, report (with --json), quit
     bool lodColors = false;   // --lod-colors: tint each level of detail its own colour
@@ -166,9 +172,21 @@ int importLegacySaves(const fs::path& from, const shockwave::UserPaths& paths, b
 // contract and every release gate worked out from the project (with --json, as JSON); exit 1
 // when the contract has errors. --release-schema writes docs/ReleaseSchema.md ("-" for
 // stdout). --check reports the contract's problems, against the project's other settings.
-int releaseInfo(const shockwave::Project& project, const fs::path& json);
+// The release inputs from the project's files; `levelFacts` (each level's scene, read by
+// Player::levelFacts) lets the level_catalog gate follow the links between levels too.
+shockwave::ReleaseInputs releaseInputs(
+    const shockwave::Project& project, const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
+int releaseInfo(
+    const shockwave::Project& project, const fs::path& json,
+    const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
 int releaseSchema(const fs::path& file);
-void checkRelease(const shockwave::Project& project, std::vector<std::string>& problems);
+int levelSchema(const fs::path& file);
+// --level: the catalog level's scene becomes the startup scene. Throws with the levels
+// there are when the id isn't one.
+void applyStartLevel(shockwave::Project& project, const std::string& level);
+void checkRelease(
+    const shockwave::Project& project, std::vector<std::string>& problems,
+    const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
 // Multiplayer (PlayerNetwork.cpp, docs/Networking.md). --network-schema writes
 // docs/NetworkSchema.md for the game's registered types ("-" for stdout); --network-info
 // prints the project's network settings, digests and problems (with --json, as JSON).
@@ -264,6 +282,10 @@ private:
 
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);
+    int levels();   // --levels [--json]
+    int releaseInfoTool();   // --release-info [--json]
+    // Loads each level's scene once, in an isolated world, and reads what it says.
+    std::map<std::string, shockwave::LevelSceneFacts> levelFacts(const shockwave::LevelCatalog& catalog);
 
     int schema();
     // --check for prefabs: problems loading them, and parts that don't belong in one.

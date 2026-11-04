@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         bool releaseInfo = false;   // --release-info
         player::UserPathsCommand userPathsCommand;   // --user-dir, --profile, --user-paths, --import-legacy-saves
         std::filesystem::path releaseSchema;   // --release-schema
+        std::filesystem::path levelSchema;   // --level-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
@@ -406,6 +407,12 @@ int main(int argc, char** argv) {
                 releaseInfo = true;
             } else if (arg == "--release-schema" && i + 1 < argc) {
                 releaseSchema = argv[++i];
+            } else if (arg == "--levels") {
+                tool.mode = Tool::Mode::Levels;
+            } else if (arg == "--level-schema" && i + 1 < argc) {
+                levelSchema = argv[++i];
+            } else if (arg == "--level" && i + 1 < argc) {
+                tool.level = argv[++i];
             } else if (arg == "--steam-status") {
                 steamStatus = 1;
                 if (i + 1 < argc &&
@@ -566,6 +573,10 @@ int main(int argc, char** argv) {
                     "player --release-info [--json file] the release contract and each release gate: passed,\n"
                     "                                    failed or unverified (docs/Release.md)\n"
                     "player --release-schema file.md     write the release contract reference (- for stdout)\n"
+                    "player --levels [--json file]       the level catalog and the links between levels\n"
+                    "                                    (docs/Levels.md); exit 1 on a broken link\n"
+                    "player --level id                   play from this catalog level instead of the startup scene\n"
+                    "player --level-schema file.md       write the level catalog reference (- for stdout)\n"
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
@@ -637,7 +648,9 @@ int main(int argc, char** argv) {
                 "--assign-network-keys",
                 "--lighting-info",
                 "--lighting-assign-ids",
-                "--bake-lighting"};
+                "--bake-lighting",
+                "--levels",
+                "--release-info"};
             mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
@@ -653,6 +666,7 @@ int main(int argc, char** argv) {
             mode(userPathsCommand.info, "--user-paths");
             mode(!userPathsCommand.importLegacy.empty(), "--import-legacy-saves");
             mode(!releaseSchema.empty(), "--release-schema");
+            mode(!levelSchema.empty(), "--level-schema");
             mode(steamStatus != 0, "--steam-status");
             mode(netTest.requested, "--net-test");
             mode(!netDump.empty(), "--net-dump");
@@ -670,7 +684,7 @@ int main(int argc, char** argv) {
                 "--net-test",       "--net-dump",         "--net-encode",          "--net-preview",
                 "--host",           "--join-lobby",       "--join-steam",          "--run-circuit",
                 "--circuit --dump", "--network-manifest", "--assign-network-keys", "--release-info",
-                "--release-schema", "--user-paths", "--import-legacy-saves"};
+                "--release-schema", "--user-paths", "--import-legacy-saves", "--levels", "--level-schema"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -705,6 +719,20 @@ int main(int argc, char** argv) {
                                          "--lighting-import");
             if ((package.development || package.noBuild || package.noArchive) && !package.requested)
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
+            // --level picks a catalog level; guessing which wins against another start is
+            // worse than saying so (LevelOptionConflict, docs/LevelSchema.md).
+            if (!tool.level.empty()) {
+                if (!tool.scene.empty())
+                    throw player::UsageError("LevelOptionConflict: --level and --scene both choose the start; pick one");
+                if (!tool.load.empty())
+                    throw player::UsageError(
+                        "LevelOptionConflict: --load starts where the save was made; drop --level");
+                if (online || !tool.netPreview.empty())
+                    throw player::UsageError(
+                        "LevelOptionConflict: online play starts in the network settings' match scene; drop --level");
+                if (tool.mode != Tool::Mode::Play)
+                    throw player::UsageError("LevelOptionConflict: --level goes with play, not with tools");
+            }
             if (userPathsCommand.preview && userPathsCommand.importLegacy.empty())
                 throw player::UsageError("--preview goes with --import-legacy-saves");
             if (std::string why; !shockwave::validUserProfile(userPathsCommand.profile, why))
@@ -724,6 +752,7 @@ int main(int argc, char** argv) {
         if (!netEncode.empty()) return player::netEncode(netEncode, output);
         if (!materialSchema.empty()) return player::materialSchema(materialSchema);   // no project
         if (!releaseSchema.empty()) return player::releaseSchema(releaseSchema);
+        if (!levelSchema.empty()) return player::levelSchema(levelSchema);
         if (!lightingSchema.empty()) return player::lightingSchema(lightingSchema);
         if (!lightingExport.empty()) return player::lightingExport(lightingExport, output);
         if (!lightingImport.empty()) return player::lightingImport(lightingImport, output);
@@ -796,6 +825,7 @@ int main(int argc, char** argv) {
             manifest = *found;
         }
         if (!shockwave::loadProject(manifest, project, error)) throw std::runtime_error(error);
+        if (!tool.level.empty()) player::applyStartLevel(project, tool.level);
         if (!shockwave::projectGraphicsSettings(project, tool.graphicsDefaults, error)) throw std::runtime_error(error);
         tool.graphics = tool.graphicsDefaults;
         {
@@ -889,7 +919,9 @@ int main(int argc, char** argv) {
         if (tool.listSaves)
             return player::listSaves(
                 project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(), tool.benchmarkJson);   // only reads files
-        if (releaseInfo) return player::releaseInfo(project, tool.benchmarkJson);   // only reads files
+        // --release-info loads every level's scene to follow the links between them, so it
+        // runs with the game module, like --check (no window or GPU).
+        if (releaseInfo) tool.mode = Tool::Mode::ReleaseInfo;
         // The project's game code, before any window: a missing module fails fast. It
         // outlives the engine and the player, which hold what it made.
         if (package.requested) return player::packageGame(project, package);

@@ -80,7 +80,9 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     shockwave::GraphicsSettings graphics;
     if (shockwave::projectGraphicsSettings(project, graphics, error))
         inputs.graphicsMemoryBudgetMb = graphics.memoryBudgetMb;
-    inputs.levelCatalogPresent = fs::exists(project.root / "Config" / "Levels.swlevels", ec);
+    // The catalog and its files; the links between levels need every scene loaded, which
+    // the Levels panel's Validate does (the gate says so meanwhile).
+    shockwave::levelReleaseInputs(project, inputs);
     userPathsInputs(project, shockwave::projectApplicationId(project), inputs);
     return inputs;
 }

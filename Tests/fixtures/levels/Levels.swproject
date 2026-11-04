@@ -1,0 +1,11 @@
+# The level catalog's test project (S02, docs/Levels.md): a UI-only menu and two
+# gameplay levels joined by exits, menu -> a -> b -> menu. Tests copy it and break it
+# one way at a time (Tests/LevelCheck.cmake). It borrows the Sample game's module.
+shockwave_project 1
+name "Level fixtures"
+game_module "sample"
+startup_scene "Scenes/menu.swscene"
+assets "Content"
+levels "Config/Levels.swlevels"
+tick_rate 60
+window_size 1280 720

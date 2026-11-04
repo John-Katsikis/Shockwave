@@ -26,9 +26,11 @@
 // editor's Project > Release readiness window and the generated docs/ReleaseSchema.md.
 
 #include <Projects/Diagnostic.h>
+#include <Projects/LevelCatalog.h>
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
@@ -139,8 +141,15 @@ struct ReleaseInputs {
     uint32_t steamAppId = 0;
     // The project's default graphics memory budget (graphics_memory_budget_mb, 0 = none).
     uint32_t graphicsMemoryBudgetMb = 0;
-    // Config/Levels.swlevels (S02): present or not.
-    bool levelCatalogPresent = false;
+    // The level catalog (S02, docs/Levels.md). Checked: it was read and its files checked
+    // (levelReleaseInputs fills these). Links checked: every level's
+    // scene was loaded and the exits and spawns between them followed too.
+    bool levelCatalogChecked = false;
+    bool levelLinksChecked = false;
+    bool levelCatalogImplicit = true;   // no catalog: the startup scene is the only level
+    size_t levelCount = 0;
+    std::string levelEntry;
+    std::string levelCatalogProblem;   // the first error, or empty
     // Whether the acceptance scenario's file exists; unknown when not asked.
     bool acceptanceScenarioExists = false;
     // The build this engine is ("Release", "Debug", ... from CMake), for the build gate.
@@ -153,6 +162,11 @@ struct ReleaseInputs {
     std::string userPathsRoot;
     std::string userPathsProblem;
 };
+
+// Fills the level_catalog inputs: reads the project's catalog and checks its files, and
+// with `facts` (each level's scene, read by the caller) the links between levels too.
+void levelReleaseInputs(
+    const Project& project, ReleaseInputs& inputs, const std::map<std::string, LevelSceneFacts>* facts = nullptr);
 
 // Everything wrong with a contract: its own rules, then (with inputs) the rules it shares
 // with the project, package and network settings. `shown` names the file in diagnostics;

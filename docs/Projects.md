@@ -114,6 +114,7 @@ renderer "vulkan"    # optional: the renderer plugin the player starts with
 | `scenes` | no | `Scenes` | Where the editor lists and saves scenes, for example `scenes "levels"`. |
 | `theme` | no | | An editor theme. Used when neither `--theme` nor Preferences picks one. |
 | `game_circuit` | no | | A `.swcircuit` inside the content folder that runs for the whole game, next to the GameMode. The file must exist. See [Circuits](Circuits.md). |
+| `levels` | no | | A level catalog, `.swlevels`, inside the project. The file must exist. Without one the startup scene is the only level. See [Levels](Levels.md). |
 | `tick_rate` | no | `60` | Simulation ticks per second, 1 to 1000. |
 | `window_size` | no | `1280 720` | The player's window size. At least 320 x 240. |
 | `vsync` | no | `true` | Wait for the screen's refresh before showing a frame. |

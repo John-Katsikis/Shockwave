@@ -63,13 +63,14 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
             } else if (
                 key == "startup_scene" || key == "assets" || key == "scenes" || key == "theme" ||
-                key == "game_circuit") {
+                key == "game_circuit" || key == "levels") {
                 std::string value;
                 if (!(row >> std::quoted(value)) || value.empty()) return fail("empty or invalid " + key);
                 auto& target = key == "startup_scene"  ? result.startupScene
                                : key == "assets"       ? result.assetFolder
                                : key == "scenes"       ? result.sceneFolder
                                : key == "game_circuit" ? result.gameCircuit
+                               : key == "levels"       ? result.levelCatalog
                                                        : result.theme;
                 target = (result.root / value).lexically_normal();
             } else if (key == "tick_rate") {
@@ -138,6 +139,15 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
         if (!std::filesystem::is_regular_file(result.gameCircuit, ec))
             return fail("game circuit does not exist: " + result.gameCircuit.string());
     }
+    if (!result.levelCatalog.empty()) {
+        if (result.levelCatalog.extension() != ".swlevels")
+            return fail("levels must be a .swlevels file: " + result.levelCatalog.string());
+        const auto inside = result.levelCatalog.lexically_relative(result.root);
+        if (inside.empty() || *inside.begin() == "..")
+            return fail("levels must be inside the project: " + result.levelCatalog.string());
+        if (!std::filesystem::is_regular_file(result.levelCatalog, ec))
+            return fail("level catalog does not exist: " + result.levelCatalog.string());
+    }
     project = std::move(result);
     return true;
 }
@@ -173,6 +183,7 @@ bool saveProject(const Project& project, std::string& error) {
         out << "scenes " << quotedPath(project.sceneFolder) << "\n";
     if (!project.theme.empty()) out << "theme " << quotedPath(project.theme) << "\n";
     if (!project.gameCircuit.empty()) out << "game_circuit " << quotedPath(project.gameCircuit) << "\n";
+    if (!project.levelCatalog.empty()) out << "levels " << quotedPath(project.levelCatalog) << "\n";
     out << "tick_rate " << project.tickRate << "\n"
         << "window_size " << project.width << " " << project.height << "\n"
         << "vsync " << (project.vsync ? "true" : "false") << "\n";
