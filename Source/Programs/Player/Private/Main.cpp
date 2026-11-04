@@ -21,7 +21,9 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <cstdlib>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -29,6 +31,8 @@ using player::Player;
 using player::Tool;
 
 int main(int argc, char** argv) {
+    if (std::getenv("SW_SHUTDOWN_TRACE"))   // TEMP: runs after the statics made later are gone
+        std::atexit([] { std::fprintf(stderr, "shutdown: statics destroyed\n"); std::fflush(stderr); });
     try {
         std::filesystem::path manifest;
         std::filesystem::path newProjectFolder;
@@ -1019,11 +1023,18 @@ int main(int argc, char** argv) {
             if (!folder.empty()) std::filesystem::remove_all(folder, ec);
             if (ec) throw std::runtime_error("couldn't delete " + folder + ": " + ec.message());
         }
-        shockwave::Engine engine(config);
-        engine.setMasterVolume(audioVolume);
-        Player player(std::move(project), std::move(tool), gameModule->module());
-        engine.run(player);
-        if (player.exitCode() != 0) return player.exitCode();
+        auto engine = std::make_unique<shockwave::Engine>(config);   // TEMP: unique_ptrs for the shutdown trace
+        engine->setMasterVolume(audioVolume);
+        auto player = std::make_unique<Player>(std::move(project), std::move(tool), gameModule->module());
+        engine->run(*player);
+        const bool trace = std::getenv("SW_SHUTDOWN_TRACE") != nullptr;
+        if (trace) { std::fprintf(stderr, "shutdown: run returned\n"); std::fflush(stderr); }
+        const int code = player->exitCode();
+        player.reset();
+        if (trace) { std::fprintf(stderr, "shutdown: player destroyed\n"); std::fflush(stderr); }
+        engine.reset();
+        if (trace) { std::fprintf(stderr, "shutdown: engine destroyed\n"); std::fflush(stderr); }
+        if (code != 0) return code;
     } catch (const player::UsageError& e) {
         std::fprintf(stderr, "Player: %s\n", e.what());
         return 2;
