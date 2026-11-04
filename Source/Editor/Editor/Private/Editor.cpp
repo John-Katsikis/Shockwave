@@ -97,6 +97,7 @@ void Editor::onStart() {
     m_showLighting = m_options.showLighting;
     m_release.open = m_options.showRelease && m_hasProject;
     m_levels.open = m_options.showLevels && m_hasProject;
+    m_showResidency = m_options.showResidency;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -225,6 +226,7 @@ void Editor::onGui() {
     if (m_showContent) drawContentBrowser();
     if (m_showConsole) drawConsole();
     if (m_showOptimisation) drawOptimisationWindow();
+    if (m_showResidency) drawResidencyWindow();
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();

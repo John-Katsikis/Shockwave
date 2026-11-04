@@ -39,6 +39,10 @@ void Editor::createGameInstance() {
     (void)shockwave::buildReplicationRegistry(m_gameModule ? &m_gameModule->module() : nullptr, networkTypes, ignored);
     m_runtimeLevels =
         std::make_unique<shockwave::LevelHost>(m_world, engine().jobs(), *m_gameInstance, &engine(), levelHooks());
+    m_runtimeLevels->onLoadReport = [this](const shockwave::LoadReport& report) {
+        m_loadReports.push_back(report);
+        if (m_loadReports.size() > 32) m_loadReports.erase(m_loadReports.begin());
+    };
 }
 
 void Editor::unloadGameModule() {

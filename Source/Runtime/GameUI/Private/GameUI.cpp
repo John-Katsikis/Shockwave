@@ -33,6 +33,8 @@ namespace shockwave {
 
 namespace fs = std::filesystem;
 
+void registerGameUIAssetProviders();   // GameUIAssets.cpp
+
 void registerGameUIComponents() {
     auto document = field("document", &UIDocument::document);
     document.type = FieldType::UIDocument;
@@ -41,6 +43,7 @@ void registerGameUIComponents() {
         {document, field("visible", &UIDocument::visible), field("order", &UIDocument::order, 1.0f, -1000, 1000),
          field("focus_on_show", &UIDocument::focusOnShow), field("preview", &UIDocument::preview)},
         "UI");
+    registerGameUIAssetProviders();
 }
 
 namespace {

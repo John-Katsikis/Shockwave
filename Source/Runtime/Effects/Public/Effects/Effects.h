@@ -144,6 +144,9 @@ public:
     EffectInfo info(std::string_view effect);
     // Loads an effect ahead of time, so its first play doesn't stall. False if it can't be.
     bool preload(std::string_view effect);
+    // The files an effect reads: itself, then the textures and models Effekseer opened for
+    // it (some may be missing). Loads it if needed. For the asset graph.
+    std::vector<std::filesystem::path> files(std::string_view effect);
     // Every .efkefc in the Content folder, for the editor.
     std::vector<std::string> effectFiles() const;
     // Loads every effect again from disk.

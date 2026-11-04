@@ -41,12 +41,15 @@ the editor call `process()` once a frame, after the frame's ticks, frame and UI 
 returned. When a request is waiting:
 
 1. **Prepare.** The next level's scene loads into a separate world. If that fails, the
-   request fails and the current level keeps playing, untouched.
+   request fails and the current level keeps playing, untouched. With asset leases on,
+   its dependency closure is planned against what's resident, and a level over the
+   budget fails here as `BudgetExceeded` ([AssetResidency.md](AssetResidency.md)).
 2. **End.** The current level's session stops: the network closes, then `endPlay` runs,
    then circuits stop, then the subsystems go, newest first. If `endPlay` throws, the
    level still ends.
-3. **Swap.** The new level moves into the same World object, so the address everything
-   holds stays the same. It gets a new epoch.
+3. **Swap.** The new level's asset lease is taken and the old one given back, so assets
+   both use stay resident. The new level moves into the same World object, so the address
+   everything holds stays the same. It gets a new epoch.
 4. **Start.** A new session and GameMode start. If the new level asks for another one in
    `beginPlay`, that request runs right after, in the same `process()`.
 
@@ -129,7 +132,9 @@ stop before the objects that read from them.
 | Runtime `World` | Player `m_world`; editor `m_world` during Play | the run; contents change per level | never moves while a session refers to it; each level gets a new `levelEpoch` |
 | Authored `World` (editor) | `Editor::m_authoredDuringPlay` | one Play | the scene being edited, put back by Stop |
 | Undo / redo, selection, editor camera | Editor | the run | untouched by Play and travel; selection saved at Play, cleared on travel, restored at Stop |
+| `AssetResidency`, `AssetGraph` | Player `m_residency`, `m_assetGraph`; editor the same | the run | declared before the host, so they outlive its lease ([AssetResidency.md](AssetResidency.md)) |
 | `LevelHost` | Player `m_levels`; editor `m_runtimeLevels` | the run (editor: per game module) | owns the session; stops it before the module unloads |
+| Level asset lease | `LevelHost` | one level | the next level's is taken before the old one goes |
 | `PlaySession` + `GameContext` | `LevelHost` | one level | `unique_ptr`, never moved |
 | `GameMode` | `PlaySession` | one level | destroyed only from `process()` or Stop, never on its own call stack |
 | `PhysicsWorld` | session subsystems | one level | added first, destroyed last; rebuilt when a save loads |

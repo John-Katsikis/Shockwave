@@ -146,6 +146,15 @@ inside a callback: the host does it in `process()`, after the frame. An `EntityR
 earlier level doesn't resolve. Editor Play runs on a copy of the authored scene, so code
 that edits the scene must check `playing()`.
 
+## Asset dependencies
+
+`Assets/AssetGraph.h` follows what every file refers to, through a provider per file kind
+(`docs/AssetResidency.md`). A new file format that names other files needs a provider
+(`registerAssetProvider`); a component String field that holds a Content path needs
+`registerAssetPathField`. Never find references with a regex over text. Each level holds a
+lease (`Assets/AssetResidency.h`) on its closure during Play. `player --asset-dependencies`
+and `--check` report missing files, wrong case and cycles.
+
 ## Release contract
 
 Shipping is built in batches from `docs/ShippingImplementation.md`; record each batch's

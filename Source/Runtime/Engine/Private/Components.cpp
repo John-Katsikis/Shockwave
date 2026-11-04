@@ -1,4 +1,5 @@
 #include <Engine/Components.h>
+#include <Engine/AssetReferences.h>
 #include <Engine/Levels.h>
 
 #include <Engine/PostProcess.h>
@@ -78,6 +79,7 @@ void registerBuiltins() {
     static bool started = false;
     if (started) return;
     started = true;
+    registerEngineAssetProviders();   // Engine/AssetReferences.h
     registerComponent<Name>("Name", {field("value", &Name::value)}, "Core");
     registerComponent<PrefabInstance>(
         "Prefab", {field("path", &PrefabInstance::path), field("bake_id", &PrefabInstance::bakeId)},

@@ -201,10 +201,18 @@ namespace player {
 
 // ---- Runtime levels (docs/LevelLifetime.md) ---------------------------------------------
 
-std::string Player::levelForScene(const fs::path& scene) const {
-    const fs::path wanted = scene.lexically_normal();
+void Player::loadLevelCatalog() {
+    if (m_catalogLoaded) return;
+    m_catalogLoaded = true;
+    std::vector<shockwave::Diagnostic> ignored;   // --check and --levels report them
+    if (!shockwave::projectLevels(m_project, m_catalog, ignored)) m_catalog = shockwave::implicitLevelCatalog(m_project);
+}
+
+std::string Player::levelForScene(const fs::path& scene) {
+    loadLevelCatalog();   // the first level is named before anything else needs the catalog
+    const fs::path wanted = fs::absolute(scene).lexically_normal();
     for (const shockwave::LevelEntry& level : m_catalog.levels)
-        if ((m_project.root / level.scene).lexically_normal() == wanted) return level.id;
+        if (fs::absolute(m_project.root / level.scene).lexically_normal() == wanted) return level.id;
     return shockwave::kImplicitLevelId;   // the implicit level, or a scene from --scene
 }
 
@@ -252,11 +260,13 @@ shockwave::LevelHost::Hooks Player::levelHooks() {
 
 void Player::startLevels(const std::string& level, shockwave::StartReason reason) {
     if (!m_levels) {
-        std::vector<shockwave::Diagnostic> ignored;   // --check and --levels report them
-        if (!shockwave::projectLevels(m_project, m_catalog, ignored))
-            m_catalog = shockwave::implicitLevelCatalog(m_project);
-        m_levels =
-            std::make_unique<shockwave::LevelHost>(m_world, engine().jobs(), *m_instance, &engine(), levelHooks());
+        loadLevelCatalog();
+        m_levels = std::make_unique<shockwave::LevelHost>(
+            m_world, engine().jobs(), *m_instance, &engine(), withAssetLeases(levelHooks()));
+        // Level leases (docs/AssetResidency.md): off with --no-asset-residency.
+        m_residency.setBudget(m_tool.assetBudget);
+        m_levels->setResidency(m_tool.assetResidency ? &m_residency : nullptr);
+        m_levels->onLoadReport = [this](const shockwave::LoadReport& report) { recordLoad(report); };
         m_levels->onResult = [this](const shockwave::TravelResult& result) {
             if (result.status == shockwave::TravelStatus::Failed)
                 std::fprintf(stderr, "Player: level \"%s\": %s\n", result.request.level.c_str(), result.error.c_str());

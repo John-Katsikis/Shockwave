@@ -258,7 +258,10 @@ const char* circuitExecutionName(CircuitExecution execution) {
     return "?";
 }
 
+void registerCircuitAssetProvider();   // CircuitAssets.cpp
+
 void registerCircuitComponents() {
+    registerCircuitAssetProvider();
     registerComponent<Circuit>(
         "Circuit",
         {field("circuit", &Circuit::circuit), field("enabled", &Circuit::enabled),

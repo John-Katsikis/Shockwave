@@ -1,5 +1,6 @@
 #include <Multiplayer/NetworkComponents.h>
 
+#include <Engine/AssetReferences.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
 #include <Network/Messages.h>
@@ -24,6 +25,7 @@ void registerNetworkComponents() {
             field("always_relevant", &NetworkObject::alwaysRelevant),
         },
         "Multiplayer");
+    registerAssetPathField("NetworkObject", "prefab", AssetKind::Prefab);   // what clients spawn
     registerComponent<NetworkSpawnPoint>(
         "NetworkSpawnPoint",
         {
