@@ -85,7 +85,7 @@ void Editor::drawAnimatorNotes(Entity e) {
             if (playing()) {
                 ImGui::Text(
                     "%s %.2f / %.2f s", animator->playing ? "Playing" : "Holding",
-                    static_cast<double>(m_session->animation()->time(e)), static_cast<double>(clip->duration));
+                    static_cast<double>(session()->animation()->time(e)), static_cast<double>(clip->duration));
             } else {
                 ImGui::SetNextItemWidth(-FLT_MIN);
                 ImGui::SliderFloat("##scrub", &animator->time, 0.0f, clip->duration, "%.2f s");
@@ -145,7 +145,7 @@ void Editor::drawSkeletons(const ImVec2& pos, const ImVec2& size) {
 }
 
 void Editor::drawAnimationStats() {
-    const shockwave::AnimationWorld* animation = playing() ? m_session->animation() : m_animation.get();
+    const shockwave::AnimationWorld* animation = playing() ? session()->animation() : m_animation.get();
     if (!animation) return;
     const shockwave::AnimationStats s = animation->stats();
     ImGui::SeparatorText("Animation");

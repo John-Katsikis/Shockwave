@@ -338,7 +338,8 @@ void Player::startNetPreview() {
     m_previewHost->start();
     start.role = net::NetworkRole::Client;
     start.capture = m_capture.get();   // --net-capture records the client's side
-    m_session->setNetworkStart(start, m_previewClientServices.get());
+    m_levelNetworkStart = start;   // the level's session is a client of the preview host
+    m_levelServices = m_previewClientServices.get();
     const net::FaultProfile& f = preset->profile;
     std::printf(
         "net preview: playing %s as a client of a host in this process, %s network (%.0f ms one way, %.0f ms "
@@ -565,10 +566,7 @@ void Player::setUpOnline() {
 }
 
 void Player::playScene(const fs::path& scene, const net::NetworkStart* start) {
-    if (m_session) {
-        m_session->stop();
-        m_session.reset();
-    }
+    if (m_levels) m_levels->stop();
     std::string error;
     std::vector<std::string> warnings;
     shockwave::World world;
@@ -578,16 +576,17 @@ void Player::playScene(const fs::path& scene, const net::NetworkStart* start) {
     m_world = std::move(world);
     if (shockwave::loadSceneNavMesh(scene, error); !error.empty())
         SW_LOG(shockwave::LogNavigation, Warning, "{}; baking instead", error);
-    m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
-    m_session->setSaveFolder(saveFolder(), m_project.relative(scene));
-    m_session->setGameCircuit(m_project.gameCircuitPath());
-    m_session->setOnlineMatch(m_match.configured() ? &m_match : nullptr);
+    m_levelNetworkStart.reset();
+    m_levelServices = nullptr;
     if (start) {
         net::NetworkStart online = *start;
         online.capture = m_capture.get();
-        m_session->setNetworkStart(std::move(online), services());
+        m_levelNetworkStart = std::move(online);
+        m_levelServices = services();
     }
-    m_session->start();
+    startLevels(
+        levelForScene(scene), start && start->role == net::NetworkRole::Client ? shockwave::StartReason::OnlineBaseline
+                                                                               : shockwave::StartReason::Fresh);
     SW_LOG(
         shockwave::LogEngine, Info, "playing {}{}", m_project.relative(scene),
         start ? (start->role == net::NetworkRole::Authority ? " as host" : " as a client") : "");
@@ -619,7 +618,7 @@ void Player::updateOnline() {
             SW_LOG(shockwave::LogNetwork, Warning, "{}", why);
             backOffline(why);
         }
-    } else if (m_onlineFromCommandLine && m_match.state() == net::MatchState::Failed && !m_session) {
+    } else if (m_onlineFromCommandLine && m_match.state() == net::MatchState::Failed && !session()) {
         backOffline(m_match.error());   // failed before Play started (a refused join, say)
     }
 }

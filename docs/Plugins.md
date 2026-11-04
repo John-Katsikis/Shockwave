@@ -154,5 +154,5 @@ This section is for the curious.
   `shockwave_game_module()` sets `SW_GAME_MODULE_ID`, which gives each one its own
   `projectGameModule` and component list so they don't clash.
 - **Version check.** A plugin built against a different engine version is refused
-  (`kPluginAbiVersion`, 16 since G12 instancing and occlusion culling). Rebuild
+  (`kPluginAbiVersion`, 17 since S03 level lifetime). Rebuild
   it along with the engine.

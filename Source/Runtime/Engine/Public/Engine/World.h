@@ -138,6 +138,12 @@ public:
     // with an entity's index and generation it names one object for the renderer's history
     // (RenderInstanceKey). Never saved.
     uint64_t lifetime() const { return m_lifetime; }
+    // Which runtime level this world holds (docs/LevelLifetime.md): 0 for an authored or
+    // tool world, a new value each time level travel puts another level in. Copies and
+    // moves keep it, so a save loaded in place keeps EntityRefs alive; EntityRefs made in
+    // an earlier level stop resolving once another level is in.
+    uint64_t levelEpoch() const { return m_levelEpoch; }
+    void setLevelEpoch(uint64_t epoch) { m_levelEpoch = epoch; }
 
     Entity create();
     void destroy(Entity e);
@@ -275,6 +281,7 @@ private:
     size_t m_count = 0;
     std::vector<std::unique_ptr<PoolBase>> m_pools;   // indexed by componentId
     uint64_t m_lifetime = newLifetime();
+    uint64_t m_levelEpoch = 0;
 };
 
 // Structural changes recorded while a Schedule runs and applied once it finishes.

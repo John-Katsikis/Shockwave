@@ -37,12 +37,13 @@ void Editor::createGameInstance() {
     shockwave::net::ReplicationRegistry networkTypes;
     std::vector<std::string> ignored;
     (void)shockwave::buildReplicationRegistry(m_gameModule ? &m_gameModule->module() : nullptr, networkTypes, ignored);
-    m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_gameInstance, &engine());
+    m_runtimeLevels =
+        std::make_unique<shockwave::LevelHost>(m_world, engine().jobs(), *m_gameInstance, &engine(), levelHooks());
 }
 
 void Editor::unloadGameModule() {
     stop();
-    m_session.reset();
+    m_runtimeLevels.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameInstance.reset();
     // Everything that can hold the module's components goes while its code is loaded.
@@ -115,7 +116,7 @@ void Editor::reloadGameCode() {
     const bool wasPlaying = playing();
     if (wasPlaying) stop();
 
-    m_session.reset();
+    m_runtimeLevels.reset();
     m_gameInstance->shutdown();
     m_gameInstance.reset();
 
@@ -180,6 +181,7 @@ void Editor::buildGameCode() {
 }
 
 void Editor::pollGameCode() {
+    if (m_runtimeLevels && m_runtimeLevels->transitioning()) return;   // travel first: reloads wait a frame
     if (std::exchange(m_reloadGameCodeRequested, false)) reloadGameCode();
     if (m_build.finished.exchange(false)) {
         m_build.thread.join();

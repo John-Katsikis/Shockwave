@@ -5,6 +5,10 @@
 // GameMode; update() runs a fixed tick; stop() ends play and restores the snapshot
 // exactly, so nothing done while playing sticks. The player uses the same class.
 //
+// Policies (S03, docs/LevelLifetime.md), set before start(): with OwnedRuntimeWorld the
+// world is the runtime's and is neither copied nor restored, which is how LevelHost runs
+// each level; PreserveUserSettings keeps graphics changes made during Play.
+//
 // Network play (docs/Networking.md, "Session integration"): setNetworkStart() before
 // start() makes the session a host or a client. Its NetworkWorld (game.network()) starts
 // before GameMode::beginPlay, and Stop closes it first. While online the session never
@@ -65,6 +69,17 @@ public:
     bool handleOnlineEvent(const net::OnlineEvent& event);
     void collectInput(double frameDt);
 
+    // ---- Lifetime (before start) ----
+    void setWorldPolicy(SessionWorldPolicy policy) { m_worldPolicy = policy; }
+    void setSettingsPolicy(SessionSettingsPolicy policy) { m_settingsPolicy = policy; }
+    SessionWorldPolicy worldPolicy() const { return m_worldPolicy; }
+    SessionSettingsPolicy settingsPolicy() const { return m_settingsPolicy; }
+    // What game.startReason, game.levelEpoch and game.requestLevel say (LevelHost sets them).
+    void setStartReason(StartReason reason) { m_context.startReason = reason; }
+    void setLevelEpoch(uint64_t epoch) { m_context.levelEpoch = epoch; }
+    void setTravel(std::function<bool(const LevelRequest&)> travel) { m_context.travel = std::move(travel); }
+    World& world() const { return m_context.world; }
+
     State state() const { return m_state; }
     bool active() const { return m_state != State::Editing; }
     uint64_t ticks() const { return m_ticks; }
@@ -113,6 +128,8 @@ private:
     bool m_audioDevice = true;
     net::NetworkStart m_networkStart;
     net::IOnlineServices* m_services = nullptr;
+    SessionWorldPolicy m_worldPolicy = SessionWorldPolicy::RestoreAuthoredSnapshot;
+    SessionSettingsPolicy m_settingsPolicy = SessionSettingsPolicy::RestoreOnStop;
 };
 
 }   // namespace shockwave

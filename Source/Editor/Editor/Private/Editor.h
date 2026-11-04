@@ -17,6 +17,7 @@
 #include <Multiplayer/NetworkSettings.h>
 #include <Multiplayer/OnlineMatch.h>
 #include <Network/NetworkCapture.h>
+#include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
 #include <Engine/PostProcess.h>
@@ -73,6 +74,10 @@ struct EditorOptions {
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
     bool playOnStart = false;   // press Play straight away (tests)
+    // --level-cycles N (tests, docs/LevelLifetime.md): Play, travel to another level and
+    // Stop, N times, then check the authored scene, undo, selection and camera are as they
+    // were; exit 1 if not.
+    int levelCycles = 0;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
 };
 
@@ -396,10 +401,10 @@ private:
     void play();
     void pause();
     void stop();
-    PlayState playState() const { return m_session ? m_session->state() : PlayState::Editing; }
+    PlayState playState() const { return session() ? session()->state() : PlayState::Editing; }
     bool playing() const { return playState() != PlayState::Editing; }
     // Play as a host or client: no Pause, and reloads wait until Stop (docs/Networking.md).
-    bool networkPlay() const { return m_session && m_session->online(); }
+    bool networkPlay() const { return session() && session()->online(); }
     void applyProjectTheme();
 
     // ---- Scene files (Editor.cpp) ----
@@ -496,7 +501,41 @@ private:
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
     bool m_showEffects = true;
-    std::unique_ptr<shockwave::PlaySession> m_session;
+    // Play's runtime levels (docs/LevelLifetime.md). Play moves the authored scene to
+    // m_authoredDuringPlay and plays a copy in m_world, so every panel shows the running
+    // game; travel replaces that copy; Stop puts the authored scene and selection back.
+    std::unique_ptr<shockwave::LevelHost> m_runtimeLevels;
+    std::optional<shockwave::World> m_authoredDuringPlay;
+    std::vector<shockwave::Entity> m_selectionBeforePlay;
+    shockwave::LevelCatalog m_playCatalog;   // read at Play: where travel can go
+    // How the next Play goes online (Network panel, a match), or offline.
+    std::optional<shockwave::net::NetworkStart> m_playNetworkStart;
+    shockwave::net::IOnlineServices* m_playServices = nullptr;
+    void
+    setPlayNetworkStart(std::optional<shockwave::net::NetworkStart> start, shockwave::net::IOnlineServices* services) {
+        m_playNetworkStart = std::move(start);
+        m_playServices = services;
+    }
+    shockwave::LevelHost::Hooks levelHooks();
+    void processTravel();   // after the frame: travel, or Stop when a level fails to start
+    void runLevelCycles();   // --level-cycles: one step a frame
+    struct LevelCycles {
+        int step = -1;
+        std::string scene;   // the authored scene as text, before the first cycle
+        size_t undo = 0, redo = 0;
+        std::vector<shockwave::Entity> selection;
+        glm::vec3 cameraPosition{};
+        float cameraYaw = 0, cameraPitch = 0;
+        std::string to;   // this cycle's destination
+        std::vector<std::string> problems;
+    } m_cycles;
+    int m_exitCode = 0;
+
+public:
+    int exitCode() const { return m_exitCode; }
+
+private:
+    shockwave::PlaySession* session() const { return m_runtimeLevels ? m_runtimeLevels->session() : nullptr; }
     // Navigation while editing: the mesh last baked or loaded for this scene.
     std::shared_ptr<const shockwave::NavMesh> m_navMesh;
     shockwave::NavMeshOverlay m_navOverlay;

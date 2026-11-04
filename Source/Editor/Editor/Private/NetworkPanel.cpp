@@ -250,7 +250,7 @@ void Editor::drawNetworkProjectSettings() {
         ImGui::EndDisabled();
         if (networkPlay()) ImGui::SetItemTooltip("Stop network play first");
     }
-    if (const net::NetworkWorld* network = m_session ? m_session->network() : nullptr; network && network->online()) {
+    if (const net::NetworkWorld* network = session() ? session()->network() : nullptr; network && network->online()) {
         const net::NetworkWorldStats& stats = network->stats();
         ImGui::Text(
             "Network play: %s, %s, player %u, %u network objects", net::networkRoleName(network->role()),
@@ -315,11 +315,11 @@ bool Editor::prepareOnlineMatch() {
 }
 
 void Editor::updateOnlineMatch() {
-    if (!m_match.configured() || !m_session) return;
+    if (!m_match.configured() || !m_runtimeLevels) return;
     if (m_match.takeEnded()) {
         m_lastMatchEnd = m_match.state() == net::MatchState::Failed ? m_match.error() : "left the match";
         if (playing()) stop();
-        m_session->setNetworkStart({}, nullptr);   // the next Play is offline again
+        setPlayNetworkStart({}, nullptr);   // the next Play is offline again
         if (m_capture) {
             log("Packet capture: " + std::to_string(m_capture->recordsWritten()) + " records in " +
                 m_project.relative(m_capturePath));
@@ -344,13 +344,13 @@ void Editor::updateOnlineMatch() {
             log("Capturing this match's messages to " + m_project.relative(m_capturePath) + " (tickets redacted)");
         }
     }
-    m_session->setNetworkStart(std::move(start), m_steam.get());
+    setPlayNetworkStart(std::move(start), m_steam.get());
     play();
     if (!playing()) {
         // play() said why; the match can't go on without its session.
         m_match.leave();
         (void)m_match.takeEnded();
-        m_session->setNetworkStart({}, nullptr);
+        setPlayNetworkStart({}, nullptr);
         m_lastMatchEnd = "the match couldn't start Play";
     }
 }
@@ -386,7 +386,7 @@ std::string Editor::networkDiagnostics() {
         out += std::string("steam: ") + net::steamServiceStateName(m_steam->state()) + ", relay " +
                net::steamRelayStatusName(m_steam->relayStatus()) + ", signed in " +
                (m_steam->available() ? "yes" : "no") + "\n";
-    const net::NetworkWorld* network = m_session ? m_session->network() : nullptr;
+    const net::NetworkWorld* network = session() ? session()->network() : nullptr;
     if (network && network->online()) {
         const net::NetworkWorldStats& s = network->stats();
         out += std::string("session: ") + net::networkRoleName(network->role()) + ", " +
@@ -415,7 +415,7 @@ std::string Editor::networkDiagnostics() {
 }
 
 void Editor::drawNetworkObjectNotes(shockwave::Entity e) {
-    const net::NetworkWorld* network = m_session && playing() ? m_session->network() : nullptr;
+    const net::NetworkWorld* network = session() && playing() ? session()->network() : nullptr;
     if (!network) return;
     const auto& object = *m_world.get<net::NetworkObject>(e);
     const net::NetworkIdentity* identity = network->identity(e);
@@ -470,7 +470,7 @@ void Editor::drawNetworkWindow() {
     }
     const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
     const ImVec4 warningColor = gui::semanticColor(gui::currentTheme().warning);
-    const net::NetworkWorld* network = m_session ? m_session->network() : nullptr;
+    const net::NetworkWorld* network = session() ? session()->network() : nullptr;
     const bool online = network && network->online();
 
     // ---- Top: what we are, and the match buttons ----

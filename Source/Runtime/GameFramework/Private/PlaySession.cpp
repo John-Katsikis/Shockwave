@@ -51,7 +51,7 @@ Input& GameContext::input() const {
 }
 
 PlaySession::PlaySession(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine)
-    : m_instance(instance), m_context{world, jobs, engine, m_subsystems} {}
+    : m_instance(instance), m_context{world, jobs, engine, m_subsystems, nullptr, StartReason::Fresh, 0, {}} {}
 
 PlaySession::~PlaySession() {
     try {
@@ -73,12 +73,12 @@ void PlaySession::start() {
         return;
     }
     World& world = m_context.world;
-    m_snapshot.emplace(world);
+    if (m_worldPolicy == SessionWorldPolicy::RestoreAuthoredSnapshot) m_snapshot.emplace(world);
     m_ticks = 0;
     try {
         if (!m_context.engine)
             m_subsystems.add<Graphics>();
-        else if (m_context.engine->guiEnabled())
+        else if (m_context.engine->guiEnabled() && m_settingsPolicy == SessionSettingsPolicy::RestoreOnStop)
             m_graphicsSnapshot = m_context.graphics().requested();
         m_subsystems.add<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
         m_subsystems.add<AudioWorld>(world, m_context.engine ? &m_context.engine->assets() : nullptr, m_audioDevice);
@@ -187,7 +187,7 @@ void PlaySession::tearDown() {
     }
     m_mode.reset();
     m_subsystems.clear();
-    m_context.world = std::move(*m_snapshot);
+    if (m_snapshot) m_context.world = std::move(*m_snapshot);   // OwnedRuntimeWorld keeps what Play left
     m_snapshot.reset();
     m_schedule = Schedule{};
     m_state = State::Editing;
