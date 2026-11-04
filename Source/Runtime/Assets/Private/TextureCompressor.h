@@ -62,12 +62,12 @@ public:
     void clear();
 
 private:
-    // Shared with the thread, which may outlive the compressor by one task.
+    // Shared with the thread.
     struct State {
         std::mutex mutex;
         std::condition_variable wake, progress;
         std::deque<std::shared_ptr<Task>> tasks;   // waiting, running and finished, in order
-        bool stop = false, busy = false;
+        bool stop = false;
     };
     static void run(Task& task);
     static void loop(State& state);
