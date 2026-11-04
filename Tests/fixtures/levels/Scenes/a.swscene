@@ -1,0 +1,43 @@
+# Level A: a floor, a start, an exit to B's entrance and a checkpoint.
+shockwave_scene 2
+
+entity "Camera"
+  Transform
+    position 0 2 6
+  Camera
+    primary true
+end
+
+entity "Floor"
+  Transform
+    scale 20 1 20
+  MeshRenderer
+    mesh floor
+end
+
+entity "Start"
+  Transform
+    position 0 0 0
+  LevelSpawn
+    id start
+  PersistentIdentity
+    id 3f2c9a1e-6b7d-4c58-9e0a-1b2c3d4e5f60
+end
+
+entity "Halfway"
+  Transform
+    position 4 0 0
+  LevelSpawn
+    id halfway
+  Checkpoint
+    id halfway
+    spawn halfway
+end
+
+entity "Door to B"
+  Transform
+    position 8 0 0
+  LevelExit
+    destination b
+    spawn entrance
+end

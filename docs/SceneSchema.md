@@ -183,6 +183,38 @@ No fields; the component's presence is what matters.
 |---|---|---|
 | `values` | quoted text | `""` |
 
+### Levels
+
+#### LevelSpawn
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `"start"` |
+| `team` | whole number; range -1 to 255 | `-1` |
+
+#### LevelExit
+
+| Field | Value | Default |
+|---|---|---|
+| `destination` | quoted text | `""` |
+| `spawn` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+| `one_shot` | 1 or 0 (true/false also accepted) | `1` |
+
+#### Checkpoint
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `""` |
+| `spawn` | quoted text | `""` |
+| `enabled` | 1 or 0 (true/false also accepted) | `1` |
+
+#### PersistentIdentity
+
+| Field | Value | Default |
+|---|---|---|
+| `id` | quoted text | `""` |
+
 ### Lighting
 
 #### BakeGeometry

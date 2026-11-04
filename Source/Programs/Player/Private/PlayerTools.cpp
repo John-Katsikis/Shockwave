@@ -2,6 +2,8 @@
 // --schema writes the scene format reference.
 #include "Player.h"
 
+#include <Engine/Levels.h>
+
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
@@ -67,6 +69,26 @@ int Player::check(const std::vector<std::string>& importProblems) {
         std::sort(scenes.begin(), scenes.end());
     }
     if (onlySaves) scenes.clear();
+    // The level catalog (docs/Levels.md): a whole-project check visits every level's
+    // scene, wherever it lives, and then the links between them.
+    shockwave::LevelCatalog catalog;
+    std::vector<shockwave::Diagnostic> levelDiagnostics;
+    const std::string catalogShown =
+        m_project.levelCatalog.empty() ? std::string() : m_project.relative(m_project.levelCatalog);
+    const bool catalogRead = shockwave::projectLevels(m_project, catalog, levelDiagnostics);
+    const bool checkLevels = m_tool.scenes.empty() && catalogRead && !catalog.implicit;
+    std::map<fs::path, std::vector<const shockwave::LevelEntry*>> levelsByScene;
+    std::map<fs::path, shockwave::LevelSceneFacts> sceneFacts;
+    if (checkLevels) {
+        shockwave::validateLevelCatalog(m_project, catalog, catalogShown, levelDiagnostics);
+        for (const shockwave::LevelEntry& level : catalog.levels) {
+            const fs::path file = (m_project.root / level.scene).lexically_normal();
+            std::error_code ec;
+            if (!fs::is_regular_file(file, ec)) continue;   // reported by validateLevelCatalog
+            levelsByScene[file].push_back(&level);
+            if (std::find(scenes.begin(), scenes.end(), file) == scenes.end()) scenes.push_back(file);
+        }
+    }
     if (m_tool.scenes.empty()) {   // every save game the project has
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(saveFolder(), ec)) {
@@ -88,10 +110,14 @@ int Player::check(const std::vector<std::string>& importProblems) {
         std::vector<std::string> warnings;
         shockwave::SceneFileHooks hooks;
         hooks.readHeader = [](const std::string&, std::istream&) {};   // old editor_camera lines
+        const fs::path sceneKey = fs::absolute(scene).lexically_normal();
+        const bool isLevel = levelsByScene.count(sceneKey) != 0;
         if (!shockwave::loadScene(world, engine().assets(), scene.string(), error, hooks, &warnings)) {
             report(error);
+            if (isLevel) sceneFacts[sceneKey].loadError = error;
             continue;
         }
+        if (isLevel) sceneFacts[sceneKey] = shockwave::levelSceneFacts(world);
         for (const std::string& warning : warnings) report(warning);
         world.each<const shockwave::PrefabInstance>([&](shockwave::Entity e, const shockwave::PrefabInstance& p) {
             if (world.has<shockwave::PrefabPart>(e)) return;
@@ -108,7 +134,9 @@ int Player::check(const std::vector<std::string>& importProblems) {
 
         int primaries = 0;
         world.each<const shockwave::Camera>([&](const shockwave::Camera& camera) { primaries += camera.primary; });
-        if (primaries == 0) report(scene.string() + ": no entity has a primary Camera; the game has no view");
+        // A catalog level's camera is checked by its kind below: a menu may be UI only.
+        if (primaries == 0 && !isLevel)
+            report(scene.string() + ": no entity has a primary Camera; the game has no view");
         if (primaries > 1) report(scene.string() + ": " + std::to_string(primaries) + " primary Cameras; keep one");
 
         // Material bindings (G02): a map read through TEXCOORD_1 on a mesh that has none
@@ -218,6 +246,25 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    if (checkLevels) {
+        std::map<std::string, shockwave::LevelSceneFacts> facts;
+        for (const auto& [file, levels] : levelsByScene)
+            for (const shockwave::LevelEntry* level : levels) facts[level->id] = sceneFacts[file];
+        shockwave::validateLevelLinks(catalog, facts, catalogShown, levelDiagnostics);
+    }
+    {
+        const size_t before = problems.size();
+        for (const shockwave::Diagnostic& diagnostic : levelDiagnostics) {
+            if (diagnostic.error())
+                problems.push_back(diagnostic.text());
+            else
+                std::printf("warning %s\n", diagnostic.text().c_str());
+        }
+        if (checkLevels && problems.size() == before)
+            std::printf(
+                "ok %s (%zu level%s)\n", catalogShown.c_str(), catalog.levels.size(),
+                catalog.levels.size() == 1 ? "" : "s");
+    }
     checkPrefabs(usedPrefabs, problems);
     checkAllCircuits(usedCircuits, problems);
     // Save games: they must read back the way a load would, entity handles and all.
@@ -289,7 +336,13 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
     }
     checkPackageSettings(m_project, problems);
-    checkRelease(m_project, problems);
+    {
+        // The release gates see the links the level check followed.
+        std::map<std::string, shockwave::LevelSceneFacts> facts;
+        for (const auto& [file, levels] : levelsByScene)
+            for (const shockwave::LevelEntry* level : levels) facts[level->id] = sceneFacts[file];
+        checkRelease(m_project, problems, checkLevels ? &facts : nullptr);
+    }
     for (const std::string& problem : problems) std::printf("%s\n", problem.c_str());
     std::printf(
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),

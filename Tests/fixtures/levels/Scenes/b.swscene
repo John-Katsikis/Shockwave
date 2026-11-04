@@ -1,0 +1,32 @@
+# Level B: an entrance from A and an exit back to the menu.
+shockwave_scene 2
+
+entity "Camera"
+  Transform
+    position 0 2 6
+  Camera
+    primary true
+end
+
+entity "Floor"
+  Transform
+    scale 20 1 20
+  MeshRenderer
+    mesh floor
+end
+
+entity "Entrance"
+  Transform
+    position 0 0 0
+  LevelSpawn
+    id entrance
+  PersistentIdentity
+    id 9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+end
+
+entity "Way out"
+  Transform
+    position 8 0 0
+  LevelExit
+    destination menu
+end

@@ -61,6 +61,13 @@ shockwave_warnings(user_paths_test)
 add_test(NAME user_paths COMMAND user_paths_test)
 set_tests_properties(user_paths PROPERTIES TIMEOUT 60 LABELS unit)
 
+# The level catalog (S02, docs/Levels.md): Config/Levels.swlevels and links between levels.
+add_executable(level_catalog_test LevelCatalogTest.cpp)
+target_link_libraries(level_catalog_test PRIVATE Shockwave::Projects)
+shockwave_warnings(level_catalog_test)
+add_test(NAME level_catalog COMMAND level_catalog_test)
+set_tests_properties(level_catalog PROPERTIES TIMEOUT 60 LABELS unit)
+
 add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
 add_test(NAME project COMMAND project_test ${CMAKE_SOURCE_DIR}/Templates/Blank
@@ -535,4 +542,17 @@ if(SHOCKWAVE_STEAM_TESTS)
     endif()
     add_test(NAME steam_status COMMAND player --project ${SHOCKWAVE_STEAM_TEST_PROJECT} --steam-status)
     set_tests_properties(steam_status PROPERTIES TIMEOUT 60)
+endif()
+# The level catalog (S02): --check, --levels, --level and --level-schema on a copy of
+# Tests/fixtures/levels, made wrong one way at a time (Tests/LevelCheck.cmake).
+if(TARGET game_sample)
+add_test(NAME level_check_cli COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DSAMPLE=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+    -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/LevelSchema.md
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/LevelCLI
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/LevelCheck.cmake)
+set_tests_properties(level_check_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 120 LABELS integration)
 endif()

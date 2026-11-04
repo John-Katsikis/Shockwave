@@ -13,7 +13,8 @@ section says:
 | --- | --- | --- |
 | S00 release contract | done | [below](#s00-release-contract) |
 | S01 per-user paths | done | [below](#s01-per-user-paths) |
-| S02-S15 | not started | none |
+| S02 level catalog | done | [below](#s02-level-catalog) |
+| S03-S15 | not started | none |
 
 ## S00: release contract
 
@@ -154,7 +155,7 @@ The S00 machine gates:
 Every other gate is `unverified` until its batch brings the evidence:
 
 - `user_paths` (S01, measured since S01);
-- `level_catalog` (S02);
+- `level_catalog` (S02, measured since S02);
 - `level_travel` and `acceptance_scenario` (S05);
 - `saves` (S06);
 - `player_settings` (S08);
@@ -251,3 +252,75 @@ folder with a test `HOME` (`home ü`). It checks:
 - **Old saves.** Saves from before S01 are not moved automatically, by design. The player
   imports them with `--import-legacy-saves`.
 
+## S02: level catalog
+
+### What was built
+
+- `Projects/LevelCatalog.h` reads, writes and checks the level catalog
+  ([Levels.md](Levels.md)): levels with a scene, a kind, a default spawn, a next level and
+  preloads, plus the entry. The project's optional `levels` key names it. Without it, the
+  project has one implicit level, `startup`, and nothing changes.
+- The checks are pure data, so Projects still depends on no world. The caller loads each
+  level's scene and hands over what it found (`LevelSceneFacts`).
+- Four components in the new **Levels** category: `LevelSpawn`, `LevelExit`, `Checkpoint`
+  and `PersistentIdentity`. Adding a PersistentIdentity in the editor gives it a new UUID.
+- `player --check` checks the catalog and follows every link between levels. The new
+  `--levels [--json]` lists them, `--level <id>` starts in one, and `--level-schema`
+  writes the generated [LevelSchema.md](LevelSchema.md). Every problem has a stable code.
+- The `level_catalog` release gate is measured: failed without a catalog or with an error,
+  unverified when only the files were checked, passed when every scene loads and every exit
+  and spawn resolves. `--release-info` now runs with the game module so it can load scenes.
+- In the editor, **Project > Levels** creates and edits the catalog, with undo, validation,
+  atomic saves, Open scene and Play level.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `level_catalog` | unit | see below |
+| `level_check_cli` | integration | see below |
+| `release_cli` | integration | the gate fails without a catalog, passes for a good one-level Arena catalog, and fails for a bad default spawn |
+
+`level_catalog` covers:
+
+- parsing every key, a write followed by a read giving the same catalog, and the atomic
+  write;
+- each format error with its code and line: header, version, unknown and repeated keys,
+  structure, missing keys, bad IDs and kinds, duplicate levels, unknown entry and next;
+- paths: missing files, `..` and absolute paths, a symlink out of the project, spelling
+  that differs from the disk only by case;
+- links: unknown exit destinations and spawns, missing default and checkpoint spawns,
+  duplicate spawns, checkpoints and persistent IDs, bad UUIDs, cameras by level kind, and
+  unreachable levels as warnings;
+- the implicit level, the `levels` project key, and the gate's inputs with and without
+  the links checked.
+
+`level_check_cli` copies `Tests/fixtures/levels` (a menu and two gameplay levels, menu to
+a to b and back) and checks:
+
+- the good fixture passes `--check`, and `--levels` lists it as text and as JSON;
+- each of 18 mistakes, made one at a time, fails `--check`, and `--levels --json` names
+  its code;
+- an unreachable level warns and still exits 0;
+- `--level b` plays, `--level zz` exits 1 and lists the levels, and `--level` with
+  `--scene` exits 2;
+- `--level-schema` matches the checked-in file;
+- Sample, which has no catalog, lists the implicit `startup` level.
+
+### Still unverified
+
+- **Travel.** Nothing moves between levels at runtime yet. Exits, spawns and checkpoints
+  are checked but not used; level travel is S03 to S05.
+- **Renaming across files.** Rename in the Levels panel changes the catalog only. Exits in
+  scenes that use the old ID are listed by Validate but not rewritten. The plan's
+  previewable rename across files is still to do.
+- **Other ways in.** A level reached only from code or a menu is reported as unreachable,
+  as a warning. There's no way yet to mark it as an intended second entry.
+- **The editor's gate.** The Release readiness window checks the catalog's files but not
+  the links, so it shows the gate as unverified until `player --check` or `--release-info`
+  measures it.
+- **Prefab identities.** Combining a prefab copy's identity with its entities' own, and
+  reporting a copy without one, is written but no test scene has a prefab with a
+  PersistentIdentity yet. The unit test covers how such a problem is reported.
+- **Arena.** The reference game has no catalog yet, so its gate fails. Arena's levels are a
+  choice for the reference game work (S07).

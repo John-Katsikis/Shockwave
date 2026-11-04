@@ -7,6 +7,8 @@
 #include <Assets/BuiltinAssets.h>
 #include <Audio/Audio.h>
 #include <Circuits/Circuit.h>
+#include <Engine/Levels.h>
+#include <Engine/SceneFile.h>
 #include <Engine/Prefab.h>
 #include <GameFramework/NetworkPump.h>
 #include <GameUI/GameUI.h>
@@ -94,6 +96,7 @@ void Editor::onStart() {
     m_showNetwork = m_options.showNetwork;
     m_showLighting = m_options.showLighting;
     m_release.open = m_options.showRelease && m_hasProject;
+    m_levels.open = m_options.showLevels && m_hasProject;
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -233,6 +236,36 @@ void Editor::onGui() {
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
     m_release.draw(m_project, playing());
+    if (m_levels.open) {
+        LevelsPanel::Hooks hooks;
+        hooks.openScene = [this](const std::filesystem::path& path) {
+            requestAction(PendingAction::OpenScene, path.string());
+        };
+        hooks.playScene = [this](const std::filesystem::path& path) {
+            // Unsaved changes ask first, and Play waits for the person to press it.
+            if (m_dirty) {
+                requestAction(PendingAction::OpenScene, path.string());
+                return;
+            }
+            if (openScene(path)) play();
+        };
+        hooks.sceneFacts = [this](const std::filesystem::path& path) {
+            shockwave::World world;
+            std::string err;
+            shockwave::SceneFileHooks fileHooks;
+            fileHooks.readHeader = [](const std::string&, std::istream&) {};
+            shockwave::LevelSceneFacts facts;
+            if (!shockwave::loadScene(world, engine().assets(), path.string(), err, fileHooks))
+                facts.loadError = err;
+            else
+                facts = shockwave::levelSceneFacts(world);
+            return facts;
+        };
+        hooks.saveProject = [](shockwave::Project& project, std::string& err) {
+            return shockwave::saveProject(project, err);
+        };
+        m_levels.draw(m_project, playing(), hooks);
+    }
     if (m_showControls) drawControlsWindow();
     if (m_showAbout) drawAboutWindow();
     if (m_showGraphicsGuide) drawGraphicsGuide(m_showGraphicsGuide);

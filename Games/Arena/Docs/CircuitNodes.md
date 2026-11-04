@@ -1773,6 +1773,109 @@ Sets the entity's CharacterController step_height.
 - In `target` Entity, default self
 - In `step_height` Float, required
 
+### Component.Checkpoint.Add
+
+Gives the entity a Checkpoint with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Checkpoint.Get
+
+Every field of the entity's Checkpoint; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `id` String
+- Out `spawn` String
+- Out `enabled` Bool
+
+### Component.Checkpoint.Get.enabled
+
+The entity's Checkpoint enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.Checkpoint.Get.id
+
+The entity's Checkpoint id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `id` String
+
+### Component.Checkpoint.Get.spawn
+
+The entity's Checkpoint spawn.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `spawn` String
+
+### Component.Checkpoint.Has
+
+The entity has a Checkpoint.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.Checkpoint.Remove
+
+Takes the Checkpoint off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Checkpoint.Set
+
+Sets the fields given (connected or written) of the entity's Checkpoint; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String
+- In `spawn` String
+- In `enabled` Bool
+
+### Component.Checkpoint.Set.enabled
+
+Sets the entity's Checkpoint enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.Checkpoint.Set.id
+
+Sets the entity's Checkpoint id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String, required
+
+### Component.Checkpoint.Set.spawn
+
+Sets the entity's Checkpoint spawn.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `spawn` String, required
+
 ### Component.Circuit.Add
 
 Gives the entity a Circuit with default values, if it has none.
@@ -3056,6 +3159,212 @@ Sets the entity's Environment tonemapper.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None, required
+
+### Component.LevelExit.Add
+
+Gives the entity a LevelExit with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.LevelExit.Get
+
+Every field of the entity's LevelExit; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `destination` String
+- Out `spawn` String
+- Out `enabled` Bool
+- Out `one_shot` Bool
+
+### Component.LevelExit.Get.destination
+
+The entity's LevelExit destination.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `destination` String
+
+### Component.LevelExit.Get.enabled
+
+The entity's LevelExit enabled.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `enabled` Bool
+
+### Component.LevelExit.Get.one_shot
+
+The entity's LevelExit one_shot.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `one_shot` Bool
+
+### Component.LevelExit.Get.spawn
+
+The entity's LevelExit spawn.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `spawn` String
+
+### Component.LevelExit.Has
+
+The entity has a LevelExit.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.LevelExit.Remove
+
+Takes the LevelExit off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.LevelExit.Set
+
+Sets the fields given (connected or written) of the entity's LevelExit; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `destination` String
+- In `spawn` String
+- In `enabled` Bool
+- In `one_shot` Bool
+
+### Component.LevelExit.Set.destination
+
+Sets the entity's LevelExit destination.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `destination` String, required
+
+### Component.LevelExit.Set.enabled
+
+Sets the entity's LevelExit enabled.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `enabled` Bool, required
+
+### Component.LevelExit.Set.one_shot
+
+Sets the entity's LevelExit one_shot.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `one_shot` Bool, required
+
+### Component.LevelExit.Set.spawn
+
+Sets the entity's LevelExit spawn.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `spawn` String, required
+
+### Component.LevelSpawn.Add
+
+Gives the entity a LevelSpawn with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.LevelSpawn.Get
+
+Every field of the entity's LevelSpawn; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `id` String
+- Out `team` Int
+
+### Component.LevelSpawn.Get.id
+
+The entity's LevelSpawn id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `id` String
+
+### Component.LevelSpawn.Get.team
+
+The entity's LevelSpawn team.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `team` Int
+
+### Component.LevelSpawn.Has
+
+The entity has a LevelSpawn.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.LevelSpawn.Remove
+
+Takes the LevelSpawn off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.LevelSpawn.Set
+
+Sets the fields given (connected or written) of the entity's LevelSpawn; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String
+- In `team` Int
+
+### Component.LevelSpawn.Set.id
+
+Sets the entity's LevelSpawn id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String, required
+
+### Component.LevelSpawn.Set.team
+
+Sets the entity's LevelSpawn team.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `team` Int, required
 
 ### Component.Light.Add
 
@@ -4869,6 +5178,69 @@ Sets the entity's ParticleEffect speed.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `speed` Float, required
+
+### Component.PersistentIdentity.Add
+
+Gives the entity a PersistentIdentity with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.PersistentIdentity.Get
+
+Every field of the entity's PersistentIdentity; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `id` String
+
+### Component.PersistentIdentity.Get.id
+
+The entity's PersistentIdentity id.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `id` String
+
+### Component.PersistentIdentity.Has
+
+The entity has a PersistentIdentity.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.PersistentIdentity.Remove
+
+Takes the PersistentIdentity off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.PersistentIdentity.Set
+
+Sets the fields given (connected or written) of the entity's PersistentIdentity; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String
+
+### Component.PersistentIdentity.Set.id
+
+Sets the entity's PersistentIdentity id.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `id` String, required
 
 ### Component.PhysicsSettings.Add
 

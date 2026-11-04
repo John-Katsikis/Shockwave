@@ -557,6 +557,32 @@ bool writeRelease(const std::filesystem::path& file, const ReleaseSettings& sett
     return true;
 }
 
+void levelReleaseInputs(
+    const Project& project, ReleaseInputs& inputs, const std::map<std::string, LevelSceneFacts>* facts) {
+    LevelCatalog catalog;
+    std::vector<Diagnostic> diagnostics;
+    const std::string shown = project.levelCatalog.empty() ? std::string() : project.relative(project.levelCatalog);
+    inputs.levelCatalogChecked = true;
+    inputs.levelLinksChecked = false;
+    inputs.levelCatalogProblem.clear();
+    const bool read = projectLevels(project, catalog, diagnostics);
+    inputs.levelCatalogImplicit = read && catalog.implicit;
+    inputs.levelCount = catalog.levels.size();
+    inputs.levelEntry = catalog.entry;
+    if (read && !catalog.implicit) {
+        validateLevelCatalog(project, catalog, shown, diagnostics);
+        if (facts) {
+            validateLevelLinks(catalog, *facts, shown, diagnostics);
+            inputs.levelLinksChecked = true;
+        }
+    }
+    for (const Diagnostic& d : diagnostics)
+        if (d.error()) {
+            inputs.levelCatalogProblem = d.text();
+            break;
+        }
+}
+
 std::filesystem::path releasePath(const Project& project) { return project.root / "Config" / "Release.swrelease"; }
 
 std::string fallbackApplicationId(const Project& project) {
@@ -806,14 +832,33 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
     else
         gate("user_paths", GateStatus::Passed, "S01", "installed, it writes under " + inputs.userPathsRoot);
 
+    // The game's levels (S02): a catalog whose files exist and whose links resolve.
+    auto levelCatalogGate = [&]() {
+        if (!inputs.levelCatalogChecked)
+            gate("level_catalog", GateStatus::Unverified, "S02", "the level catalog wasn't checked");
+        else if (inputs.levelCatalogImplicit)
+            gate(
+                "level_catalog", GateStatus::Failed, "S02",
+                "no level catalog: a release lists its levels (the project's levels key, docs/Levels.md)");
+        else if (!inputs.levelCatalogProblem.empty())
+            gate("level_catalog", GateStatus::Failed, "S02", inputs.levelCatalogProblem);
+        else if (!inputs.levelLinksChecked)
+            gate(
+                "level_catalog", GateStatus::Unverified, "S02",
+                std::to_string(inputs.levelCount) + (inputs.levelCount == 1 ? " level" : " levels") +
+                    " read and their files exist; the links between them are checked by player --check");
+        else
+            gate(
+                "level_catalog", GateStatus::Passed, "S02",
+                std::to_string(inputs.levelCount) + (inputs.levelCount == 1 ? " level" : " levels") +
+                    " from entry " + inputs.levelEntry +
+                    "; every scene loads and every exit and spawn resolves");
+    };
     // In batch order, with the catalog (S02) and the acceptance scenario (S05) in their places.
     for (const PendingGate& pending : kPendingGates) {
         const std::string_view id = pending.id;
         if (id == "level_travel")
-            gate(
-                "level_catalog", GateStatus::Unverified, "S02",
-                inputs.levelCatalogPresent ? "Config/Levels.swlevels exists; checking it arrives with S02"
-                                           : "no Config/Levels.swlevels; the level catalog arrives with S02");
+            levelCatalogGate();
         if (pending.online && !online)
             gate(pending.id, GateStatus::NotApplicable, pending.batch, "offline only");
         else

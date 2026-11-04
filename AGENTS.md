@@ -125,6 +125,19 @@ run a packaged game must pass `--user-dir <temp>`, so they never touch real play
 build/bin/player --project <file.swproject> --user-paths [--json -]
 ```
 
+## Levels
+
+A game's levels, their scenes, kinds, entry and links are in an optional level catalog named
+by the project's `levels` key (`docs/Levels.md`, `docs/LevelSchema.md`). Without one, the
+startup scene is the only level. `--check` loads every level's scene and follows its
+LevelExits, LevelSpawns and Checkpoints; `--levels [--json -]` lists them, and
+`--level <id>` starts in one. After changing the format, components or codes, regenerate
+the schema:
+
+```sh
+build/bin/player --level-schema docs/LevelSchema.md
+```
+
 ## Release contract
 
 Shipping is built in batches from `docs/ShippingImplementation.md`; record each batch's

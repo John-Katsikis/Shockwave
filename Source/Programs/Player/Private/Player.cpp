@@ -91,6 +91,8 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::LightingInfo      ? lightingInfo()
                      : m_tool.mode == Tool::Mode::LightingAssignIds ? lightingAssignIds()
                      : m_tool.mode == Tool::Mode::BakeLighting      ? bakeLightingTool()
+                     : m_tool.mode == Tool::Mode::Levels            ? levels()
+                     : m_tool.mode == Tool::Mode::ReleaseInfo       ? releaseInfoTool()
                                                                     : schema();
         engine().quit();
         return;

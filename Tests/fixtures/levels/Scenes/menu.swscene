@@ -1,0 +1,7 @@
+# The menu: drawn by its UI alone, so it has no camera.
+shockwave_scene 2
+
+entity "Menu"
+  UIDocument
+    document UI/menu.rml
+end

@@ -1,0 +1,2 @@
+<rml><head><title>Menu</title><style>body { font-family: "Noto Sans"; font-size: 24dp; color: white; }</style></head>
+<body><h1>Level fixtures</h1><button onclick="play">PLAY</button></body></rml>

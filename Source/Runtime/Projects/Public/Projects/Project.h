@@ -20,6 +20,9 @@ struct Project {
     // The game circuit (docs/Circuits.md): a .swcircuit inside the assets folder that runs
     // for the whole game, alongside the C++ GameMode. Empty for none (game_circuit).
     std::filesystem::path gameCircuit;
+    // The level catalog (docs/Levels.md): a .swlevels file in the project (levels). Empty:
+    // the startup scene is the only level.
+    std::filesystem::path levelCatalog;
     std::string name, gameModule;
     double tickRate = 60;
     int width = 1280, height = 720;

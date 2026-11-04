@@ -190,6 +190,10 @@ void Editor::drawMenuBar() {
                 m_networkEdit.loaded = false;
                 m_showProjectSettings = true;
             }
+            ImGui::MenuItem("Levels", nullptr, &m_levels.open);
+            ImGui::SetItemTooltip(
+                "The game's levels (Config/Levels.swlevels): which scene each one is, where the game starts\n"
+                "and where each level leads (the same as: player --levels)");
             ImGui::MenuItem("Release readiness", nullptr, &m_release.open);
             ImGui::SetItemTooltip(
                 "What the project promises to ship (Config/Release.swrelease) and each release gate:\n"
