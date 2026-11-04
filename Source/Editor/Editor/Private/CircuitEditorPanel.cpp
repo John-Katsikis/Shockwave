@@ -588,7 +588,7 @@ void Editor::drawCircuitsWindow() {
     const float sideWidth = 250.0f * dpi;
     ImGui::BeginChild("side", ImVec2(sideWidth, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
     // Live values: the game circuit's, or the selected entity's while it runs this circuit.
-    shockwave::CircuitWorld* live = m_session ? m_session->circuits() : nullptr;
+    shockwave::CircuitWorld* live = session() ? session()->circuits() : nullptr;
     shockwave::Entity liveEntity = shockwave::kNullEntity;
     if (live && s.kind == shockwave::CircuitKind::Entity) {
         for (shockwave::Entity e : selection())

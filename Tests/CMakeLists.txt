@@ -82,6 +82,13 @@ target_link_libraries(save_game_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(save_game_test)
 add_test(NAME save_games COMMAND save_game_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(save_games PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+# Level lifetime (S03): LevelHost travel, counted lifecycles, failures, stale requests and
+# refs, redirect cycles and editor-style Play cycles, without a window.
+add_executable(level_lifetime_test LevelLifetimeTest.cpp)
+target_link_libraries(level_lifetime_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(level_lifetime_test)
+add_test(NAME level_lifetime COMMAND level_lifetime_test)
+set_tests_properties(level_lifetime PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 
 # Circuits (visual scripting): format, compiler checks and circuits running without a window.
 add_executable(circuit_test CircuitTest.cpp)
@@ -555,4 +562,15 @@ add_test(NAME level_check_cli COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/LevelCheck.cmake)
 set_tests_properties(level_check_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 120 LABELS integration)
+endif()
+# Editor Play on runtime levels (S03): 100 Play/travel/Stop cycles keep the authored scene,
+# undo, selection and camera (Tests/LevelCyclesCheck.cmake). Draws its interface: gpu.
+if(TARGET game_sample AND TARGET editor)
+add_test(NAME level_lifetime_editor COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/LevelCycles
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/LevelCyclesCheck.cmake)
+set_tests_properties(level_lifetime_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
 endif()

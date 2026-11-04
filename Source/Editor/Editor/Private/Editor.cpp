@@ -124,7 +124,7 @@ void Editor::onShutdown() {
         m_build.thread.join();
     }
     stop();
-    m_session.reset();
+    m_runtimeLevels.reset();
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
     m_navOverlay.release(engine().renderer());
@@ -283,24 +283,26 @@ void Editor::onGui() {
 // Every frame, editing too: Steam's callbacks, then Play's network and input (GameFramework/NetworkPump.h).
 void Editor::onPump(double rawFrameDt) {
     shockwave::pumpNetworkFrame(
-        engine(), m_steam.get(), m_session.get(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
+        engine(), m_steam.get(), session(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
     updateOnlineMatch();
 }
 
 // Play mode runs the project's gameplay and physics at the fixed tick rate, like the player.
 void Editor::onUpdate(double dt) {
     if (playState() != PlayState::Playing) return;
-    m_session->update(dt);
+    session()->update(dt);
 }
 
 void Editor::onFrame(double dt) {
     m_frameDt = dt;
     pollGameCode();   // between frames, before anything looks at the world
-    if (m_session) m_session->frame(dt);
+    if (m_options.levelCycles > 0) runLevelCycles();
+    if (session()) session()->frame(dt);
     updateGameUI(dt);
     updateNavigation(dt);
     updateEffects(dt);
     updateAnimation(dt);
+    processTravel();   // after the frame's callbacks: travel never ends a GameMode mid-call
 }
 
 void Editor::onRender(shockwave::Renderer& renderer, double alpha) {

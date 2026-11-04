@@ -37,7 +37,7 @@ void Editor::drawSaveGamesWindow() {
         ImGui::End();
         return;
     }
-    shockwave::SaveGames* saves = m_session ? m_session->saves() : nullptr;
+    shockwave::SaveGames* saves = session() ? session()->saves() : nullptr;
     // Saving happens on a worker, so the list catches up a moment later by itself.
     m_saveListAge += ImGui::GetIO().DeltaTime;
     if (m_saveListAge > 1.0) {
@@ -136,11 +136,11 @@ void Editor::drawSaveGamesWindow() {
         ImGui::BeginDisabled(!m_gameModuleMatches);
         if (gui::button("Play from save")) {
             play();
-            if (m_session && m_session->saves()) {
-                if (m_session->saves()->load(slot))
+            if (session() && session()->saves()) {
+                if (session()->saves()->load(slot))
                     log("Loading slot \"" + slot + "\"");
                 else
-                    warn(m_session->saves()->lastError());
+                    warn(session()->saves()->lastError());
             }
         }
         ImGui::EndDisabled();

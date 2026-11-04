@@ -183,7 +183,7 @@ void Editor::drawSpatialAudioNotes(const shockwave::ComponentInfo& info, Entity 
     ImGui::TextDisabled("Rendered with %s", shockwave::spatialBackendName().c_str());
     ImGui::SetItemTooltip("%s", shockwave::steamAudioStatus().c_str());
     // During Play: how the listener hears it right now.
-    const shockwave::AudioWorld* audio = m_session ? m_session->audio() : nullptr;
+    const shockwave::AudioWorld* audio = session() ? session()->audio() : nullptr;
     if (!audio) return;
     for (const auto& report : audio->report()) {
         if (!(report.entity == e)) continue;
@@ -200,15 +200,15 @@ void Editor::drawSpatialAudioNotes(const shockwave::ComponentInfo& info, Entity 
 
 void Editor::drawAudioStats() {
     ImGui::SeparatorText("Audio");
-    shockwave::AudioWorld* session = m_session ? m_session->audio() : nullptr;
-    shockwave::AudioMixer* mixer = session ? &session->mixer() : m_audioPreview.get();
+    shockwave::AudioWorld* live = session() ? session()->audio() : nullptr;
+    shockwave::AudioMixer* mixer = live ? &live->mixer() : m_audioPreview.get();
     if (gui::beginPropertyGrid("audio_stats")) {
         gui::propertyLabel("Spatial");
         ImGui::TextUnformatted(shockwave::spatialBackendName().c_str());
         ImGui::SetItemTooltip("%s", shockwave::steamAudioStatus().c_str());
         if (mixer) {
             const shockwave::AudioMixerStats s = mixer->stats();
-            gui::propertyLabel(session ? "Voices (Play)" : "Voices (preview)");
+            gui::propertyLabel(live ? "Voices (Play)" : "Voices (preview)");
             ImGui::Text("%d, %d of %d through Steam Audio", s.voices, s.spatialVoices, s.spatialSlots);
             gui::propertyLabel("Mix cost");
             ImGui::Text(

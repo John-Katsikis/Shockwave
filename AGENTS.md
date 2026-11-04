@@ -138,6 +138,14 @@ the schema:
 build/bin/player --level-schema docs/LevelSchema.md
 ```
 
+## Level lifetime
+
+One level plays at a time, owned by `LevelHost` (`docs/LevelLifetime.md`). Game code asks
+for another with `game.requestLevel(id)`. Never destroy a GameMode or swap the world from
+inside a callback: the host does it in `process()`, after the frame. An `EntityRef` from an
+earlier level doesn't resolve. Editor Play runs on a copy of the authored scene, so code
+that edits the scene must check `playing()`.
+
 ## Release contract
 
 Shipping is built in batches from `docs/ShippingImplementation.md`; record each batch's

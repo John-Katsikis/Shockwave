@@ -113,7 +113,7 @@ void Editor::renderNavigation(shockwave::Renderer& renderer) {
     shockwave::NavMeshOverlay::Style style;
     style.mesh = themeColor(gui::currentTheme().accent, 0.4f);
     style.path = themeColor(gui::currentTheme().warning, 1.0f);
-    const shockwave::NavigationWorld* navigation = m_session ? m_session->navigation() : nullptr;
+    const shockwave::NavigationWorld* navigation = session() ? session()->navigation() : nullptr;
     if (navigation && playing()) {
         m_navOverlay.drawMesh(renderer, navigation->sharedNavMesh(), style);
         m_navOverlay.drawPaths(renderer, engine().assets(), *navigation, m_world, style);
@@ -123,7 +123,7 @@ void Editor::renderNavigation(shockwave::Renderer& renderer) {
 }
 
 void Editor::reportNavigationProblems() {
-    const shockwave::NavigationWorld* navigation = m_session ? m_session->navigation() : nullptr;
+    const shockwave::NavigationWorld* navigation = session() ? session()->navigation() : nullptr;
     if (!navigation) return;
     for (const auto& problem : navigation->diagnostics())
         warn((problem.entity.valid() ? displayName(problem.entity) + ": " : "Navigation: ") + problem.message);
@@ -176,7 +176,7 @@ void Editor::drawNavigationNotes(const shockwave::ComponentInfo& info, Entity e)
     const bool settings = info.id == shockwave::componentId<shockwave::NavMeshSettings>();
     const bool agent = info.id == shockwave::componentId<shockwave::NavAgent>();
     if (!settings && !agent) return;
-    const shockwave::NavigationWorld* navigation = m_session && playing() ? m_session->navigation() : nullptr;
+    const shockwave::NavigationWorld* navigation = session() && playing() ? session()->navigation() : nullptr;
     const auto errorText = [](const std::string& text) {
         ImGui::PushStyleColor(ImGuiCol_Text, gui::semanticColor(gui::currentTheme().error));
         ImGui::TextWrapped("%s", text.c_str());
@@ -229,7 +229,7 @@ void Editor::drawNavigationNotes(const shockwave::ComponentInfo& info, Entity e)
 
 void Editor::drawNavigationStats() {
     ImGui::SeparatorText("Navigation (Recast & Detour)");
-    const shockwave::NavigationWorld* navigation = m_session && playing() ? m_session->navigation() : nullptr;
+    const shockwave::NavigationWorld* navigation = session() && playing() ? session()->navigation() : nullptr;
     const shockwave::NavMesh* mesh = navigation ? navigation->navMesh() : m_navMesh.get();
     if (!mesh) {
         ImGui::TextDisabled(m_navUsed ? "Not baked yet" : "No NavMeshSettings or NavAgent in this scene");

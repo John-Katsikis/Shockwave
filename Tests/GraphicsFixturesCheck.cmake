@@ -335,6 +335,7 @@ endforeach()
 # reddens the ceiling beside it (the indirect view), the green wall's side doesn't; the
 # ball isn't baked and takes its light from the probe volume.
 set(BAKED "${TEMP}/baked")
+file(REMOVE_RECURSE "${BAKED}")   # a run that was stopped part way leaves its bake behind
 file(COPY "${FIXTURE}/" DESTINATION "${BAKED}")
 set(BAKED_SCENE "${BAKED}/Scenes/room-doorway-baked.swscene")
 function(bake_room)

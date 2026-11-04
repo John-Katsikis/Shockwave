@@ -196,3 +196,100 @@ int Player::levels() {
 }
 
 }   // namespace player
+
+namespace player {
+
+// ---- Runtime levels (docs/LevelLifetime.md) ---------------------------------------------
+
+std::string Player::levelForScene(const fs::path& scene) const {
+    const fs::path wanted = scene.lexically_normal();
+    for (const shockwave::LevelEntry& level : m_catalog.levels)
+        if ((m_project.root / level.scene).lexically_normal() == wanted) return level.id;
+    return shockwave::kImplicitLevelId;   // the implicit level, or a scene from --scene
+}
+
+fs::path Player::sceneForLevel(const std::string& level) const {
+    if (const shockwave::LevelEntry* entry = m_catalog.find(level))
+        return (m_project.root / entry->scene).lexically_normal();
+    return {};
+}
+
+shockwave::LevelHost::Hooks Player::levelHooks() {
+    shockwave::LevelHost::Hooks hooks;
+    hooks.load = [this](const shockwave::LevelRequest& request, shockwave::World& into, std::string& error) {
+        const fs::path scene = sceneForLevel(request.level);
+        if (scene.empty()) {
+            std::string have;
+            for (const auto& l : m_catalog.levels) have += (have.empty() ? "" : ", ") + l.id;
+            error = "no level \"" + request.level + "\" in the catalog (there are: " + have + ")";
+            return false;
+        }
+        std::vector<std::string> warnings;
+        if (!shockwave::loadScene(into, engine().assets(), scene.string(), error, {}, &warnings)) return false;
+        if (!warnings.empty()) {
+            error = m_project.relative(scene) + " has unresolved content: " + warnings.front();
+            return false;
+        }
+        std::string navError;
+        if (shockwave::loadSceneNavMesh(scene, navError); !navError.empty())
+            SW_LOG(shockwave::LogNavigation, Warning, "{}; baking instead", navError);
+        return true;
+    };
+    hooks.configure = [this](shockwave::PlaySession& session, const shockwave::LevelRequest& request) {
+        fs::path scene = sceneForLevel(request.level);
+        if (scene.empty()) scene = m_project.startupScene;
+        session.setSaveFolder(saveFolder(), m_project.relative(scene));
+        session.setGameCircuit(m_project.gameCircuitPath());
+        session.setOnlineMatch(m_match.configured() ? &m_match : nullptr);
+        if (m_levelNetworkStart) session.setNetworkStart(*m_levelNetworkStart, m_levelServices);
+    };
+    hooks.started = [this](shockwave::PlaySession&, const shockwave::LevelRequest&) {
+        // --camera named an entity of the first level; later levels use their own camera.
+        if (m_levels && m_levels->epoch() > 1) m_toolCamera = shockwave::kNullEntity;
+    };
+    return hooks;
+}
+
+void Player::startLevels(const std::string& level, shockwave::StartReason reason) {
+    if (!m_levels) {
+        std::vector<shockwave::Diagnostic> ignored;   // --check and --levels report them
+        if (!shockwave::projectLevels(m_project, m_catalog, ignored))
+            m_catalog = shockwave::implicitLevelCatalog(m_project);
+        m_levels =
+            std::make_unique<shockwave::LevelHost>(m_world, engine().jobs(), *m_instance, &engine(), levelHooks());
+        m_levels->onResult = [this](const shockwave::TravelResult& result) {
+            if (result.status == shockwave::TravelStatus::Failed)
+                std::fprintf(stderr, "Player: level \"%s\": %s\n", result.request.level.c_str(), result.error.c_str());
+        };
+    }
+    m_levels->start({level}, reason);
+}
+
+void Player::processTravel() {
+    if (!m_levels) return;
+    m_levels->process();
+    if (m_levels->playing() || m_levels->failure().empty()) return;
+    // The level that failed to start has gone; go back to the entry, once.
+    const std::string failed = m_levels->current().level;
+    if (failed != m_catalog.entry) {
+        std::string error;
+        shockwave::World entry;
+        const fs::path scene = sceneForLevel(m_catalog.entry);
+        if (!scene.empty() && shockwave::loadScene(entry, engine().assets(), scene.string(), error)) {
+            m_world = std::move(entry);
+            try {
+                startLevels(m_catalog.entry, shockwave::StartReason::Fresh);
+                SW_LOG(
+                    shockwave::LogGame, Warning, "Back at level \"{}\" after \"{}\" failed", m_catalog.entry, failed);
+                return;
+            } catch (const std::exception& e) {
+                std::fprintf(
+                    stderr, "Player: level \"%s\" didn't start either: %s\n", m_catalog.entry.c_str(), e.what());
+            }
+        }
+    }
+    m_exitCode = 1;
+    engine().quit();
+}
+
+}   // namespace player

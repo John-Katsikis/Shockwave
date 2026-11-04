@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         SubsystemCollection subsystems;
         auto& controls = subsystems.add<UIWorld>(world, &ui);
         auto& graphics = subsystems.add<Graphics>();
-        GameContext game{world, jobs, nullptr, subsystems};
+        GameContext game{world, jobs, nullptr, subsystems, nullptr, StartReason::Fresh, 0, {}};
         arena::GraphicsMenu menu;
         menu.bind(game);
         ui.update(world, 0);

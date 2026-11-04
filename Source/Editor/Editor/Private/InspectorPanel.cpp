@@ -268,7 +268,7 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         info.id == shockwave::componentId<shockwave::CharacterController>() ||
         (info.id == shockwave::componentId<shockwave::RigidBody>() && !m_world.has<shockwave::Collider>(e));
     if (physicsPart) {
-        if (const auto* physics = m_session->physics()) {
+        if (const auto* physics = session()->physics()) {
             for (const auto& problem : physics->diagnostics()) {
                 if (!(problem.entity == e)) continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, gui::semanticColor(gui::currentTheme().error));

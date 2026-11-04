@@ -385,6 +385,7 @@ bool SaveGames::applyLoaded() {
         if (!m_shared->loaded) return false;
         loaded.swap(m_shared->loaded);
     }
+    loaded->world.setLevelEpoch(m_world.levelEpoch());   // the same level, loaded: refs stay valid
     m_world = std::move(loaded->world);
     m_values = std::move(loaded->info.values);
     m_playTime = loaded->info.playTime;

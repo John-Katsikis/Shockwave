@@ -163,29 +163,25 @@ void Player::onStart() {
         SW_LOG(shockwave::LogNetwork, Info, "Online: {}", m_match.status());
         return;
     }
-    m_session = std::make_unique<shockwave::PlaySession>(m_world, engine().jobs(), *m_instance, &engine());
-    m_session->setSaveFolder(saveFolder(), m_project.relative(m_project.startupScene));
-    m_session->setGameCircuit(m_project.gameCircuitPath());
-    m_session->setOnlineMatch(m_match.configured() ? &m_match : nullptr);
     if (!m_tool.netPreview.empty()) startNetPreview();
-    m_session->start();
+    startLevels(levelForScene(m_project.startupScene), shockwave::StartReason::Fresh);
     if (!loadFile.empty()) {
         // Read now; the world is swapped in before the first tick.
-        shockwave::SaveGames& saves = *m_session->saves();
+        shockwave::SaveGames& saves = *session()->saves();
         saves.loadFile(loadFile);
         saves.wait();
         if (!saves.lastError().empty()) throw std::runtime_error(saves.lastError());
-        m_session->frame(0);
+        session()->frame(0);
         SW_LOG(shockwave::LogGame, Info, "started from save {}", m_project.relative(loadFile));
     }
-    if (!m_session->physics()->diagnostics().empty()) {
-        const auto& problem = m_session->physics()->diagnostics().front();
+    if (!session()->physics()->diagnostics().empty()) {
+        const auto& problem = session()->physics()->diagnostics().front();
         throw std::runtime_error(
             "Physics setup failed for entity " + std::to_string(problem.entity.index) + ": " + problem.message);
     }
     SW_LOG(
-        shockwave::LogPhysics, Info, "{} bodies, {} characters", m_session->physics()->bodyCount(),
-        m_session->physics()->characterCount());
+        shockwave::LogPhysics, Info, "{} bodies, {} characters", session()->physics()->bodyCount(),
+        session()->physics()->characterCount());
     SW_LOG(
         shockwave::LogEngine, Info, "project {}; module {}; startup scene {}", m_project.name, m_project.gameModule,
         m_project.relative(m_project.startupScene));
@@ -200,29 +196,29 @@ void Player::onPump(double rawFrameDt) {
         frame.nowSeconds = engine().frameStartSeconds();
         frame.rawFrameDt = rawFrameDt;
         shockwave::pumpNetworkFrame(m_previewHostServices.get(), m_previewHost.get(), frame);
-        shockwave::pumpNetworkFrame(engine(), m_previewClientServices.get(), m_session.get(), rawFrameDt);
+        shockwave::pumpNetworkFrame(engine(), m_previewClientServices.get(), session(), rawFrameDt);
         return;
     }
     shockwave::pumpNetworkFrame(
-        engine(), services(), m_session.get(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
+        engine(), services(), session(), rawFrameDt, nullptr, m_match.configured() ? &m_match : nullptr);
     updateOnline();
 }
 
 void Player::onUpdate(double dt) {
     if (m_previewHost) m_previewHost->update(dt);
-    if (m_session) m_session->update(dt);
+    if (session()) session()->update(dt);
 }
 
 void Player::onFrame(double dt) {
     m_frameDt = dt;
-    if (!m_session) return;
+    if (!session()) return;
     for (const auto& change : m_assets->poll(dt)) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
             SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
     }
     // Prefab files saved while the game runs update every copy (hot reload).
     if (!shockwave::prefabs().poll(dt).empty()) shockwave::updatePrefabInstances(m_world);
-    m_session->frame(dt);
+    session()->frame(dt);
     m_ui->update(m_world, dt);
     // --ui-nav: one menu step a frame, once documents have loaded and shown.
     if (const size_t step = m_uiNavFrame++; step >= 5 && step - 5 < m_tool.uiNav.size())
@@ -236,10 +232,11 @@ void Player::onFrame(double dt) {
         graphicsReport();
         engine().quit();
     }
+    processTravel();   // after the frame's callbacks: travel never ends a GameMode mid-call
 }
 
 void Player::saveAndQuit() {
-    shockwave::SaveGames& saves = *m_session->saves();
+    shockwave::SaveGames& saves = *session()->saves();
     if (saves.save(m_tool.save)) saves.wait();
     if (const std::string error = saves.lastError(); !error.empty()) {
         std::fprintf(stderr, "Player: %s\n", error.c_str());
@@ -328,7 +325,7 @@ void Player::reportBenchmark() {
             m_effectsUpdateMs / frames, m_particles.waitMs / frames, m_effectsBuildMs / frames,
             m_particles.uploadMs / frames, m_particles.uploadBytes / frames / 1e6, m_particles.gpuMs / frames);
     }
-    if (const shockwave::AnimationWorld* animation = m_session ? m_session->animation() : nullptr) {
+    if (const shockwave::AnimationWorld* animation = session() ? session()->animation() : nullptr) {
         const shockwave::AnimationStats a = animation->stats();
         std::printf(
             "animation cpu: %.3f ms last frame (%u animators, %u joints; GPU: the skinning pass)\n",
@@ -406,11 +403,11 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets(), &m_bakedLighting);
     if (m_postProcess) shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     m_effects->render(renderer);
-    if (m_session) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
-    if (m_tool.showNavMesh && m_session && m_session->navigation()) {
+    if (session()) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
+    if (m_tool.showNavMesh && session() && session()->navigation()) {
         const shockwave::NavMeshOverlay::Style style;
-        m_navOverlay.drawMesh(renderer, m_session->navigation()->sharedNavMesh(), style);
-        m_navOverlay.drawPaths(renderer, engine().assets(), *m_session->navigation(), m_world, style);
+        m_navOverlay.drawMesh(renderer, session()->navigation()->sharedNavMesh(), style);
+        m_navOverlay.drawPaths(renderer, engine().assets(), *session()->navigation(), m_world, style);
     }
 }
 
@@ -419,11 +416,9 @@ void Player::onShutdown() {
     m_bakedLighting.release();
     m_reflections.release();
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
-    if (m_session) {
-        SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", m_session->ticks());
-        m_session->stop();
-    }
-    m_session.reset();
+    if (session()) SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", session()->ticks());
+    if (m_levels) m_levels->stop();
+    m_levels.reset();
     if (m_previewHost) m_previewHost->stop();
     m_previewHost.reset();
     // The session's transport and auth sessions were Steam's: Steam goes after them.

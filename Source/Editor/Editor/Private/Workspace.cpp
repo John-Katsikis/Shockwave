@@ -577,7 +577,7 @@ void Editor::drawStatsWindow() {
     // How the scheduler laid out the game's systems: each stage runs after the one
     // above it, and systems sharing a stage run at the same time.
     ImGui::SeparatorText("Systems");
-    const auto stages = m_session->schedule().stages();
+    const auto stages = session()->schedule().stages();
     for (size_t i = 0; i < stages.size(); ++i) {
         std::string row;
         for (const std::string& name : stages[i]) row += (row.empty() ? "" : ", ") + name;
@@ -587,7 +587,7 @@ void Editor::drawStatsWindow() {
     ImGui::TextDisabled("%.0f ticks per second", engine().tickRate());
 
     ImGui::SeparatorText("Physics (Jolt)");
-    if (const auto* physics = m_session->physics()) {
+    if (const auto* physics = session()->physics()) {
         ImGui::Text(
             "%u bodies, %u active, %u characters", physics->bodyCount(), physics->activeBodyCount(),
             physics->characterCount());

@@ -26,6 +26,7 @@ uint64_t World::newLifetime() {
 World& World::operator=(const World& other) {
     if (this == &other) return *this;
     m_lifetime = newLifetime();   // a copy is another world, even with the same entities
+    m_levelEpoch = other.m_levelEpoch;
     m_generations = other.m_generations;
     m_alive = other.m_alive;
     m_free = other.m_free;

@@ -9,6 +9,7 @@
 #include <Engine/ReflectionProbes.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
 #include <Engine/PostProcess.h>
@@ -358,6 +359,17 @@ private:
     void setUpOnline();
     void updateOnline();
     void playScene(const fs::path& scene, const shockwave::net::NetworkStart* start);
+    // ---- Levels (docs/LevelLifetime.md) ----
+    // The level that's in m_world starts playing as `level`.
+    void startLevels(const std::string& level, shockwave::StartReason reason);
+    shockwave::LevelHost::Hooks levelHooks();
+    // The catalog's level for a scene ("startup" for the implicit one, or a scene the
+    // catalog doesn't list, from --scene).
+    std::string levelForScene(const fs::path& scene) const;
+    fs::path sceneForLevel(const std::string& level) const;
+    // After the frame: carries out travel; a level that fails to start goes back to the entry.
+    void processTravel();
+    shockwave::PlaySession* session() const { return m_levels ? m_levels->session() : nullptr; }
     shockwave::net::IOnlineServices* startSteam(std::string& error);
     shockwave::net::IOnlineServices* services() const {
         return m_steam ? static_cast<shockwave::net::IOnlineServices*>(m_steam.get()) : m_services.get();
@@ -416,7 +428,12 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
-    std::unique_ptr<shockwave::PlaySession> m_session;
+    // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
+    std::unique_ptr<shockwave::LevelHost> m_levels;
+    shockwave::LevelCatalog m_catalog;   // where travel can go; the implicit "startup" without one
+    // How the next level's session goes online (host, client, net preview), or offline.
+    std::optional<shockwave::net::NetworkStart> m_levelNetworkStart;
+    shockwave::net::IOnlineServices* m_levelServices = nullptr;
     shockwave::NavMeshOverlay m_navOverlay;
     shockwave::BakedLightingRuntime m_bakedLighting;   // the scene's lightmaps and probes (G05, G06)
     double m_bakedLightingTime = 0;

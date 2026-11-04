@@ -14,7 +14,8 @@ section says:
 | S00 release contract | done | [below](#s00-release-contract) |
 | S01 per-user paths | done | [below](#s01-per-user-paths) |
 | S02 level catalog | done | [below](#s02-level-catalog) |
-| S03-S15 | not started | none |
+| S03 level lifetime | done | [below](#s03-level-lifetime) |
+| S04-S15 | not started | none |
 
 ## S00: release contract
 
@@ -324,3 +325,71 @@ a to b and back) and checks:
   PersistentIdentity yet. The unit test covers how such a problem is reported.
 - **Arena.** The reference game has no catalog yet, so its gate fails. Arena's levels are a
   choice for the reference game work (S07).
+
+## S03: level lifetime
+
+### What was built
+
+- **Session policies.** `PlaySession` has `SessionWorldPolicy` and `SessionSettingsPolicy`
+  ([LevelLifetime.md](LevelLifetime.md)). The defaults keep the old snapshot-and-restore
+  behaviour, so existing tools, tests and games are unchanged.
+- **`GameFramework/LevelHost.h`** owns the one active runtime level and moves between
+  levels. Game code asks with `game.requestLevel(id, spawn)`, and the move happens after
+  the frame's callbacks.
+  - The next level is prepared in a separate world, so a failed load keeps the current
+    level.
+  - Every request ends exactly once: succeeded, failed or cancelled.
+  - Requests from an old level are refused.
+  - More than 8 redirects before a level plays fail as a cycle.
+  - Epoch overflow fails explicitly.
+- **Lifecycle context.** `game.startReason` (`Fresh`, `RestoreSave`, `OnlineBaseline`) and
+  `game.levelEpoch`.
+- **`World::levelEpoch`.** An `EntityRef` from an earlier level no longer resolves to the
+  new level's entity with the same handle. A save loaded in place keeps its refs, as
+  before.
+- **The player** plays every level through the host: offline, online and the net
+  preview. A level that fails to start sends it back to the entry level, and if that
+  fails too, it exits 1. A whole-world copy per session is gone.
+- **Editor Play** moves the authored scene aside, plays one copy, and travels inside that
+  copy. Stop puts the authored scene and selection back. Undo and the editor camera are
+  never touched. Hot reload waits while a request is pending.
+- The owner table is in [LevelLifetime.md](LevelLifetime.md#who-owns-what).
+- Plugin ABI 17: `GameContext` and `EntityRef` changed, so older game modules are refused
+  and need rebuilding.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `level_lifetime` | unit | see below |
+| `level_lifetime_editor` | gpu | the real editor, 100 Play, travel to `a`, Stop cycles on `Tests/fixtures/levels`: the authored scene (as text), undo, selection and camera unchanged, and 100 arrivals |
+
+`level_lifetime` builds levels in memory and checks:
+
+- construction, `beginPlay`, `endPlay` and destruction counted exactly once per level;
+- requests from `fixedUpdate`, `frame`, a UI-style callback between frames (while paused),
+  and `beginPlay`;
+- a level that doesn't load keeps the current one; `endPlay` throwing still ends the level;
+  `beginPlay` throwing leaves nothing playing, with one failure;
+- replaced and stopped requests are each cancelled once;
+- Stop during preparation cancels and moves nothing in;
+- an `EntityRef` and a `requestLevel` callback kept from level A are refused in B;
+- `transitioning()` while a request waits (hot reload holds off);
+- a short `beginPlay` chain works, and a cycle fails after 8 with the chain in the message;
+- epoch overflow fails;
+- 100 editor-style Play/A/B/Stop cycles leave the authored world exactly as it was;
+- both world policies, on a plain `PlaySession`.
+
+`level_lifetime` also passes in an AddressSanitizer + UndefinedBehaviorSanitizer build
+(RelWithDebInfo, `-fsanitize=address,undefined`, leak checking on), with no reports.
+
+### Still unverified
+
+- **Loading in the background.** Preparation runs on the main thread, inside `process()`.
+  Bounded, budgeted loading and honest progress are S04, and the loading screen is S05.
+- **Spawns.** A request carries its spawn, but placing the player at a LevelSpawn is S05.
+- **Menus and circuits.** No circuit node or menu button travels yet (S05).
+- **ThreadSanitizer.** Not run in this batch. The host is main-thread only, and the one
+  background producer it meets (save loading) is waited for when its session ends.
+- **Online travel.** Online map changes still restart the match's session as before,
+  through the host. Map rotation with a controlled session restart is S11.

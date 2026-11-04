@@ -7,9 +7,11 @@
 #include <Engine/EntityRef.h>
 #include <Engine/Schedule.h>
 #include <Engine/Subsystem.h>
+#include <GameFramework/LevelLifetime.h>
 
 #include <glm/vec3.hpp>
 
+#include <functional>
 #include <string_view>
 
 namespace shockwave {
@@ -77,6 +79,19 @@ struct GameContext {
     // menus grey their online buttons then. Hosting or joining replaces the session, so
     // call it from menu handlers, never mid-tick.
     net::OnlineMatch* onlineMatch = nullptr;
+
+    // ---- Levels (docs/LevelLifetime.md) ----
+    // Why this session started, and which runtime level it is (0 outside level travel).
+    StartReason startReason = StartReason::Fresh;
+    uint64_t levelEpoch = 0;
+    // Asks to go to another level of the catalog, arriving at `spawn` (or its default).
+    // Never immediate: the level ends after this frame's callbacks have returned, so it's
+    // safe from fixedUpdate, frame, UI handlers and beginPlay. False when nothing can
+    // travel (a session without a LevelHost) or the request comes from an old level.
+    bool requestLevel(std::string level, std::string spawn = {}) const {
+        return travel && travel(LevelRequest{std::move(level), std::move(spawn)});
+    }
+    std::function<bool(const LevelRequest&)> travel;   // set by LevelHost
 };
 
 class GameMode {
@@ -95,7 +110,8 @@ public:
     virtual void fixedUpdate(GameContext&, double dt) { (void)dt; }
     // Main thread, once per rendered frame with the real frame time.
     virtual void frame(GameContext&, double frameDt) { (void)frameDt; }
-    // Play is stopping; the authored scene is restored right after.
+    // Play is stopping, or the level is ending for another: the authored scene is
+    // restored right after (editor Play), or the level's world is discarded (travel).
     virtual void endPlay(GameContext&) {}
     // Main thread, just before a save game snapshots the world: put state that isn't in
     // components into game.saves().set(...).

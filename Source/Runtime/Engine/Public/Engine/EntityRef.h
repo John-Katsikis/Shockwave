@@ -21,10 +21,13 @@ namespace shockwave {
 class EntityRef {
 public:
     EntityRef() = default;
-    EntityRef(World& world, Entity entity) : m_world(&world), m_entity(entity) {}
+    EntityRef(World& world, Entity entity) : m_world(&world), m_entity(entity), m_levelEpoch(world.levelEpoch()) {}
 
-    // False when nothing was found, or the entity has been destroyed since.
-    explicit operator bool() const { return m_world && m_world->alive(m_entity); }
+    // False when nothing was found, the entity has been destroyed since, or level travel
+    // has put another level in the world (its entities can reuse the same handles).
+    explicit operator bool() const {
+        return m_world && m_world->levelEpoch() == m_levelEpoch && m_world->alive(m_entity);
+    }
     Entity entity() const { return m_entity; }
     World& world() const { return *m_world; }
 
@@ -62,6 +65,7 @@ public:
 private:
     World* m_world = nullptr;
     Entity m_entity;
+    uint64_t m_levelEpoch = 0;
 };
 
 // The first entity with this Name, or an empty EntityRef.
