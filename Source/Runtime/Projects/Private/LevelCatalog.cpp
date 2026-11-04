@@ -397,21 +397,28 @@ void validateLevelCatalog(
         fs::path here = project.root;
         for (const fs::path& part : fs::path(file)) {
             const fs::path next = here / part;
-            if (!fs::exists(next, ec)) {
-                // Is it there, spelt differently?
+            // Compare against the directory's own spelling: on a case-insensitive disk
+            // exists() would accept any case, and the mistake would only show elsewhere.
+            if (part != "." && part != "..") {
+                bool exact = false;
                 std::string other;
-                for (const auto& entry : fs::directory_iterator(here, ec))
-                    if (lower(entry.path().filename().string()) == lower(part.string()))
-                        other = entry.path().filename().string();
-                if (!other.empty())
+                for (const auto& entry : fs::directory_iterator(here, ec)) {
+                    const std::string name = entry.path().filename().string();
+                    if (name == part.string())
+                        exact = true;
+                    else if (lower(name) == lower(part.string()))
+                        other = name;
+                }
+                if (!exact && !other.empty())
                     return diagnostics.push_back(make(
                         "LevelPathCase", DiagnosticSeverity::Error, shown, line, level.id,
                         std::string(key) + " \"" + file + "\": the disk spells \"" + part.string() + "\" as \"" +
                             other + "\""));
+            }
+            if (!fs::exists(next, ec))
                 return diagnostics.push_back(make(
                     missingCode, DiagnosticSeverity::Error, shown, line, level.id,
                     std::string(key) + " \"" + file + "\" doesn't exist"));
-            }
             here = next;
         }
         if (std::string(key) == "scene" && !fs::is_regular_file(path, ec))
