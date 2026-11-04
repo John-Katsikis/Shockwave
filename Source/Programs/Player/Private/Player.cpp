@@ -93,6 +93,7 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::BakeLighting      ? bakeLightingTool()
                      : m_tool.mode == Tool::Mode::Levels            ? levels()
                      : m_tool.mode == Tool::Mode::ReleaseInfo       ? releaseInfoTool()
+                     : m_tool.mode == Tool::Mode::AssetDependencies ? assetDependencies()
                                                                     : schema();
         engine().quit();
         return;
@@ -419,6 +420,7 @@ void Player::onShutdown() {
     if (session()) SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", session()->ticks());
     if (m_levels) m_levels->stop();
     m_levels.reset();
+    writeLoadReport();   // after Stop, so it shows what stayed resident (nothing should)
     if (m_previewHost) m_previewHost->stop();
     m_previewHost.reset();
     // The session's transport and auth sessions were Steam's: Steam goes after them.

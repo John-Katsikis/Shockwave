@@ -3,6 +3,7 @@
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 
+#include <chrono>
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -27,8 +28,61 @@ const char* travelStatusName(TravelStatus status) {
     return "failed";
 }
 
+const char* loadPhaseName(int phase) {
+    static const char* const names[] = {"validate", "read", "prepare", "retire", "upload", "start"};
+    return phase >= 0 && phase < 6 ? names[phase] : "";
+}
+
 namespace {
 constexpr size_t kKeptResults = 32;
+
+using Clock = std::chrono::steady_clock;
+double msSince(Clock::time_point& from) {
+    const auto now = Clock::now();
+    const double ms = std::chrono::duration<double, std::milli>(now - from).count();
+    from = now;
+    return ms;
+}
+
+std::string leaseOwner(const LevelRequest& level, uint64_t epoch) {
+    return "level " + level.level + " (epoch " + std::to_string(epoch) + ")";
+}
+}   // namespace
+
+// The level's closure against what's resident, before anything ends. False when it can't
+// be listed or doesn't fit the budget.
+bool LevelHost::planAssets(
+    const LevelRequest& request, const World& level, std::vector<AssetCost>& assets, LoadReport& load,
+    std::string& error) {
+    if (!m_residency || !m_hooks.assets) return true;
+    try {
+        if (!m_hooks.assets(request, level, assets, error)) return false;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+    const AssetResidency::Plan plan = m_residency->plan(assets, m_lease.valid() ? &m_lease : nullptr);
+    load.assets = plan.shared + plan.added;
+    load.shared = plan.shared;
+    load.added = plan.added;
+    load.retired = plan.retired;
+    load.addedCpuBytes = plan.addedCpu;
+    load.addedGpuBytes = plan.addedGpu;
+    load.retiredCpuBytes = plan.retiredCpu;
+    load.retiredGpuBytes = plan.retiredGpu;
+    load.residentCpuBytes = plan.afterCpu;
+    load.residentGpuBytes = plan.afterGpu;
+    load.peakCpuBytes = plan.peakCpu;
+    load.peakGpuBytes = plan.peakGpu;
+    return m_residency->fits(plan, error);
+}
+
+void LevelHost::report(LoadReport load) {
+    load.totalMs = load.validateMs + load.readMs + load.prepareMs + load.retireMs + load.uploadMs +
+                     load.startMs;
+    m_reports.push_back(load);
+    if (m_reports.size() > kKeptResults) m_reports.erase(m_reports.begin());
+    if (onLoadReport) onLoadReport(load);
 }
 
 LevelHost::LevelHost(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine, Hooks hooks)
@@ -51,16 +105,46 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     m_failure.clear();
     m_redirects = 0;
     m_chain.clear();
+    LoadReport load;
+    load.request = level;
+    auto clock = Clock::now();
+    // The level is already in the world: its lease first, so a budget it can't fit stops
+    // it before anything starts.
+    std::vector<AssetCost> assets;
+    std::string error;
+    if (!planAssets(level, m_world, assets, load, error)) {
+        load.status = TravelStatus::Failed;
+        load.error = error;
+        load.epoch = m_epoch;
+        load.prepareMs = msSince(clock);
+        report(load);
+        throw std::runtime_error("level \"" + level.level + "\": " + error);
+    }
+    load.prepareMs = msSince(clock);
     m_current = std::move(level);
     m_world.setLevelEpoch(++m_epoch);
+    load.epoch = m_epoch;
+    if (m_residency && m_hooks.assets) m_lease = m_residency->acquire(leaseOwner(m_current, m_epoch), assets);
+    load.uploadMs = msSince(clock);
     // The application's graphics, put back by stop(); levels keep the player's changes.
     if (m_engine && m_engine->guiEnabled() && !m_settings) m_settings = m_engine->graphics().requested();
     try {
         startSession(reason);
+    } catch (const std::exception& e) {
+        m_lease.release();
+        restoreSettings();
+        load.startMs = msSince(clock);
+        load.status = TravelStatus::Failed;
+        load.error = e.what();
+        report(load);
+        throw;
     } catch (...) {
+        m_lease.release();
         restoreSettings();
         throw;
     }
+    load.startMs = msSince(clock);
+    report(load);
 }
 
 void LevelHost::startSession(StartReason reason) {
@@ -116,6 +200,7 @@ void LevelHost::stop() {
         finish(pending.id, pending.request, TravelStatus::Cancelled, "Play stopped first");
     }
     endSession();
+    m_lease.release();   // after the session: nothing reads its assets any more
     restoreSettings();
     m_redirects = 0;
     m_chain.clear();
@@ -148,6 +233,19 @@ void LevelHost::process() {
     while (m_pending) {
         const Pending next = *m_pending;
         m_pending.reset();
+        LoadReport load;
+        load.request = next.request;
+        load.from = m_current.level;
+        load.epoch = m_epoch;
+        auto clock = Clock::now();
+        auto fail = [&](TravelStatus status, std::string why, double LoadReport::*phase) {
+            load.*phase += msSince(clock);
+            load.status = status;
+            load.error = why;
+            load.epoch = m_epoch;
+            report(load);
+            finish(next.id, next.request, status, std::move(why));
+        };
         if (next.redirect) {
             ++m_redirects;
             m_chain.push_back(next.request.level);
@@ -160,16 +258,18 @@ void LevelHost::process() {
             for (const auto& id : m_chain) chain += (chain.empty() ? "" : " -> ") + id;
             m_redirects = 0;
             m_chain.clear();
-            finish(
-                next.id, next.request, TravelStatus::Failed,
+            fail(
+                TravelStatus::Failed,
                 "more than " + std::to_string(kMaxRedirects) +
-                    " levels asked for another before playing (a cycle?): " + chain);
+                    " levels asked for another before playing (a cycle?): " + chain,
+                &LoadReport::validateMs);
             return;
         }
         if (m_epoch == std::numeric_limits<uint64_t>::max()) {
-            finish(next.id, next.request, TravelStatus::Failed, "level epochs ran out: restart the game");
+            fail(TravelStatus::Failed, "level epochs ran out: restart the game", &LoadReport::validateMs);
             return;
         }
+        load.validateMs = msSince(clock);
         // Prepare: the next level loads beside the current one, which keeps playing if it fails.
         World prepared;
         std::string error;
@@ -181,21 +281,41 @@ void LevelHost::process() {
             error = e.what();
         }
         if (!m_session) {   // Stop (a quit, say) came while it loaded
-            finish(next.id, next.request, TravelStatus::Cancelled, "Play stopped while it loaded");
+            fail(TravelStatus::Cancelled, "Play stopped while it loaded", &LoadReport::readMs);
             return;
         }
         if (!loaded) {
-            finish(next.id, next.request, TravelStatus::Failed, error.empty() ? "it didn't load" : error);
+            fail(TravelStatus::Failed, error.empty() ? "it didn't load" : error, &LoadReport::readMs);
             continue;   // a request made by a hook meanwhile still gets its turn
         }
-        // Commit: the current level ends, then the new one starts in the same World.
+        load.readMs = msSince(clock);
+        // What it needs, against what's resident: refused here, the current level plays on.
+        std::vector<AssetCost> assets;
+        if (!planAssets(next.request, prepared, assets, load, error)) {
+            fail(TravelStatus::Failed, error, &LoadReport::prepareMs);
+            continue;
+        }
+        load.prepareMs = msSince(clock);
+        // Commit: the current level ends, then the new one starts in the same World. Its
+        // lease goes after its session, so what both levels use never leaves.
         endSession();
+        // The new lease is taken before the old one goes, so what both use keeps a ref
+        // throughout; only the old level's own assets retire.
+        AssetResidency::Lease arriving;
+        if (m_residency && m_hooks.assets)
+            arriving = m_residency->acquire(leaseOwner(next.request, m_epoch + 1), assets);
+        m_lease.release();
+        m_lease = std::move(arriving);
+        load.retireMs = msSince(clock);
         m_world = std::move(prepared);
         m_world.setLevelEpoch(++m_epoch);
         m_current = next.request;
+        load.epoch = m_epoch;
+        load.uploadMs = msSince(clock);
         try {
             startSession(StartReason::Fresh);
         } catch (const std::exception& e) {
+            m_lease.release();
             // Nothing is playing now; the application goes back to somewhere safe.
             m_failure = "level \"" + next.request.level + "\" didn't start: " + e.what();
             SW_LOG(LogGame, Error, "{}", m_failure);
@@ -204,9 +324,15 @@ void LevelHost::process() {
                 m_pending.reset();
                 finish(orphan.id, orphan.request, TravelStatus::Cancelled, "the level asking for it didn't start");
             }
+            load.startMs = msSince(clock);
+            load.status = TravelStatus::Failed;
+            load.error = m_failure;
+            report(load);
             finish(next.id, next.request, TravelStatus::Failed, m_failure);
             return;
         }
+        load.startMs = msSince(clock);
+        report(load);
         finish(next.id, next.request, TravelStatus::Succeeded, {});
     }
 }

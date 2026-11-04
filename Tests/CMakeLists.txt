@@ -90,6 +90,20 @@ shockwave_warnings(level_lifetime_test)
 add_test(NAME level_lifetime COMMAND level_lifetime_test)
 set_tests_properties(level_lifetime PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 
+# Asset dependencies and residency (S04, docs/AssetResidency.md): the graph's providers,
+# problems, cycles and hashes over a project made on disk; leases, budgets and level travel
+# holding them, without a window.
+add_executable(asset_dependencies_test AssetDependenciesTest.cpp)
+target_link_libraries(asset_dependencies_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(asset_dependencies_test)
+add_test(NAME asset_dependencies COMMAND asset_dependencies_test)
+set_tests_properties(asset_dependencies PROPERTIES TIMEOUT 120 LABELS unit)
+add_executable(asset_residency_test AssetResidencyTest.cpp)
+target_link_libraries(asset_residency_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(asset_residency_test)
+add_test(NAME asset_residency COMMAND asset_residency_test)
+set_tests_properties(asset_residency PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
+
 # Circuits (visual scripting): format, compiler checks and circuits running without a window.
 add_executable(circuit_test CircuitTest.cpp)
 target_link_libraries(circuit_test PRIVATE Shockwave::Circuits)
@@ -562,6 +576,18 @@ add_test(NAME level_check_cli COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/LevelCheck.cmake)
 set_tests_properties(level_check_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 120 LABELS integration)
+endif()
+# Asset dependencies and residency on the command line (S04, Tests/AssetDependencyCheck.cmake):
+# --asset-dependencies, --check's dependency problems, --load-report and budgets.
+if(TARGET game_sample)
+add_test(NAME asset_dependencies_cli COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DTEXTURE=${CMAKE_SOURCE_DIR}/Games/Sample/Content/textures/bricks.png
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/AssetDependencyCLI
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/AssetDependencyCheck.cmake)
+set_tests_properties(asset_dependencies_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 180 LABELS integration)
 endif()
 # Editor Play on runtime levels (S03): 100 Play/travel/Stop cycles keep the authored scene,
 # undo, selection and camera (Tests/LevelCyclesCheck.cmake). Draws its interface: gpu.

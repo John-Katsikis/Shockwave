@@ -207,6 +207,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Content", nullptr, &m_showContent);
             ImGui::MenuItem("Console", nullptr, &m_showConsole);
             ImGui::MenuItem("Optimisation", nullptr, &m_showOptimisation);
+            ImGui::MenuItem("Resource residency", nullptr, &m_showResidency);
             ImGui::MenuItem("Stats", nullptr, &m_showStats);
             ImGui::MenuItem("Input", nullptr, &m_showInput);
             ImGui::MenuItem("Save Games", nullptr, &m_showSaveGames);

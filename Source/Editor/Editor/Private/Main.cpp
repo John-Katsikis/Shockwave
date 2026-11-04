@@ -29,6 +29,7 @@
 //   --lighting             show the Lighting (bake) window on startup
 //   --release              show Project > Release readiness on startup
 //   --levels               show Project > Levels on startup
+//   --residency            show Window > Resource residency on startup
 //   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
@@ -82,6 +83,8 @@ int main(int argc, char** argv) {
                 options.showRelease = true;
             else if (arg == "--levels")
                 options.showLevels = true;
+            else if (arg == "--residency")
+                options.showResidency = true;
             else if (arg == "--lighting")
                 options.showLighting = true;
             else if (arg == "--graphics-guide-path") {
@@ -112,8 +115,8 @@ int main(int argc, char** argv) {
                           "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
                           "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
                           "       [--play] [--select N] [--circuit path] [--level-cycles N]\n"
-                          "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting]\n"
-                          "       [--frames N]");
+                          "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting] [--release]\n"
+                          "       [--levels] [--residency] [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;

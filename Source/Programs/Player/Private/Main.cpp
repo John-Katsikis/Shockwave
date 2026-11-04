@@ -409,6 +409,20 @@ int main(int argc, char** argv) {
                 releaseSchema = argv[++i];
             } else if (arg == "--levels") {
                 tool.mode = Tool::Mode::Levels;
+            } else if (arg == "--asset-dependencies") {
+                tool.mode = Tool::Mode::AssetDependencies;
+            } else if (arg == "--load-report" && i + 1 < argc) {
+                tool.loadReport = argv[++i];
+            } else if (arg == "--no-asset-residency") {
+                tool.assetResidency = false;
+            } else if ((arg == "--asset-budget-cpu" || arg == "--asset-budget-gpu") && i + 1 < argc) {
+                const std::string value = argv[++i];
+                double mib = 0;
+                const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), mib);
+                if (ec != std::errc{} || end != value.data() + value.size() || mib < 0)
+                    throw player::UsageError(arg + " takes a size in MiB (0 for no limit)");
+                (arg == "--asset-budget-cpu" ? tool.assetBudget.cpuBytes : tool.assetBudget.gpuBytes) =
+                    uint64_t(mib * 1024.0 * 1024.0);
             } else if (arg == "--level-schema" && i + 1 < argc) {
                 levelSchema = argv[++i];
             } else if (arg == "--level" && i + 1 < argc) {
@@ -650,7 +664,8 @@ int main(int argc, char** argv) {
                 "--lighting-assign-ids",
                 "--bake-lighting",
                 "--levels",
-                "--release-info"};
+                "--release-info",
+                "--asset-dependencies"};
             mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
@@ -684,7 +699,8 @@ int main(int argc, char** argv) {
                 "--net-test",       "--net-dump",         "--net-encode",          "--net-preview",
                 "--host",           "--join-lobby",       "--join-steam",          "--run-circuit",
                 "--circuit --dump", "--network-manifest", "--assign-network-keys", "--release-info",
-                "--release-schema", "--user-paths", "--import-legacy-saves", "--levels", "--level-schema"};
+                "--release-schema", "--user-paths", "--import-legacy-saves", "--levels", "--level-schema",
+                "--asset-dependencies"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -730,7 +746,8 @@ int main(int argc, char** argv) {
                 if (online || !tool.netPreview.empty())
                     throw player::UsageError(
                         "LevelOptionConflict: online play starts in the network settings' match scene; drop --level");
-                if (tool.mode != Tool::Mode::Play)
+                // --asset-dependencies --level id: that level's closure only.
+                if (tool.mode != Tool::Mode::Play && tool.mode != Tool::Mode::AssetDependencies)
                     throw player::UsageError("LevelOptionConflict: --level goes with play, not with tools");
             }
             if (userPathsCommand.preview && userPathsCommand.importLegacy.empty())

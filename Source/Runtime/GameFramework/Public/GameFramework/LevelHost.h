@@ -24,10 +24,15 @@
 //   - a request from an older level (a stale callback) is refused;
 //   - requests made before a level has ticked (from beginPlay, say) are redirects; more
 //     than kMaxRedirects in a row fail as a cycle instead of loading forever;
-//   - EntityRefs from an earlier level stop resolving (World::levelEpoch).
+//   - EntityRefs from an earlier level stop resolving (World::levelEpoch);
+//   - with a residency (setResidency), each level holds a lease on its dependency closure
+//     (Hooks::assets). The next level's is planned before the current one ends: one that
+//     doesn't fit the budget fails as BudgetExceeded and the current level plays on. The
+//     old lease goes after its session, so assets both levels use stay resident.
 //
 // Main thread only. Not copyable; the World and GameInstance must outlive it.
 
+#include <Assets/AssetResidency.h>
 #include <GameFramework/LevelLifetime.h>
 #include <GameFramework/PlaySession.h>
 
@@ -54,6 +59,12 @@ public:
         std::function<void(PlaySession&, const LevelRequest&)> started;
         // Just before a level's session stops for travel or Stop.
         std::function<void(PlaySession&)> stopping;
+        // What a level needs resident: its scene's dependency closure, with costs. Called
+        // with the prepared world before the current level ends (and for start()). False,
+        // with the reason, refuses the level. Unset: levels hold no lease.
+        std::function<bool(const LevelRequest&, const World& level, std::vector<AssetCost>& assets,
+                           std::string& error)>
+            assets;
     };
 
     LevelHost(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine, Hooks hooks);
@@ -85,6 +96,17 @@ public:
     // Called once for every result, as it happens.
     std::function<void(const TravelResult&)> onResult;
 
+    // ---- Residency (S04, docs/AssetResidency.md) ----
+    // Where levels take their leases; null (the default) turns it off. Set before start();
+    // it must outlive the host.
+    void setResidency(AssetResidency* residency) { m_residency = residency; }
+    AssetResidency* residency() const { return m_residency; }
+    const AssetResidency::Lease& lease() const { return m_lease; }
+    // One per start() and per carried-out request (not cancelled ones), oldest first (at
+    // most 32 kept), and as each finishes.
+    const std::vector<LoadReport>& loadReports() const { return m_reports; }
+    std::function<void(const LoadReport&)> onLoadReport;
+
     // For tests: the epoch the next level would get. Overflow fails travel explicitly.
     void setEpochForTesting(uint64_t epoch) { m_epoch = epoch; }
 
@@ -98,6 +120,9 @@ private:
     void startSession(StartReason reason);
     void endSession();
     void restoreSettings();
+    bool planAssets(const LevelRequest& request, const World& level, std::vector<AssetCost>& assets,
+                    LoadReport& report, std::string& error);
+    void report(LoadReport report);
 
     World& m_world;
     JobSystem& m_jobs;
@@ -116,6 +141,9 @@ private:
     std::optional<GraphicsSettings> m_settings;   // the application's, put back by stop()
     std::string m_failure;
     std::vector<TravelResult> m_results;
+    AssetResidency* m_residency = nullptr;
+    AssetResidency::Lease m_lease;   // the current level's
+    std::vector<LoadReport> m_reports;
 };
 
 }   // namespace shockwave

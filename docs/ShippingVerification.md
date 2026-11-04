@@ -15,7 +15,8 @@ section says:
 | S01 per-user paths | done | [below](#s01-per-user-paths) |
 | S02 level catalog | done | [below](#s02-level-catalog) |
 | S03 level lifetime | done | [below](#s03-level-lifetime) |
-| S04-S15 | not started | none |
+| S04 assets and loading | part 1 done: dependencies, leases, budget, load report | [below](#s04-asset-dependencies-and-residency-part-1) |
+| S05-S15 | not started | none |
 
 ## S00: release contract
 
@@ -393,3 +394,64 @@ a to b and back) and checks:
   background producer it meets (save loading) is waited for when its session ends.
 - **Online travel.** Online map changes still restart the match's session as before,
   through the host. Map rotation with a controlled session restart is S11.
+
+## S04: asset dependencies and residency, part 1
+
+### What was built
+
+- **The dependency graph** (`Assets/AssetGraph.h`, [AssetResidency.md](AssetResidency.md)).
+  Providers registered per file kind read scenes, prefabs, materials, models (what their
+  importer opened), RML, RCSS, effects, circuits, post-process profiles, lighting and
+  reflection manifests and navigation sidecars, each with its own parser.
+  - Problems with stable codes: `AssetMissing`, `AssetPathCase`, `AssetPathOutside`,
+    `AssetKindConflict`, `AssetUnreadable`, `AssetCycle` and the warning
+    `AssetUnknownName`.
+  - Cycles are found by a depth-first search with colours and reported as the loop.
+  - Each node has a closure hash over its bytes, kind, provider versions and every
+    dependency's closure hash.
+  - The graph re-reads only files whose size or time changed.
+- **`registerAssetPathField`** (`Engine/AssetReferences.h`) marks String fields that hold
+  Content paths. Engine, Circuits, Effects and Multiplayer register theirs; game modules can
+  too.
+- **Leases** (`Assets/AssetResidency.h`). Each level holds a lease on its closure. Shared
+  assets are counted once. The next level's lease is taken before the old one goes, so
+  assets both use never retire. A plan before teardown says what's shared, new and retiring.
+- **The budget.** `--asset-budget-cpu` and `--asset-budget-gpu` (MiB), or the editor's
+  window. A level that doesn't fit fails as `BudgetExceeded` with totals, before the
+  current level ends. A first level that doesn't fit exits 1.
+- **`LevelHost`**: `Hooks::assets`, `setResidency`, and a `LoadReport` per start and
+  travel with milliseconds for validate, read, prepare, retire, upload and start.
+- **The player**: `--asset-dependencies [--level id] [--json]`, the dependency check in
+  `--check`, `--load-report out.json` and `--no-asset-residency`.
+- **The editor**: Window > Resource residency, with level loads, resident assets by owner,
+  the open scene's dependency check, and the lease switch and budgets.
+- **Fix from S03**: the player named its first level "startup" even when a catalog listed
+  the startup scene, because the catalog was read after the name. It's read first now.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `asset_dependencies` | unit | every provider's edges on a project made on disk; each problem code with file, line and object; material and prefab cycles reported as loops; closure hashes change when a texture two steps down changes, and not for unrelated files; unchanged files aren't read again |
+| `asset_residency` | unit | shared assets survive A to B; unique ones retire; duplicates coalesce; a level over budget is refused before teardown and the current level plays on; a start over budget fails; leases off asks nothing; 100 A/B cycles plateau and drain at Stop |
+| `asset_dependencies_cli` | integration | `--asset-dependencies` as text and JSON, `--level`, closure hashes on the command line, `--check` failing on a missing texture and a cycle, `--load-report`, `--no-asset-residency`, a budget too small, bad budget arguments |
+
+`player --check` on Sample, Arena, `Tests/fixtures/levels` and `Tests/fixtures/graphics`
+reports no new problems. Unbaked lighting stays a warning: bake references are optional.
+
+### Still unverified
+
+- **Lazy loading and freeing.** Every asset is still imported at startup. Loading a
+  level's assets when it needs them, freeing retired ones, deferred GPU frees after their
+  frame, and the tests that need them (cancelled decode, failed upload, fake GPU delayed
+  completion, real GPU lifetime) are part 2 of S04.
+- **Measured CPU cost.** A lease counts each file's size as its CPU cost until part 2
+  measures prepared data.
+- **Dynamic names.** Assets named only in C++ are warned about, not followed.
+  `runtime_roots` for the cook is S09.
+- **Models without an AssetFolder.** A model's edges come from its importer. A tool that
+  doesn't import (none today) would see models as leaves.
+- **The editor window** draws during Play (`editor --residency --play --frames 60` on
+  `Tests/fixtures/levels` exits cleanly), and the editor's 100 level cycles pass with leases
+  on. Nobody has looked at it on screen yet in this batch.
+

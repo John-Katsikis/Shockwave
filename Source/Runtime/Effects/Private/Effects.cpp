@@ -9,6 +9,7 @@
 #include <Core/Jobs.h>
 #include <Core/Log.h>
 #include <Core/Profile.h>
+#include <Engine/AssetReferences.h>
 #include <Engine/Components.h>
 #include <Engine/Engine.h>
 #include <Engine/Hierarchy.h>
@@ -41,6 +42,23 @@ void registerEffectsComponents() {
          field("soft_distance", &ParticleEffect::softDistance, 0.01f, -1.0f, 100.0f),
          enumField("sorting", &ParticleEffect::sorting, {"whole", "parts"})},
         "Effects");
+    registerAssetPathField("ParticleEffect", "effect", AssetKind::Effect);
+    // An effect: the textures and models Effekseer opens for it, read the way it plays.
+    registerAssetProvider("effect", {".efkefc"}, [](AssetReader& r, std::string& error) {
+        const std::string name = r.contentName();
+        if (name.empty()) {
+            error = "effects are read from Content";
+            return false;
+        }
+        Effects tool(nullptr);
+        tool.setContentFolder(r.contentFolder());
+        const bool loaded = tool.preload(name);
+        for (const fs::path& file : tool.files(name))
+            if (fs::absolute(file).lexically_normal() != fs::absolute(r.file()).lexically_normal())
+                r.path(file, "effect resource");
+        if (!loaded) error = "Effekseer couldn't read it";
+        return loaded;
+    });
 }
 
 namespace {
@@ -645,6 +663,13 @@ EffectInfo Effects::info(std::string_view effect) {
 bool Effects::preload(std::string_view effect) {
     m->join();
     return m->load(effect).effect != nullptr;
+}
+
+std::vector<std::filesystem::path> Effects::files(std::string_view effect) {
+    m->join();
+    std::vector<std::filesystem::path> out;
+    for (const auto& [file, modified] : m->load(effect).files) out.push_back(file);
+    return out;
 }
 
 std::vector<std::string> Effects::effectFiles() const {

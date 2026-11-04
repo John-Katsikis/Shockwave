@@ -50,4 +50,25 @@ struct TravelResult {
     uint64_t epoch = 0;   // the level epoch it arrived in (Succeeded), else the one it left
 };
 
+// How one level start or change went, phase by phase (S04, docs/AssetResidency.md). The
+// times are measured on the main thread; the loading screen's weights (S05) are only an
+// estimate of them. The asset counts come from the level's dependency closure.
+struct LoadReport {
+    LevelRequest request;
+    std::string from;   // the level it left; empty for the first
+    uint64_t epoch = 0;   // the epoch it arrived in, or the one it stayed in
+    TravelStatus status = TravelStatus::Succeeded;
+    std::string error;
+    // Milliseconds per phase: Validate (the request), Read (the scene into a separate
+    // world), Prepare (its dependency closure and the budget), Retire (the old level and
+    // its lease), Upload (the new world and lease), Start (the session and beginPlay).
+    double validateMs = 0, readMs = 0, prepareMs = 0, retireMs = 0, uploadMs = 0, startMs = 0, totalMs = 0;
+    size_t assets = 0;   // in the new level's closure
+    size_t shared = 0, added = 0, retired = 0;
+    uint64_t addedCpuBytes = 0, addedGpuBytes = 0, retiredCpuBytes = 0, retiredGpuBytes = 0;
+    uint64_t residentCpuBytes = 0, residentGpuBytes = 0;   // afterwards
+    uint64_t peakCpuBytes = 0, peakGpuBytes = 0;
+};
+const char* loadPhaseName(int phase);   // 0..5: "validate", "read", "prepare", "retire", "upload", "start"
+
 }   // namespace shockwave

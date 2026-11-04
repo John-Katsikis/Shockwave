@@ -59,6 +59,11 @@ void Editor::play() {
                 if (!m_scenePath.empty() &&
                     (m_project.root / entry.scene).lexically_normal() == m_scenePath.lexically_normal())
                     level = entry.id;
+            // Level leases (docs/AssetResidency.md), unless the Resource residency window
+            // turned them off.
+            m_residency.setBudget({uint64_t(double(m_budgetCpuMiB) * 1024 * 1024),
+                                   uint64_t(double(m_budgetGpuMiB) * 1024 * 1024)});
+            m_runtimeLevels->setResidency(m_residencyEnabled ? &m_residency : nullptr);
             m_selectionBeforePlay = m_selection;
             m_authoredDuringPlay.emplace(std::move(m_world));
             m_world = *m_authoredDuringPlay;
@@ -157,6 +162,17 @@ shockwave::LevelHost::Hooks Editor::levelHooks() {
         session.setSaveFolder(saveGamesFolder(), scene);
         session.setGameCircuit(m_project.gameCircuitPath());
         if (m_playNetworkStart) session.setNetworkStart(*m_playNetworkStart, m_playServices);
+    };
+    // What a level needs resident: its scene as saved, and everything that reaches.
+    hooks.assets = [this](const shockwave::LevelRequest& request, const shockwave::World&,
+                          std::vector<shockwave::AssetCost>& assets, std::string&) {
+        const shockwave::LevelEntry* entry = m_playCatalog.find(request.level);
+        const fs::path scene = entry ? (m_project.root / entry->scene).lexically_normal() : m_scenePath;
+        if (scene.empty()) return true;   // never saved: nothing on disk to follow
+        shockwave::AssetGraph& graph = assetGraph();
+        const std::string id = graph.idFor(fs::absolute(scene));
+        if (!id.empty()) assets = shockwave::assetCosts(graph, id, m_assetFolder.get(), &engine().assets());
+        return true;
     };
     hooks.started = [this](shockwave::PlaySession&, const shockwave::LevelRequest& request) {
         if (!m_authoredDuringPlay || m_runtimeLevels->epoch() <= 1) return;

@@ -17,6 +17,7 @@
 #include <Multiplayer/NetworkSettings.h>
 #include <Multiplayer/OnlineMatch.h>
 #include <Network/NetworkCapture.h>
+#include <GameFramework/LevelAssets.h>
 #include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
@@ -70,6 +71,7 @@ struct EditorOptions {
     bool showLighting = false;   // --lighting: open the Lighting window
     bool showRelease = false;   // --release: open Project > Release readiness
     bool showLevels = false;   // --levels: open Project > Levels
+    bool showResidency = false;   // --residency: open Window > Resource residency
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -501,6 +503,20 @@ private:
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
     bool m_showEffects = true;
+    // Asset residency (ResidencyPanel.cpp, docs/AssetResidency.md): what Play's levels hold
+    // and what the next one needs. Before m_runtimeLevels, which holds a lease on it.
+    shockwave::AssetResidency m_residency;
+    std::unique_ptr<shockwave::AssetGraph> m_assetGraph;
+    std::filesystem::path m_assetGraphRoot;   // the project the graph is over
+    std::vector<shockwave::LoadReport> m_loadReports;   // the last 32 level loads
+    bool m_residencyEnabled = true;   // Resource residency > Track level leases; applies at Play
+    bool m_showResidency = false;
+    float m_budgetCpuMiB = 0, m_budgetGpuMiB = 0;   // 0: no limit
+    std::vector<shockwave::Diagnostic> m_sceneDependencyProblems;
+    std::string m_sceneDependencySummary;
+    char m_residencyFilter[128] = {};
+    shockwave::AssetGraph& assetGraph();
+    void drawResidencyWindow();
     // Play's runtime levels (docs/LevelLifetime.md). Play moves the authored scene to
     // m_authoredDuringPlay and plays a copy in m_world, so every panel shows the running
     // game; travel replaces that copy; Stop puts the authored scene and selection back.

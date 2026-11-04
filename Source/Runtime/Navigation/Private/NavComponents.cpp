@@ -1,10 +1,18 @@
 #include <Navigation/NavComponents.h>
 
 #include <Engine/Components.h>
+#include <Navigation/NavMesh.h>
+
+#include <Assets/AssetGraph.h>
 
 namespace shockwave {
 
 void registerNavigationComponents() {
+    // A scene's baked navigation mesh sits beside it; without one Play bakes it.
+    registerAssetProvider("navigation", {".swscene"}, [](AssetReader& r, std::string&) {
+        r.path(navMeshPathFor(r.file()), "navigation mesh", 0, AssetKind::NavMesh, false);
+        return true;
+    });
     registerComponent<NavMeshSettings>(
         "NavMeshSettings",
         {

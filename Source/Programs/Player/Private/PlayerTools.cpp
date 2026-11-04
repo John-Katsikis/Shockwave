@@ -267,6 +267,9 @@ int Player::check(const std::vector<std::string>& importProblems) {
     }
     checkPrefabs(usedPrefabs, problems);
     checkAllCircuits(usedCircuits, problems);
+    // What everything checked reaches, file by file (docs/AssetResidency.md): references
+    // that don't resolve, wrong case, paths leaving the project, cycles.
+    if (!onlySaves) checkAssetGraph(scenes, problems);
     // Save games: they must read back the way a load would, entity handles and all.
     for (const fs::path& file : saves) {
         const std::string shown = m_project.relative(file);

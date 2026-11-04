@@ -59,7 +59,8 @@ struct Tool {
         LightingAssignIds,
         BakeLighting,
         Levels,   // --levels: the level catalog and every level's links (docs/Levels.md)
-        ReleaseInfo   // --release-info, which loads every level to follow its links
+        ReleaseInfo,   // --release-info, which loads every level to follow its links
+        AssetDependencies   // --asset-dependencies [--level id] [--json out] (docs/AssetResidency.md)
     } mode = Mode::Play;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
@@ -121,6 +122,12 @@ struct Tool {
     // --capture-reflections (PlayerLighting.cpp): the scene's reflection probes, captured on
     // the GPU in a hidden window, then quit.
     bool captureReflections = false;
+    // Asset residency (PlayerAssets.cpp, docs/AssetResidency.md): --no-asset-residency
+    // turns level leases off; --asset-budget-cpu/-gpu MiB refuse a level that won't fit;
+    // --load-report out.json writes each level load's phases and assets at exit.
+    bool assetResidency = true;
+    shockwave::AssetBudget assetBudget;
+    fs::path loadReport;
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -284,6 +291,13 @@ private:
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);
     int levels();   // --levels [--json]
+    // Asset dependencies and residency (PlayerAssets.cpp, docs/AssetResidency.md).
+    shockwave::AssetGraph& assetGraph();
+    int assetDependencies();   // --asset-dependencies [--level id] [--json out]
+    void checkAssetGraph(const std::vector<fs::path>& scenes, std::vector<std::string>& problems);
+    shockwave::LevelHost::Hooks withAssetLeases(shockwave::LevelHost::Hooks hooks);
+    void recordLoad(const shockwave::LoadReport& report);
+    void writeLoadReport();   // --load-report
     int releaseInfoTool();   // --release-info [--json]
     // Loads each level's scene once, in an isolated world, and reads what it says.
     std::map<std::string, shockwave::LevelSceneFacts> levelFacts(const shockwave::LevelCatalog& catalog);
@@ -365,7 +379,8 @@ private:
     shockwave::LevelHost::Hooks levelHooks();
     // The catalog's level for a scene ("startup" for the implicit one, or a scene the
     // catalog doesn't list, from --scene).
-    std::string levelForScene(const fs::path& scene) const;
+    std::string levelForScene(const fs::path& scene);
+    void loadLevelCatalog();   // once
     fs::path sceneForLevel(const std::string& level) const;
     // After the frame: carries out travel; a level that fails to start goes back to the entry.
     void processTravel();
@@ -428,9 +443,15 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    // What levels hold resident and the graph that says what they need (docs/AssetResidency.md);
+    // before m_levels, which holds a lease on it.
+    shockwave::AssetResidency m_residency;
+    std::unique_ptr<shockwave::AssetGraph> m_assetGraph;
+    std::vector<shockwave::LoadReport> m_loadReports;   // --load-report
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
     shockwave::LevelCatalog m_catalog;   // where travel can go; the implicit "startup" without one
+    bool m_catalogLoaded = false;
     // How the next level's session goes online (host, client, net preview), or offline.
     std::optional<shockwave::net::NetworkStart> m_levelNetworkStart;
     shockwave::net::IOnlineServices* m_levelServices = nullptr;

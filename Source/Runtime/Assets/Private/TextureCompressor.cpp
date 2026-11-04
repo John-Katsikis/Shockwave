@@ -12,21 +12,16 @@ namespace shockwave {
 TextureCompressor::TextureCompressor() : m_state(std::make_shared<State>()) {}
 
 TextureCompressor::~TextureCompressor() {
-    bool busy = false;
     {
         std::lock_guard lock(m_state->mutex);
-        m_state->stop = true;
-        busy = m_state->busy;
+        m_state->stop = true;   // nothing waiting starts
     }
     m_state->wake.notify_all();
-    if (!m_thread.joinable()) return;
-    // An encode can take seconds and can't be interrupted. Rather than hold up quitting,
-    // let it finish on its own: it only touches the shared state, and the cache file is
-    // written through a temporary, so a process exiting under it leaves nothing broken.
-    if (busy)
-        m_thread.detach();
-    else
-        m_thread.join();
+    // The encode in progress can't be interrupted, so wait for it. A thread left running
+    // past here would still be encoding while the process exits and the encoder's globals
+    // are destroyed under it, which crashes (seen on Windows and macOS, quitting just after
+    // a texture was imported).
+    if (m_thread.joinable()) m_thread.join();
 }
 
 void TextureCompressor::add(std::shared_ptr<Task> task) {
@@ -129,11 +124,9 @@ void TextureCompressor::loop(State& state) {
             return false;
         });
         if (state.stop) return;
-        state.busy = true;
         lock.unlock();
         run(*next);
         lock.lock();
-        state.busy = false;
         state.progress.notify_all();
     }
 }
