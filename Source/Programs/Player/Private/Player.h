@@ -9,6 +9,7 @@
 #include <Engine/ReflectionProbes.h>
 #include <Engine/Engine.h>
 #include <GameFramework/GameModule.h>
+#include <GameFramework/LevelAssets.h>
 #include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
 #include <Effects/Effects.h>
@@ -128,6 +129,8 @@ struct Tool {
     bool assetResidency = true;
     shockwave::AssetBudget assetBudget;
     fs::path loadReport;
+    // --asset-loading all|levels: the project's asset_loading, overridden. Empty: the project's.
+    std::string assetLoading;
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -297,6 +300,11 @@ private:
     void checkAssetGraph(const std::vector<fs::path>& scenes, std::vector<std::string>& problems);
     shockwave::LevelHost::Hooks withAssetLeases(shockwave::LevelHost::Hooks hooks);
     void recordLoad(const shockwave::LoadReport& report);
+    // asset_loading levels (docs/AssetResidency.md): each level's assets load when it needs them.
+    bool loadAssetsOnDemand() const;
+    // On demand: a lease on what a scene (or the game circuit) needs, loaded, so the scene
+    // can be read before its level takes its own lease. Empty without on-demand loading.
+    shockwave::AssetResidency::Lease sceneAssets(const std::string& owner, const fs::path& file);
     void writeLoadReport();   // --load-report
     int releaseInfoTool();   // --release-info [--json]
     // Loads each level's scene once, in an isolated world, and reads what it says.
@@ -445,9 +453,15 @@ private:
     double m_frameDt = 1.0 / 60.0;
     // What levels hold resident and the graph that says what they need (docs/AssetResidency.md);
     // before m_levels, which holds a lease on it.
+    // On demand, what loads and unloads m_assets for it; before it, so leases can use it.
+    std::unique_ptr<shockwave::AssetFolderLoader> m_assetLoader;
     shockwave::AssetResidency m_residency;
     std::unique_ptr<shockwave::AssetGraph> m_assetGraph;
     std::vector<shockwave::LoadReport> m_loadReports;   // --load-report
+    // On demand: the game circuit's assets, for the whole run, and the scene in m_world
+    // until its level's lease holds them (startLevels lets go).
+    shockwave::AssetResidency::Lease m_applicationAssets;
+    shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
     shockwave::LevelCatalog m_catalog;   // where travel can go; the implicit "startup" without one

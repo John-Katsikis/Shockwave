@@ -3,13 +3,18 @@
 // request coalesces, a level that doesn't fit the budget is refused before the current
 // level ends (BudgetExceeded, with totals), a start that doesn't fit fails explicitly,
 // load reports carry every phase, and 100 A/B cycles plateau and drain to nothing at Stop.
+// With a loader (part 2, on demand): only new assets load, only retired ones unload, travel
+// unloads the old level's own assets before it loads the new one's and reads its scene, a
+// load that fails or is cancelled leaves nothing loaded, and cycles plateau there too.
 #include <Assets/AssetResidency.h>
 #include <Engine/Components.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/LevelHost.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -221,6 +226,183 @@ void testCyclesPlateau(JobSystem& jobs) {
     CHECK(residency.size() == 0 && residency.gpuBytes() == 0);
 }
 
+// ---- On demand: a fake loader that keeps a log --------------------------------------------
+
+struct FakeLoader final : AssetResidency::Loader {
+    std::vector<std::string>* log = nullptr;
+    std::set<std::string> live;   // what's loaded now
+    std::set<std::string> broken;   // these fail to load
+    size_t frees = 0;
+    bool load(
+        const std::vector<std::string>& ids, const std::function<bool()>& cancelled, std::vector<std::string>& loaded,
+        std::string& error) override {
+        if (cancelled && cancelled()) {
+            error = "cancelled";
+            return false;
+        }
+        bool ok = true;
+        for (const std::string& id : ids) {
+            if (log) log->push_back("load " + id);
+            if (broken.count(id)) {
+                error = "AssetLoadFailed: " + id;
+                ok = false;
+                continue;
+            }
+            CHECK(live.insert(id).second);   // never loaded twice
+            loaded.push_back(id);
+        }
+        return ok;
+    }
+    void unload(const std::vector<std::string>& ids) override {
+        for (const std::string& id : ids) {
+            if (log) log->push_back("unload " + id);
+            CHECK(live.erase(id) == 1);   // only what's loaded
+            ++frees;
+        }
+    }
+    size_t pendingFrees() const override { return frees; }
+};
+
+void testLoader() {
+    AssetResidency residency;
+    FakeLoader loader;
+    residency.setLoader(&loader);
+    auto menu = residency.acquire("menu", levelAssets["menu"]);
+    CHECK(!residency.find("Content/ui/font.ttf")->loaded);   // accounted, not in yet
+    std::string error;
+    CHECK(residency.load(menu, error) && loader.live.size() == 2 && residency.find("Content/ui/font.ttf")->loaded);
+    CHECK(residency.load(menu, error) && residency.loadedCount() == 2);   // nothing new: no call
+    // A -> menu's font stays; only a's own load, only menu's own unload.
+    auto a = residency.acquire("a", levelAssets["a"]);
+    menu.release();
+    CHECK(loader.live == (std::set<std::string>{"Content/ui/font.ttf"}));
+    CHECK(residency.load(a, error) && loader.live.size() == 3 && residency.unloadedCount() == 1);
+    CHECK(residency.pendingFrees() == 1);
+    // A load that fails: what did load stays until the lease goes, then nothing is left.
+    loader.broken = {"Content/b/sand.png"};
+    auto b = residency.acquire("b", levelAssets["b"]);
+    CHECK(!residency.load(b, error) && error.find("AssetLoadFailed: Content/b/sand.png") != std::string::npos);
+    CHECK(residency.find("Content/b/sand.png")->lastError.find("AssetLoadFailed") != std::string::npos);
+    b.release();
+    CHECK(!residency.find("Content/b/sand.png") && loader.live.size() == 3);
+    // Cancelled before it starts: nothing loads.
+    loader.broken.clear();
+    auto again = residency.acquire("b", levelAssets["b"]);
+    CHECK(!residency.load(again, [] { return true; }, error) && error == "cancelled");
+    CHECK(!residency.find("Content/b/sand.png")->loaded);
+    again.release();
+    a.release();
+    CHECK(loader.live.empty() && residency.size() == 0);
+}
+
+LevelHost::Hooks loggingHooks(std::vector<std::string>& log, std::set<std::string>* refuse = nullptr) {
+    LevelHost::Hooks h = hooks();
+    h.load = [&log](const LevelRequest& request, World& into, std::string& error) {
+        log.push_back("read " + request.level);
+        if (!levelAssets.count(request.level)) {
+            error = "no level " + request.level;
+            return false;
+        }
+        into.add<Name>(into.create(), Name{"level:" + request.level});
+        return true;
+    };
+    h.assets = [&log,
+                refuse](const LevelRequest& request, const World&, std::vector<AssetCost>& out, std::string& error) {
+        log.push_back("plan " + request.level);
+        if (refuse && refuse->count(request.level)) {
+            error = "AssetMissing: Content/" + request.level + "/gone.png";
+            return false;
+        }
+        out = levelAssets[request.level];
+        return true;
+    };
+    h.stopping = [&log](PlaySession&) { log.push_back("end"); };
+    return h;
+}
+
+void testTravelOnDemand(JobSystem& jobs) {
+    std::vector<std::string> log;
+    std::set<std::string> refuse;
+    AssetResidency residency;
+    FakeLoader loader;
+    loader.log = &log;
+    residency.setLoader(&loader);
+    Instance instance;
+    World world;
+    world.add<Name>(world.create(), Name{"level:a"});
+    LevelHost host(world, jobs, instance, nullptr, loggingHooks(log, &refuse));
+    host.setResidency(&residency);
+    host.start({"a"});
+    CHECK(loader.live.size() == 3);   // start() loads what the lease holds
+    tick(*host.session());
+    log.clear();
+    CHECK(host.request({"b"}) != 0);
+    host.process();
+    CHECK(host.playing() && host.current().level == "b");
+    // Unload before upload, then the scene: the order section 6.1 of the plan gives.
+    const std::vector<std::string> order = {
+        "plan b", "end", "unload Content/a/floor.png", "load Content/b/sand.png", "read b"};
+    CHECK(log == order);
+    if (log != order)
+        for (const auto& line : log) std::fprintf(stderr, "  %s\n", line.c_str());
+    const LoadReport& report = host.loadReports().back();
+    CHECK(report.loadedAssets == 1 && report.unloadedAssets == 1 && report.pendingFrees == loader.frees);
+    CHECK(report.status == TravelStatus::Succeeded && report.retireMs >= 0 && report.uploadMs >= 0);
+    // A broken link is refused before anything ends: b plays on, nothing loaded or unloaded.
+    refuse = {"a"};
+    tick(*host.session());
+    log.clear();
+    std::vector<TravelResult> results;
+    host.onResult = [&](const TravelResult& r) { results.push_back(r); };
+    host.request({"a"});
+    host.process();
+    CHECK(host.playing() && host.current().level == "b" && log == (std::vector<std::string>{"plan a"}));
+    CHECK(
+        results.size() == 1 && results[0].status == TravelStatus::Failed &&
+        results[0].error.find("AssetMissing") != std::string::npos);
+    // A load that fails after b ended: a failed start, nothing plays and nothing stays loaded.
+    refuse.clear();
+    loader.broken = {"Content/a/floor.png"};
+    tick(*host.session());
+    host.request({"a"});
+    host.process();
+    CHECK(!host.playing() && host.failure().find("didn't load") != std::string::npos);
+    CHECK(host.failure().find("AssetLoadFailed: Content/a/floor.png") != std::string::npos);
+    CHECK(loader.live.empty() && residency.size() == 0 && !host.lease().valid());
+    CHECK(host.loadReports().back().status == TravelStatus::Failed);
+    host.stop();
+}
+
+void testCyclesOnDemand(JobSystem& jobs) {
+    std::vector<std::string> log;
+    AssetResidency residency;
+    FakeLoader loader;
+    residency.setLoader(&loader);
+    auto application = residency.acquire("application ui", {cost("Content/ui/font.ttf", 1)});
+    std::string error;
+    CHECK(residency.load(application, error));
+    Instance instance;
+    World world;
+    world.add<Name>(world.create(), Name{"level:a"});
+    LevelHost host(world, jobs, instance, nullptr, loggingHooks(log));
+    host.setResidency(&residency);
+    host.start({"a"});
+    size_t liveAtA = loader.live.size();
+    for (int cycle = 0; cycle < 100; ++cycle)
+        for (const char* level : {"b", "a"}) {
+            tick(*host.session());
+            host.request({level});
+            host.process();
+            CHECK(host.playing() && host.current().level == level);
+        }
+    CHECK(loader.live.size() == liveAtA && residency.loadedCount() == 3 + 200);
+    CHECK(residency.unloadedCount() == 200);   // each change: one out, one in
+    host.stop();
+    CHECK(loader.live == (std::set<std::string>{"Content/ui/font.ttf"}));   // the application's, only
+    application.release();
+    CHECK(loader.live.empty() && residency.size() == 0);
+}
+
 }   // namespace
 
 int main() {
@@ -231,6 +413,9 @@ int main() {
     testStartOverBudget(jobs);
     testOff(jobs);
     testCyclesPlateau(jobs);
+    testLoader();
+    testTravelOnDemand(jobs);
+    testCyclesOnDemand(jobs);
     if (failures) {
         std::fprintf(stderr, "asset_residency: %d failure%s\n", failures, failures == 1 ? "" : "s");
         return 1;

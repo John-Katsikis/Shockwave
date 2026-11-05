@@ -205,7 +205,8 @@ void Player::loadLevelCatalog() {
     if (m_catalogLoaded) return;
     m_catalogLoaded = true;
     std::vector<shockwave::Diagnostic> ignored;   // --check and --levels report them
-    if (!shockwave::projectLevels(m_project, m_catalog, ignored)) m_catalog = shockwave::implicitLevelCatalog(m_project);
+    if (!shockwave::projectLevels(m_project, m_catalog, ignored))
+        m_catalog = shockwave::implicitLevelCatalog(m_project);
 }
 
 std::string Player::levelForScene(const fs::path& scene) {
@@ -273,6 +274,7 @@ void Player::startLevels(const std::string& level, shockwave::StartReason reason
         };
     }
     m_levels->start({level}, reason);
+    m_sceneAssets.release();   // on demand: the level's lease holds them now
 }
 
 void Player::processTravel() {
@@ -285,7 +287,12 @@ void Player::processTravel() {
         std::string error;
         shockwave::World entry;
         const fs::path scene = sceneForLevel(m_catalog.entry);
-        if (!scene.empty() && shockwave::loadScene(entry, engine().assets(), scene.string(), error)) {
+        try {
+            if (!scene.empty()) m_sceneAssets = sceneAssets("startup", scene);   // on demand
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        if (!scene.empty() && error.empty() && shockwave::loadScene(entry, engine().assets(), scene.string(), error)) {
             m_world = std::move(entry);
             try {
                 startLevels(m_catalog.entry, shockwave::StartReason::Fresh);

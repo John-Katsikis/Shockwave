@@ -53,6 +53,11 @@ returned. When a request is waiting:
 4. **Start.** A new session and GameMode start. If the new level asks for another one in
    `beginPlay`, that request runs right after, in the same `process()`.
 
+With `asset_loading levels`, the new level's assets aren't in memory until its lease
+loads them, so the scene is read after the swap instead: plan, end, swap (the old level's
+own assets unload), load the new assets, read the scene, start. A failure there leaves
+nothing playing, like a level that didn't start ([AssetResidency.md](AssetResidency.md#loading-on-demand)).
+
 Every accepted request ends exactly once, through `onResult`:
 
 | Result | When |

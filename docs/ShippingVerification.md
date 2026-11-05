@@ -15,7 +15,7 @@ section says:
 | S01 per-user paths | done | [below](#s01-per-user-paths) |
 | S02 level catalog | done | [below](#s02-level-catalog) |
 | S03 level lifetime | done | [below](#s03-level-lifetime) |
-| S04 assets and loading | part 1 done: dependencies, leases, budget, load report | [below](#s04-asset-dependencies-and-residency-part-1) |
+| S04 assets and loading | done: dependencies, leases, budget, load report; loading on demand, deferred GPU frees | [part 1](#s04-asset-dependencies-and-residency-part-1), [part 2](#s04-loading-on-demand-part-2) |
 | S05-S15 | not started | none |
 
 ## S00: release contract
@@ -441,12 +441,9 @@ reports no new problems. Unbaked lighting stays a warning: bake references are o
 
 ### Still unverified
 
-- **Lazy loading and freeing.** Every asset is still imported at startup. Loading a
-  level's assets when it needs them, freeing retired ones, deferred GPU frees after their
-  frame, and the tests that need them (cancelled decode, failed upload, fake GPU delayed
-  completion, real GPU lifetime) are part 2 of S04.
-- **Measured CPU cost.** A lease counts each file's size as its CPU cost until part 2
-  measures prepared data.
+- **Lazy loading and freeing.** Done in [part 2](#s04-loading-on-demand-part-2).
+- **Measured CPU cost.** A lease counts each file's size as its CPU cost (still true after
+  part 2).
 - **Dynamic names.** Assets named only in C++ are warned about, not followed.
   `runtime_roots` for the cook is S09.
 - **Models without an AssetFolder.** A model's edges come from its importer. A tool that
@@ -455,3 +452,54 @@ reports no new problems. Unbaked lighting stays a warning: bake references are o
   `Tests/fixtures/levels` exits cleanly), and the editor's 100 level cycles pass with leases
   on. Nobody has looked at it on screen yet in this batch.
 
+## S04: loading on demand, part 2
+
+### What was built
+
+- **`asset_loading all|levels`** in the project (default `all`), `--asset-loading` in the
+  player, and **Player asset loading** in the editor's Resource residency window. `levels`
+  with `--no-asset-residency` is refused (exit 2). The editor itself stays eager.
+- **AssetFolder on demand** (`setOnDemand`). `open()` only lists files. `load(names,
+  LoadOptions)` imports in batches bounded by an estimated staging size, decoding on
+  workers and publishing on the main thread only, textures before models and sounds before
+  materials. `cancelled()` is asked before each batch and after its decode; a cancelled
+  load unloads what it published. A failed upload unregisters the file and destroys its
+  partial GPU objects. `unload()` unregisters and destroys, and materials re-resolve, so
+  one reading an unloaded texture falls back. Hot reload only re-imports loaded files.
+- **Assets registry**: `removeTexture`, `removeModel`, `removeMaterial`. Handles to removed
+  models and materials stay invalid; their slots aren't reused.
+- **Deferred GPU frees.** `Renderer::pendingFrees()` and `flushFrees()`. Vulkan's
+  `destroyMesh` now retires the mesh behind the frame fences instead of waiting for the
+  device to go idle. The null renderer fakes two frames in flight. Plugin ABI 18.
+- **`AssetResidency::Loader`**: `load(lease)` imports what a lease holds; the last lease on
+  an asset going unloads it. `AssetFolderLoader` maps `Content/` ids to the AssetFolder.
+- **`LevelHost` on demand**: plan, end, swap (old assets unload), upload, read, start.
+  `start()` loads the first lease too. Load reports count loaded and unloaded assets and
+  pending frees.
+- **The player** holds a lease on the game circuit's assets for the run and one on the
+  startup scene while it starts, flushes frees before the report, and writes
+  `asset_loading`, per-load `loaded`, `unloaded`, `pending_frees` and the totals.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `asset_residency` | unit | with a loader: a lease loads what isn't in, its release unloads what only it held, a failed or cancelled load keeps nothing, the on-demand travel order (plan, end, unload, load, read), 100 A/B cycles on demand plateau and drain |
+| `asset_streaming` | unit | a real AssetFolder on the null renderer's fake GPU: open imports nothing; batches under a staging limit; uploads only on the main thread; a decode cancelled before publishing is never uploaded and what was published goes again; a failed model or texture upload leaves nothing registered and frees its meshes; a material falls back when its texture unloads; frees wait for frames, then drain; a saved loaded file re-imports and an unloaded one doesn't; `AssetFolderLoader` under `AssetResidency`; 100 load/unload cycles keep the registry flat and drain |
+| `asset_streaming_vulkan` | gpu | the same on Vulkan, with real frame fences |
+| `asset_dependencies_cli` | integration | adds `--asset-loading levels` on level b (its material and texture load, and everything unloads with no frees pending at exit), the default reporting `all`, and both usage errors |
+
+Run here on Linux (llvmpipe for Vulkan).
+
+### Still unverified
+
+- **Assets named only in code** aren't loaded on demand. A game that has them should stay
+  on `all` until S09's `runtime_roots` lists them.
+- **Measured CPU cost and staging.** CPU bytes are file sizes and staging is estimated as
+  four times them; peak staging is measured per load but not against real allocations.
+- **GPU cost before first load** is 0 for a file never loaded; plans for a level whose
+  assets were never loaded under-count until they have been once.
+- **Loading on a real game.** Sample and Arena still default to `all`. With
+  `--asset-loading levels --renderer null --frames 30` both start, load their startup
+  scene's assets (9 and 6) and unload them all at exit with no frees pending, but nobody
+  has played them that way on screen. The loading screen that would show progress is S05.

@@ -36,10 +36,12 @@
 #include <GameFramework/LevelLifetime.h>
 #include <GameFramework/PlaySession.h>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace shockwave {
@@ -62,8 +64,14 @@ public:
         // What a level needs resident: its scene's dependency closure, with costs. Called
         // with the prepared world before the current level ends (and for start()). False,
         // with the reason, refuses the level. Unset: levels hold no lease.
-        std::function<bool(const LevelRequest&, const World& level, std::vector<AssetCost>& assets,
-                           std::string& error)>
+        //
+        // When the residency has a loader (assets load on demand, docs/AssetResidency.md),
+        // travel runs in the order section 6.1 of the shipping plan gives: this is asked
+        // first, with an empty world, since the scene can't be read before its assets are
+        // in; then the current level ends and its own assets unload; then the new lease is
+        // loaded, the scene read (load) and the level started. A failure after the current
+        // level ended is a failed start: nothing is playing (failure() says why).
+        std::function<bool(const LevelRequest&, const World& level, std::vector<AssetCost>& assets, std::string& error)>
             assets;
     };
 
@@ -120,9 +128,14 @@ private:
     void startSession(StartReason reason);
     void endSession();
     void restoreSettings();
-    bool planAssets(const LevelRequest& request, const World& level, std::vector<AssetCost>& assets,
-                    LoadReport& report, std::string& error);
+    bool planAssets(
+        const LevelRequest& request, const World& level, std::vector<AssetCost>& assets, LoadReport& report,
+        std::string& error);
     void report(LoadReport report);
+    // Travel when assets load on demand (Hooks::assets). False: stop processing (nothing plays).
+    bool travelOnDemand(const Pending& next, LoadReport& load, std::chrono::steady_clock::time_point& clock);
+    // After the current level ended: the new one didn't start, so nothing plays.
+    void failStarted(const Pending& next, LoadReport& load, const std::string& why);
 
     World& m_world;
     JobSystem& m_jobs;
@@ -136,6 +149,8 @@ private:
     int m_redirects = 0;
     std::optional<Pending> m_pending;
     bool m_processing = false;
+    bool m_stopped = false;   // stop() came while process() was loading
+    std::pair<uint64_t, uint64_t> m_countsAtStart{};   // the residency's loaded/unloaded when a change began
     bool m_starting = false;   // inside a session's start(): beginPlay may request
     std::vector<std::string> m_chain;   // the redirects so far, for the cycle message
     std::optional<GraphicsSettings> m_settings;   // the application's, put back by stop()

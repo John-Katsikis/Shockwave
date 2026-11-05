@@ -5,6 +5,7 @@
 
 #include <Assets/AssetResidency.h>
 #include <GameFramework/LevelAssets.h>
+#include <Projects/Project.h>
 
 #include <algorithm>
 #include <cctype>
@@ -55,12 +56,29 @@ void Editor::drawResidencyWindow() {
     ImGui::InputFloat("GPU MiB", &m_budgetGpuMiB, 0, 0, "%.0f");
     ImGui::SetItemTooltip("The most a level change may leave resident on the GPU; 0 for no limit. At the next Play.");
     m_budgetGpuMiB = std::max(0.0f, m_budgetGpuMiB);
+    // The project's asset_loading: the player's, since the editor keeps everything in for editing.
+    ImGui::SetNextItemWidth(170);
+    int loading = m_project.assetLoading == "levels" ? 1 : 0;
+    if (ImGui::Combo("Player asset loading", &loading, "All at start\0Each level's, on demand\0")) {
+        m_project.assetLoading = loading ? "levels" : "all";
+        std::string error;
+        if (shockwave::saveProject(m_project, error))
+            log("asset_loading " + m_project.assetLoading + " saved to the project");
+        else
+            log("Couldn't save the project: " + error);
+    }
+    ImGui::SetItemTooltip("The project's asset_loading. On demand, the player imports each level's assets when it "
+                          "needs them and unloads them when no level holds them (player --asset-loading overrides "
+                          "it). The editor always keeps everything loaded, so you can edit any of it.");
 
     ImGui::Text(
-        "%s: %zu assets in %zu lease%s, CPU %s, GPU %s; %llu retired so far", live ? "Playing" : "Not playing",
-        m_residency.size(), m_residency.leases(), m_residency.leases() == 1 ? "" : "s",
-        formatAssetBytes(m_residency.cpuBytes()).c_str(), formatAssetBytes(m_residency.gpuBytes()).c_str(),
-        static_cast<unsigned long long>(m_residency.retiredCount()));
+        "%s: %zu assets in %zu lease%s, CPU %s, GPU %s; %llu retired so far; %zu GPU frees pending",
+        live ? "Playing" : "Not playing", m_residency.size(), m_residency.leases(),
+        m_residency.leases() == 1 ? "" : "s", formatAssetBytes(m_residency.cpuBytes()).c_str(),
+        formatAssetBytes(m_residency.gpuBytes()).c_str(), static_cast<unsigned long long>(m_residency.retiredCount()),
+        engine().renderer().pendingFrees());
+    ImGui::SetItemTooltip("GPU frees pending: meshes and textures destroyed but kept until the frames still in "
+                          "flight are done with them.");
 
     // The last level loads, newest first.
     if (ImGui::CollapsingHeader("Level loads", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -108,7 +126,7 @@ void Editor::drawResidencyWindow() {
                 "resident", 7,
                 ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable,
                 ImVec2(0, 200))) {
-            for (const char* column : {"Asset", "Kind", "Owners", "Refs", "CPU", "GPU", "Pending free / last error"})
+            for (const char* column : {"Asset", "Kind", "Owners", "Refs", "CPU", "GPU", "State / last error"})
                 ImGui::TableSetupColumn(column);
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
@@ -131,8 +149,7 @@ void Editor::drawResidencyWindow() {
                 ImGui::TextUnformatted(formatAssetBytes(e.gpuBytes).c_str());
                 ImGui::TableNextColumn();
                 ImGui::Text(
-                    "%s%s%s", formatAssetBytes(e.pendingFreeBytes).c_str(), e.lastError.empty() ? "" : "; ",
-                    e.lastError.c_str());
+                    "%s%s%s", e.loaded ? "loaded" : "not loaded", e.lastError.empty() ? "" : "; ", e.lastError.c_str());
             }
             ImGui::EndTable();
         }

@@ -91,6 +91,10 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (result.textureCompression != "high" && result.textureCompression != "small" &&
                     result.textureCompression != "off")
                     return fail("texture_compression must be high, small or off");
+            } else if (key == "asset_loading") {
+                row >> result.assetLoading;
+                if (result.assetLoading != "all" && result.assetLoading != "levels")
+                    return fail("asset_loading must be all or levels");
             } else if (key == "mesh_lods") {
                 if (!(row >> result.meshLods) || result.meshLods < 0 || result.meshLods > 7)
                     return fail("mesh_lods must be a whole number from 0 to 7");
@@ -190,6 +194,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.frameLimit > 0) out << "frame_limit " << project.frameLimit << "\n";
     if (project.lowLatency) out << "low_latency true\n";
     if (project.textureCompression != "high") out << "texture_compression " << project.textureCompression << "\n";
+    if (project.assetLoading != "all") out << "asset_loading " << project.assetLoading << "\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";
     if (project.lodErrorPixels != 1.0) out << "lod_error_pixels " << project.lodErrorPixels << "\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";

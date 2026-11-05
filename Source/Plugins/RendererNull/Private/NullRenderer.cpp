@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <string>
+#include <vector>
 
 namespace shockwave {
 namespace {
@@ -20,11 +21,15 @@ public:
     uint32_t maxMeshes() const override { return 1u << 20; }
     uint32_t maxTextures() const override { return 1u << 20; }
     void createMesh(MeshHandle, std::span<const Vertex>, std::span<const uint32_t>) override {}
-    void destroyMesh(MeshHandle) override {}
+    void destroyMesh(MeshHandle) override { retire(); }
     void setMeshSkin(MeshHandle, std::span<const VertexSkin>) override {}
     void createTexture(TextureHandle, uint32_t, uint32_t, std::span<const uint8_t>, bool) override {}
     void updateTexture(TextureHandle, uint32_t, uint32_t, std::span<const uint8_t>, bool) override {}
-    void destroyTexture(TextureHandle) override {}
+    void destroyTexture(TextureHandle) override { retire(); }
+    // Like a GPU with frames in flight: what's destroyed is freed kFramesInFlight frames
+    // later, so tests see deferred frees complete (docs/AssetResidency.md).
+    size_t pendingFrees() const override { return m_pending.size(); }
+    void flushFrees() override { m_pending.clear(); }
     uint64_t guiTexture(TextureHandle) override { return 0; }
 
     void setClearColor(const Color&) override {}
@@ -115,6 +120,8 @@ public:
 
     bool beginFrame() override { return true; }
     void endFrame() override {
+        ++m_frame;
+        std::erase_if(m_pending, [&](uint64_t due) { return due <= m_frame; });
         m_lastDraws = m_draws.exchange(0);
         m_lastUnkeyed = m_unkeyed.exchange(0);
         m_lastLights = m_lights.exchange(0);
@@ -132,6 +139,11 @@ public:
     void drawUi(const UiDrawList&) override {}
 
 private:
+    static constexpr uint64_t kFramesInFlight = 2;
+    void retire() { m_pending.push_back(m_frame + kFramesInFlight); }
+    uint64_t m_frame = 0;
+    std::vector<uint64_t> m_pending;   // the frame each destroyed resource is freed after
+
     uint32_t outputWidth() const { return m_viewportWidth ? m_viewportWidth : m_window.pixelWidth(); }
     uint32_t outputHeight() const { return m_viewportHeight ? m_viewportHeight : m_window.pixelHeight(); }
 

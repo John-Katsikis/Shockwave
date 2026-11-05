@@ -44,7 +44,7 @@ ModelHandle Assets::addModel(std::string name, std::shared_ptr<const ModelAsset>
 ModelHandle Assets::findModel(std::string_view name) const {
     std::shared_lock lock(m_mutex);
     for (uint32_t i = 0; i < m_models.size(); ++i)
-        if (m_models[i].first == name) return {i};
+        if (m_models[i].first == name) return m_models[i].second ? ModelHandle{i} : ModelHandle{};
     return {};
 }
 std::shared_ptr<const ModelAsset> Assets::model(ModelHandle handle) const {
@@ -58,7 +58,8 @@ std::string Assets::modelName(ModelHandle handle) const {
 std::vector<std::pair<std::string, ModelHandle>> Assets::models() const {
     std::shared_lock lock(m_mutex);
     std::vector<std::pair<std::string, ModelHandle>> result;
-    for (uint32_t i = 0; i < m_models.size(); ++i) result.emplace_back(m_models[i].first, ModelHandle{i});
+    for (uint32_t i = 0; i < m_models.size(); ++i)
+        if (m_models[i].second) result.emplace_back(m_models[i].first, ModelHandle{i});
     return result;
 }
 
@@ -76,7 +77,7 @@ MaterialHandle Assets::addMaterial(std::string name, std::shared_ptr<const Mater
 MaterialHandle Assets::findMaterial(std::string_view name) const {
     std::shared_lock lock(m_mutex);
     for (uint32_t i = 0; i < m_materials.size(); ++i)
-        if (m_materials[i].first == name) return {i};
+        if (m_materials[i].first == name) return m_materials[i].second ? MaterialHandle{i} : MaterialHandle{};
     return {};
 }
 std::shared_ptr<const MaterialAsset> Assets::material(MaterialHandle handle) const {
@@ -90,7 +91,8 @@ std::string Assets::materialName(MaterialHandle handle) const {
 std::vector<std::pair<std::string, MaterialHandle>> Assets::materials() const {
     std::shared_lock lock(m_mutex);
     std::vector<std::pair<std::string, MaterialHandle>> result;
-    for (uint32_t i = 0; i < m_materials.size(); ++i) result.emplace_back(m_materials[i].first, MaterialHandle{i});
+    for (uint32_t i = 0; i < m_materials.size(); ++i)
+        if (m_materials[i].second) result.emplace_back(m_materials[i].first, MaterialHandle{i});
     return result;
 }
 
@@ -142,6 +144,24 @@ std::vector<std::pair<std::string, MeshHandle>> Assets::meshes() const {
 std::vector<std::pair<std::string, TextureHandle>> Assets::textures() const {
     std::shared_lock lock(m_mutex);
     return m_textures;
+}
+
+void Assets::removeTexture(std::string_view name) {
+    if (name == "white") return;
+    std::unique_lock lock(m_mutex);
+    std::erase_if(m_textures, [&](const auto& entry) { return entry.first == name; });
+}
+
+void Assets::removeModel(std::string_view name) {
+    std::unique_lock lock(m_mutex);
+    for (auto& [n, model] : m_models)
+        if (n == name) model.reset();
+}
+
+void Assets::removeMaterial(std::string_view name) {
+    std::unique_lock lock(m_mutex);
+    for (auto& [n, material] : m_materials)
+        if (n == name) material.reset();
 }
 
 void Assets::addAudioClip(std::string name, std::shared_ptr<const AudioClip> clip) {

@@ -57,6 +57,13 @@ public:
     std::vector<std::pair<std::string, MeshHandle>> meshes() const;
     std::vector<std::pair<std::string, TextureHandle>> textures() const;
 
+    // Unloading (S04, docs/AssetResidency.md): the name stops resolving, so a scene read
+    // afterwards reports it as unknown. A model or material keeps its slot, empty, and
+    // gets it back when it's added again. The GPU resources are the caller's to destroy.
+    void removeTexture(std::string_view name);   // never "white"
+    void removeModel(std::string_view name);
+    void removeMaterial(std::string_view name);
+
     // The folder asset names are relative to (a project's Content/), for assets other
     // modules read from disk themselves, like particle effects. AssetFolder::open sets it.
     void setContentRoot(std::filesystem::path root);

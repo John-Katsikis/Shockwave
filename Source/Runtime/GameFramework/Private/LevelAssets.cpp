@@ -7,6 +7,7 @@
 #include <Engine/Components.h>
 #include <Projects/Diagnostic.h>
 #include <Projects/Project.h>
+#include <Renderer/Renderer.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -130,5 +131,61 @@ std::string assetDependenciesJson(
     out << (diagnostics.empty() ? "" : "\n  ") << "],\n  \"ok\": " << (ok ? "true" : "false") << "\n}\n";
     return out.str();
 }
+
+// ---- AssetFolderLoader ------------------------------------------------------------------
+
+AssetFolderLoader::AssetFolderLoader(const Project& project, AssetFolder& folder, Renderer* renderer)
+    : m_prefix(project.relative(project.assetFolder) + "/"), m_folder(folder), m_renderer(renderer) {}
+
+std::string AssetFolderLoader::name(const std::string& id) const {
+    return id.size() > m_prefix.size() && id.compare(0, m_prefix.size(), m_prefix) == 0 ? id.substr(m_prefix.size())
+                                                                                        : std::string();
+}
+
+bool AssetFolderLoader::load(
+    const std::vector<std::string>& ids, const std::function<bool()>& cancelled, std::vector<std::string>& loaded,
+    std::string& error) {
+    std::vector<std::string> names;
+    std::vector<const std::string*> content;
+    for (const std::string& id : ids) {
+        const std::string n = name(id);
+        if (n.empty()) {
+            loaded.push_back(id);   // a scene or a built-in: nothing to import
+            continue;
+        }
+        names.push_back(n);
+        content.push_back(&id);
+    }
+    AssetFolder::LoadOptions options;
+    options.cancelled = cancelled;
+    options.stagingBytes = m_stagingBytes;
+    const AssetFolder::LoadResult result = m_folder.load(names, options);
+    m_lastBatches = result.batches;
+    m_lastPeak = result.peakStagedBytes;
+    if (result.cancelled) {
+        error = "cancelled before its assets were published";
+        return false;
+    }
+    for (size_t i = 0; i < names.size(); ++i)
+        if (m_folder.loaded(names[i]) || !m_folder.find(names[i]) ||
+            m_folder.find(names[i])->kind == AssetFolder::Kind::Other) {
+            const bool failed = std::any_of(
+                result.failed.begin(), result.failed.end(), [&](const auto& c) { return c.name == names[i]; });
+            if (!failed) loaded.push_back(*content[i]);
+        }
+    if (result.failed.empty()) return true;
+    error = "AssetLoadFailed: " + m_prefix + result.failed.front().name + ": " + result.failed.front().error;
+    if (result.failed.size() > 1) error += " (and " + std::to_string(result.failed.size() - 1) + " more)";
+    return false;
+}
+
+void AssetFolderLoader::unload(const std::vector<std::string>& ids) {
+    std::vector<std::string> names;
+    for (const std::string& id : ids)
+        if (std::string n = name(id); !n.empty()) names.push_back(std::move(n));
+    m_folder.unload(names);
+}
+
+size_t AssetFolderLoader::pendingFrees() const { return m_renderer ? m_renderer->pendingFrees() : 0; }
 
 }   // namespace shockwave

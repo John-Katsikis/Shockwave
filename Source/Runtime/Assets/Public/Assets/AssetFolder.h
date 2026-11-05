@@ -7,6 +7,8 @@
 #include <Core/Jobs.h>
 
 #include <filesystem>
+#include <functional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +32,10 @@ class TextureCompressor;
 // so a material follows its parents, models and textures as they're saved. One that stops
 // parsing keeps its last good version (and says why); one whose parent, model or texture
 // has gone is drawn magenta until it's back.
+//
+// On demand (setOnDemand, S04 docs/AssetResidency.md), open() only lists the files, and
+// nothing is imported until load() asks for it; unload() gives it back, and its GPU memory
+// is freed once no frame in flight reads it. Saving a loaded file still re-imports it.
 //
 // Main thread only.
 class AssetFolder {
@@ -131,6 +137,45 @@ public:
     // (player --optimise) and tests; the editor and games let it happen in the background.
     std::vector<Change> finishCompressing();
 
+    // ---- Loading on demand (S04, docs/AssetResidency.md) ----
+    // Off (the default): open() imports everything, as it always has. On: open() lists the
+    // files and imports none of them; load() and unload() decide. Set before open().
+    void setOnDemand(bool on) { m_onDemand = on; }
+    bool onDemand() const { return m_onDemand; }
+    struct LoadOptions {
+        // Asked before each batch is read and again before it's published: true drops what
+        // was read, unloads what this call published, and stops. Never after publication.
+        std::function<bool()> cancelled;
+        // About how much decoded data is held at once: files are read in batches whose
+        // decoded size (counted as 4 times their file's) stays under it, one file at least.
+        uint64_t stagingBytes = 256ull * 1024 * 1024;
+    };
+    struct LoadResult {
+        size_t loaded = 0;   // imported by this call
+        size_t resident = 0;   // already in, or nothing to import (a scene, a .rml file)
+        std::vector<Change> failed;   // couldn't be read or uploaded: nothing of it stays
+        bool cancelled = false;
+        size_t batches = 0;
+        uint64_t peakStagedBytes = 0;   // the most decoded data one batch held
+        bool ok() const { return failed.empty() && !cancelled; }
+    };
+    // Imports the named files (names inside the folder, as files() lists them) and their
+    // materials' textures' decodings. Reading and decoding run on the job system; uploading
+    // and publishing on this thread, between frames. Loaded files are hot-reloaded when saved.
+    LoadResult load(const std::vector<std::string>& names, const LoadOptions& options);
+    LoadResult load(const std::vector<std::string>& names) { return load(names, LoadOptions{}); }
+    // Unregisters the named files and destroys their GPU resources, which the renderer frees
+    // once the frames in flight are done (Renderer::pendingFrees). A material still in that
+    // reads an unloaded texture falls back to magenta rather than read freed memory.
+    // Returns how many were unloaded.
+    size_t unload(const std::vector<std::string>& names);
+    bool loaded(std::string_view name) const;
+    // Tests: called with "upload" and a file's name on the thread that uploads it, just
+    // before; returning true makes that upload fail. Empty: none.
+    void setFaultHook(std::function<bool(std::string_view stage, std::string_view name)> hook) {
+        m_fault = std::move(hook);
+    }
+
 private:
     struct AudioImport;
     std::vector<std::shared_ptr<AudioImport>> m_audioImports;
@@ -151,6 +196,18 @@ private:
     bool m_backgroundCompression = true;
     std::filesystem::path m_cacheFolder;
     std::unique_ptr<TextureCompressor> m_compressor;
+    // On demand
+    struct Batch {
+        const std::set<std::string, std::less<>>* names = nullptr;
+        const std::function<bool()>* cancelled = nullptr;
+        bool wasCancelled = false;
+        uint64_t stagedBytes = 0;
+    };
+    bool selected(const File& f, const File* old) const;
+    void unloadFile(File& f);
+    bool m_onDemand = false;
+    Batch* m_batch = nullptr;   // during load(): the batch refresh() imports
+    std::function<bool(std::string_view, std::string_view)> m_fault;
 };
 
 }   // namespace shockwave

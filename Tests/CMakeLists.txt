@@ -103,6 +103,17 @@ target_link_libraries(asset_residency_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(asset_residency_test)
 add_test(NAME asset_residency COMMAND asset_residency_test)
 set_tests_properties(asset_residency PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
+# Loading on demand (S04 part 2): a real AssetFolder on the null renderer's fake GPU, then Vulkan (gpu).
+add_executable(asset_streaming_test AssetStreamingTest.cpp)
+target_link_libraries(asset_streaming_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(asset_streaming_test)
+shockwave_link_plugins(asset_streaming_test)
+add_test(NAME asset_streaming COMMAND asset_streaming_test null)
+set_tests_properties(asset_streaming PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 120 LABELS unit)
+add_test(NAME asset_streaming_vulkan COMMAND asset_streaming_test vulkan)
+set_tests_properties(asset_streaming_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 120 LABELS gpu)
 
 # Circuits (visual scripting): format, compiler checks and circuits running without a window.
 add_executable(circuit_test CircuitTest.cpp)

@@ -415,6 +415,10 @@ int main(int argc, char** argv) {
                 tool.loadReport = argv[++i];
             } else if (arg == "--no-asset-residency") {
                 tool.assetResidency = false;
+            } else if (arg == "--asset-loading" && i + 1 < argc) {
+                tool.assetLoading = argv[++i];
+                if (tool.assetLoading != "all" && tool.assetLoading != "levels")
+                    throw player::UsageError("--asset-loading takes all or levels");
             } else if ((arg == "--asset-budget-cpu" || arg == "--asset-budget-gpu") && i + 1 < argc) {
                 const std::string value = argv[++i];
                 double mib = 0;
@@ -695,12 +699,12 @@ int main(int argc, char** argv) {
             mode(tool.online == Tool::Online::JoinDirect, "--join-steam");
             // Only the network and online modes are strict: older tools keep combining as before.
             static const std::vector<std::string> strict = {
-                "--package",        "--network-info",     "--network-schema",      "--steam-status",
-                "--net-test",       "--net-dump",         "--net-encode",          "--net-preview",
-                "--host",           "--join-lobby",       "--join-steam",          "--run-circuit",
-                "--circuit --dump", "--network-manifest", "--assign-network-keys", "--release-info",
-                "--release-schema", "--user-paths", "--import-legacy-saves", "--levels", "--level-schema",
-                "--asset-dependencies"};
+                "--package",        "--network-info",      "--network-schema",      "--steam-status",
+                "--net-test",       "--net-dump",          "--net-encode",          "--net-preview",
+                "--host",           "--join-lobby",        "--join-steam",          "--run-circuit",
+                "--circuit --dump", "--network-manifest",  "--assign-network-keys", "--release-info",
+                "--release-schema", "--user-paths",        "--import-legacy-saves", "--levels",
+                "--level-schema",   "--asset-dependencies"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -727,6 +731,8 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--lighting-export and --lighting-import need --output file");
             if (tool.bakeQuality != "preview" && tool.mode != Tool::Mode::BakeLighting)
                 throw player::UsageError("--quality goes with --bake-lighting");
+            if (tool.assetLoading == "levels" && !tool.assetResidency)
+                throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
             if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
                 lightingImport.empty() && tool.mode != Tool::Mode::NetworkManifest &&
                 tool.mode != Tool::Mode::AssignNetworkKeys && tool.mode != Tool::Mode::LightingAssignIds)
@@ -739,7 +745,8 @@ int main(int argc, char** argv) {
             // worse than saying so (LevelOptionConflict, docs/LevelSchema.md).
             if (!tool.level.empty()) {
                 if (!tool.scene.empty())
-                    throw player::UsageError("LevelOptionConflict: --level and --scene both choose the start; pick one");
+                    throw player::UsageError(
+                        "LevelOptionConflict: --level and --scene both choose the start; pick one");
                 if (!tool.load.empty())
                     throw player::UsageError(
                         "LevelOptionConflict: --load starts where the save was made; drop --level");
@@ -935,7 +942,8 @@ int main(int argc, char** argv) {
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
         if (tool.listSaves)
             return player::listSaves(
-                project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(), tool.benchmarkJson);   // only reads files
+                project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(),
+                tool.benchmarkJson);   // only reads files
         // --release-info loads every level's scene to follow the links between them, so it
         // runs with the game module, like --check (no window or GPU).
         if (releaseInfo) tool.mode = Tool::Mode::ReleaseInfo;

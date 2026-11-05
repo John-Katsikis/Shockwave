@@ -74,10 +74,16 @@ public:
     // drawSkinnedMesh to pose it; drawMesh shows it as modelled (its bind pose).
     MeshHandle createSkinnedMesh(
         std::span<const Vertex> vertices, std::span<const uint32_t> indices, std::span<const VertexSkin> skin);
-    // Main thread, between frames, after users have dropped these handles. Waits
-    // for GPU readers and recycles the slot. Used by transactional model reload.
+    // Main thread, between frames, after users have dropped these handles. The slot is
+    // recycled at once; the GPU memory is freed once the frames still in flight are done
+    // with it, without waiting (pendingFrees). Used by model reload and level unloading.
     void destroyMesh(MeshHandle mesh);
     void destroyTexture(TextureHandle texture);
+    // Destroyed meshes, textures and other GPU objects whose memory is waiting for a frame
+    // still in flight (S04, docs/AssetResidency.md). Main thread.
+    size_t pendingFrees() const;
+    // Waits for the GPU and frees them now: shutdown, tests. Main thread, between frames.
+    void flushFrees();
     // RGBA8 pixels, rows top to bottom. Mipmaps are generated on the GPU. Every texture
     // lives in one bindless table, so any draw can use any texture at no extra cost.
     // usage: Material lets texture_quality drop its largest levels (setTextureQuality); the

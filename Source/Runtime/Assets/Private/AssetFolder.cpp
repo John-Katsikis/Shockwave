@@ -14,6 +14,7 @@
 #include <set>
 #include <cmath>
 #include <exception>
+#include <stdexcept>
 
 namespace shockwave {
 
@@ -121,7 +122,7 @@ void AssetFolder::publishCompressed(std::vector<Change>& changes) {
     if (!m_compressor || !m_renderer) return;
     for (const auto& task : m_compressor->takeFinished()) {
         File* f = findFile(task->asset);
-        if (!f || f->modified != task->modified || f->bytes != task->bytes) continue;
+        if (!f || !f->imported || f->modified != task->modified || f->bytes != task->bytes) continue;
         f->compressing -= std::min(f->compressing, 1u);
         if (!task->texture.valid()) {
             f->warnings.push_back("Texture compression failed: " + task->error);
@@ -202,7 +203,7 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
     };
     std::vector<Resolved> resolved;
     for (File& f : m_files)
-        if (f.kind == Kind::Material) {
+        if (f.kind == Kind::Material && (!m_onDemand || f.materialFile)) {   // on demand: the loaded ones
             Resolved& r = resolved.emplace_back();
             r.file = &f;
             r.problem = resolveMaterial(f.name, lookup, r.desc, r.error);
@@ -544,7 +545,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         const File* old = find(f.name);
         if (old) {
             const bool needsImport = force || old->modified != f.modified || old->bytes != f.bytes ||
-                                     std::any_of(old->dependencies.begin(), old->dependencies.end(), changed);
+                                     std::any_of(old->dependencies.begin(), old->dependencies.end(), changed) ||
+                                     (m_batch && !old->imported && m_batch->names->count(f.name));
             f.imported = old->imported;
             f.error = old->error;
             f.texture = old->texture;
@@ -569,12 +571,21 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             f.meshes = old->meshes;
             if (!needsImport) continue;
         }
+        if (f.kind != Kind::Other && !selected(f, old)) {
+            // On demand, and not asked for: listed only. A change to one that isn't loaded is
+            // left for whenever it is (its old stamp stays, so it's still seen as changed).
+            if (old) {
+                f.modified = old->modified;
+                f.bytes = old->bytes;
+            }
+            continue;
+        }
         if (f.kind == Kind::Other) {
             if (!old)
                 changes.push_back({f.error.empty() ? Change::What::Added : Change::What::Failed, f.name, f.error});
             continue;
         }
-        if (f.kind == Kind::Audio && !m_initialImport) {
+        if (f.kind == Kind::Audio && !m_initialImport && !m_batch) {
             auto job = std::make_shared<AudioImport>();
             job->file = f;
             m_audioImports.push_back(job);
@@ -678,6 +689,21 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             if (f.kind == Kind::Model && job.error.empty()) optimiseImportedModel(f, job);
         }
     });
+    if (m_batch) {
+        // load(): what this batch holds decoded, and the last chance to drop it unpublished.
+        for (const Import& job : imports) {
+            uint64_t bytes = job.image.rgba.size() + job.texture.bytes.size();
+            for (const TextureData& t : job.modelTextures) bytes += t.bytes.size();
+            for (const auto& mesh : job.model.meshes)
+                bytes += mesh.data.vertices.size() * sizeof(Vertex) + mesh.data.indices.size() * sizeof(uint32_t);
+            for (const auto& texture : job.model.textures) bytes += texture.image.rgba.size();
+            m_batch->stagedBytes += bytes;
+        }
+        if (m_batch->cancelled && *m_batch->cancelled && (*m_batch->cancelled)()) {
+            m_batch->wasCancelled = true;
+            return {};   // nothing of it is published, and m_files is as it was
+        }
+    }
 
     // After a successful import: what its textures take on the GPU now, and which are
     // left for the background compressor.
@@ -760,6 +786,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                                 : m_renderer->createMesh(mesh.data));
                         if (mesh.skinned()) m_renderer->setMeshUv1(uploaded->meshes.back(), mesh.data.uv1);
                     }
+                    // Tests: an upload failing part way, after its meshes are on the GPU.
+                    if (m_fault && m_fault("upload", f.name)) throw std::runtime_error("the upload failed (injected)");
                     // Every map a material samples: colour maps as sRGB, data maps linear. They
                     // are material textures, so texture_quality may shrink them (A01).
                     // A masked material's base color gets mipmaps that keep its cut-out coverage.
@@ -775,7 +803,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                             const auto& texture = uploaded->data.textures[index];
                             const float coverage = job.coverage[size_t(index)];
                             uploaded->textures[index] =
-                                job.modelTextures[index].valid() ? m_renderer->createTexture(job.modelTextures[index], usage)
+                                job.modelTextures[index].valid()
+                                    ? m_renderer->createTexture(job.modelTextures[index], usage)
                                 : coverage >= 0.0f
                                     ? m_renderer->createTexture(
                                           textureMipChain(rgbaTexture(texture.image, texture.srgb), coverage), usage)
@@ -803,6 +832,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 if (job.error.empty() && previous) release(*m_renderer, *previous);
             } else {
                 try {
+                    if (m_fault && m_fault("upload", f.name)) throw std::runtime_error("the upload failed (injected)");
                     // HDR environment maps light the scene; they keep their full size.
                     const auto usage = job.texture.valid() && job.texture.format == TextureFormat::RGBA16F
                                            ? TextureUsage::Fixed
@@ -810,8 +840,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                     f.srgb = !job.texture.valid() || job.texture.srgb;
                     // A .ktx2's levels, or an HDR image. A compressed copy of a PNG from the
                     // cache isn't: the PNG can still be decoded another way for a material.
-                    f.ownLevels = job.texture.valid() &&
-                                  (isKtx2File(f.path) || job.texture.format == TextureFormat::RGBA16F);
+                    f.ownLevels =
+                        job.texture.valid() && (isKtx2File(f.path) || job.texture.format == TextureFormat::RGBA16F);
                     if (job.texture.valid() && job.reload)
                         m_renderer->updateTexture(f.texture, job.texture, usage);
                     else if (job.texture.valid())
@@ -851,6 +881,155 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
     m_files = std::move(found);
     if (!changes.empty()) resolveMaterials(changes);
     return changes;
+}
+
+// ---- Loading on demand (S04, docs/AssetResidency.md) ----
+
+bool AssetFolder::selected(const File& f, const File* old) const {
+    if (!m_onDemand) return true;
+    if (m_batch) return m_batch->names->count(f.name) > 0;   // load(): this batch only
+    return old && old->imported;   // a hot reload of one that's loaded
+}
+
+bool AssetFolder::loaded(std::string_view name) const {
+    const File* f = find(name);
+    return f && f->imported;
+}
+
+AssetFolder::LoadResult AssetFolder::load(const std::vector<std::string>& names, const LoadOptions& options) {
+    LoadResult result;
+    struct Wanted {
+        std::string name;
+        Kind kind;
+        uintmax_t bytes;
+    };
+    std::vector<Wanted> todo;
+    std::set<std::string, std::less<>> seen;
+    for (const std::string& name : names) {
+        if (!seen.insert(name).second) continue;   // asked for twice: once
+        const File* f = find(name);
+        if (!f) {
+            result.failed.push_back({Change::What::Failed, name, "there's no such file in Content"});
+        } else if (f->kind == Kind::Other || f->imported) {
+            ++result.resident;   // in already, or read by its own runtime (a scene, a .rml)
+        } else if (!m_onDemand) {
+            result.failed.push_back({Change::What::Failed, name, f->error.empty() ? "it isn't imported" : f->error});
+        } else {
+            todo.push_back({name, f->kind, f->bytes});
+        }
+    }
+    // Textures, then models and sounds, then the materials that resolve against them.
+    auto rank = [](Kind kind) { return kind == Kind::Texture ? 0 : kind == Kind::Material ? 2 : 1; };
+    std::stable_sort(todo.begin(), todo.end(), [&](const Wanted& a, const Wanted& b) {
+        return rank(a.kind) != rank(b.kind) ? rank(a.kind) < rank(b.kind) : a.name < b.name;
+    });
+    std::vector<std::string> published;
+    for (size_t next = 0; next < todo.size();) {
+        if (options.cancelled && options.cancelled()) {
+            result.cancelled = true;
+            break;
+        }
+        std::set<std::string, std::less<>> batchNames;
+        uint64_t estimate = 0;
+        while (next < todo.size()) {
+            const uint64_t cost = uint64_t(todo[next].bytes) * 4;
+            if (!batchNames.empty() && estimate + cost > options.stagingBytes) break;
+            batchNames.insert(todo[next].name);
+            estimate += cost;
+            ++next;
+        }
+        Batch batch;
+        batch.names = &batchNames;
+        batch.cancelled = &options.cancelled;
+        m_batch = &batch;
+        try {
+            refresh();
+        } catch (...) {
+            m_batch = nullptr;
+            throw;
+        }
+        m_batch = nullptr;
+        ++result.batches;
+        result.peakStagedBytes = std::max(result.peakStagedBytes, batch.stagedBytes);
+        if (batch.wasCancelled) {
+            result.cancelled = true;
+            break;
+        }
+        std::vector<std::string> broken;
+        for (const std::string& name : batchNames) {
+            const File* f = find(name);
+            const bool good = f && f->imported && (f->kind != Kind::Material || f->error.empty());
+            if (good) {
+                ++result.loaded;
+                published.push_back(name);
+                continue;
+            }
+            result.failed.push_back(
+                {Change::What::Failed, name,
+                 !f                 ? "it was removed while it loaded"
+                 : f->error.empty() ? "it didn't import"
+                                    : f->error});
+            if (f && f->imported) broken.push_back(name);   // a fallback material: nothing of it stays
+        }
+        unload(broken);
+    }
+    if (result.cancelled) {
+        unload(published);   // what this call published goes again
+        result.loaded = 0;
+    }
+    return result;
+}
+
+size_t AssetFolder::unload(const std::vector<std::string>& names) {
+    size_t count = 0;
+    bool readByMaterials = false;
+    for (const std::string& name : names) {
+        File* f = findFile(name);
+        if (!f || !f->imported || f->kind == Kind::Other) continue;
+        readByMaterials = readByMaterials || f->kind == Kind::Texture || f->kind == Kind::Model;
+        unloadFile(*f);
+        ++count;
+    }
+    // A material still in that read one of them falls back now, instead of reading a freed texture.
+    if (readByMaterials) {
+        std::vector<Change> ignored;
+        resolveMaterials(ignored);
+    }
+    return count;
+}
+
+void AssetFolder::unloadFile(File& f) {
+    switch (f.kind) {
+    case Kind::Texture:
+        m_assets.removeTexture(f.name);
+        if (m_renderer) {
+            if (f.texture.id) m_renderer->destroyTexture(f.texture);
+            for (const TextureVariant& v : f.variants) m_renderer->destroyTexture(v.texture);
+        }
+        f.texture = {};
+        f.variants.clear();
+        break;
+    case Kind::Model:
+        if (const auto model = m_assets.model(f.model)) {
+            m_assets.removeModel(f.name);
+            if (m_renderer) release(*m_renderer, *model);
+        }
+        break;
+    case Kind::Material:
+        m_assets.removeMaterial(f.name);
+        f.materialFile.reset();
+        f.materialParseFailed = false;
+        break;
+    case Kind::Audio: m_assets.addAudioClip(f.name, nullptr); break;
+    case Kind::Other: return;
+    }
+    f.imported = false;
+    f.error.clear();
+    f.warnings.clear();
+    f.dependencies.clear();
+    f.compressing = 0;
+    // gpuBytes and the other measurements stay: what it took when last in, which is what the
+    // next level's budget plans with (docs/AssetResidency.md).
 }
 
 }   // namespace shockwave
