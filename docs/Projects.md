@@ -99,6 +99,7 @@ frame_limit 0      # optional: cap in frames per second, 0 = none
 low_latency false  # optional: wait for each frame to reach the screen before the next
 shadow_quality high  # optional: off, low, medium, high or ultra
 texture_compression high  # optional: high, small or off (docs/Optimisation.md)
+asset_loading all  # optional: all, or levels to load each level's assets when it needs them
 mesh_lods 4        # optional: simpler levels of detail per mesh, 0 to 7
 lod_error_pixels 1 # optional: how far a level may stray on screen, in pixels
 renderer "vulkan"    # optional: the renderer plugin the player starts with
@@ -122,6 +123,7 @@ renderer "vulkan"    # optional: the renderer plugin the player starts with
 | `low_latency` | no | `false` | Wait for each frame to reach the screen before starting the next. |
 | `shadow_quality` | no | `high` | `off`, `low`, `medium`, `high` or `ultra`. |
 | `texture_compression` | no | `high` | `high`, `small` or `off`. See [Optimisation](Optimisation.md). |
+| `asset_loading` | no | `all` | `all` imports every asset when the player starts. `levels` imports each level's assets when it needs them and unloads them when no level holds them. See [Asset residency](AssetResidency.md). |
 | `mesh_lods` | no | `4` | Simpler levels of detail per model mesh, `0` to `7`. |
 | `lod_error_pixels` | no | `1` | How far, in pixels, a level of detail may stray on screen, `0` to `100`. |
 | `renderer` | no | | The renderer plugin the player starts with. |

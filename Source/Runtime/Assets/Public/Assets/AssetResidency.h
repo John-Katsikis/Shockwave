@@ -15,13 +15,17 @@
 //   menu.release();
 //   auto a = residency.acquire("level a (epoch 2)", aAssets);
 //
-// This batch accounts for what's resident; the assets themselves are still imported by
-// AssetFolder. Freeing a retired asset's memory, with deferred GPU frees, comes next, and
-// pendingFreeBytes is there for it. Main thread only; the residency must outlive its leases.
+// With a Loader (setLoader), it also decides what's in memory: load() imports a lease's
+// assets that aren't yet, and an asset whose last lease goes is unloaded at once, its GPU
+// memory freed once no frame in flight reads it (Renderer::pendingFrees). Without one, it
+// only accounts, and the assets are whatever AssetFolder imported.
+//
+// Main thread only; the residency must outlive its leases.
 
 #include <Assets/AssetGraph.h>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -75,8 +79,23 @@ public:
         uint64_t gpuBytes = 0;
         uint32_t refs = 0;   // leases holding it
         std::vector<std::string> owners;   // their owners, in the order they took it
-        uint64_t pendingFreeBytes = 0;   // GPU memory waiting for its frame to finish
+        bool loaded = false;   // in memory: always, without a loader; after load(), with one
         std::string lastError;
+    };
+
+    // What imports and frees assets, for load() and retirement. AssetGraph ids.
+    class Loader {
+    public:
+        virtual ~Loader() = default;
+        // Imports ids. Fills loaded with those now in; false, with error, when any couldn't
+        // be or cancelled() said stop (then nothing this call loaded stays loaded).
+        virtual bool load(
+            const std::vector<std::string>& ids, const std::function<bool()>& cancelled,
+            std::vector<std::string>& loaded, std::string& error) = 0;
+        // Unregisters ids and destroys their resources; GPU memory follows once no frame reads it.
+        virtual void unload(const std::vector<std::string>& ids) = 0;
+        // GPU objects destroyed but not freed yet, waiting for frames in flight.
+        virtual size_t pendingFrees() const { return 0; }
     };
 
     // What travelling would do: the next level's assets against what's resident, with the
@@ -120,6 +139,20 @@ public:
 
     void setError(std::string_view id, std::string error);
 
+    // ---- Loading (on demand) ----
+    // Set before any lease is taken, and outlive the residency's leases. Null: accounting only.
+    void setLoader(Loader* loader) { m_loader = loader; }
+    Loader* loader() const { return m_loader; }
+    // Imports what the lease holds that isn't in memory yet. False, with error, when any of
+    // it can't be, or when cancelled() says stop first; release the lease then, and what it
+    // alone holds is unloaded again. True at once without a loader.
+    bool load(const Lease& lease, const std::function<bool()>& cancelled, std::string& error);
+    bool load(const Lease& lease, std::string& error) { return load(lease, {}, error); }
+    size_t pendingFrees() const { return m_loader ? m_loader->pendingFrees() : 0; }
+    // In total so far: assets loaded by load(), and unloaded when they retired.
+    uint64_t loadedCount() const { return m_loadedCount; }
+    uint64_t unloadedCount() const { return m_unloadedCount; }
+
 private:
     struct Held {
         std::string owner;
@@ -134,6 +167,8 @@ private:
     uint64_t m_retiredCount = 0;
     std::vector<std::string> m_recent;
     AssetBudget m_budget;
+    Loader* m_loader = nullptr;
+    uint64_t m_loadedCount = 0, m_unloadedCount = 0;
 };
 
 // "12.5 MiB", for messages.

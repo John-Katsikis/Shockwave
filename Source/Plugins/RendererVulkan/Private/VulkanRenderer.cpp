@@ -28,6 +28,11 @@ void VulkanRenderer::updateTexture(
 }
 
 uint64_t VulkanRenderer::guiTexture(TextureHandle texture) { return m_impl->guiTexture(texture); }
+size_t VulkanRenderer::pendingFrees() const { return m_impl->retired.size(); }
+void VulkanRenderer::flushFrees() {
+    vk::check(vkDeviceWaitIdle(m_impl->context->device()), "vkDeviceWaitIdle");
+    m_impl->collectRetired(true);
+}
 
 void VulkanRenderer::setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) {
     m_impl->setMeshLods(id, lods, lodIndices);

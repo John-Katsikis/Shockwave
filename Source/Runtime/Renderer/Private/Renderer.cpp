@@ -608,6 +608,16 @@ void Renderer::destroyTexture(TextureHandle texture) {
 
 uint64_t Renderer::guiTexture(TextureHandle texture) { return m->backend->guiTexture(texture); }
 
+size_t Renderer::pendingFrees() const {
+    std::shared_lock swap(m->swapMutex);
+    return m->backend->pendingFrees();
+}
+
+void Renderer::flushFrees() {
+    std::shared_lock swap(m->swapMutex);
+    m->backend->flushFrees();
+}
+
 // ---- Optimised assets ----
 
 void Renderer::setMeshLods(MeshHandle mesh, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) {

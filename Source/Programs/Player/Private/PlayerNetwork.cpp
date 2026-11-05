@@ -566,6 +566,8 @@ void Player::setUpOnline() {
 }
 
 void Player::playScene(const fs::path& scene, const net::NetworkStart* start) {
+    // On demand: the scene's assets, taken before the level goes so shared ones stay in.
+    m_sceneAssets = sceneAssets("startup", scene);
     if (m_levels) m_levels->stop();
     std::string error;
     std::vector<std::string> warnings;

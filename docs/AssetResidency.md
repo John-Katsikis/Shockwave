@@ -6,12 +6,13 @@ and a document names its stylesheets and images. Shockwave follows all of it, so
 say exactly which files a level needs, find the broken links before anyone plays, and
 keep track of what stays resident when the game moves from one level to the next.
 
-This is the first half of S04 in [the shipping plan](ShippingImplementation.md). It adds
-the dependency graph, the checks, per-level leases, a budget, the load report and the
-editor's **Resource residency** window. Every asset is still imported when the game
-starts, as before. Loading a level's assets only when it needs them, and freeing them
-(with GPU frees that wait for their frame) when nothing holds them, comes in the second
-half. Travel itself is in [LevelLifetime.md](LevelLifetime.md).
+This is S04 in [the shipping plan](ShippingImplementation.md). Its first half added the
+dependency graph, the checks, per-level leases, a budget, the load report and the editor's
+**Resource residency** window. Its second half loads a level's assets only when it needs
+them and frees them when nothing holds them, with GPU frees that wait for the frames
+still reading them ([Loading on demand](#loading-on-demand)). That's off by default:
+every asset is imported when the game starts, as before. Travel itself is in
+[LevelLifetime.md](LevelLifetime.md).
 
 ## The dependency graph
 
@@ -120,12 +121,80 @@ In the editor, the Resource residency window sets it for the next Play.
 
 GPU bytes are what the AssetFolder measured for a texture's mipmaps and variants, plus a
 model's vertex and index buffers. CPU bytes are each file's size, standing in for its
-prepared data until the second half of S04 measures that.
+prepared data. A file that's never been loaded on demand costs 0 GPU bytes until its
+first load measures it; after that the last measurement is kept, so plans stay honest
+once it's unloaded again.
 
 ### Turning it off
 
 `--no-asset-residency` in the player, or **Track level leases** in the editor's window
 (for the next Play). Levels then hold no lease and nothing is planned or refused.
+
+## Loading on demand
+
+Set it in the project, or for one run:
+
+```
+asset_loading levels        # all (the default): everything is imported at startup
+```
+
+```sh
+build/bin/player --project <file.swproject> --asset-loading levels
+```
+
+The editor's Resource residency window has the same switch (**Player asset loading**); it
+saves the project. The editor itself stays eager, so everything stays editable.
+
+With `levels`:
+
+- **Opening the Content folder imports nothing.** It lists the files and watches them.
+- **A lease loads its assets.** Before a level starts, `AssetResidency::load` asks its
+  loader (`AssetFolderLoader`, in `GameFramework/LevelAssets.h`) for whatever the lease
+  holds that isn't in memory yet. Files that need no import (scenes, RML, circuits) just
+  count as loaded.
+- **In bounded batches.** `AssetFolder::load` groups files while their estimated staging
+  (four times the file size) stays under `LoadOptions::stagingBytes` (256 MiB by default;
+  a file bigger than that goes alone). Workers decode; only the main thread creates GPU
+  objects and registers names. Textures go first, then models and sounds, then
+  materials, so a material resolves against textures already in.
+- **Cancellable.** `cancelled()` is asked before each batch and after its decode, before
+  anything is published. A cancelled load publishes nothing more and unloads what it
+  already published.
+- **Failures clean up.** A file whose upload fails is unregistered, its partial GPU
+  objects destroyed, and its `error` says why. A material that can only resolve as the
+  fallback counts as failed. The level fails with `AssetLoadFailed: <id>: <why>`.
+- **The last lease going unloads.** An asset whose last lease is released is unregistered
+  at once and its GPU objects destroyed. A material still reading an unloaded texture
+  falls back (magenta) instead of reading freed memory.
+- **GPU frees wait for their frames.** Destroying a texture or mesh hands it to the
+  renderer, which frees it once no frame in flight reads it (`Renderer::pendingFrees()`;
+  `flushFrees()` waits for the GPU and frees everything). On Vulkan that's the frame
+  fences; the null renderer fakes two frames in flight so tests see the delay.
+- **Hot reload only touches what's loaded.** A saved file that isn't loaded is picked up
+  the next time it's asked for.
+
+Travel on demand runs in this order:
+
+1. plan against an empty world (graph errors are refused here, before anything ends);
+2. end the current level's session;
+3. take the new lease, give the old one back: the old level's own assets unload;
+4. **upload**: load the new lease's assets;
+5. **read**: the new level's scene, now that its assets are in;
+6. start.
+
+A failure in steps 4 to 6 happens after the old level ended, so nothing is playing; the
+player goes back to its entry level, as for any level that didn't start
+([LevelLifetime.md](LevelLifetime.md)).
+
+The player also holds a lease on the game circuit's assets for the whole run, and one on
+the startup scene's assets while it starts.
+
+Assets named only in code (not reachable from a scene, prefab, material or document) aren't
+loaded on demand. Leave such a game on `all` until it lists them; `runtime_roots` for the
+cook is S09.
+
+`asset_loading levels` needs leases: with `--no-asset-residency` the player refuses to
+start (exit 2).
 
 ## The load report
 
@@ -140,9 +209,12 @@ At exit it writes every level start and change (format 1):
   (its closure and the budget), `retire` (the old level and its lease), `upload` (the new
   world and lease) and `start` (the session and `beginPlay`);
 - assets: how many, shared, new and retired, with bytes;
-- resident and peak CPU and GPU bytes afterwards.
+- resident and peak CPU and GPU bytes afterwards;
+- on demand, how many assets that load imported and unloaded, and the GPU frees pending.
 
-It ends with what's still resident after Stop, which should be nothing. The loading
+It says which `asset_loading` the run used, and ends with what's still resident after
+Stop, which should be nothing: no assets, no leases, no pending frees, and as many
+unloaded as loaded in total. The loading
 screen (S05) shows the same phases.
 
 ## In the editor
@@ -152,23 +224,37 @@ screen (S05) shows the same phases.
 - **Level loads**: the last loads during Play, phase by phase, with shared, new and
   retired assets. A failed one says why.
 - **Resident assets**: each asset, its kind, the leases holding it, refs, CPU and GPU bytes,
-  pending frees and its last error. Filter by path or owner.
+  whether it's loaded and its last error, with the GPU frees pending in the summary.
+  Filter by path or owner.
 - **Open scene's dependencies**: **Check dependencies** follows the saved scene the way
   `--asset-dependencies` does.
 - **Track level leases** and the CPU and GPU budgets, for the next Play.
+- **Player asset loading**: `all` or `levels`, saved to the project.
 
 ## Code and tests
 
 - `Assets/AssetGraph.h`: the graph, providers and diagnostics.
-- `Assets/AssetResidency.h`: leases, the plan and the budget.
+- `Assets/AssetResidency.h`: leases, the plan, the budget and the `Loader`.
+- `Assets/AssetFolder.h`: `setOnDemand`, `load` with `LoadOptions`, `unload`, `loaded`.
+- `Renderer/Renderer.h`: `pendingFrees`, `flushFrees`.
 - `Engine/AssetReferences.h`: scene and prefab references, and `registerAssetPathField`.
-- `GameFramework/LevelAssets.h`: a project's graph, a level's costs and the JSON.
+- `GameFramework/LevelAssets.h`: a project's graph, a level's costs, the JSON and
+  `AssetFolderLoader`.
 - `GameFramework/LevelHost.h`: `Hooks::assets`, `setResidency`, `loadReports()`.
 - Tests:
   - `asset_dependencies` (unit): every provider, each problem code, cycles, closure
     hashes changing transitively and only then, and unchanged files not read again;
   - `asset_residency` (unit): shared assets survive A to B, unique ones retire, duplicates
     coalesce, a level over budget is refused before teardown, a start over budget fails,
-    leases off, and 100 A/B cycles that plateau and drain to nothing at Stop;
+    leases off, and 100 A/B cycles that plateau and drain to nothing at Stop; with a
+    loader, loads and unloads per lease, a cancelled or failed load leaving nothing, the
+    on-demand travel order, and 100 cycles on demand;
+  - `asset_streaming` (unit, null renderer) and `asset_streaming_vulkan` (gpu): a real
+    AssetFolder on demand: open imports nothing, batches under a staging limit, uploads on
+    the main thread only, a cancelled decode never published, a failed upload freed, a
+    material falling back when its texture goes, frees that wait for frames then drain,
+    hot reload of loaded files only, a lease loading and unloading, and 100 cycles that
+    plateau;
   - `asset_dependencies_cli` (integration): `--asset-dependencies`, `--check`,
-    `--load-report`, `--no-asset-residency` and budgets on `Tests/fixtures/levels`.
+    `--load-report`, `--no-asset-residency`, budgets and `--asset-loading` on
+    `Tests/fixtures/levels`.

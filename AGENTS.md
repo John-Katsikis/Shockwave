@@ -153,7 +153,11 @@ that edits the scene must check `playing()`.
 (`registerAssetProvider`); a component String field that holds a Content path needs
 `registerAssetPathField`. Never find references with a regex over text. Each level holds a
 lease (`Assets/AssetResidency.h`) on its closure during Play. `player --asset-dependencies`
-and `--check` report missing files, wrong case and cycles.
+and `--check` report missing files, wrong case and cycles. With `asset_loading levels` a
+level's assets are imported only when its lease loads them and unloaded when the last
+lease goes: create GPU objects and register names on the main thread only, and destroy
+textures and meshes through the renderer, which frees them once no frame in flight reads
+them (`Renderer::pendingFrees`). Never wait for the device to go idle to free one.
 
 ## Release contract
 

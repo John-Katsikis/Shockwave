@@ -75,6 +75,7 @@ AssetResidency::Lease AssetResidency::acquire(std::string owner, const std::vect
             entry.kind = cost.kind;
             entry.cpuBytes = cost.cpuBytes;
             entry.gpuBytes = cost.gpuBytes;
+            entry.loaded = m_loader == nullptr;   // with a loader, load() brings it in
             m_cpu += cost.cpuBytes;
             m_gpu += cost.gpuBytes;
         }
@@ -93,6 +94,7 @@ AssetResidency::Lease AssetResidency::acquire(std::string owner, const std::vect
 void AssetResidency::release(uint64_t lease) {
     const auto it = m_leases.find(lease);
     if (it == m_leases.end()) return;
+    std::vector<std::string> unload;
     for (const std::string& id : it->second.ids) {
         const auto entry = m_entries.find(id);
         if (entry == m_entries.end()) continue;
@@ -103,11 +105,40 @@ void AssetResidency::release(uint64_t lease) {
         m_cpu -= e.cpuBytes;
         m_gpu -= e.gpuBytes;
         ++m_retiredCount;
+        if (m_loader && e.loaded) unload.push_back(e.id);
         m_recent.push_back(e.id);
         if (m_recent.size() > 64) m_recent.erase(m_recent.begin());
         m_entries.erase(entry);
     }
     m_leases.erase(it);
+    if (!unload.empty()) {
+        m_unloadedCount += unload.size();
+        m_loader->unload(unload);
+    }
+}
+
+bool AssetResidency::load(const Lease& lease, const std::function<bool()>& cancelled, std::string& error) {
+    if (!m_loader || lease.m_residency != this) return true;
+    const auto held = m_leases.find(lease.m_id);
+    if (held == m_leases.end()) return true;
+    std::vector<std::string> wanted;
+    for (const std::string& id : held->second.ids)
+        if (const auto it = m_entries.find(id); it != m_entries.end() && !it->second.loaded) wanted.push_back(id);
+    if (wanted.empty()) return true;
+    std::vector<std::string> loaded;
+    std::string why;
+    const bool ok = m_loader->load(wanted, cancelled, loaded, why);
+    for (const std::string& id : loaded)
+        if (const auto it = m_entries.find(id); it != m_entries.end()) {
+            it->second.loaded = true;
+            it->second.lastError.clear();
+        }
+    m_loadedCount += loaded.size();
+    if (ok) return true;
+    for (const std::string& id : wanted)
+        if (const auto it = m_entries.find(id); it != m_entries.end() && !it->second.loaded) it->second.lastError = why;
+    error = why.empty() ? "its assets didn't load" : why;
+    return false;
 }
 
 std::vector<AssetResidency::Entry> AssetResidency::entries() const {

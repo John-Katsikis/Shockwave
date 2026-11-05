@@ -68,6 +68,10 @@ struct LoadReport {
     uint64_t addedCpuBytes = 0, addedGpuBytes = 0, retiredCpuBytes = 0, retiredGpuBytes = 0;
     uint64_t residentCpuBytes = 0, residentGpuBytes = 0;   // afterwards
     uint64_t peakCpuBytes = 0, peakGpuBytes = 0;
+    // On demand (asset_loading levels): assets this change loaded and unloaded, and GPU
+    // objects still waiting for a frame in flight to free them when it finished.
+    size_t loadedAssets = 0, unloadedAssets = 0;
+    size_t pendingFrees = 0;
 };
 const char* loadPhaseName(int phase);   // 0..5: "validate", "read", "prepare", "retire", "upload", "start"
 

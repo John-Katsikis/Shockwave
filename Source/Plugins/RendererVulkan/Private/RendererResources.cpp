@@ -123,18 +123,19 @@ void VulkanRenderer::Impl::createMesh(
 
 void VulkanRenderer::Impl::destroyMesh(MeshHandle handle) {
     if (handle.id >= kMaxMeshes || !meshReady[handle.id].load()) return;
-    vk::check(vkDeviceWaitIdle(context->device()), "vkDeviceWaitIdle");
-    Mesh& mesh = meshes[handle.id];
     meshReady[handle.id].store(false, std::memory_order_release);
-    if (mesh.lodIndices.buffer)
-        vmaDestroyBuffer(context->allocator(), mesh.lodIndices.buffer, mesh.lodIndices.allocation);
-    vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
-    vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
-    if (mesh.skin.buffer) vmaDestroyBuffer(context->allocator(), mesh.skin.buffer, mesh.skin.allocation);
-    if (mesh.uv1.buffer) vmaDestroyBuffer(context->allocator(), mesh.uv1.buffer, mesh.uv1.allocation);
-    if (mesh.lightmapUv.buffer)
-        vmaDestroyBuffer(context->allocator(), mesh.lightmapUv.buffer, mesh.lightmapUv.allocation);
-    mesh = {};
+    // Freed once the frames that may still draw it are done, so nothing waits for the GPU
+    // (S04, docs/AssetResidency.md). The slot can be reused at once: its buffers moved here.
+    retire([this, mesh = std::exchange(meshes[handle.id], Mesh{})]() mutable {
+        if (mesh.lodIndices.buffer)
+            vmaDestroyBuffer(context->allocator(), mesh.lodIndices.buffer, mesh.lodIndices.allocation);
+        vmaDestroyBuffer(context->allocator(), mesh.vertices.buffer, mesh.vertices.allocation);
+        vmaDestroyBuffer(context->allocator(), mesh.indices.buffer, mesh.indices.allocation);
+        if (mesh.skin.buffer) vmaDestroyBuffer(context->allocator(), mesh.skin.buffer, mesh.skin.allocation);
+        if (mesh.uv1.buffer) vmaDestroyBuffer(context->allocator(), mesh.uv1.buffer, mesh.uv1.allocation);
+        if (mesh.lightmapUv.buffer)
+            vmaDestroyBuffer(context->allocator(), mesh.lightmapUv.buffer, mesh.lightmapUv.allocation);
+    });
 }
 
 void VulkanRenderer::Impl::setMeshUv1(MeshHandle handle, std::span<const glm::vec2> uv1) {

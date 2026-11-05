@@ -61,6 +61,12 @@ public:
     updateTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) = 0;
     virtual void destroyTexture(TextureHandle id) = 0;
     virtual uint64_t guiTexture(TextureHandle id) = 0;
+    // GPU objects destroyed but not yet freed, because a frame still in flight may read them
+    // (S04, docs/AssetResidency.md). destroyMesh and destroyTexture never wait for the GPU;
+    // the memory comes back once those frames finish. 0 for a backend that frees at once.
+    virtual size_t pendingFrees() const { return 0; }
+    // Waits for the GPU and frees everything pending. Main thread, between frames.
+    virtual void flushFrees() {}
 
     // ---- Optimised assets (docs/Optimisation.md); the defaults suit a simple backend ----
     // Right after createMesh: its simpler levels of detail, ranges of lodIndices. Ignoring

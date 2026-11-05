@@ -78,8 +78,12 @@ bool LevelHost::planAssets(
 }
 
 void LevelHost::report(LoadReport load) {
-    load.totalMs = load.validateMs + load.readMs + load.prepareMs + load.retireMs + load.uploadMs +
-                     load.startMs;
+    load.totalMs = load.validateMs + load.readMs + load.prepareMs + load.retireMs + load.uploadMs + load.startMs;
+    if (m_residency) {
+        load.loadedAssets = size_t(m_residency->loadedCount() - m_countsAtStart.first);
+        load.unloadedAssets = size_t(m_residency->unloadedCount() - m_countsAtStart.second);
+        load.pendingFrees = m_residency->pendingFrees();
+    }
     m_reports.push_back(load);
     if (m_reports.size() > kKeptResults) m_reports.erase(m_reports.begin());
     if (onLoadReport) onLoadReport(load);
@@ -108,6 +112,7 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     LoadReport load;
     load.request = level;
     auto clock = Clock::now();
+    if (m_residency) m_countsAtStart = {m_residency->loadedCount(), m_residency->unloadedCount()};
     // The level is already in the world: its lease first, so a budget it can't fit stops
     // it before anything starts.
     std::vector<AssetCost> assets;
@@ -124,7 +129,19 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     m_current = std::move(level);
     m_world.setLevelEpoch(++m_epoch);
     load.epoch = m_epoch;
-    if (m_residency && m_hooks.assets) m_lease = m_residency->acquire(leaseOwner(m_current, m_epoch), assets);
+    if (m_residency && m_hooks.assets) {
+        m_lease = m_residency->acquire(leaseOwner(m_current, m_epoch), assets);
+        // On demand: what isn't in yet. The world is already loaded, so the caller brought
+        // the scene's assets in first; this is a no-op then, and catches what it missed.
+        if (!m_residency->load(m_lease, error)) {
+            m_lease.release();
+            load.uploadMs = msSince(clock);
+            load.status = TravelStatus::Failed;
+            load.error = error;
+            report(load);
+            throw std::runtime_error("level \"" + m_current.level + "\": " + error);
+        }
+    }
     load.uploadMs = msSince(clock);
     // The application's graphics, put back by stop(); levels keep the player's changes.
     if (m_engine && m_engine->guiEnabled() && !m_settings) m_settings = m_engine->graphics().requested();
@@ -194,6 +211,7 @@ void LevelHost::restoreSettings() {
 }
 
 void LevelHost::stop() {
+    if (m_processing) m_stopped = true;
     if (m_pending) {
         const Pending pending = *m_pending;
         m_pending.reset();
@@ -230,12 +248,14 @@ void LevelHost::process() {
         bool& flag;
         ~Done() { flag = false; }
     } done{m_processing};
+    m_stopped = false;
     while (m_pending) {
         const Pending next = *m_pending;
         m_pending.reset();
         LoadReport load;
         load.request = next.request;
         load.from = m_current.level;
+        if (m_residency) m_countsAtStart = {m_residency->loadedCount(), m_residency->unloadedCount()};
         load.epoch = m_epoch;
         auto clock = Clock::now();
         auto fail = [&](TravelStatus status, std::string why, double LoadReport::*phase) {
@@ -270,6 +290,10 @@ void LevelHost::process() {
             return;
         }
         load.validateMs = msSince(clock);
+        if (m_residency && m_residency->loader() && m_hooks.assets) {
+            if (!travelOnDemand(next, load, clock)) return;
+            continue;
+        }
         // Prepare: the next level loads beside the current one, which keeps playing if it fails.
         World prepared;
         std::string error;
@@ -315,26 +339,111 @@ void LevelHost::process() {
         try {
             startSession(StartReason::Fresh);
         } catch (const std::exception& e) {
-            m_lease.release();
-            // Nothing is playing now; the application goes back to somewhere safe.
-            m_failure = "level \"" + next.request.level + "\" didn't start: " + e.what();
-            SW_LOG(LogGame, Error, "{}", m_failure);
-            if (m_pending) {   // asked for during the failed start
-                const Pending orphan = *m_pending;
-                m_pending.reset();
-                finish(orphan.id, orphan.request, TravelStatus::Cancelled, "the level asking for it didn't start");
-            }
             load.startMs = msSince(clock);
-            load.status = TravelStatus::Failed;
-            load.error = m_failure;
-            report(load);
-            finish(next.id, next.request, TravelStatus::Failed, m_failure);
+            failStarted(next, load, "level \"" + next.request.level + "\" didn't start: " + e.what());
             return;
         }
         load.startMs = msSince(clock);
         report(load);
         finish(next.id, next.request, TravelStatus::Succeeded, {});
     }
+}
+
+void LevelHost::failStarted(const Pending& next, LoadReport& load, const std::string& why) {
+    m_lease.release();
+    // Nothing is playing now; the application goes back to somewhere safe.
+    m_failure = why;
+    SW_LOG(LogGame, Error, "{}", m_failure);
+    if (m_pending) {   // asked for during the failed start
+        const Pending orphan = *m_pending;
+        m_pending.reset();
+        finish(orphan.id, orphan.request, TravelStatus::Cancelled, "the level asking for it didn't start");
+    }
+    load.status = TravelStatus::Failed;
+    load.error = m_failure;
+    report(load);
+    finish(next.id, next.request, TravelStatus::Failed, m_failure);
+}
+
+bool LevelHost::travelOnDemand(const Pending& next, LoadReport& load, Clock::time_point& clock) {
+    auto refuse = [&](std::string why, double LoadReport::*phase) {
+        load.*phase += msSince(clock);
+        load.status = TravelStatus::Failed;
+        load.error = why;
+        report(load);
+        finish(next.id, next.request, TravelStatus::Failed, std::move(why));
+    };
+    // Prepare: its closure against what's resident, read from its files. Refused here, the
+    // current level plays on.
+    const World unread;
+    std::vector<AssetCost> assets;
+    std::string error;
+    if (!planAssets(next.request, unread, assets, load, error)) {
+        refuse(error, &LoadReport::prepareMs);
+        return true;
+    }
+    load.prepareMs = msSince(clock);
+    // Retire: the current level ends and its own assets unload (their GPU memory follows
+    // once no frame reads it). The new lease is taken first, so shared assets stay in.
+    endSession();
+    AssetResidency::Lease arriving = m_residency->acquire(leaseOwner(next.request, m_epoch + 1), assets);
+    m_lease.release();
+    m_lease = std::move(arriving);
+    load.retireMs = msSince(clock);
+    // Upload: what the new level needs that isn't in. Past the point of no return.
+    if (!m_residency->load(m_lease, [this] { return m_stopped; }, error)) {
+        load.uploadMs = msSince(clock);
+        if (m_stopped) {
+            m_lease.release();
+            load.status = TravelStatus::Cancelled;
+            load.error = "Play stopped while it loaded";
+            report(load);
+            finish(next.id, next.request, TravelStatus::Cancelled, load.error);
+            return false;
+        }
+        failStarted(next, load, "level \"" + next.request.level + "\" didn't load: " + error);
+        return false;
+    }
+    load.uploadMs = msSince(clock);
+    // Read: its scene, now that the names it uses resolve.
+    World prepared;
+    bool read = false;
+    try {
+        read = m_hooks.load && m_hooks.load(next.request, prepared, error);
+        if (!m_hooks.load) error = "this application can't load levels";
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    load.readMs = msSince(clock);
+    if (m_stopped) {
+        m_lease.release();
+        load.status = TravelStatus::Cancelled;
+        load.error = "Play stopped while it loaded";
+        report(load);
+        finish(next.id, next.request, TravelStatus::Cancelled, load.error);
+        return false;
+    }
+    if (!read) {
+        failStarted(
+            next, load,
+            "level \"" + next.request.level + "\" didn't load: " + (error.empty() ? "it didn't load" : error));
+        return false;
+    }
+    m_world = std::move(prepared);
+    m_world.setLevelEpoch(++m_epoch);
+    m_current = next.request;
+    load.epoch = m_epoch;
+    try {
+        startSession(StartReason::Fresh);
+    } catch (const std::exception& e) {
+        load.startMs = msSince(clock);
+        failStarted(next, load, "level \"" + next.request.level + "\" didn't start: " + e.what());
+        return false;
+    }
+    load.startMs = msSince(clock);
+    report(load);
+    finish(next.id, next.request, TravelStatus::Succeeded, {});
+    return true;
 }
 
 void LevelHost::finish(uint64_t id, const LevelRequest& request, TravelStatus status, std::string error) {

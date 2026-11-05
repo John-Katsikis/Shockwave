@@ -126,16 +126,44 @@ shockwave::LevelHost::Hooks Player::withAssetLeases(shockwave::LevelHost::Hooks 
     if (!m_tool.assetResidency) return hooks;
     hooks.assets = [this](
                        const shockwave::LevelRequest& request, const shockwave::World&,
-                       std::vector<shockwave::AssetCost>& assets, std::string&) {
+                       std::vector<shockwave::AssetCost>& assets, std::string& error) {
         fs::path scene = sceneForLevel(request.level);
         if (scene.empty()) scene = m_project.startupScene;
         shockwave::AssetGraph& graph = assetGraph();
         const std::string id = graph.idFor(fs::absolute(scene));
         if (id.empty()) return true;   // a scene from outside the project: nothing to lease
         assets = shockwave::assetCosts(graph, id, m_assets.get(), &engine().assets());
+        // On demand the scene is read after the current level ends, so a broken link is
+        // refused now, while that level can still play on.
+        if (m_assetLoader)
+            for (const shockwave::Diagnostic& d : graph.diagnostics(id))
+                if (d.error()) {
+                    error = d.text() + " (" + d.code + ")";
+                    return false;
+                }
         return true;
     };
     return hooks;
+}
+
+bool Player::loadAssetsOnDemand() const {
+    const std::string& mode = m_tool.assetLoading.empty() ? m_project.assetLoading : m_tool.assetLoading;
+    return mode == "levels" && m_tool.assetResidency && m_tool.mode == Tool::Mode::Play && !m_tool.optimise &&
+           !m_tool.captureReflections;
+}
+
+shockwave::AssetResidency::Lease Player::sceneAssets(const std::string& owner, const fs::path& file) {
+    if (!m_assetLoader) return {};
+    shockwave::AssetGraph& graph = assetGraph();
+    const std::string id = graph.idFor(fs::absolute(file));
+    if (id.empty()) return {};
+    auto costs = shockwave::assetCosts(graph, id, m_assets.get(), &engine().assets());
+    for (const shockwave::Diagnostic& d : graph.diagnostics(id))
+        if (d.error()) throw std::runtime_error(d.text() + " (" + d.code + ")");
+    auto lease = m_residency.acquire(owner, costs);
+    std::string error;
+    if (!m_residency.load(lease, error)) throw std::runtime_error(m_project.relative(file) + ": " + error);
+    return lease;
 }
 
 void Player::recordLoad(const shockwave::LoadReport& report) {
@@ -144,6 +172,10 @@ void Player::recordLoad(const shockwave::LoadReport& report) {
         shockwave::LogGame, Info, "Level \"{}\" {}: {:.1f} ms, {} assets ({} shared, {} new, {} retired), GPU {}",
         report.request.level, shockwave::travelStatusName(report.status), report.totalMs, report.assets, report.shared,
         report.added, report.retired, shockwave::formatAssetBytes(report.residentGpuBytes));
+    if (m_assetLoader)
+        SW_LOG(
+            shockwave::LogGame, Info, "Level \"{}\": loaded {}, unloaded {}, {} GPU frees pending",
+            report.request.level, report.loadedAssets, report.unloadedAssets, report.pendingFrees);
 }
 
 void Player::writeLoadReport() {
@@ -151,6 +183,7 @@ void Player::writeLoadReport() {
     std::string text = "{\n  \"format\": 1,\n  \"mode\": \"load_report\",\n";
     text += "  \"project\": " + json(m_project.name) + ",\n";
     text += std::string("  \"residency\": ") + (m_tool.assetResidency ? "true" : "false") + ",\n";
+    text += std::string("  \"asset_loading\": ") + (m_assetLoader ? "\"levels\"" : "\"all\"") + ",\n";
     text += "  \"budget\": {\"cpu_bytes\": " + std::to_string(m_tool.assetBudget.cpuBytes) +
             ", \"gpu_bytes\": " + std::to_string(m_tool.assetBudget.gpuBytes) + "},\n";
     text += "  \"loads\": [";
@@ -164,28 +197,33 @@ void Player::writeLoadReport() {
             r.validateMs, r.readMs, r.prepareMs, r.retireMs, r.uploadMs, r.startMs);
         char total[32];
         std::snprintf(total, sizeof(total), "%.3f", r.totalMs);
-        text += std::string(i ? ",\n    " : "\n    ") + "{\"level\": " + json(r.request.level) +
-                ", \"spawn\": " + json(r.request.spawn) + ", \"from\": " + json(r.from) +
-                ", \"epoch\": " + std::to_string(r.epoch) +
-                ", \"status\": " + json(shockwave::travelStatusName(r.status)) + ", \"error\": " + json(r.error) +
-                ", \"phases_ms\": " + phases + ", \"total_ms\": " + total +
-                ", \"assets\": " + std::to_string(r.assets) + ", \"shared\": " + std::to_string(r.shared) +
-                ", \"added\": " + std::to_string(r.added) + ", \"retired\": " + std::to_string(r.retired) +
-                ", \"added_cpu_bytes\": " + std::to_string(r.addedCpuBytes) +
-                ", \"added_gpu_bytes\": " + std::to_string(r.addedGpuBytes) +
-                ", \"retired_cpu_bytes\": " + std::to_string(r.retiredCpuBytes) +
-                ", \"retired_gpu_bytes\": " + std::to_string(r.retiredGpuBytes) +
-                ", \"resident_cpu_bytes\": " + std::to_string(r.residentCpuBytes) +
-                ", \"resident_gpu_bytes\": " + std::to_string(r.residentGpuBytes) +
-                ", \"peak_cpu_bytes\": " + std::to_string(r.peakCpuBytes) +
-                ", \"peak_gpu_bytes\": " + std::to_string(r.peakGpuBytes) + "}";
+        text +=
+            std::string(i ? ",\n    " : "\n    ") + "{\"level\": " + json(r.request.level) +
+            ", \"spawn\": " + json(r.request.spawn) + ", \"from\": " + json(r.from) +
+            ", \"epoch\": " + std::to_string(r.epoch) + ", \"status\": " + json(shockwave::travelStatusName(r.status)) +
+            ", \"error\": " + json(r.error) + ", \"phases_ms\": " + phases + ", \"total_ms\": " + total +
+            ", \"assets\": " + std::to_string(r.assets) + ", \"shared\": " + std::to_string(r.shared) +
+            ", \"added\": " + std::to_string(r.added) + ", \"retired\": " + std::to_string(r.retired) +
+            ", \"added_cpu_bytes\": " + std::to_string(r.addedCpuBytes) +
+            ", \"added_gpu_bytes\": " + std::to_string(r.addedGpuBytes) +
+            ", \"retired_cpu_bytes\": " + std::to_string(r.retiredCpuBytes) +
+            ", \"retired_gpu_bytes\": " + std::to_string(r.retiredGpuBytes) +
+            ", \"resident_cpu_bytes\": " + std::to_string(r.residentCpuBytes) +
+            ", \"resident_gpu_bytes\": " + std::to_string(r.residentGpuBytes) +
+            ", \"peak_cpu_bytes\": " + std::to_string(r.peakCpuBytes) +
+            ", \"peak_gpu_bytes\": " + std::to_string(r.peakGpuBytes) +
+            ", \"loaded\": " + std::to_string(r.loadedAssets) + ", \"unloaded\": " + std::to_string(r.unloadedAssets) +
+            ", \"pending_frees\": " + std::to_string(r.pendingFrees) + "}";
     }
     text += m_loadReports.empty() ? "],\n" : "\n  ],\n";
     text += "  \"resident\": {\"assets\": " + std::to_string(m_residency.size()) +
             ", \"cpu_bytes\": " + std::to_string(m_residency.cpuBytes()) +
             ", \"gpu_bytes\": " + std::to_string(m_residency.gpuBytes()) +
             ", \"leases\": " + std::to_string(m_residency.leases()) +
-            ", \"retired_total\": " + std::to_string(m_residency.retiredCount()) + "}\n}\n";
+            ", \"retired_total\": " + std::to_string(m_residency.retiredCount()) +
+            ", \"loaded_total\": " + std::to_string(m_residency.loadedCount()) +
+            ", \"unloaded_total\": " + std::to_string(m_residency.unloadedCount()) +
+            ", \"pending_frees\": " + std::to_string(engine().renderer().pendingFrees()) + "}\n}\n";
     if (!writeText(m_tool.loadReport, text)) m_exitCode = 1;
 }
 

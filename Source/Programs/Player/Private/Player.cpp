@@ -60,6 +60,13 @@ void Player::onStart() {
     }
     m_assets = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
     applyOptimisationSettings();   // before importing (docs/Optimisation.md)
+    // asset_loading levels (docs/AssetResidency.md): nothing is imported now; each level's
+    // lease loads what it needs, and what no lease holds is unloaded.
+    if (loadAssetsOnDemand()) {
+        m_assets->setOnDemand(true);
+        m_assetLoader = std::make_unique<shockwave::AssetFolderLoader>(m_project, *m_assets, &engine().renderer());
+        m_residency.setLoader(m_assetLoader.get());
+    }
     std::vector<std::string> importProblems;
     for (const auto& change : m_assets->open(m_project.assetFolder)) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
@@ -129,6 +136,11 @@ void Player::onStart() {
         if (key == "editor_camera" || key == "camera")
             in >> m_camera.position.x >> m_camera.position.y >> m_camera.position.z >> m_camera.yaw >> m_camera.pitch;
     };
+    // On demand, the game circuit's assets for the whole run, and the first scene's until its
+    // level holds them.
+    if (m_assetLoader && !m_project.gameCircuit.empty())
+        m_applicationAssets = sceneAssets("application (game circuit)", m_project.root / m_project.gameCircuit);
+    m_sceneAssets = sceneAssets("startup", m_project.startupScene);
     if (!shockwave::loadScene(m_world, engine().assets(), m_project.startupScene.string(), error, hooks, &warnings))
         throw std::runtime_error(error);
     if (!warnings.empty()) throw std::runtime_error("Scene has unresolved content: " + warnings.front());
@@ -420,6 +432,10 @@ void Player::onShutdown() {
     if (session()) SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", session()->ticks());
     if (m_levels) m_levels->stop();
     m_levels.reset();
+    m_applicationAssets.release();
+    m_sceneAssets.release();
+    // Let the GPU finish with what was unloaded, so the report shows nothing pending.
+    if (m_assetLoader) engine().renderer().flushFrees();
     writeLoadReport();   // after Stop, so it shows what stayed resident (nothing should)
     if (m_previewHost) m_previewHost->stop();
     m_previewHost.reset();

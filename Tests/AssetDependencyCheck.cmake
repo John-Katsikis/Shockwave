@@ -4,7 +4,9 @@
 #   - --check and --asset-dependencies fail on a missing file and on a material cycle, with
 #     their codes, and pass again once they're fixed;
 #   - --load-report writes the start's phases and assets, and nothing stays resident;
-#   - --no-asset-residency turns leases off; a budget too small fails with BudgetExceeded.
+#   - --no-asset-residency turns leases off; a budget too small fails with BudgetExceeded;
+#   - --asset-loading levels imports level b's material and texture on demand, and unloads
+#     them at the end with no GPU frees left pending.
 #   -DPLAYER=player -DFIXTURE=Tests/fixtures/levels -DTEXTURE=a .png -DTEMP=dir
 cmake_policy(SET CMP0054 NEW)
 file(REMOVE_RECURSE "${TEMP}")
@@ -106,4 +108,25 @@ endif()
 run(1 "BudgetExceeded: CPU" --renderer null --frames 3 --user-dir "${TEMP}/User" --asset-budget-cpu 0.0001)
 run(0 "" --renderer null --frames 3 --user-dir "${TEMP}/User" --asset-budget-cpu 64 --asset-budget-gpu 64)
 run(2 "takes a size in MiB" --renderer null --asset-budget-gpu lots)
+
+# ---- --asset-loading levels: on demand ----
+run(0 "Wrote" --renderer null --frames 3 --user-dir "${TEMP}/User" --level b --asset-loading levels
+    --load-report "${TEMP}/demand.json")
+file(READ "${TEMP}/demand.json" demand)
+string(JSON loading GET "${demand}" asset_loading)
+string(JSON level GET "${demand}" loads 0 level)
+string(JSON resident GET "${demand}" resident assets)
+string(JSON loadedTotal GET "${demand}" resident loaded_total)
+string(JSON unloadedTotal GET "${demand}" resident unloaded_total)
+string(JSON pending GET "${demand}" resident pending_frees)
+if(NOT loading STREQUAL "levels" OR NOT level STREQUAL "b" OR NOT resident EQUAL 0
+   OR NOT loadedTotal EQUAL unloadedTotal OR loadedTotal LESS 3 OR NOT pending EQUAL 0)
+    message(FATAL_ERROR "--asset-loading levels: ${demand}")
+endif()
+string(JSON loading GET "${load}" asset_loading)
+if(NOT loading STREQUAL "all")
+    message(FATAL_ERROR "the default loads everything: ${load}")
+endif()
+run(2 "takes all or levels" --renderer null --asset-loading bad)
+run(2 "needs level leases" --renderer null --asset-loading levels --no-asset-residency)
 message(STATUS "asset dependencies command line: all checks passed")

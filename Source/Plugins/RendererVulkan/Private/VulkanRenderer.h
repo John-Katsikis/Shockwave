@@ -25,6 +25,8 @@ public:
     updateTexture(TextureHandle id, uint32_t width, uint32_t height, std::span<const uint8_t> rgba, bool srgb) override;
     void destroyTexture(TextureHandle id) override;
     uint64_t guiTexture(TextureHandle id) override;
+    size_t pendingFrees() const override;
+    void flushFrees() override;
 
     void setMeshLods(MeshHandle id, std::span<const MeshLod> lods, std::span<const uint32_t> lodIndices) override;
     bool supportsTextureFormat(TextureFormat format) const override;
