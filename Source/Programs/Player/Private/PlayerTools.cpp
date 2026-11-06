@@ -246,11 +246,11 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    std::map<std::string, shockwave::LevelSceneFacts> levelFacts;
     if (checkLevels) {
-        std::map<std::string, shockwave::LevelSceneFacts> facts;
         for (const auto& [file, levels] : levelsByScene)
-            for (const shockwave::LevelEntry* level : levels) facts[level->id] = sceneFacts[file];
-        shockwave::validateLevelLinks(catalog, facts, catalogShown, levelDiagnostics);
+            for (const shockwave::LevelEntry* level : levels) levelFacts[level->id] = sceneFacts[file];
+        shockwave::validateLevelLinks(catalog, levelFacts, catalogShown, levelDiagnostics);
     }
     {
         const size_t before = problems.size();
@@ -266,7 +266,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 catalog.levels.size() == 1 ? "" : "s");
     }
     checkPrefabs(usedPrefabs, problems);
-    checkAllCircuits(usedCircuits, problems);
+    checkAllCircuits(usedCircuits, problems, catalogRead ? &catalog : nullptr, checkLevels ? &levelFacts : nullptr);
     // What everything checked reaches, file by file (docs/AssetResidency.md): references
     // that don't resolve, wrong case, paths leaving the project, cycles.
     if (!onlySaves) checkAssetGraph(scenes, problems);

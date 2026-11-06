@@ -516,6 +516,16 @@ void CircuitWorld::endPlay() {
     m_messages.clear();
 }
 
+void CircuitWorld::travelFinished(
+    int32_t ticket, bool succeeded, const std::string& level, const std::string& from, const std::string& code,
+    const std::string& message) {
+    dispatchAll(CircuitEvent::TravelFinished, {}, [&](const CircuitProgram::CallSite& site, std::vector<Value>& regs) {
+        const Value values[] = {Value::integer(ticket), Value::boolean(succeeded), Value::string(level),
+                                Value::string(from),    Value::string(code),       Value::string(message)};
+        for (size_t i = 0; i < site.outputs.size() && i < std::size(values); ++i) regs[site.outputs[i]] = values[i];
+    });
+}
+
 void CircuitWorld::fixedTick(double dt) {
     if (!m_playing || m_debugPaused) return;
     refresh();

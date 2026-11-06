@@ -131,6 +131,8 @@ struct Tool {
     fs::path loadReport;
     // --asset-loading all|levels: the project's asset_loading, overridden. Empty: the project's.
     std::string assetLoading;
+    // --instant-travel: the project's level_travel as instant (docs/LevelLifetime.md).
+    bool instantTravel = false;
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -334,7 +336,12 @@ private:
     void checkCircuits(
         shockwave::World& world, const std::string& scene, std::vector<std::string>& problems,
         std::vector<std::string>& usedCircuits);
-    void checkAllCircuits(const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems);
+    // With the level catalog, a Level.RequestTravel's literal level (and, with the levels'
+    // scene facts, its spawn) must be one there.
+    void checkAllCircuits(
+        const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems,
+        const shockwave::LevelCatalog* catalog = nullptr,
+        const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
     int nodeSchema();
     int dumpCircuit();
     int runCircuit();

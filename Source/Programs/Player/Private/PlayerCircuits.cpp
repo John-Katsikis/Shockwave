@@ -62,7 +62,53 @@ void Player::checkCircuits(
 // Every .swcircuit in Content compiles (game code and spawned prefabs can use any of them),
 // or with scenes named on the command line, the ones those use. Warnings are reported but
 // don't fail the check.
-void Player::checkAllCircuits(const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems) {
+namespace {
+// Level.RequestTravel with a literal level, and spawn, that the catalog doesn't have.
+void checkTravelLiterals(
+    const fs::path& file, const std::string& shown, const shockwave::LevelCatalog& catalog,
+    const std::map<std::string, shockwave::LevelSceneFacts>* facts, std::vector<std::string>& problems) {
+    std::ifstream in(file, std::ios::binary);
+    shockwave::CircuitDocument document;
+    std::string error;
+    if (!in || !shockwave::parseCircuit(in, shown, document, error)) return;   // compiling reports it
+    for (const auto& node : document.nodes) {
+        if (node.type != "Level.RequestTravel") continue;
+        std::string level, spawn;
+        int line = node.line;
+        for (const auto& input : node.inputs) {
+            if (input.text.empty() || input.text.front() != '"') continue;   // a wire or a variable
+            shockwave::Value value;
+            if (!shockwave::parseValue(input.text, shockwave::PinType::String, value, error)) continue;
+            if (input.pin == "level") {
+                level = value.text;
+                line = input.line;
+            } else if (input.pin == "spawn") {
+                spawn = value.text;
+            }
+        }
+        if (level.empty()) continue;
+        const shockwave::LevelEntry* entry = catalog.find(level);
+        if (!entry) {
+            problems.push_back(
+                shown + ":" + std::to_string(line) + ": error UnknownLevel: node " + node.name +
+                ": Level.RequestTravel level \"" + level + "\" isn't in the level catalog");
+            continue;
+        }
+        if (spawn.empty() || !facts) continue;
+        const auto there = facts->find(level);
+        if (there == facts->end() || !there->second.loaded) continue;
+        const auto& spawns = there->second.spawns;
+        if (std::none_of(spawns.begin(), spawns.end(), [&](const auto& s) { return s.id == spawn; }))
+            problems.push_back(
+                shown + ":" + std::to_string(line) + ": error UnknownSpawn: node " + node.name +
+                ": Level.RequestTravel spawn \"" + spawn + "\" isn't a LevelSpawn in " + entry->scene);
+    }
+}
+}   // namespace
+
+void Player::checkAllCircuits(
+    const std::vector<std::string>& usedCircuits, std::vector<std::string>& problems,
+    const shockwave::LevelCatalog* catalog, const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
     const fs::path content = m_project.assetFolder;
     const std::string game = m_project.gameCircuitPath();
     std::vector<std::string> circuits = usedCircuits;
@@ -80,6 +126,11 @@ void Player::checkAllCircuits(const std::vector<std::string>& usedCircuits, std:
         const auto kind = path == game ? shockwave::CircuitKind::Game : shockwave::CircuitKind::Entity;
         std::vector<std::string> found;
         const auto program = shockwave::circuitLibrary().load(path, kind, &found);
+        if (catalog) {
+            std::vector<std::string> travel;
+            checkTravelLiterals(content / path, path, *catalog, levelFacts, travel);
+            for (std::string& problem : travel) found.push_back(std::move(problem));
+        }
         size_t errors = 0;
         for (const std::string& problem : found) {
             const bool warning = problem.find(": warning: ") != std::string::npos;

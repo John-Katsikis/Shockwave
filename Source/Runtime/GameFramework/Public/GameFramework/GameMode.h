@@ -7,6 +7,8 @@
 #include <Engine/EntityRef.h>
 #include <Engine/Schedule.h>
 #include <Engine/Subsystem.h>
+#include <Engine/Levels.h>
+#include <GameFramework/GameFlow.h>
 #include <GameFramework/LevelLifetime.h>
 
 #include <glm/vec3.hpp>
@@ -84,14 +86,20 @@ struct GameContext {
     // Why this session started, and which runtime level it is (0 outside level travel).
     StartReason startReason = StartReason::Fresh;
     uint64_t levelEpoch = 0;
-    // Asks to go to another level of the catalog, arriving at `spawn` (or its default).
-    // Never immediate: the level ends after this frame's callbacks have returned, so it's
-    // safe from fixedUpdate, frame, UI handlers and beginPlay. False when nothing can
-    // travel (a session without a LevelHost) or the request comes from an old level.
+    // Travel (S05, GameFramework/GameFlow.h): request, restart, menu, exits, tickets and
+    // their progress. Never immediate: the level ends after this frame's callbacks have
+    // returned, so it's safe from fixedUpdate, frame, UI handlers and beginPlay. Requests
+    // carry this level's epoch, so one kept from an earlier level is refused.
+    LevelFlow flow() const { return LevelFlow(flowHost, levelEpoch); }
+    // The short form: asks to go to another level of the catalog, arriving at `spawn` (or
+    // its default). False when it's refused (game.flow().request says why).
     bool requestLevel(std::string level, std::string spawn = {}) const {
-        return travel && travel(LevelRequest{std::move(level), std::move(spawn)});
+        return bool(flow().request(std::move(level), std::move(spawn)));
     }
-    std::function<bool(const LevelRequest&)> travel;   // set by LevelHost
+    GameFlow* flowHost = nullptr;   // set by LevelHost; null: nothing can travel
+    // Where this level was entered: the spawn asked for (or the catalog's default) and its
+    // place. Place the player there in beginPlay; found is false when there's no spawn.
+    LevelArrival arrival;
 };
 
 class GameMode {

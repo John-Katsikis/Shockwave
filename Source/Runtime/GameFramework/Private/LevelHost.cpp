@@ -1,9 +1,14 @@
 #include <GameFramework/LevelHost.h>
 
+#include <Circuits/CircuitWorld.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
+#include <Engine/Levels.h>
+#include <Input/Input.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -47,6 +52,18 @@ double msSince(Clock::time_point& from) {
 std::string leaseOwner(const LevelRequest& level, uint64_t epoch) {
     return "level " + level.level + " (epoch " + std::to_string(epoch) + ")";
 }
+
+LevelRequest levelOf(const TravelRequest& request) { return {request.level, request.spawn}; }
+
+// A plan or load that failed: the budget, or anything else that kept it from loading.
+TravelError codeFor(const std::string& error) {
+    return error.rfind("BudgetExceeded", 0) == 0 ? TravelError::BudgetExceeded : TravelError::LoadFailed;
+}
+
+struct Reset {
+    uint64_t& value;
+    ~Reset() { value = 0; }
+};
 }   // namespace
 
 // The level's closure against what's resident, before anything ends. False when it can't
@@ -145,8 +162,11 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     load.uploadMs = msSince(clock);
     // The application's graphics, put back by stop(); levels keep the player's changes.
     if (m_engine && m_engine->guiEnabled() && !m_settings) m_settings = m_engine->graphics().requested();
+    const LevelArrival arrival = levelArrival(m_world, m_current.spawn);
+    if (!m_current.spawn.empty() && arrival.entity == kNullEntity)
+        SW_LOG(LogGame, Warning, "Level \"{}\" has no LevelSpawn \"{}\"", m_current.level, m_current.spawn);
     try {
-        startSession(reason);
+        startSession(reason, arrival);
     } catch (const std::exception& e) {
         m_lease.release();
         restoreSettings();
@@ -162,21 +182,18 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     }
     load.startMs = msSince(clock);
     report(load);
+    arrived();
+    deliver();
 }
 
-void LevelHost::startSession(StartReason reason) {
+void LevelHost::startSession(StartReason reason, const LevelArrival& arrival) {
     m_session = std::make_unique<PlaySession>(m_world, m_jobs, m_instance, m_engine);
     m_session->setWorldPolicy(SessionWorldPolicy::OwnedRuntimeWorld);
     m_session->setSettingsPolicy(SessionSettingsPolicy::PreserveUserSettings);
     m_session->setStartReason(reason);
     m_session->setLevelEpoch(m_epoch);
-    m_session->setTravel([this, epoch = m_epoch](const LevelRequest& request) {
-        if (epoch != m_epoch) {
-            SW_LOG(LogGame, Warning, "Ignored a request for level \"{}\" from an earlier level", request.level);
-            return false;
-        }
-        return this->request(request) != 0;
-    });
+    m_session->setFlow(this);
+    m_session->setArrival(arrival);
     if (m_hooks.configure) m_hooks.configure(*m_session, m_current);
     m_starting = true;
     try {
@@ -188,6 +205,16 @@ void LevelHost::startSession(StartReason reason) {
     }
     m_starting = false;
     if (m_hooks.started) m_hooks.started(*m_session, m_current);
+}
+
+// A new level starts clean: nothing held through the loading screen counts, the camera
+// doesn't blend from the old level's view, and the time spent loading isn't caught up.
+// (The session's start already made every previous transform equal to its transform.)
+void LevelHost::arrived() {
+    if (!m_engine) return;
+    m_engine->input().holdUntilReleased();
+    m_engine->renderer().cutCamera();
+    m_engine->discardFrameTime();
 }
 
 void LevelHost::endSession() {
@@ -212,196 +239,440 @@ void LevelHost::restoreSettings() {
 
 void LevelHost::stop() {
     if (m_processing) m_stopped = true;
+    if (m_candidate) {
+        const uint64_t id = m_candidate->next.id;
+        m_candidate.reset();   // the session ends below: nothing to resume
+        finish(id, TravelStatus::Cancelled, TravelError::Cancelled, "Play stopped first");
+    }
     if (m_pending) {
-        const Pending pending = *m_pending;
+        const uint64_t id = m_pending->id;
         m_pending.reset();
-        finish(pending.id, pending.request, TravelStatus::Cancelled, "Play stopped first");
+        finish(id, TravelStatus::Cancelled, TravelError::Cancelled, "Play stopped first");
     }
     endSession();
     m_lease.release();   // after the session: nothing reads its assets any more
     restoreSettings();
     m_redirects = 0;
     m_chain.clear();
+    deliver();
 }
 
-uint64_t LevelHost::request(LevelRequest level) {
-    if (!m_session || (!m_session->active() && !m_starting)) {
-        SW_LOG(LogGame, Warning, "Can't go to level \"{}\": nothing is playing", level.level);
-        return 0;
-    }
-    if (m_pending) {
-        const Pending replaced = *m_pending;
-        m_pending.reset();
-        finish(
-            replaced.id, replaced.request, TravelStatus::Cancelled,
-            "replaced by a request for \"" + level.level + "\"");
-    }
-    const uint64_t id = m_nextId++;
-    m_pending = Pending{id, std::move(level), m_starting || m_session->ticks() == 0};
-    return id;
+// ---- Requests ---------------------------------------------------------------------------------
+
+TravelTicket LevelHost::refuse(TravelError code, std::string message, const TravelRequest& request) const {
+    SW_LOG(LogGame, Warning, "Can't go to level \"{}\": {} ({})", request.level, message, travelErrorName(code));
+    return {0, code, std::move(message)};
 }
 
-void LevelHost::process() {
-    if (m_processing) return;   // a hook called back in: the loop below picks it up
-    m_processing = true;
-    struct Done {
-        bool& flag;
-        ~Done() { flag = false; }
-    } done{m_processing};
-    m_stopped = false;
-    while (m_pending) {
-        const Pending next = *m_pending;
-        m_pending.reset();
-        LoadReport load;
-        load.request = next.request;
-        load.from = m_current.level;
-        if (m_residency) m_countsAtStart = {m_residency->loadedCount(), m_residency->unloadedCount()};
-        load.epoch = m_epoch;
-        auto clock = Clock::now();
-        auto fail = [&](TravelStatus status, std::string why, double LoadReport::*phase) {
-            load.*phase += msSince(clock);
-            load.status = status;
-            load.error = why;
-            load.epoch = m_epoch;
-            report(load);
-            finish(next.id, next.request, status, std::move(why));
-        };
-        if (next.redirect) {
-            ++m_redirects;
-            m_chain.push_back(next.request.level);
-        } else {
-            m_redirects = 1;
-            m_chain = {next.request.level};
-        }
-        if (m_redirects > kMaxRedirects) {
-            std::string chain;
-            for (const auto& id : m_chain) chain += (chain.empty() ? "" : " -> ") + id;
-            m_redirects = 0;
-            m_chain.clear();
-            fail(
-                TravelStatus::Failed,
-                "more than " + std::to_string(kMaxRedirects) +
-                    " levels asked for another before playing (a cycle?): " + chain,
-                &LoadReport::validateMs);
-            return;
-        }
-        if (m_epoch == std::numeric_limits<uint64_t>::max()) {
-            fail(TravelStatus::Failed, "level epochs ran out: restart the game", &LoadReport::validateMs);
-            return;
-        }
-        load.validateMs = msSince(clock);
-        if (m_residency && m_residency->loader() && m_hooks.assets) {
-            if (!travelOnDemand(next, load, clock)) return;
-            continue;
-        }
-        // Prepare: the next level loads beside the current one, which keeps playing if it fails.
-        World prepared;
+uint64_t LevelHost::requestLevel(LevelRequest level) {
+    TravelRequest r;
+    r.level = std::move(level.level);
+    r.spawn = std::move(level.spawn);
+    return request(std::move(r)).id;
+}
+
+TravelTicket LevelHost::request(TravelRequest r) {
+    if (!m_session || (!m_session->active() && !m_starting))
+        return refuse(TravelError::NotPlaying, "nothing is playing", r);
+    if (r.fromEpoch && r.fromEpoch != m_epoch)
+        return refuse(
+            TravelError::StaleLevel,
+            "asked from level epoch " + std::to_string(r.fromEpoch) + ", which has ended (now " +
+                std::to_string(m_epoch) + ")",
+            r);
+    if (r.level.empty()) return refuse(TravelError::InvalidRequest, "no level named", r);
+    if (r.resetCampaign && r.reason != TravelReason::NewGame)
+        return refuse(TravelError::InvalidRequest, "only a new game resets the campaign", r);
+    if (m_session->online())
+        return refuse(
+            TravelError::AuthorityRequired, "levels can't change during network play yet (map rotation is S11)", r);
+    // One at a time; a level asking for another from its beginPlay is a redirect.
+    const uint64_t active = m_pending ? m_pending->id : m_candidate ? m_candidate->next.id : m_inFlight;
+    if (active && !(m_starting && !m_pending)) {
+        const auto it = m_tickets.find(active);
+        const std::string where = it != m_tickets.end() ? it->second.request.level : std::string("another level");
+        return refuse(
+            TravelError::Busy, "travel to \"" + where + "\" is under way (ticket " + std::to_string(active) + ")", r);
+    }
+    if (m_hooks.resolve) {
+        TravelError code = TravelError::None;
         std::string error;
-        bool loaded = false;
+        bool ok = false;
         try {
-            loaded = m_hooks.load && m_hooks.load(next.request, prepared, error);
-            if (!m_hooks.load) error = "this application can't load levels";
+            ok = m_hooks.resolve(r, code, error);
         } catch (const std::exception& e) {
             error = e.what();
         }
-        if (!m_session) {   // Stop (a quit, say) came while it loaded
-            fail(TravelStatus::Cancelled, "Play stopped while it loaded", &LoadReport::readMs);
-            return;
-        }
-        if (!loaded) {
-            fail(TravelStatus::Failed, error.empty() ? "it didn't load" : error, &LoadReport::readMs);
-            continue;   // a request made by a hook meanwhile still gets its turn
-        }
-        load.readMs = msSince(clock);
-        // What it needs, against what's resident: refused here, the current level plays on.
-        std::vector<AssetCost> assets;
-        if (!planAssets(next.request, prepared, assets, load, error)) {
-            fail(TravelStatus::Failed, error, &LoadReport::prepareMs);
-            continue;
-        }
-        load.prepareMs = msSince(clock);
-        // Commit: the current level ends, then the new one starts in the same World. Its
-        // lease goes after its session, so what both levels use never leaves.
-        endSession();
-        // The new lease is taken before the old one goes, so what both use keeps a ref
-        // throughout; only the old level's own assets retire.
-        AssetResidency::Lease arriving;
-        if (m_residency && m_hooks.assets)
-            arriving = m_residency->acquire(leaseOwner(next.request, m_epoch + 1), assets);
-        m_lease.release();
-        m_lease = std::move(arriving);
-        load.retireMs = msSince(clock);
-        m_world = std::move(prepared);
-        m_world.setLevelEpoch(++m_epoch);
-        m_current = next.request;
-        load.epoch = m_epoch;
-        load.uploadMs = msSince(clock);
-        try {
-            startSession(StartReason::Fresh);
-        } catch (const std::exception& e) {
-            load.startMs = msSince(clock);
-            failStarted(next, load, "level \"" + next.request.level + "\" didn't start: " + e.what());
-            return;
-        }
-        load.startMs = msSince(clock);
-        report(load);
-        finish(next.id, next.request, TravelStatus::Succeeded, {});
+        if (!ok) return refuse(code == TravelError::None ? TravelError::UnknownLevel : code, error, r);
+    }
+    const uint64_t id = m_nextId++;
+    TravelProgress progress;
+    progress.ticket = id;
+    progress.request = r;
+    progress.from = m_current.level;
+    progress.epoch = m_epoch;
+    m_tickets[id] = progress;
+    m_accepted[id] = Clock::now();
+    m_pending = Pending{id, std::move(r), m_starting || m_session->ticks() == 0};
+    deliver();
+    return {id, TravelError::None, {}};
+}
+
+TravelError LevelHost::cancel(uint64_t ticket) {
+    if (m_pending && m_pending->id == ticket) {
+        m_pending.reset();
+        finish(ticket, TravelStatus::Cancelled, TravelError::Cancelled, "cancelled");
+        deliver();
+        return TravelError::None;
+    }
+    if (m_candidate && m_candidate->next.id == ticket) {
+        Candidate candidate = std::move(*m_candidate);
+        m_candidate.reset();
+        resume(candidate);   // the prepared world goes with it; the current level plays on
+        finish(ticket, TravelStatus::Cancelled, TravelError::Cancelled, "cancelled before the level changed");
+        deliver();
+        return TravelError::None;
+    }
+    if (m_tickets.count(ticket)) return TravelError::TooLateToCancel;   // past the boundary: it carries on
+    for (const TravelProgress& ended : m_ended)
+        if (ended.ticket == ticket) return TravelError::AlreadyFinished;
+    return TravelError::UnknownTicket;
+}
+
+std::optional<TravelProgress> LevelHost::status(uint64_t ticket) const {
+    if (const auto it = m_tickets.find(ticket); it != m_tickets.end()) return it->second;
+    for (auto it = m_ended.rbegin(); it != m_ended.rend(); ++it)
+        if (it->ticket == ticket) return *it;
+    return std::nullopt;
+}
+
+uint64_t LevelHost::activeTicket() const {
+    if (m_inFlight) return m_inFlight;
+    if (m_candidate) return m_candidate->next.id;
+    return m_pending ? m_pending->id : 0;
+}
+
+TravelTicket LevelHost::restartLevel(uint64_t fromEpoch) {
+    TravelRequest r;
+    r.level = m_current.level;
+    r.spawn = m_current.spawn;
+    r.reason = TravelReason::Restart;
+    r.fromEpoch = fromEpoch;
+    return request(std::move(r));
+}
+
+TravelTicket LevelHost::returnToMenu(uint64_t fromEpoch) {
+    TravelRequest r;
+    r.level = m_menuLevel;
+    r.reason = TravelReason::Menu;
+    r.fromEpoch = fromEpoch;
+    if (m_menuLevel.empty()) return refuse(TravelError::InvalidRequest, "this game has no menu level", r);
+    return request(std::move(r));
+}
+
+TravelTicket LevelHost::useExit(Entity exit, uint64_t fromEpoch) {
+    TravelRequest r;
+    r.reason = TravelReason::Exit;
+    r.fromEpoch = fromEpoch;
+    const LevelExit* found = m_world.alive(exit) ? m_world.get<LevelExit>(exit) : nullptr;
+    if (!found) return refuse(TravelError::InvalidRequest, "that isn't a LevelExit", r);
+    r.level = found->destination;
+    r.spawn = found->spawn;
+    if (!found->enabled) return refuse(TravelError::InvalidRequest, "this exit is disabled", r);
+    if (fromEpoch && fromEpoch != m_epoch) return request(std::move(r));   // refused as stale
+    const bool oneShot = found->oneShot;
+    const TravelTicket ticket = request(std::move(r));
+    if (ticket && oneShot)
+        if (LevelExit* used = m_world.get<LevelExit>(exit)) used->enabled = false;   // a second contact can't
+    return ticket;
+}
+
+// ---- Tickets ----------------------------------------------------------------------------------
+
+void LevelHost::setPhase(uint64_t id, TravelPhase phase) {
+    const auto it = m_tickets.find(id);
+    if (it == m_tickets.end()) return;
+    TravelProgress& p = it->second;
+    p.phase = phase;
+    p.progress = std::max(p.progress, travelPhaseProgress(phase));
+    p.cancellable = travelPhaseCancellable(phase);
+}
+
+void LevelHost::finish(uint64_t id, TravelStatus status, TravelError code, std::string error) {
+    TravelProgress p;
+    if (const auto it = m_tickets.find(id); it != m_tickets.end()) {
+        p = std::move(it->second);
+        m_tickets.erase(it);
+    }
+    p.ticket = id;
+    p.phase = status == TravelStatus::Succeeded   ? TravelPhase::Succeeded
+              : status == TravelStatus::Cancelled ? TravelPhase::Cancelled
+                                                  : TravelPhase::Failed;
+    if (status == TravelStatus::Succeeded) p.progress = 1.0f;
+    p.code = code;
+    p.message = std::move(error);
+    p.cancellable = false;
+    p.epoch = m_epoch;
+    if (const auto it = m_accepted.find(id); it != m_accepted.end()) {
+        p.durationMs = std::chrono::duration<double, std::milli>(Clock::now() - it->second).count();
+        m_accepted.erase(it);
+    }
+    if (status == TravelStatus::Succeeded)
+        SW_LOG(LogGame, Info, "Level \"{}\" (epoch {})", p.request.level, m_epoch);
+    else
+        SW_LOG(
+            LogGame, Warning, "Level \"{}\" {} ({}): {}", p.request.level, travelStatusName(status),
+            travelErrorName(code), p.message);
+    m_ended.push_back(p);
+    if (m_ended.size() > kKeptTickets) m_ended.erase(m_ended.begin());
+    TravelResult result{id, levelOf(p.request), status, p.message, m_epoch};
+    m_results.push_back(result);
+    if (m_results.size() > kKeptResults) m_results.erase(m_results.begin());
+    TravelCompletion completion;
+    completion.ticket = id;
+    completion.request = p.request;
+    completion.from = p.from;
+    completion.to = playing() ? m_current.level : std::string();
+    completion.status = status;
+    completion.code = code;
+    completion.message = p.message;
+    completion.epoch = m_epoch;
+    completion.durationMs = p.durationMs;
+    m_outbox.push_back(std::move(completion));
+}
+
+void LevelHost::deliver() {
+    if (m_processing || m_delivering) return;
+    m_delivering = true;
+    struct Done {
+        bool& flag;
+        ~Done() { flag = false; }
+    } done{m_delivering};
+    while (!m_outbox.empty()) {
+        const TravelCompletion c = std::move(m_outbox.front());
+        m_outbox.erase(m_outbox.begin());
+        if (onResult) onResult(TravelResult{c.ticket, levelOf(c.request), c.status, c.message, c.epoch});
+        notifyObservers(c);
+        // The circuits of the level playing now: the new one after a change, the same one
+        // after a failure or cancel before it, none when nothing plays. A level that ended
+        // never hears of the one after it.
+        if (m_session && m_session->active())
+            if (CircuitWorld* circuits = m_session->circuits())
+                circuits->travelFinished(
+                    c.ticket <= uint64_t(std::numeric_limits<int32_t>::max()) ? int32_t(c.ticket) : 0,
+                    c.status == TravelStatus::Succeeded, c.request.level, c.from, travelErrorName(c.code), c.message);
     }
 }
 
-void LevelHost::failStarted(const Pending& next, LoadReport& load, const std::string& why) {
+// ---- Carrying it out --------------------------------------------------------------------------
+
+void LevelHost::process() {
+    if (m_processing) return;   // a hook called back in: the loop below picks it up
+    {
+        m_processing = true;
+        struct Done {
+            bool& flag;
+            ~Done() { flag = false; }
+        } done{m_processing};
+        m_stopped = false;
+        while (true) {
+            if (m_candidate) {   // prepared last frame: across the boundary now
+                Candidate candidate = std::move(*m_candidate);
+                m_candidate.reset();
+                if (!commit(std::move(candidate))) break;
+                continue;   // a redirect from its beginPlay
+            }
+            if (!m_pending) break;
+            const Pending next = *m_pending;
+            m_pending.reset();
+            Candidate candidate;
+            if (!prepare(next, candidate)) continue;   // a request made by a hook meanwhile still gets its turn
+            setPhase(next.id, TravelPhase::AwaitingBoundary);
+            if (m_staged && !next.redirect) {
+                // A frame renders before the current level ends: a loading screen shows, and
+                // the ticket can still be cancelled. The level waits, paused, meanwhile.
+                if (m_session && m_session->state() == PlaySession::State::Playing && !m_session->online())
+                    candidate.paused = m_session->pause();
+                m_candidate = std::move(candidate);
+                break;
+            }
+            if (!commit(std::move(candidate))) break;
+        }
+    }
+    deliver();
+}
+
+void LevelHost::resume(Candidate& candidate) {
+    if (candidate.paused && m_session && m_session->state() == PlaySession::State::Paused) m_session->start();
+    candidate.paused = false;
+}
+
+bool LevelHost::prepare(const Pending& next, Candidate& out) {
+    out.next = next;
+    LoadReport& load = out.load;
+    load.request = levelOf(next.request);
+    load.from = m_current.level;
+    if (m_residency) m_countsAtStart = {m_residency->loadedCount(), m_residency->unloadedCount()};
+    load.epoch = m_epoch;
+    auto clock = Clock::now();
+    auto fail = [&](TravelStatus status, TravelError code, std::string why, double LoadReport::*phase) {
+        load.*phase += msSince(clock);
+        load.status = status;
+        load.error = why;
+        load.epoch = m_epoch;
+        report(load);
+        finish(next.id, status, code, std::move(why));
+        return false;
+    };
+    setPhase(next.id, TravelPhase::Validating);
+    if (next.redirect) {
+        ++m_redirects;
+        m_chain.push_back(next.request.level);
+    } else {
+        m_redirects = 1;
+        m_chain = {next.request.level};
+    }
+    if (m_redirects > kMaxRedirects) {
+        std::string chain;
+        for (const auto& id : m_chain) chain += (chain.empty() ? "" : " -> ") + id;
+        m_redirects = 0;
+        m_chain.clear();
+        return fail(
+            TravelStatus::Failed, TravelError::RedirectCycle,
+            "more than " + std::to_string(kMaxRedirects) +
+                " levels asked for another before playing (a cycle?): " + chain,
+            &LoadReport::validateMs);
+    }
+    if (m_epoch == std::numeric_limits<uint64_t>::max())
+        return fail(
+            TravelStatus::Failed, TravelError::StartFailed, "level epochs ran out: restart the game",
+            &LoadReport::validateMs);
+    load.validateMs = msSince(clock);
+    std::string error;
+    if (m_residency && m_residency->loader() && m_hooks.assets) {
+        // On demand: its closure from its files, against what's resident. The scene is read
+        // once its assets are in, after the current level has gone.
+        out.onDemand = true;
+        setPhase(next.id, TravelPhase::Preparing);
+        const World unread;
+        if (!planAssets(load.request, unread, out.assets, load, error))
+            return fail(TravelStatus::Failed, codeFor(error), error, &LoadReport::prepareMs);
+        load.prepareMs = msSince(clock);
+        return true;
+    }
+    // Read: the next level loads beside the current one, which keeps playing if it fails.
+    setPhase(next.id, TravelPhase::Reading);
+    out.prepared = std::make_unique<World>();
+    bool loaded = false;
+    try {
+        loaded = m_hooks.load && m_hooks.load(load.request, *out.prepared, error);
+        if (!m_hooks.load) error = "this application can't load levels";
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    if (!m_session)   // Stop (a quit, say) came while it loaded
+        return fail(
+            TravelStatus::Cancelled, TravelError::Cancelled, "Play stopped while it loaded", &LoadReport::readMs);
+    if (!loaded)
+        return fail(
+            TravelStatus::Failed, TravelError::LoadFailed, error.empty() ? "it didn't load" : error,
+            &LoadReport::readMs);
+    if (!next.request.spawn.empty() && findLevelSpawn(*out.prepared, next.request.spawn) == kNullEntity)
+        return fail(
+            TravelStatus::Failed, TravelError::UnknownSpawn,
+            "level \"" + next.request.level + "\" has no LevelSpawn \"" + next.request.spawn + "\"",
+            &LoadReport::readMs);
+    load.readMs = msSince(clock);
+    // Prepare: what it needs, against what's resident. Refused here, the current level plays on.
+    setPhase(next.id, TravelPhase::Preparing);
+    if (!planAssets(load.request, *out.prepared, out.assets, load, error))
+        return fail(TravelStatus::Failed, codeFor(error), error, &LoadReport::prepareMs);
+    load.prepareMs = msSince(clock);
+    return true;
+}
+
+bool LevelHost::commit(Candidate candidate) {
+    m_inFlight = candidate.next.id;
+    Reset clear{m_inFlight};
+    auto clock = Clock::now();
+    const Pending& next = candidate.next;
+    LoadReport& load = candidate.load;
+    if (candidate.onDemand) return travelOnDemand(candidate, clock);
+    // Retire: the current level ends, then the new one starts in the same World. The new
+    // lease is taken before the old one goes, so what both use keeps a ref throughout;
+    // only the old level's own assets retire.
+    setPhase(next.id, TravelPhase::Retiring);
+    endSession();
+    AssetResidency::Lease arriving;
+    if (m_residency && m_hooks.assets)
+        arriving = m_residency->acquire(leaseOwner(load.request, m_epoch + 1), candidate.assets);
+    m_lease.release();
+    m_lease = std::move(arriving);
+    load.retireMs = msSince(clock);
+    setPhase(next.id, TravelPhase::Uploading);
+    m_world = std::move(*candidate.prepared);
+    m_world.setLevelEpoch(++m_epoch);
+    m_current = load.request;
+    load.epoch = m_epoch;
+    load.uploadMs = msSince(clock);
+    setPhase(next.id, TravelPhase::Starting);
+    try {
+        startSession(StartReason::Fresh, levelArrival(m_world, m_current.spawn));
+    } catch (const std::exception& e) {
+        load.startMs = msSince(clock);
+        failStarted(
+            next, load, TravelError::StartFailed, "level \"" + m_current.level + "\" didn't start: " + e.what());
+        return false;
+    }
+    load.startMs = msSince(clock);
+    report(load);
+    arrived();
+    finish(next.id, TravelStatus::Succeeded, TravelError::None, {});
+    return true;
+}
+
+void LevelHost::failStarted(const Pending& next, LoadReport& load, TravelError code, const std::string& why) {
     m_lease.release();
     // Nothing is playing now; the application goes back to somewhere safe.
     m_failure = why;
     SW_LOG(LogGame, Error, "{}", m_failure);
     if (m_pending) {   // asked for during the failed start
-        const Pending orphan = *m_pending;
+        const uint64_t orphan = m_pending->id;
         m_pending.reset();
-        finish(orphan.id, orphan.request, TravelStatus::Cancelled, "the level asking for it didn't start");
+        finish(orphan, TravelStatus::Cancelled, TravelError::Cancelled, "the level asking for it didn't start");
     }
     load.status = TravelStatus::Failed;
     load.error = m_failure;
     report(load);
-    finish(next.id, next.request, TravelStatus::Failed, m_failure);
+    finish(next.id, TravelStatus::Failed, code, m_failure);
 }
 
-bool LevelHost::travelOnDemand(const Pending& next, LoadReport& load, Clock::time_point& clock) {
-    auto refuse = [&](std::string why, double LoadReport::*phase) {
-        load.*phase += msSince(clock);
-        load.status = TravelStatus::Failed;
-        load.error = why;
+bool LevelHost::travelOnDemand(Candidate& candidate, Clock::time_point& clock) {
+    const Pending& next = candidate.next;
+    LoadReport& load = candidate.load;
+    auto cancelled = [&] {
+        m_lease.release();
+        load.status = TravelStatus::Cancelled;
+        load.error = "Play stopped while it loaded";
         report(load);
-        finish(next.id, next.request, TravelStatus::Failed, std::move(why));
+        finish(next.id, TravelStatus::Cancelled, TravelError::Cancelled, load.error);
+        return false;
     };
-    // Prepare: its closure against what's resident, read from its files. Refused here, the
-    // current level plays on.
-    const World unread;
-    std::vector<AssetCost> assets;
-    std::string error;
-    if (!planAssets(next.request, unread, assets, load, error)) {
-        refuse(error, &LoadReport::prepareMs);
-        return true;
-    }
-    load.prepareMs = msSince(clock);
     // Retire: the current level ends and its own assets unload (their GPU memory follows
     // once no frame reads it). The new lease is taken first, so shared assets stay in.
+    setPhase(next.id, TravelPhase::Retiring);
     endSession();
-    AssetResidency::Lease arriving = m_residency->acquire(leaseOwner(next.request, m_epoch + 1), assets);
+    AssetResidency::Lease arriving = m_residency->acquire(leaseOwner(load.request, m_epoch + 1), candidate.assets);
     m_lease.release();
     m_lease = std::move(arriving);
     load.retireMs = msSince(clock);
     // Upload: what the new level needs that isn't in. Past the point of no return.
+    setPhase(next.id, TravelPhase::Uploading);
+    std::string error;
     if (!m_residency->load(m_lease, [this] { return m_stopped; }, error)) {
         load.uploadMs = msSince(clock);
-        if (m_stopped) {
-            m_lease.release();
-            load.status = TravelStatus::Cancelled;
-            load.error = "Play stopped while it loaded";
-            report(load);
-            finish(next.id, next.request, TravelStatus::Cancelled, load.error);
-            return false;
-        }
-        failStarted(next, load, "level \"" + next.request.level + "\" didn't load: " + error);
+        if (m_stopped) return cancelled();
+        failStarted(next, load, codeFor(error), "level \"" + next.request.level + "\" didn't load: " + error);
         return false;
     }
     load.uploadMs = msSince(clock);
@@ -409,52 +680,43 @@ bool LevelHost::travelOnDemand(const Pending& next, LoadReport& load, Clock::tim
     World prepared;
     bool read = false;
     try {
-        read = m_hooks.load && m_hooks.load(next.request, prepared, error);
+        read = m_hooks.load && m_hooks.load(load.request, prepared, error);
         if (!m_hooks.load) error = "this application can't load levels";
     } catch (const std::exception& e) {
         error = e.what();
     }
     load.readMs = msSince(clock);
-    if (m_stopped) {
-        m_lease.release();
-        load.status = TravelStatus::Cancelled;
-        load.error = "Play stopped while it loaded";
-        report(load);
-        finish(next.id, next.request, TravelStatus::Cancelled, load.error);
-        return false;
-    }
+    if (m_stopped) return cancelled();
     if (!read) {
         failStarted(
-            next, load,
+            next, load, TravelError::LoadFailed,
             "level \"" + next.request.level + "\" didn't load: " + (error.empty() ? "it didn't load" : error));
+        return false;
+    }
+    if (!next.request.spawn.empty() && findLevelSpawn(prepared, next.request.spawn) == kNullEntity) {
+        failStarted(
+            next, load, TravelError::UnknownSpawn,
+            "level \"" + next.request.level + "\" has no LevelSpawn \"" + next.request.spawn + "\"");
         return false;
     }
     m_world = std::move(prepared);
     m_world.setLevelEpoch(++m_epoch);
-    m_current = next.request;
+    m_current = load.request;
     load.epoch = m_epoch;
+    setPhase(next.id, TravelPhase::Starting);
     try {
-        startSession(StartReason::Fresh);
+        startSession(StartReason::Fresh, levelArrival(m_world, m_current.spawn));
     } catch (const std::exception& e) {
         load.startMs = msSince(clock);
-        failStarted(next, load, "level \"" + next.request.level + "\" didn't start: " + e.what());
+        failStarted(
+            next, load, TravelError::StartFailed, "level \"" + next.request.level + "\" didn't start: " + e.what());
         return false;
     }
     load.startMs = msSince(clock);
     report(load);
-    finish(next.id, next.request, TravelStatus::Succeeded, {});
+    arrived();
+    finish(next.id, TravelStatus::Succeeded, TravelError::None, {});
     return true;
-}
-
-void LevelHost::finish(uint64_t id, const LevelRequest& request, TravelStatus status, std::string error) {
-    TravelResult result{id, request, status, std::move(error), m_epoch};
-    if (status == TravelStatus::Succeeded)
-        SW_LOG(LogGame, Info, "Level \"{}\" (epoch {})", request.level, m_epoch);
-    else
-        SW_LOG(LogGame, Warning, "Level \"{}\" {}: {}", request.level, travelStatusName(status), result.error);
-    m_results.push_back(result);
-    if (m_results.size() > kKeptResults) m_results.erase(m_results.begin());
-    if (onResult) onResult(result);
 }
 
 }   // namespace shockwave

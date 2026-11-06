@@ -12,7 +12,9 @@
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 
+#include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <stdexcept>
@@ -51,7 +53,7 @@ Input& GameContext::input() const {
 }
 
 PlaySession::PlaySession(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine)
-    : m_instance(instance), m_context{world, jobs, engine, m_subsystems, nullptr, StartReason::Fresh, 0, {}} {}
+    : m_instance(instance), m_context{world, jobs, engine, m_subsystems, nullptr, StartReason::Fresh, 0, nullptr, {}} {}
 
 PlaySession::~PlaySession() {
     try {
@@ -64,6 +66,39 @@ PlaySession::~PlaySession() {
 }
 
 PhysicsWorld* PlaySession::physics() const { return m_subsystems.find<PhysicsWorld>(); }
+
+namespace {
+// Circuits ask through the session's game.flow(), so their requests carry its epoch.
+class SessionTravel final : public CircuitTravel {
+public:
+    explicit SessionTravel(const GameContext& game) : m_game(game) {}
+    Ticket request(const std::string& level, const std::string& spawn) override {
+        return ticket(m_game.flow().request(level, spawn));
+    }
+    Ticket restartLevel() override { return ticket(m_game.flow().restartLevel()); }
+    Ticket returnToMenu() override { return ticket(m_game.flow().returnToMenu()); }
+    Ticket useExit(Entity exit) override { return ticket(m_game.flow().useExit(exit)); }
+    Status status(int32_t id) const override {
+        Status s;
+        if (id <= 0) return s;
+        const auto progress = m_game.flow().status(uint64_t(id));
+        if (!progress) return s;
+        s.known = true;
+        s.phase = travelPhaseName(progress->phase);
+        s.progress = progress->progress;
+        s.code = travelErrorName(progress->code);
+        s.message = progress->message;
+        s.cancellable = progress->cancellable;
+        return s;
+    }
+
+private:
+    static Ticket ticket(const TravelTicket& t) {
+        return {t.id <= uint64_t(INT32_MAX) ? int32_t(t.id) : 0, travelErrorName(t.error), t.message};
+    }
+    const GameContext& m_game;
+};
+}   // namespace
 
 void PlaySession::start() {
     if (m_state == State::Playing) return;
@@ -133,6 +168,10 @@ void PlaySession::start() {
         host.physics = physics();
         host.assets = m_context.engine ? &m_context.engine->assets() : nullptr;
         host.network = &network;
+        if (m_context.flowHost) {
+            m_circuitTravel = std::make_unique<SessionTravel>(m_context);
+            host.travel = m_circuitTravel.get();
+        }
         CircuitWorld& circuits = m_subsystems.add<CircuitWorld>(world, host, m_gameCircuit);
         circuits.setBreakpointsAllowed(!online());
         circuits.beginPlay();
@@ -187,6 +226,7 @@ void PlaySession::tearDown() {
     }
     m_mode.reset();
     m_subsystems.clear();
+    m_circuitTravel.reset();
     if (m_snapshot) m_context.world = std::move(*m_snapshot);   // OwnedRuntimeWorld keeps what Play left
     m_snapshot.reset();
     m_schedule = Schedule{};

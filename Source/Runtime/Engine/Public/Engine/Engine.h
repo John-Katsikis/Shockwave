@@ -157,6 +157,10 @@ public:
     double interpolationAlpha() const { return m_interpolationAlpha; }
     // Changes the simulation rate from the next frame on. Main thread.
     void setTickRate(double ticksPerSecond);
+    // The time this frame took doesn't become simulation: the next frame counts as one
+    // tick, and owed time is dropped. After a level loads, so the time spent loading
+    // isn't caught up in a burst of ticks. Main thread.
+    void discardFrameTime() { m_discardFrameTime = true; }
     // Simulation time source, from the next frame on (Engine/SimulationClock.h). While it
     // is Monotonic (network play), renderer swaps and reloads wait until it's Smoothed
     // again, so they don't stall the ticks. Main thread.
@@ -205,6 +209,7 @@ private:
     FrameLimiter m_limiter;
     FrameTimeSmoother m_smoother;
     SimulationClock m_clock;
+    bool m_discardFrameTime = false;
     SimulationStep m_simulationStep;
     double m_frameStartSeconds = 0;
     FrameStats m_frameStats;

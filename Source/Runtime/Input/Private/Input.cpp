@@ -206,6 +206,7 @@ float Input::bindingValue(const InputBinding& b, bool previous, uint8_t sources)
 }
 
 uint8_t Input::actionState(const std::string& action, uint8_t sources) const {
+    if ((!m_barred.empty() || !m_freed.empty()) && (m_barred.count(action) || m_freed.count(action))) return 0;
     auto it = m_actions.find(action);
     if (it == m_actions.end()) return 0;
     float now = 0.0f, before = 0.0f;
@@ -236,6 +237,7 @@ bool Input::wasActionPressed(const std::string& a, uint8_t s) const { return act
 bool Input::wasActionReleased(const std::string& a, uint8_t s) const { return actionState(a, s) & Released; }
 
 float Input::actionValue(const std::string& action, uint8_t sources) const {
+    if (m_barred.count(action)) return 0.0f;
     auto it = m_actions.find(action);
     if (it == m_actions.end()) return 0.0f;
     float value = 0.0f;
@@ -370,6 +372,23 @@ void Input::update(double frameDt) {
     pollDevices();
     applyFeedback();
     checkBindingsFile(frameDt);
+    // Barred actions that were let go count again from the next press.
+    m_freed.clear();
+    for (auto it = m_barred.begin(); it != m_barred.end();) {
+        const std::string action = *it;
+        it = m_barred.erase(it);
+        if (actionState(action, AllInputSources) & Down)
+            m_barred.insert(action);
+        else
+            m_freed.insert(action);
+    }
+}
+
+void Input::holdUntilReleased() {
+    m_barred.clear();
+    m_freed.clear();
+    for (const auto& [action, bindings] : m_actions)
+        if (actionState(action, AllInputSources) & Down) m_barred.insert(action);
 }
 
 // ---- Devices -----------------------------------------------------------------------------

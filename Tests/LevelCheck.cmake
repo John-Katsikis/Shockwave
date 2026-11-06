@@ -4,6 +4,7 @@
 #   - each mistake, made one at a time, fails --check and --levels with its code;
 #   - an unreachable level is a warning, not a failure;
 #   - --level starts in a level, refuses unknown IDs and clashes with --scene;
+#   - a circuit's Level.RequestTravel naming an unknown level or spawn fails --check (S05);
 #   - --level-schema matches the checked-in docs/LevelSchema.md;
 #   - a project without a catalog (Sample) has the implicit "startup" level.
 #   -DPLAYER=player -DFIXTURE=Tests/fixtures/levels -DSAMPLE=Games/Sample/Sample.swproject
@@ -110,6 +111,21 @@ run(0 "warning .*secret" --check)
 run(0 "\"code\": \"LevelUnreachable\", \"severity\": \"warning\"" --levels --json -)
 run(0 "level secret .*\\(unreachable\\).*ok" --levels)
 file(WRITE "${catalog}" "${goodCatalog}")
+
+# ---- Circuits naming levels (S05): a literal level and spawn must exist ----
+function(travel level spawn)
+    file(WRITE "${root}/Content/Circuits/travel.swcircuit"
+         "shockwave_circuit 1\nnode go Event.BeginPlay\nnode travel Level.RequestTravel\n  exec go.then\n"
+         "  in level = \"${level}\"\n  in spawn = \"${spawn}\"\n")
+endfunction()
+travel("b" "entrance")
+run(0 "ok Content/Circuits/travel.swcircuit" --check)
+travel("nowhere" "")
+run(1 "travel.swcircuit:5: error UnknownLevel: node travel: Level.RequestTravel level \"nowhere\"" --check)
+travel("b" "attic")
+run(1 "error UnknownSpawn: node travel: Level.RequestTravel spawn \"attic\" isn't a LevelSpawn in Scenes/b.swscene"
+    --check)
+file(REMOVE "${root}/Content/Circuits/travel.swcircuit")
 
 # ---- --level ----
 run(0 "" --level b --renderer null --frames 3 --user-dir "${TEMP}/User")

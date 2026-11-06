@@ -61,14 +61,24 @@ void Editor::play() {
                     level = entry.id;
             // Level leases (docs/AssetResidency.md), unless the Resource residency window
             // turned them off.
-            m_residency.setBudget({uint64_t(double(m_budgetCpuMiB) * 1024 * 1024),
-                                   uint64_t(double(m_budgetGpuMiB) * 1024 * 1024)});
+            m_residency.setBudget(
+                {uint64_t(double(m_budgetCpuMiB) * 1024 * 1024), uint64_t(double(m_budgetGpuMiB) * 1024 * 1024)});
             m_runtimeLevels->setResidency(m_residencyEnabled ? &m_residency : nullptr);
+            // Travel as the player does it (level_travel), and where Return to menu goes.
+            m_runtimeLevels->setStaged(m_project.levelTravel != "instant");
+            std::string menu = m_playCatalog.entry;
+            for (const shockwave::LevelEntry& entry : m_playCatalog.levels)
+                if (entry.kind == shockwave::LevelKind::Menu) {
+                    menu = entry.id;
+                    break;
+                }
+            m_runtimeLevels->setMenuLevel(menu);
             m_selectionBeforePlay = m_selection;
             m_authoredDuringPlay.emplace(std::move(m_world));
             m_world = *m_authoredDuringPlay;
             try {
-                m_runtimeLevels->start({level});
+                const shockwave::LevelEntry* entry = m_playCatalog.find(level);
+                m_runtimeLevels->start({level, entry ? entry->defaultSpawn : std::string()});
             } catch (...) {
                 m_world = std::move(*m_authoredDuringPlay);
                 m_authoredDuringPlay.reset();
@@ -139,6 +149,17 @@ void Editor::stop() {
 
 shockwave::LevelHost::Hooks Editor::levelHooks() {
     shockwave::LevelHost::Hooks hooks;
+    // Before a request is accepted: a level of the catalog, and its default spawn.
+    hooks.resolve = [this](shockwave::TravelRequest& request, shockwave::TravelError& code, std::string& problem) {
+        const shockwave::LevelEntry* entry = m_playCatalog.find(request.level);
+        if (!entry) {
+            code = shockwave::TravelError::UnknownLevel;
+            problem = "no level \"" + request.level + "\" in the level catalog";
+            return false;
+        }
+        if (request.spawn.empty()) request.spawn = entry->defaultSpawn;
+        return true;
+    };
     hooks.load = [this](const shockwave::LevelRequest& request, shockwave::World& into, std::string& problem) {
         const shockwave::LevelEntry* entry = m_playCatalog.find(request.level);
         if (!entry) {
@@ -164,8 +185,9 @@ shockwave::LevelHost::Hooks Editor::levelHooks() {
         if (m_playNetworkStart) session.setNetworkStart(*m_playNetworkStart, m_playServices);
     };
     // What a level needs resident: its scene as saved, and everything that reaches.
-    hooks.assets = [this](const shockwave::LevelRequest& request, const shockwave::World&,
-                          std::vector<shockwave::AssetCost>& assets, std::string&) {
+    hooks.assets = [this](
+                       const shockwave::LevelRequest& request, const shockwave::World&,
+                       std::vector<shockwave::AssetCost>& assets, std::string&) {
         const shockwave::LevelEntry* entry = m_playCatalog.find(request.level);
         const fs::path scene = entry ? (m_project.root / entry->scene).lexically_normal() : m_scenePath;
         if (scene.empty()) return true;   // never saved: nothing on disk to follow
@@ -252,10 +274,14 @@ void Editor::runLevelCycles() {
         c.to = here && !here->next.empty() ? here->next : std::string();
         for (const auto& level : m_playCatalog.levels)
             if (c.to.empty() && level.id != from) c.to = level.id;
-        if (c.to.empty() || !m_runtimeLevels->request({c.to})) fail("couldn't ask for another level from " + from);
+        if (c.to.empty() || !m_runtimeLevels->requestLevel({c.to})) fail("couldn't ask for another level from " + from);
         break;   // processTravel() carries it out at the end of this frame
     }
     case 2:
+        if (m_runtimeLevels->transitioning()) {   // staged: prepared, crossing at the next frame
+            --c.step;
+            break;
+        }
         if (!playing() || m_runtimeLevels->current().level != c.to)
             fail("cycle " + std::to_string(cycle) + " didn't arrive in \"" + c.to + "\"");
         if (!m_selection.empty()) fail("the selection survived travel into another level");

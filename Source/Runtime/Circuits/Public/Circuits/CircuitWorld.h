@@ -58,6 +58,10 @@ public:
     void beginPlay();
     void endPlay();
     void fixedTick(double dt);   // runs trigger events from the physics step too
+    // Level.OnTravelFinished, in every circuit (S05). The host calls it after the change.
+    void travelFinished(
+        int32_t ticket, bool succeeded, const std::string& level, const std::string& from, const std::string& code,
+        const std::string& message);
     void frame(double dt);   // input actions, then Frame; picks up edited circuits
     // Game circuit values for save games: BeforeSave runs, then they're written with set.
     void beforeSave(const std::function<void(const std::string& key, const std::string& value)>& set);

@@ -129,7 +129,7 @@ void testTravel(JobSystem& jobs) {
     CHECK(host.loadReports().size() == 1 && host.loadReports()[0].added == 3);
     tick(*host.session());
     // A -> B: the font and crate are shared and never leave; a's floor retires.
-    CHECK(host.request({"b"}) != 0);
+    CHECK(host.requestLevel({"b"}) != 0);
     host.process();
     CHECK(host.playing() && host.current().level == "b");
     CHECK(residency.find("Content/a/floor.png") == nullptr);
@@ -147,7 +147,7 @@ void testTravel(JobSystem& jobs) {
     tick(*host.session());
     std::vector<TravelResult> results;
     host.onResult = [&](const TravelResult& r) { results.push_back(r); };
-    CHECK(host.request({"huge"}) != 0);
+    CHECK(host.requestLevel({"huge"}) != 0);
     host.process();
     CHECK(results.size() == 1 && results[0].status == TravelStatus::Failed);
     CHECK(!results.empty() && results[0].error.rfind("BudgetExceeded: GPU", 0) == 0);
@@ -186,7 +186,7 @@ void testOff(JobSystem& jobs) {
     LevelHost host(world, jobs, instance, nullptr, hooks(&calls));
     host.start({"a"});
     tick(*host.session());
-    host.request({"b"});
+    host.requestLevel({"b"});
     host.process();
     CHECK(host.playing() && calls == 0 && !host.lease().valid());
     CHECK(host.loadReports().size() == 2 && host.loadReports()[1].assets == 0);
@@ -206,7 +206,7 @@ void testCyclesPlateau(JobSystem& jobs) {
     for (int cycle = 0; cycle < 100; ++cycle) {
         for (const char* level : {"b", "a"}) {
             tick(*host.session());
-            host.request({level});
+            host.requestLevel({level});
             host.process();
             CHECK(host.playing() && host.current().level == level);
         }
@@ -336,7 +336,7 @@ void testTravelOnDemand(JobSystem& jobs) {
     CHECK(loader.live.size() == 3);   // start() loads what the lease holds
     tick(*host.session());
     log.clear();
-    CHECK(host.request({"b"}) != 0);
+    CHECK(host.requestLevel({"b"}) != 0);
     host.process();
     CHECK(host.playing() && host.current().level == "b");
     // Unload before upload, then the scene: the order section 6.1 of the plan gives.
@@ -354,7 +354,7 @@ void testTravelOnDemand(JobSystem& jobs) {
     log.clear();
     std::vector<TravelResult> results;
     host.onResult = [&](const TravelResult& r) { results.push_back(r); };
-    host.request({"a"});
+    host.requestLevel({"a"});
     host.process();
     CHECK(host.playing() && host.current().level == "b" && log == (std::vector<std::string>{"plan a"}));
     CHECK(
@@ -364,7 +364,7 @@ void testTravelOnDemand(JobSystem& jobs) {
     refuse.clear();
     loader.broken = {"Content/a/floor.png"};
     tick(*host.session());
-    host.request({"a"});
+    host.requestLevel({"a"});
     host.process();
     CHECK(!host.playing() && host.failure().find("didn't load") != std::string::npos);
     CHECK(host.failure().find("AssetLoadFailed: Content/a/floor.png") != std::string::npos);
@@ -391,7 +391,7 @@ void testCyclesOnDemand(JobSystem& jobs) {
     for (int cycle = 0; cycle < 100; ++cycle)
         for (const char* level : {"b", "a"}) {
             tick(*host.session());
-            host.request({level});
+            host.requestLevel({level});
             host.process();
             CHECK(host.playing() && host.current().level == level);
         }

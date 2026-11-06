@@ -28,6 +28,7 @@
 namespace shockwave {
 
 class CircuitWorld;
+class CircuitTravel;
 
 class PlaySession {
 public:
@@ -77,7 +78,10 @@ public:
     // What game.startReason, game.levelEpoch and game.requestLevel say (LevelHost sets them).
     void setStartReason(StartReason reason) { m_context.startReason = reason; }
     void setLevelEpoch(uint64_t epoch) { m_context.levelEpoch = epoch; }
-    void setTravel(std::function<bool(const LevelRequest&)> travel) { m_context.travel = std::move(travel); }
+    // The flow game.flow() reaches, and where the level was entered (game.arrival).
+    void setFlow(GameFlow* flow) { m_context.flowHost = flow; }
+    void setArrival(LevelArrival arrival) { m_context.arrival = std::move(arrival); }
+    const GameContext& context() const { return m_context; }
     World& world() const { return m_context.world; }
 
     State state() const { return m_state; }
@@ -117,6 +121,7 @@ private:
     SubsystemCollection m_subsystems;
     GameContext m_context;
     std::unique_ptr<GameMode> m_mode;
+    std::unique_ptr<CircuitTravel> m_circuitTravel;   // the circuits' view of game.flow()
     std::optional<World> m_snapshot;
     std::optional<GraphicsSettings> m_graphicsSnapshot;
     std::filesystem::path m_saveFolder;   // setSaveFolder

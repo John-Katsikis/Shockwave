@@ -89,6 +89,18 @@ target_link_libraries(level_lifetime_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(level_lifetime_test)
 add_test(NAME level_lifetime COMMAND level_lifetime_test)
 set_tests_properties(level_lifetime PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
+# Level travel (S05): tickets, phases, cancel and failures (level_travel); game.flow() and
+# the Level.* circuit nodes (game_flow). Without a window.
+add_executable(level_travel_test LevelTravelTest.cpp)
+target_link_libraries(level_travel_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(level_travel_test)
+add_test(NAME level_travel COMMAND level_travel_test)
+set_tests_properties(level_travel PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
+add_executable(game_flow_test GameFlowTest.cpp)
+target_link_libraries(game_flow_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(game_flow_test)
+add_test(NAME game_flow COMMAND game_flow_test)
+set_tests_properties(game_flow PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 
 # Asset dependencies and residency (S04, docs/AssetResidency.md): the graph's providers,
 # problems, cycles and hashes over a project made on disk; leases, budgets and level travel

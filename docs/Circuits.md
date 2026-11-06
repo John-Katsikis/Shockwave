@@ -256,6 +256,7 @@ exec input can be reached from many outputs.
 | `Event.BeforeSave` | A save game is about to be written. | | game |
 | `Event.AfterLoad` | A save game was loaded. | | game |
 | `Event.UICommand` | A UI element's `onclick="command"` ran. Its `command` input names it. | `value`, `element`, `document` | game |
+| `Level.OnTravelFinished` | A level travel ended. Runs in the level playing afterwards: the new one after a success, the same one after a failure or cancel before it ended. | `ticket`, `succeeded`, `level`, `from`, `code`, `message` | both |
 
 Network play adds `Network.PeerJoined` and `Network.PeerLeft` (the host: outputs `slot`),
 `Network.Ready` (this machine is in play), `Network.Disconnected` (output `reason`), and a
@@ -279,6 +280,9 @@ The main groups:
 - **Math, Logic, Vector, Rotation, Convert, Text:** values.
 - **Entity:** Self, FindByName, IsValid, Spawn, SpawnAt, Destroy.
 - **Input, Audio, UI, Physics:** the game's services.
+- **Level:** RequestTravel, RestartLevel, ReturnToMenu and UseExit ask to travel, with
+  `accepted` and `refused` outputs, the ticket and its code. TravelStatus reads a ticket.
+  See [Level lifetime](LevelLifetime.md#travel-tickets-game-flow).
 - **Debug.Print:** writes to the log and the editor's Console.
 - **Component:** made for every registered component, your game's own included.
   - `Component.<Name>.Get` gives every field and `found`.

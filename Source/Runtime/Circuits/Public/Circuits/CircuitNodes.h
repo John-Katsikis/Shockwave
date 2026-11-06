@@ -50,6 +50,30 @@ class NetworkWorld;
 class ReplicationRegistry;
 }   // namespace net
 
+// Level travel as circuits see it (S05, docs/LevelLifetime.md): the session's game.flow(),
+// which GameFramework provides. Ticket ids fit an Int; 0 is no ticket.
+class CircuitTravel {
+public:
+    virtual ~CircuitTravel() = default;
+    struct Ticket {
+        int32_t id = 0;
+        std::string code;   // a TravelError name: "None" when accepted
+        std::string message;
+    };
+    struct Status {
+        bool known = false;
+        std::string phase;   // "queued", ..., "succeeded", "failed", "cancelled"
+        float progress = 0;
+        std::string code, message;
+        bool cancellable = false;
+    };
+    virtual Ticket request(const std::string& level, const std::string& spawn) = 0;
+    virtual Ticket restartLevel() = 0;
+    virtual Ticket returnToMenu() = 0;
+    virtual Ticket useExit(Entity exit) = 0;
+    virtual Status status(int32_t ticket) const = 0;
+};
+
 // What circuits can reach while they run: the session's services. Any may be null (tools
 // and tests); nodes that need a missing one do nothing.
 struct CircuitHost {
@@ -60,6 +84,7 @@ struct CircuitHost {
     const Assets* assets = nullptr;
     CircuitWorld* circuits = nullptr;   // session-owned message destination
     net::NetworkWorld* network = nullptr;   // the session's (offline too); null in tools
+    CircuitTravel* travel = nullptr;   // level travel; null without a LevelHost
 };
 
 // Events start a circuit running. Which kind of circuit may use which is checked when it
@@ -82,7 +107,8 @@ enum class CircuitEvent : uint8_t {
     PeerLeft,   // host: a player left
     NetworkReady,   // this machine's network session became Active
     Disconnected,   // the session failed or the host ended it (outputs reason)
-    GameEvent   // a registered game event (NodeDesc::eventParam names it)
+    GameEvent,   // a registered game event (NodeDesc::eventParam names it)
+    TravelFinished   // a level travel ended, delivered to the level playing afterwards
 };
 enum class CircuitKind : uint8_t { Entity, Game };
 const char* circuitEventName(CircuitEvent event);

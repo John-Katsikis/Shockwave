@@ -214,6 +214,36 @@ static void testVirtualJoystick() {
     frame(input);
 }
 
+// A key held through a level change reads as up until it's let go (Input::holdUntilReleased).
+static void key(Input& input, SDL_Scancode code, bool down) {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+    event.key.scancode = code;
+    event.key.down = down;
+    input.beginFrame();
+    input.handleEvent(event);
+    input.update(1.0);
+}
+
+static void testHoldUntilReleased() {
+    Input input;
+    input.bindAction("fire", Key::Space);
+    input.bindAction("jump", Key::J);
+    key(input, SDL_SCANCODE_SPACE, true);
+    CHECK(input.isActionDown("fire") && input.wasActionPressed("fire"));
+    input.holdUntilReleased();   // the new level starts here
+    CHECK(input.heldUntilReleased("fire") && !input.heldUntilReleased("jump"));
+    CHECK(!input.isActionDown("fire") && !input.wasActionPressed("fire") && input.actionValue("fire") == 0.0f);
+    frame(input);   // still held
+    CHECK(!input.isActionDown("fire") && input.heldUntilReleased("fire"));
+    key(input, SDL_SCANCODE_J, true);   // a new press of another action counts at once
+    CHECK(input.isActionDown("jump") && input.wasActionPressed("jump"));
+    key(input, SDL_SCANCODE_SPACE, false);   // let go: no Released for a press the level never saw
+    CHECK(!input.heldUntilReleased("fire") && !input.wasActionReleased("fire") && !input.isActionDown("fire"));
+    key(input, SDL_SCANCODE_SPACE, true);   // pressed again: it counts
+    CHECK(input.isActionDown("fire") && input.wasActionPressed("fire"));
+}
+
 int main() {
     if (!SDL_Init(SDL_INIT_EVENTS)) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -223,6 +253,7 @@ int main() {
     testFileOverridesBuiltIn();
     testVirtualGamepad();
     testVirtualJoystick();
+    testHoldUntilReleased();
     SDL_Quit();
     if (failures) {
         std::fprintf(stderr, "%d input check(s) failed\n", failures);

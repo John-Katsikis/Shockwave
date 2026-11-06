@@ -5,15 +5,19 @@ has to end one level completely before the next one starts. Its GameMode, physic
 sounds and callbacks all go, and nothing of the old level may leak into the new one. In
 the editor, a level change during Play must never touch the scene you're editing.
 
-This is S03 of [the shipping plan](ShippingImplementation.md). It adds the lifetime rules
-and a working move between levels. Loading in the background, loading screens, menus and
-arriving at a spawn come with S04 and S05. The level catalog itself is
-[Levels.md](Levels.md).
+S03 of [the shipping plan](ShippingImplementation.md) added the lifetime rules and a
+working move between levels. S04 added asset leases and loading on demand
+([AssetResidency.md](AssetResidency.md)). S05's first part, described under
+[Travel tickets](#travel-tickets-game-flow), turns travel into tickets with phases,
+progress, cancel and stable error codes. It also adds arrival at a spawn, level exits,
+circuit nodes and a clean start for input and the camera. The application's own menu,
+pause, loading and error screens and `--flow-test` come in S05's second part. The level
+catalog itself is [Levels.md](Levels.md).
 
 ## Asking for another level
 
-From any GameMode callback, or from a UI handler during Play. A circuit node for it comes
-with S05.
+From any GameMode callback, from a UI handler during Play, or from a circuit
+(`Level.RequestTravel`).
 
 ```cpp
 void fixedUpdate(GameContext& game, double) override {
@@ -22,13 +26,15 @@ void fixedUpdate(GameContext& game, double) override {
 }
 ```
 
-The spawn travels with the request, and the started hook sees it. Placing the player
-there is S05's job. The move doesn't happen inside the call. The level keeps running to the end of the frame,
+The spawn travels with the request. An empty one is the catalog's `default_spawn`, or
+the scene's `start` spawn. The new level sees where it was entered as `game.arrival`
+(the spawn's id and world transform, `found` when there is one), and its GameMode puts the
+player there in `beginPlay`. The move doesn't happen inside the call. The level keeps running to the end of the frame,
 then ends, and the next one starts. So it's safe from `fixedUpdate`, `frame`, a button's
 handler, or even `beginPlay`.
 
-`requestLevel` returns false when nothing can travel. That's a session without levels (a
-tool, a test) or a request from a level that has already ended.
+`requestLevel` returns false when the request is refused. `game.flow().request` says why
+(below).
 
 `game.startReason` says why a level's session started: `Fresh`, `RestoreSave`, or
 `OnlineBaseline` for a client joining a host. `game.levelEpoch` says which level it is.
@@ -64,7 +70,86 @@ Every accepted request ends exactly once, through `onResult`:
 | --- | --- |
 | `Succeeded` | the new level is playing |
 | `Failed` | it didn't load (the current level plays on), it didn't start (nothing is playing; the player goes back to the entry level, the editor stops Play), or it's a redirect cycle |
-| `Cancelled` | another request replaced it, or Play stopped first, even while it loaded |
+| `Cancelled` | it was cancelled before the current level ended, or Play stopped first, even while it loaded |
+
+## Travel tickets (game flow)
+
+`game.flow()` (`GameFramework/GameFlow.h`) is the whole interface. `LevelHost` implements
+it in the player, the editor and tests. Each request gets a ticket:
+
+```cpp
+const shockwave::TravelTicket t = game.flow().request("factory", "entrance");
+if (!t) showError(shockwave::travelErrorName(t.error), t.message);   // Busy, UnknownLevel, ...
+...
+if (auto s = game.flow().status(t.id)) loadingBar.set(s->progress);
+game.flow().cancel(t.id);   // until the current level starts ending
+game.flow().restartLevel();  // this level again, at the spawn it was entered at
+game.flow().returnToMenu();  // the catalog's first menu level
+game.flow().useExit(door);   // a LevelExit: its destination and spawn
+```
+
+**One travel at a time.** Another request while a ticket is active is refused as `Busy`,
+and the active ticket carries on. So a button pressed twice, or two exits touched in the
+same frame, travel once. A level asking for another from its `beginPlay` (a redirect) is
+the exception, as before.
+
+**Phases.** A ticket goes `queued`, `validating`, `reading`, `preparing`,
+`awaiting_boundary`, `retiring`, `uploading`, `starting`, then ends `succeeded`, `failed`
+or `cancelled`. Its progress uses the plan's weights: validate .05, read .15, prepare .25,
+retire .10, upload .25, start .20. It never goes down and is 1 only once it succeeded.
+The real milliseconds per phase are in the load report.
+
+**Staged travel** (`level_travel staged`, the default). The change takes two frames. The
+first `process()` validates, reads and prepares the next level, then pauses the current
+one at `awaiting_boundary`. A frame renders, so a loading screen can show and the ticket
+can still be cancelled. The next `process()` retires the old level and starts the new
+one. `level_travel instant` in the project, or `player --instant-travel`, does it all in
+one frame, as in S03.
+
+**Cancel.** Until `retiring`, `cancel(ticket)` drops the prepared level. The current level
+plays on, unpaused, untouched, with the same epoch. After that it returns
+`TooLateToCancel` and the travel carries on. An ended ticket gives `AlreadyFinished`,
+and an unknown one `UnknownTicket`. A cancel never touches another ticket.
+
+**Codes.** Refused requests and ended tickets carry a stable code:
+
+| Code | When |
+| --- | --- |
+| `Busy` | another travel is active |
+| `NotPlaying` | nothing is playing, or a context without a flow (tools, tests) |
+| `StaleLevel` | asked from a level that has ended (a kept `game.flow()` or callback) |
+| `UnknownLevel` | not in the level catalog (refused before a ticket) |
+| `UnknownSpawn` | the destination has no LevelSpawn with that id (fails before the current level ends) |
+| `InvalidRequest` | no level named, `resetCampaign` outside `NewGame`, a disabled or used exit, no menu level |
+| `AuthorityRequired` | during network play: map travel is the host's, and comes with S11 |
+| `LoadFailed`, `BudgetExceeded` | the scene or its closure didn't load or fit (before the boundary: the level plays on) |
+| `StartFailed` | the new level didn't start: nothing plays |
+| `Cancelled`, `RedirectCycle` | cancelled or stopped; levels kept redirecting |
+
+**Completions** are delivered once per ticket, after the change has finished, never in the
+middle of one. They go to `LevelHost::onResult`, to `subscribe()` observers (the token
+ends the subscription, and is safe to outlive the host), and to `Level.OnTravelFinished`
+in the circuits of the level playing then. That's the new level after a success, or the
+same level after a failure or cancel before the boundary. A level that has ended never
+hears about the next one. The last 64 ended tickets stay queryable with `status()`.
+
+**Exits.** `useExit(entity)` reads the entity's `LevelExit`. A disabled one is refused. A
+one-shot exit is disabled once its request is accepted, so a second contact doesn't
+travel again. What touches the exit (a trigger, a key) is the game's.
+
+**Arriving clean.** Once the new level has started, the engine counts every input action
+held through the change as released until it is let go (`Input::holdUntilReleased`), so
+a held fire or jump doesn't fire in the new level. The camera's temporal history is cut,
+and the time spent loading isn't turned into a burst of ticks
+(`Engine::discardFrameTime`). Previous transforms are already the new level's own, since
+it starts from its own world.
+
+**Circuits.** `Level.RequestTravel` (level, spawn), `Level.RestartLevel`,
+`Level.ReturnToMenu` and `Level.UseExit` have `accepted` and `refused` outputs, with the
+ticket and code. `Level.TravelStatus` reads a ticket, and `Level.OnTravelFinished` says how
+it ended ([CircuitNodes.md](CircuitNodes.md)). `player --check` fails a
+`Level.RequestTravel` whose literal level isn't in the catalog (`UnknownLevel`) or whose
+literal spawn isn't in that level (`UnknownSpawn`).
 
 ## The rules it keeps
 
@@ -72,7 +157,7 @@ Every accepted request ends exactly once, through `onResult`:
 - **Nothing from an old level reaches the new one.**
   - An `EntityRef` made in level A stops resolving once B is in, even when B has an
     entity with the same handle. `World::levelEpoch()` tells them apart.
-  - A `requestLevel` callback kept from A is refused.
+  - A `game.flow()` kept from A is refused (`StaleLevel`).
   - A save game loaded in place keeps the same epoch, so its refs stay valid.
 - **No loading forever.** Levels that ask for another before they've ticked are
   redirects. More than 8 in a row fail as a cycle, and the message lists the chain.
@@ -80,7 +165,10 @@ Every accepted request ends exactly once, through `onResult`:
 - **Settings survive travel.** A level's session keeps the player's graphics settings
   (`PreserveUserSettings`). The application's own settings are put back once, when
   Play stops.
-- **Hot reload waits.** The editor doesn't reload game code while a request is waiting.
+- **Hot reload waits.** The editor doesn't reload game code while a request is waiting
+  or prepared at the boundary.
+- **Online levels don't change.** During network play a request is refused as
+  `AuthorityRequired` instead of silently disconnecting the peers. Map rotation is S11.
 
 ## Session policies
 
@@ -161,11 +249,22 @@ stop before the objects that read from them.
 
 - `GameFramework/LevelLifetime.h`: the policies, `StartReason`, `LevelRequest` and
   `TravelResult`.
-- `GameFramework/LevelHost.h`: the host.
+- `GameFramework/GameFlow.h`: tickets, phases, codes, `LevelFlow` (`game.flow()`).
+- `GameFramework/LevelHost.h`: the host, which is the GameFlow.
+- `Engine/Levels.h`: `levelArrival`, `findLevelSpawn`.
+- `Input/Input.h`: `holdUntilReleased`.
 - `GameFramework/PlaySession.h`: the policies on a session.
 - `Engine/World.h` (`levelEpoch`) and `Engine/EntityRef.h`: refs from old levels.
 - Tests:
   - `level_lifetime` (unit): lifecycles counted exactly, requests from each callback,
     failures, stale refs and callbacks, cycles, and 100 editor-style cycles;
   - `level_lifetime_editor` (gpu): the real editor's 100 cycles on
-    `Tests/fixtures/levels`.
+    `Tests/fixtures/levels`;
+  - `level_travel` (unit): staged phases and progress, A to B to A, spawns, restart and
+    menu, every refusal code, cancel before and after the boundary, a user's pause kept,
+    two exits in one frame, failures before and after the boundary, Stop while queued,
+    reading and at the boundary, completions exactly once, bounded history;
+  - `game_flow` (unit): a game circuit using every `Level.*` node, completions reaching
+    only the level playing afterwards, and stale and missing flows refusing;
+  - `input` (unit): a key held through a level change reads as up until let go;
+  - `level_check_cli` (integration): `--check` on circuit travel literals.

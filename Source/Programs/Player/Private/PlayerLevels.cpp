@@ -225,6 +225,19 @@ fs::path Player::sceneForLevel(const std::string& level) const {
 
 shockwave::LevelHost::Hooks Player::levelHooks() {
     shockwave::LevelHost::Hooks hooks;
+    // Before a request is accepted: a level of the catalog, and its default spawn.
+    hooks.resolve = [this](shockwave::TravelRequest& request, shockwave::TravelError& code, std::string& error) {
+        const shockwave::LevelEntry* entry = m_catalog.find(request.level);
+        if (!entry) {
+            std::string have;
+            for (const auto& l : m_catalog.levels) have += (have.empty() ? "" : ", ") + l.id;
+            code = shockwave::TravelError::UnknownLevel;
+            error = "no level \"" + request.level + "\" in the catalog (there are: " + have + ")";
+            return false;
+        }
+        if (request.spawn.empty()) request.spawn = entry->defaultSpawn;
+        return true;
+    };
     hooks.load = [this](const shockwave::LevelRequest& request, shockwave::World& into, std::string& error) {
         const fs::path scene = sceneForLevel(request.level);
         if (scene.empty()) {
@@ -267,13 +280,24 @@ void Player::startLevels(const std::string& level, shockwave::StartReason reason
         // Level leases (docs/AssetResidency.md): off with --no-asset-residency.
         m_residency.setBudget(m_tool.assetBudget);
         m_levels->setResidency(m_tool.assetResidency ? &m_residency : nullptr);
+        // Travel over two frames (level_travel staged), and where returnToMenu goes: the
+        // catalog's first menu level, else its entry.
+        m_levels->setStaged(!m_tool.instantTravel && m_project.levelTravel != "instant");
+        std::string menu = m_catalog.entry;
+        for (const shockwave::LevelEntry& l : m_catalog.levels)
+            if (l.kind == shockwave::LevelKind::Menu) {
+                menu = l.id;
+                break;
+            }
+        m_levels->setMenuLevel(menu);
         m_levels->onLoadReport = [this](const shockwave::LoadReport& report) { recordLoad(report); };
         m_levels->onResult = [this](const shockwave::TravelResult& result) {
             if (result.status == shockwave::TravelStatus::Failed)
                 std::fprintf(stderr, "Player: level \"%s\": %s\n", result.request.level.c_str(), result.error.c_str());
         };
     }
-    m_levels->start({level}, reason);
+    const shockwave::LevelEntry* entry = m_catalog.find(level);
+    m_levels->start({level, entry ? entry->defaultSpawn : std::string()}, reason);
     m_sceneAssets.release();   // on demand: the level's lease holds them now
 }
 

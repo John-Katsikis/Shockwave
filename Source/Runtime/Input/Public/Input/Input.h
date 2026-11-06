@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -179,6 +180,12 @@ public:
     // -1..1 from a pair of actions, e.g. axis("move_left", "move_right"). Analog on sticks.
     float axis(const std::string& negative, const std::string& positive, uint8_t sources = AllInputSources) const;
 
+    // A barrier, for a new level (S05, docs/LevelLifetime.md): every action held now reads
+    // as up (value 0, never pressed) until it's let go, so a fire or jump held through a
+    // loading screen doesn't carry into the next level. Main thread.
+    void holdUntilReleased();
+    bool heldUntilReleased(const std::string& action) const { return m_barred.count(action) > 0; }
+
     // Every action and its bindings as they apply now (built-in, then the file's).
     const std::map<std::string, std::vector<InputBinding>>& actions() const { return m_actions; }
     InputBindings currentBindings() const;   // the same, as a bindings file would hold them
@@ -273,6 +280,8 @@ private:
     std::vector<InputDevice> m_devices;
     std::vector<Handles> m_handles;   // parallel to m_devices
     std::optional<InputBinding> m_lastPressed;
+    std::set<std::string, std::less<>> m_barred;   // holdUntilReleased: held, read as up
+    std::set<std::string, std::less<>> m_freed;   // let go this frame: no Released either
 
     std::mutex m_feedbackMutex;
     std::vector<Feedback> m_feedback;
