@@ -53,7 +53,8 @@ Input& GameContext::input() const {
 }
 
 PlaySession::PlaySession(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine)
-    : m_instance(instance), m_context{world, jobs, engine, m_subsystems, nullptr, StartReason::Fresh, 0, nullptr, {}} {}
+    : m_instance(instance),
+      m_context{world, jobs, engine, m_subsystems, nullptr, StartReason::Fresh, 0, nullptr, {}, &m_ownCampaign} {}
 
 PlaySession::~PlaySession() {
     try {
@@ -136,6 +137,10 @@ void PlaySession::start() {
             world, m_context.engine ? &m_context.engine->assets() : nullptr, m_context.jobs);
         SaveGames& saves = m_subsystems.add<SaveGames>(
             world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr, m_saveFolder, m_saveScene);
+        saves.setIdentity(m_saveIdentity);
+        saves.setCampaign(m_context.campaignState);
+        if (m_context.flowHost)
+            saves.setLevel(m_context.flowHost->currentLevel().level, m_context.flowHost->currentLevel().spawn);
         // After physics, so it is destroyed before physics; before the GameMode, so
         // beginPlay sees its role. A host listens and a client connects here.
         // Offline it only spawns manifest prefabs as plain copies.
@@ -282,12 +287,42 @@ void PlaySession::collectInput(double frameDt) {
 SaveGames& GameContext::saves() const { return subsystems.get<SaveGames>(); }
 SaveGames* PlaySession::saves() const { return m_subsystems.find<SaveGames>(); }
 
-// A finished load replaces the world between ticks. Physics bodies belong to the old
-// entities, so physics starts over from the loaded components; audio and UI keep going
-// and catch up on their next synchronize.
+// A finished load replaces the world between ticks. A save from another level travels
+// there first (LevelHost brings it back through restore()); one from this level, or from
+// before saves knew their level, goes in here.
 void PlaySession::applyLoadedSave() {
     SaveGames* saves = this->saves();
-    if (!saves || !saves->applyLoaded()) return;
+    if (!saves) return;
+    std::optional<SaveRestore> loaded = saves->takeLoaded();
+    if (!loaded) return;
+    const std::string& level = loaded->info.level;
+    if (!level.empty() && m_context.flowHost && level != m_context.flowHost->currentLevel().level) {
+        TravelRequest request;
+        request.level = level;
+        request.spawn = loaded->info.spawn;
+        request.reason = TravelReason::LoadSave;
+        request.fromEpoch = m_context.levelEpoch;
+        request.restore = std::make_shared<SaveRestore>(std::move(*loaded));
+        const TravelTicket ticket = m_context.flowHost->request(std::move(request));
+        if (!ticket)
+            saves->fail(
+                "the save is from level \"" + level + "\", and going there was refused: " +
+                std::string(travelErrorName(ticket.error)) + ": " + ticket.message);
+        return;
+    }
+    applySave(std::move(*loaded));
+}
+
+void PlaySession::restore(SaveRestore restore) {
+    if (!active() || !saves()) throw std::logic_error("PlaySession::restore needs a started session");
+    applySave(std::move(restore));
+}
+
+// Physics bodies belong to the old entities, so physics starts over from the loaded
+// components; audio and UI keep going and catch up on their next synchronize.
+void PlaySession::applySave(SaveRestore restore) {
+    SaveGames* saves = this->saves();
+    saves->apply(std::move(restore));
     World& world = m_context.world;
     m_subsystems.replace<PhysicsWorld>(world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
     physics()->synchronize();

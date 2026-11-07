@@ -41,6 +41,10 @@ struct Project {
     // The application's own screens (app_shell, docs/AppShell.md): "off", "all", or which
     // of menu, level_select, pause, loading and error are on. Loading and error by default.
     std::string appShell = "loading error";
+    // The game's save data schema (save_schema, docs/SaveGames.md#compatibility): raise it
+    // when what the game keeps in saves changes meaning; older saves are then migrated
+    // by the game, and newer ones refused.
+    int saveSchema = 1;
     int meshLods = 4;   // simpler levels of detail per mesh, 0..7 (mesh_lods)
     double lodErrorPixels = 1.0;   // how far a level may stray on screen, 0 = always full detail (lod_error_pixels)
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)

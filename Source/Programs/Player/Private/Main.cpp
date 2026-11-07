@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
         std::filesystem::path effectInfo;   // --effect-info
+        std::filesystem::path saveInfoFile, saveMigrateFile;   // --save-info, --save-migrate
         std::filesystem::path postProcessSchema, postProcessInfo, lutNeutral;   // A05/A06 tools, no project
         uint32_t lutNeutralSize = 0;
         std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project
@@ -98,6 +99,10 @@ int main(int argc, char** argv) {
             }
             if (arg == "--flow-test" && i + 1 < argc) {
                 tool.flowTest = argv[++i];
+                continue;
+            }
+            if ((arg == "--save-info" || arg == "--save-migrate") && i + 1 < argc) {
+                (arg == "--save-info" ? saveInfoFile : saveMigrateFile) = argv[++i];
                 continue;
             }
             if (arg == "--graphics" && i + 1 < argc)
@@ -588,6 +593,10 @@ int main(int argc, char** argv) {
                     "[--circuit-steps N]\n"
                     "player --circuit file --dump        compile a .swcircuit and print its bytecode\n"
                     "player --saves [--json file]        list the project's save games (Saved/SaveGames)\n"
+                    "player --save-info file.swsave [--json file]\n"
+                    "                                    a save's envelope, and whether this game can load it\n"
+                    "player --save-migrate file.swsave --output new.swsave\n"
+                    "                                    a copy at this game's save format and schema\n"
                     "player --save slot [--frames N]     play N frames (default 30), save to the slot, quit\n"
                     "player --load slot|file.swsave      start Play from a save game (add --screenshot to see it)\n"
                     "player --check file.swsave          check a save game; --check alone checks them all\n"
@@ -703,6 +712,8 @@ int main(int argc, char** argv) {
             mode(tool.optimise, "--optimise");
             mode(!tool.save.empty(), "--save");
             mode(tool.listSaves, "--saves");
+            mode(!saveInfoFile.empty(), "--save-info");
+            mode(!saveMigrateFile.empty(), "--save-migrate");
             mode(networkInfo, "--network-info");
             mode(!networkSchema.empty(), "--network-schema");
             mode(releaseInfo, "--release-info");
@@ -758,11 +769,11 @@ int main(int argc, char** argv) {
             if (tool.assetLoading == "levels" && !tool.assetResidency)
                 throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
             if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
-                lightingImport.empty() && tool.mode != Tool::Mode::NetworkManifest &&
+                lightingImport.empty() && saveMigrateFile.empty() && tool.mode != Tool::Mode::NetworkManifest &&
                 tool.mode != Tool::Mode::AssignNetworkKeys && tool.mode != Tool::Mode::LightingAssignIds)
                 throw player::UsageError("--output goes with --package, --net-encode, --network-manifest, "
-                                         "--assign-network-keys, --lighting-assign-ids, --lighting-export or "
-                                         "--lighting-import");
+                                         "--assign-network-keys, --lighting-assign-ids, --lighting-export, "
+                                         "--lighting-import or --save-migrate");
             if ((package.development || package.noBuild || package.noArchive) && !package.requested)
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
             // --level picks a catalog level; guessing which wins against another start is
@@ -964,10 +975,13 @@ int main(int argc, char** argv) {
             return 0;
         if (netTest.requested) return player::netTest(project, netTest, tool.benchmarkJson);   // no window or game code
         if (steamStatus) return player::steamStatus(project, steamStatus == 2);   // no game module or window
-        if (tool.listSaves)
+        if (tool.listSaves || !saveInfoFile.empty()) {   // only read files
+            const auto identity = player::saveIdentityFor(project, tool.userPaths ? &*tool.userPaths : nullptr);
+            if (!saveInfoFile.empty()) return player::saveInfo(project, saveInfoFile, identity, tool.benchmarkJson);
             return player::listSaves(
-                project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(),
-                tool.benchmarkJson);   // only reads files
+                project, tool.userPaths ? tool.userPaths->saves() : std::filesystem::path(), identity,
+                tool.benchmarkJson);
+        }
         // --release-info loads every level's scene to follow the links between them, so it
         // runs with the game module, like --check (no window or GPU).
         if (releaseInfo) tool.mode = Tool::Mode::ReleaseInfo;
@@ -987,6 +1001,15 @@ int main(int argc, char** argv) {
         // Multiplayer tools read files and the game's registered types; no window or GPU.
         if (networkInfo) return player::networkInfo(project, gameModule->module(), tool.benchmarkJson);
         if (!networkSchema.empty()) return player::writeNetworkSchema(gameModule->module(), networkSchema);
+        if (!saveMigrateFile.empty()) {
+            // The game's own migrations: its GameInstance, without a window or Play.
+            const auto instance = shockwave::makeGameInstance(&gameModule->module());
+            auto identity = player::saveIdentityFor(project, tool.userPaths ? &*tool.userPaths : nullptr);
+            identity.migrate = [&instance](int from, shockwave::SaveInfo& save, std::string& why) {
+                return instance->migrateSave(from, save, why);
+            };
+            return player::saveMigrate(project, saveMigrateFile, output, identity);
+        }
         shockwave::EngineConfig config;
         config.window = {project.name, project.width, project.height, tool.graphics.vsync};
         config.tickRate = project.tickRate;

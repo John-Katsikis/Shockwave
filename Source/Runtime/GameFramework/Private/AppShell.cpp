@@ -217,6 +217,7 @@ void AppShell::choose() {
         next = ShellScreen::Menu;
     }
     if (next != m_screen) {
+        if (next == ShellScreen::Menu) refreshContinue();   // a save may have been made since
         // A screen opens on its first page, without the last one's complaint.
         if (next == ShellScreen::Menu || next == ShellScreen::Pause) m_page = "main";
         if (m_screen != ShellScreen::None || next != ShellScreen::None) m_message.clear();
@@ -225,6 +226,18 @@ void AppShell::choose() {
     for (int s = 1; s < 5; ++s)
         if (m_documents[s].valid())
             if (UIDocument* doc = m_world.get<UIDocument>(m_documents[s])) doc->visible = int(m_screen) == s;
+}
+
+void AppShell::refreshContinue() {
+    if (!m_setup.continueReason) {
+        m_continueReason = "No saved game to continue yet";
+        return;
+    }
+    try {
+        m_continueReason = m_setup.continueReason();
+    } catch (const std::exception& e) {
+        m_continueReason = e.what();
+    }
 }
 
 void AppShell::publish() {
@@ -262,10 +275,10 @@ void AppShell::publish() {
     const bool newGame = !m_setup.newGameLevel.empty();
     ui.setValue("can_new_game", newGame);
     ui.setValue("new_game_reason", std::string_view(newGame ? "" : "This game has no first level to start in"));
-    // Saves and checkpoints across levels arrive with campaign progress (S06), settings
-    // with S08: the buttons are there, disabled, saying why.
-    ui.setValue("can_continue", false);
-    ui.setValue("continue_reason", std::string_view("No saved game to continue yet"));
+    ui.setValue("can_continue", m_continueReason.empty());
+    ui.setValue("continue_reason", std::string_view(m_continueReason));
+    // Checkpoints arrive with S06 part 2, settings with S08: the buttons are there,
+    // disabled, saying why.
     ui.setValue("can_restart_checkpoint", false);
     ui.setValue("checkpoint_reason", std::string_view("No checkpoint reached yet"));
     ui.setValue("settings_reason", std::string_view("Player settings aren't available in this build yet"));
@@ -395,7 +408,18 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
         if (m_setup.newGameLevel.empty()) return refuse(why, "This game has no first level to start in");
         return request(to(m_setup.newGameLevel, TravelReason::NewGame, true), send);
     }
-    if (command == "continue") return refuse(why, "No saved game to continue yet");
+    if (command == "continue") {
+        refreshContinue();
+        if (!m_continueReason.empty() || !m_setup.continueGame) return refuse(why, m_continueReason);
+        TravelRequest r;
+        std::string reason;
+        if (!m_setup.continueGame(r, reason)) {
+            m_continueReason = reason.empty() ? "No saved game to continue yet" : reason;
+            return refuse(why, m_continueReason);
+        }
+        r.reason = TravelReason::LoadSave;
+        return request(std::move(r), send);
+    }
     if (command == "level_select") {
         if (!value("can_level_select").flag()) return refuse(why, "This game has no level select");
         return page("levels");

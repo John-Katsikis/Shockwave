@@ -79,6 +79,111 @@ Entities come back with the same handles they had when saved. An `EntityRef` you
 in `beginPlay`, such as `game.find("Player")`, still points at the player after a load,
 as long as that entity existed when the game was saved.
 
+## Keep progress across levels
+
+`game.saves()` values belong to the level you're in: they're gone after travel. Progress
+that belongs to the whole game, such as unlocked levels, keys or the story so far, goes in
+`game.campaign()` instead.
+
+```cpp
+game.campaign().set("keys", keys + 1);
+if (game.campaign().getBool("met_the_captain")) ...
+```
+
+It has the same calls as the values (`set`, `get`, `getInt`, `getNumber`, `getBool`,
+`has`), plus `erase`.
+
+- It survives travel, and goes into every save.
+- A load brings back the campaign from the save.
+- **New game**, after the player confirms, clears it.
+- **Restart level** puts it back as it was when you entered the level. A key picked up
+  since then isn't kept, so the player can't take it twice.
+- With the [application shell](AppShell.md), New game asks first when the campaign holds
+  something.
+
+## Saves from another level
+
+A save remembers which level it was made in, and the spawn that level was entered at.
+Loading it from another level travels there first, through the loading screen, as a
+`LoadSave` travel. The new level starts with `game.startReason` set to `RestoreSave`.
+Before its first tick, the save replaces the world, then `afterLoad` runs.
+
+A save from the level you're in loads in place, as before.
+
+The shell's **Continue** loads the newest save this game and profile can load. It skips
+saves that are damaged or belong to someone else, and logs why.
+
+## Compatibility
+
+Each save says which game it belongs to:
+
+- the release contract's `application_id`;
+- the player profile;
+- the game's save schema;
+- the release version that wrote it.
+
+Loading refuses another game's save (`WrongGame`) and another profile's (`WrongProfile`).
+A different release version still loads, since the version is only there for information.
+
+When what your game keeps in saves changes meaning, raise `save_schema` in the
+`.swproject`. It starts at 1. Then step older saves up in your `GameInstance`:
+
+```cpp
+bool migrateSave(int fromSchema, SaveInfo& save, std::string& error) const override {
+    if (fromSchema == 1) {                       // 1 -> 2: coins became gold
+        save.values["gold"] = save.values["coins"];
+        save.values.erase("coins");
+    }
+    return true;                                 // false, with error, refuses the save
+}
+```
+
+It runs once per step, oldest first: a schema 1 save in a schema 3 game calls it with 1,
+then with 2. It runs on a job worker with the save on its own, so change only `save`.
+The file on disk is never changed. A save from a newer schema than the game is refused
+(`NewerSchema`).
+
+Saves from before this (`save_game 1`) still load, in place, as schema 1. They have no
+level, game or campaign, so the campaign you have stays as it is.
+
+## When saving goes wrong
+
+Every problem has a stable code at the start of its message (`lastError()`, the console,
+`--save-info`):
+
+| Code | What happened |
+|---|---|
+| `Corrupt` | The checksum doesn't match: the file is damaged or cut short. A damaged slot loads its backup instead, if it has one, and says so. |
+| `NewerFormat`, `NewerSchema` | Written by a newer engine or a newer version of the game |
+| `WrongGame`, `WrongProfile` | Another game's or another player's save |
+| `MigrationFailed` | Your `migrateSave` refused it |
+| `TooLarge` | Over the reader's limits: 256 MiB, 4096 values, 64 KiB per value |
+| `Conflict` | Another copy of the game saved this slot since this one read it |
+| `WriteFailed` | The disk is full, read-only or refused the file |
+| `Busy` | Two saves are still being written |
+| `UnavailableDuringNetworkPlay` | Saving is off online |
+
+How a save is written:
+
+1. The world is copied between ticks.
+2. The copy is written to a temporary file with a unique name, next to the slot.
+3. The temporary file is flushed to the disk.
+4. The previous save is copied to `<slot>.swsave.bak`.
+5. The temporary file is renamed over the slot, which replaces it whole or not at all.
+6. On Linux and macOS, the folder is flushed too.
+
+A crash or a full disk at any step leaves the previous save as it was. Saves are written
+in order, one at a time, and at most two can wait.
+
+A slot remembers how many times it was written (`revision`). If another copy of the game
+wrote it after this one read it, the save fails with `Conflict` and nothing is
+overwritten. What it would have written is kept as `<slot>.swsave.conflict`. Load the slot
+again to save over it.
+
+The checksum catches damage, not cheating: offline saves are yours to edit. After editing
+one by hand, delete its `checksum` line and it loads as an edited save. To get a new
+checksum, run `player --save-migrate`.
+
 ## Use the editor
 
 Open **Window > Save Games**. It lists the project's saves, newest first, with their
@@ -117,7 +222,30 @@ the scene the save came from, unless you pass `--scene`.
 ./build/bin/player Games/Sample/Sample.swproject --saves --json saves.json
 ```
 
-Lists the saves. With `--json` it also writes them, values included, to a file.
+Lists the saves, including damaged ones and why they can't load. With `--json` it also
+writes them to a file: each save's envelope, values and campaign, `loadable`, and the
+problem's `code`.
+
+```sh
+./build/bin/player Games/Sample/Sample.swproject --save-info Saved/SaveGames/slot1.swsave
+```
+
+Shows one save's envelope: format, schema, revision, checksum, game, profile, level and
+values. It also says whether this game and profile can load it, exiting 1 when they
+can't. `--json file` (or `-`) writes the same as `--saves` does for one save.
+
+```sh
+./build/bin/player Games/Sample/Sample.swproject --save-migrate old.swsave --output new.swsave
+```
+
+Writes a copy at this game's format and schema:
+
+- it runs your migrations;
+- it fills in the level from the save's scene;
+- it gives the copy a new checksum;
+- it keeps the entities exactly as they were.
+
+It never writes over the file it reads, or over a file that already exists.
 
 ```sh
 ./build/bin/player Games/Sample/Sample.swproject --check
@@ -143,12 +271,19 @@ A save starts like any scene, then adds header lines before the first entity:
 ```text
 # Shockwave scene
 shockwave_scene 2
-save_game 1
+save_game 2
+checksum 5f0c3e1a9b2d4c77
+application "shockwave.sample"
+schema 1
+profile "default"
+revision 3
+level "startup"
 title "Three pulses"
 scene "Scenes/main.swscene"
 saved_at "2026-10-11 10:37:21"
 play_time 55.400
 entities 17
+campaign keys "2"
 value pulses "4"
 entity_ids 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
 
@@ -160,12 +295,19 @@ end
 
 | Line | Meaning |
 |---|---|
-| `save_game 1` | Marks the file as a save. Required. |
+| `save_game 2` | Marks the file as a save, and its format. Required. Format 1 files still load. |
+| `checksum` | FNV-1a of the whole file without this line. Delete it after editing by hand. |
+| `application`, `profile` | Which game and player it belongs to |
+| `schema` | The game's `save_schema` when it was written |
+| `content` | The release version that wrote it, for information |
+| `revision` | How many times the slot has been written |
+| `level`, `spawn` | The level it was saved in, and the spawn that level was entered at |
 | `title` | The title given to `save()`. Optional. |
-| `scene` | The scene Play started from, relative to the project. |
+| `scene` | The level's scene, relative to the project |
 | `saved_at` | When it was saved, in UTC. |
 | `play_time` | Seconds of play, carried over through loads. |
 | `entities` | How many entities follow. Shown in lists. |
+| `campaign <key> "<text>"` | One value from `game.campaign()` |
 | `value <key> "<text>"` | One value from `game.saves().set`. |
 | `entity_ids` | The handle of each entity block, in order: `index`, or `index:generation`. Long lists wrap onto more `entity_ids` lines. |
 
@@ -185,8 +327,7 @@ from the prefab when it loads.
 - `save()` copies the world on the main thread. Copying is fast, and it's what makes
   the save consistent. Turning the copy into text and writing the file happen on a job
   worker, so saving doesn't hitch the frame.
-- Files are written to a temporary file and then renamed, so a crash mid-save never
-  damages the previous save.
+- Files are written durably: see [When saving goes wrong](#when-saving-goes-wrong).
 - `load()` reads and parses on a worker too. Between two ticks, the session swaps the
   new world in, rebuilds physics from the loaded components (velocities included), lets
   audio catch up, then calls `afterLoad`.
@@ -203,5 +344,5 @@ from the prefab when it loads.
   `afterLoad`.
 - Sounds that are already playing keep playing.
 - Saves are plain text and not compressed or encrypted.
-- On a shipped game, saves go to the project's `Saved` folder. A per-user location will
-  come with packaging.
+- A save is still a snapshot of the whole level. Checkpoints, rewards granted only once,
+  and enemies that stay dead in a level you come back to arrive with S06 part 2.

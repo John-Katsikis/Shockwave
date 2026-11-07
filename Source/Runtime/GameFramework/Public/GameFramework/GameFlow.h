@@ -35,6 +35,8 @@
 
 namespace shockwave {
 
+struct SaveRestore;
+
 enum class TravelReason { NewGame, Exit, Restart, Checkpoint, LoadSave, Menu, OnlineMap };
 const char* travelReasonName(TravelReason reason);   // "new_game", "exit", "restart", ...
 
@@ -87,6 +89,9 @@ struct TravelRequest {
     TravelReason reason = TravelReason::Exit;
     bool resetCampaign = false;   // only with NewGame, after the player confirmed (S06)
     uint64_t fromEpoch = 0;   // the level asking (LevelFlow sets it); 0: the application
+    // LoadSave: the save read for this level, put in once it has started (before its first
+    // tick). SaveGames::load and the shell's Continue set it.
+    std::shared_ptr<SaveRestore> restore;
 };
 
 // What a request returned: a ticket, or why there's none.

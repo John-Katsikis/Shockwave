@@ -308,6 +308,17 @@ struct ShellRig {
             {"boom", "", false, true}};
         setup.quit = [this] { quit = true; };
         setup.hasProgress = [this] { return progress; };
+        setup.continueReason = [this] { return continueReason; };
+        setup.continueGame = [this](TravelRequest& r, std::string& why) {
+            if (!continueReason.empty()) return (why = continueReason), false;
+            r.level = "b";
+            r.restore = std::make_shared<SaveRestore>();
+            buildLevel(r.restore->world, "b");
+            r.restore->world.add<Name>(r.restore->world.create(), Name{"restored"});
+            r.restore->info.format = 2;
+            r.restore->info.campaign["chapter"] = "2";
+            return true;
+        };
         shell = std::make_unique<AppShell>(nullptr, *host, setup);
         frame();
     }
@@ -324,6 +335,7 @@ struct ShellRig {
     std::string value(const char* name) const { return shell->value(name).toText(); }
     bool quit = false;
     bool progress = false;
+    std::string continueReason = "No saved game to continue yet";
 };
 
 void testShellScreens(const fs::path& content) {
@@ -451,6 +463,19 @@ void testShellFlow(const fs::path& content) {
     CHECK(reset && reset->request.resetCampaign && reset->request.reason == TravelReason::NewGame);
     for (int i = 0; i < 3; ++i) rig.frame();
     CHECK(host.current().level == "a" && shell.screen() == ShellScreen::None);
+
+    // Continue (S06): once there's a save, the menu offers it; it travels with the save
+    // (LoadSave), which is in before the level's first tick, campaign and all.
+    rig.continueReason.clear();
+    CHECK(shell.command("main_menu"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(shell.screen() == ShellScreen::Menu && rig.value("can_continue") == "true");
+    CHECK(shell.click("continue"));
+    const auto resumed = host.status(shell.lastTicket());
+    CHECK(resumed && resumed->request.reason == TravelReason::LoadSave && !resumed->request.restore);
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(host.current().level == "b" && host.session()->context().startReason == StartReason::RestoreSave);
+    CHECK(findEntity(host.session()->world(), "restored") && host.campaign().get("chapter") == "2");
 
     // Quit.
     CHECK(!shell.click("quit"));   // no screen shows in a playing level

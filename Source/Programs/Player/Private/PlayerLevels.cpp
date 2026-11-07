@@ -261,6 +261,7 @@ shockwave::LevelHost::Hooks Player::levelHooks() {
         fs::path scene = sceneForLevel(request.level);
         if (scene.empty()) scene = m_project.startupScene;
         session.setSaveFolder(saveFolder(), m_project.relative(scene));
+        session.setSaveIdentity(saveIdentity());
         session.setGameCircuit(m_project.gameCircuitPath());
         session.setOnlineMatch(m_match.configured() ? &m_match : nullptr);
         if (m_levelNetworkStart) session.setNetworkStart(*m_levelNetworkStart, m_levelServices);
@@ -270,6 +271,19 @@ shockwave::LevelHost::Hooks Player::levelHooks() {
         if (m_levels && m_levels->epoch() > 1) m_toolCamera = shockwave::kNullEntity;
     };
     return hooks;
+}
+
+shockwave::SaveIdentity Player::saveIdentity() {
+    if (!m_saveIdentity) {
+        shockwave::SaveIdentity identity = saveIdentityFor(m_project, m_tool.userPaths ? &*m_tool.userPaths : nullptr);
+        // On a save worker: the game's own function, given only the detached save. The
+        // instance is looked up each time, since hot reload replaces it.
+        identity.migrate = [this](int from, shockwave::SaveInfo& save, std::string& error) {
+            return !m_instance || m_instance->migrateSave(from, save, error);
+        };
+        m_saveIdentity = std::move(identity);
+    }
+    return *m_saveIdentity;
 }
 
 void Player::startLevels(const std::string& level, shockwave::StartReason reason) {

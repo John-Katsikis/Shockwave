@@ -624,7 +624,7 @@ Full local suite: 95 of 95 pass on Linux, gpu included (`test_snapshot_delta` fa
 | `game_flow_cli` | integration | the milestone through the shell's buttons, headless: menu, New game, loading, A, B, Restart level from pause, Main menu (23 steps), from `--app-shell all` and from the project key. Also: refusals (unknown level, missing spawn, Continue); save, pause, load; a broken level A (error, Retry, Main menu); a broken menu scene (Main menu fails, the level plays on); a project menu screen with `--check`; a failing step's exit code and report; bad scenarios as usage errors; a click without the shell. |
 | `game_flow_vulkan` | gpu | the same milestone with every screen drawn by the Vulkan renderer (lavapipe) |
 
-Full local suite: 97 of 97 pass on Linux, gpu included. Five long GPU tests failed once when the player was rebuilt while they ran; all five passed when run again on their own.
+Full local suite (S05 part 2): 97 of 97 pass on Linux, gpu included. Five long GPU tests failed once when the player was rebuilt while they ran; all five passed when run again on their own.
 
 ### Still unverified
 
@@ -643,3 +643,87 @@ Full local suite: 97 of 97 pass on Linux, gpu included. Five long GPU tests fail
 - **The loading screen's length.** It shows for the frames travel really takes. Reading
   is on the main thread, so that is usually two frames.
 - **`press`** knows only the pause action; other input isn't scripted in v1.
+
+## S06: campaign saves, part 1
+
+### What was built
+
+- **Save format 2** (`save_game 2`, [SaveGames.md](SaveGames.md#the-file-format)).
+  - The envelope: application, profile, game save schema, release version, revision,
+    level and spawn (checkpoint is reserved for part 2), campaign values and a checksum.
+  - The checksum is FNV-1a over the file without its own line. It sits in the header, so
+    a file cut short fails it.
+  - Format 1 saves still load, in place, as schema 1, with the campaign left as it is.
+  - Every problem has a stable code (`SaveError`) at the start of its message.
+  - The reader refuses files over 256 MiB, more than 4096 values, values over 64 KiB and
+    more than 4M entities before it builds a world.
+- **`game.campaign()`** (`CampaignState`). It is owned by `LevelHost`, so it survives
+  travel, and goes into every save.
+  - New game with `resetCampaign` clears it.
+  - Restart level puts back the campaign as it was on entering, so a reward isn't kept twice.
+  - The shell's New game asks to confirm when the campaign holds something.
+- **Loading across levels.** `TravelRequest::restore` carries a read save. A save from
+  another level is a `LoadSave` travel through the usual tickets and loading screen. The
+  new session starts with `StartReason::RestoreSave`, and `PlaySession::restore` puts the
+  save in before the first tick or frame. Then physics is rebuilt and `afterLoad` and the
+  circuits run. A same-level save still loads in place. Tickets keep the request without
+  the save's world.
+- **Compatibility and migrations.** `SaveIdentity` is the game, the profile, the
+  project's new `save_schema` key and `GameInstance::migrateSave`.
+  - Another game's or profile's save is refused, and so is a newer schema.
+  - Migrations run step by step, oldest first, on the detached save, on the load worker.
+    The file isn't touched.
+- **Durable writes** (`writeSaveFile`):
+  1. a unique temporary file, written, then flushed and synced;
+  2. the old file copied to `.bak`;
+  3. an atomic rename;
+  4. the folder synced on POSIX (a failure here is only a warning: the save is in).
+
+  Other properties:
+  - Writes run in order, one writer job at a time, with at most two in flight (`Busy`).
+  - Each slot's revision is checked against what this session last read or wrote. A
+    stale writer gets `Conflict` and its save is kept as `.swsave.conflict`.
+  - A damaged slot loads its `.bak`, saying so. `remove()` removes the backup too.
+- **Continue** in the shell. It loads the newest save this game and profile can load,
+  passing over damaged or foreign ones and saying why. A format 1 save is mapped to its
+  level by its scene.
+- **CLI** (all of them read files only, except `--save-migrate`, which loads the game
+  module for its migrations):
+  - `--save-info file [--json]`;
+  - `--save-migrate file --output new`. It rewrites the header and keeps the entity body
+    byte for byte. It never writes over the input or an existing file.
+  - `--saves` now lists damaged saves with their problem, and its JSON has the whole
+    envelope, `loadable` and `code`.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `save_travel` | unit | A save carries level, spawn, game, profile, revision, checksum and campaign. Campaign values survive A to B; level values don't. Loading A's save from B travels to A (`RestoreSave`, the right GameMode), with the save in at tick 0 (crate, values, campaign) and the level's epoch. Restart level drops a reward taken since entry. A same-level load while paused goes in place, still paused. A load still reading when its level ends is dropped. Another game's or profile's save is refused, and the level plays on. New game resets the campaign. On a "next launch", a save made in B is continued from the menu into B. Tickets don't keep the save's world. |
+| `save_migration` | unit | A format 1 save reads and loads in place (campaign kept). Migrations 1 to 2 to 3 run in order on the detached save, and the original file is unchanged. A refusing migration gives `MigrationFailed`. A newer schema gives `NewerSchema`, a newer format `NewerFormat`, and a huge value `TooLarge`. The `--save-migrate` rewrite has a valid checksum, migrated values, a filled-in level and the same entity body. |
+| `save_durability` | unit | A damaged byte or a cut-short file is `Corrupt`. Without its checksum line, an edit loads. `--saves`-style listing shows broken files with their problem. The second save keeps the first as `.bak`, and a damaged slot loads it with a warning. A failure at `open`, `write`, `flush`, `backup` or `replace` leaves the old save byte for byte with no temporary files, while one at `directory` still commits. Two writers: the stale one gets `Conflict`, the newer save stays, and the stale save is kept aside; after reloading, it saves. A third save while two are in flight is `Busy`, and the two write in order. Remove deletes the backup. |
+| `save_games_cli` | integration | An edited file fails `--check` and `--load` with `Corrupt`. `--save-info` shows format 2 and loadable. `--save-migrate` refuses its own input and writes a loadable copy. `--saves --json` lists the slot as loadable in its level. |
+| `game_flow` | unit | Continue enabled once there's a save: a `LoadSave` ticket to B, with the save in at the start and its campaign. |
+
+Full local suite: 100 of 100 pass on Linux, gpu included.
+
+### Still unverified
+
+- **Real power loss.** The fault hook simulates a failure at each write step, and the
+  real filesystem tests show the rename replaces the file. Neither proves anything about
+  power loss. On Windows the folder isn't flushed (NTFS journals the rename).
+- **Two processes at the same instant.** The revision check happens just before the
+  rename. Two copies of the game saving the same slot in the same millisecond could
+  still both write; there's no OS lock. The test runs the two writers one after the other.
+- **Permission errors.** CI runs as root in containers, where a read-only folder can
+  still be written. Disk-full and permission failures are covered only by the fault
+  hook.
+- **Snapshot cost.** The world is still copied on the main thread. It hasn't been
+  measured on a big level.
+- **Part 2:** checkpoints and Restart checkpoint, rewards granted once by completion ID,
+  tombstones for destroyed authored entities, a dedicated restore hook instead of
+  beginPlay then `afterLoad`, and stable IDs instead of exact handles. Until then, a
+  cross-level load runs the level's `beginPlay` on its authored world, then replaces the
+  world with the snapshot and calls `afterLoad`.
+- **The editor's Save Games window** shows saves as before. It doesn't show
+  compatibility, backups or conflicts yet.

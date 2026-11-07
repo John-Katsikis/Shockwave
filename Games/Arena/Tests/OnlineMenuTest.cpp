@@ -122,7 +122,7 @@ struct Menu {
     arena::OnlineMenu menu;
 
     Menu(const fs::path& project, OnlineMatch* match)
-        : game{world, jobs, nullptr, subsystems, nullptr, StartReason::Fresh, 0, {}} {
+        : game{world, jobs, nullptr, subsystems, nullptr, StartReason::Fresh, 0, {}, {}, nullptr} {
         ui.setContentFolder(project / "Content");
         document = world.create();
         world.add<Name>(document, {"Arena Menu"});
