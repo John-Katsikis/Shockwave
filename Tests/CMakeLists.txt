@@ -89,11 +89,12 @@ target_link_libraries(level_lifetime_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(level_lifetime_test)
 add_test(NAME level_lifetime COMMAND level_lifetime_test)
 set_tests_properties(level_lifetime PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
-# Campaign saves (S06): travel with saves, migrations, durable writes. Without a window.
+# Campaign saves (S06): travel with saves, migrations, durable writes, checkpoints and
+# completions, destroyed entities that stay gone. Without a window.
 add_executable(save_campaign_test SaveCampaignTest.cpp)
 target_link_libraries(save_campaign_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(save_campaign_test)
-foreach(part travel migration durability)
+foreach(part travel migration durability checkpoints destroyed)
     add_test(NAME save_${part} COMMAND save_campaign_test ${part})
     set_tests_properties(save_${part} PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 endforeach()

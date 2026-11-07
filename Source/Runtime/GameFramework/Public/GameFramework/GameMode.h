@@ -101,6 +101,12 @@ struct GameContext {
     bool requestLevel(std::string level, std::string spawn = {}) const {
         return bool(flow().request(std::move(level), std::move(spawn)));
     }
+    // Leaves this level for good, to `next` (docs/SaveGames.md#finishing-a-level): travels
+    // like requestLevel, and once accepted writes the "autosave" slot with the campaign and
+    // the next level, so Continue after a crash resumes there without granting rewards
+    // twice. Record completions (game.campaign().complete) before calling it.
+    TravelTicket finishLevel(std::string next, std::string spawn = {}) const;
+    static constexpr const char* kAutosaveSlot = "autosave";
     GameFlow* flowHost = nullptr;   // set by LevelHost; null: nothing can travel
     // Where this level was entered: the spawn asked for (or the catalog's default) and its
     // place. Place the player there in beginPlay; found is false when there's no spawn.

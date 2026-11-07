@@ -79,6 +79,17 @@ public:
     Ticket restartLevel() override { return ticket(m_game.flow().restartLevel()); }
     Ticket returnToMenu() override { return ticket(m_game.flow().returnToMenu()); }
     Ticket useExit(Entity exit) override { return ticket(m_game.flow().useExit(exit)); }
+    Result reachCheckpoint(const std::string& id) override { return result(m_game.saves().checkpoint(id)); }
+    Result restartCheckpoint() override { return result(m_game.saves().restartCheckpoint()); }
+    Ticket finishLevel(const std::string& level, const std::string& spawn) override {
+        return ticket(m_game.finishLevel(level, spawn));
+    }
+    bool completeOnce(const std::string& id) override { return m_game.campaign().complete(id); }
+    bool campaignHas(const std::string& key) const override { return m_game.campaign().has(key); }
+    std::string campaignGet(const std::string& key) const override { return m_game.campaign().get(key); }
+    void campaignSet(const std::string& key, const std::string& value) override {
+        m_game.campaign().set(key, std::string_view(value));
+    }
     Status status(int32_t id) const override {
         Status s;
         if (id <= 0) return s;
@@ -94,6 +105,7 @@ public:
     }
 
 private:
+    Result result(bool ok) const { return {ok, ok ? "None" : saveErrorName(saveErrorOf(m_game.saves().lastError()))}; }
     static Ticket ticket(const TravelTicket& t) {
         return {t.id <= uint64_t(INT32_MAX) ? int32_t(t.id) : 0, travelErrorName(t.error), t.message};
     }
@@ -285,6 +297,18 @@ void PlaySession::collectInput(double frameDt) {
 }
 
 SaveGames& GameContext::saves() const { return subsystems.get<SaveGames>(); }
+
+TravelTicket GameContext::finishLevel(std::string next, std::string spawn) const {
+    TravelTicket ticket = flow().request(next, spawn);
+    // Accepted: the campaign as it is now, and where it goes, in one autosave. A crash
+    // before the next level starts resumes there, the completion kept and given once.
+    if (ticket) {
+        SaveGames* saves = subsystems.find<SaveGames>();
+        if (saves && !saves->networkPlay() && !saves->folder().empty())
+            saves->saveTransition(kAutosaveSlot, std::move(next), std::move(spawn));
+    }
+    return ticket;
+}
 SaveGames* PlaySession::saves() const { return m_subsystems.find<SaveGames>(); }
 
 // A finished load replaces the world between ticks. A save from another level travels
@@ -296,11 +320,13 @@ void PlaySession::applyLoadedSave() {
     std::optional<SaveRestore> loaded = saves->takeLoaded();
     if (!loaded) return;
     const std::string& level = loaded->info.level;
-    if (!level.empty() && m_context.flowHost && level != m_context.flowHost->currentLevel().level) {
+    // A fresh save (between levels) starts its level as authored, so it always travels.
+    const bool fresh = loaded->info.fresh;
+    if (!level.empty() && m_context.flowHost && (fresh || level != m_context.flowHost->currentLevel().level)) {
         TravelRequest request;
         request.level = level;
         request.spawn = loaded->info.spawn;
-        request.reason = TravelReason::LoadSave;
+        request.reason = loaded->info.checkpoint.empty() ? TravelReason::LoadSave : TravelReason::Checkpoint;
         request.fromEpoch = m_context.levelEpoch;
         request.restore = std::make_shared<SaveRestore>(std::move(*loaded));
         const TravelTicket ticket = m_context.flowHost->request(std::move(request));

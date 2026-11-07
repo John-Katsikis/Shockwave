@@ -135,7 +135,7 @@ public:
     // The "flow" data model the screens show: screen, page, title, level, destination,
     // phase, progress (0..1), percent, can_cancel, error_code, error_message, error_level,
     // can_dismiss, can_new_game, new_game_reason, can_continue, continue_reason,
-    // can_restart_checkpoint, checkpoint_reason, can_level_select, levels, settings_reason,
+    // can_restart_checkpoint, checkpoint_reason, checkpoint_state, can_level_select, levels, settings_reason,
     // credits, message (the last refusal).
     const UIValue& value(std::string_view name) const;
     GameUI& ui() { return *m_ui; }
@@ -166,6 +166,7 @@ private:
     void choose();   // which screen shows now
     void publish();   // the flow model
     void refreshContinue();   // asks Setup::continueReason
+    void refreshCheckpoint();   // asks the level's SaveGames
     bool refuse(std::string* why, std::string reason);
 
     Engine* m_engine;
@@ -184,6 +185,7 @@ private:
     std::optional<Failure> m_failure;
     std::string m_message;
     std::string m_continueReason = "No saved game to continue yet";
+    std::string m_checkpointReason = "No checkpoint reached yet";
     std::vector<std::string> m_problems;
     // Mouse capture while a screen shows, given back when it goes in the same level.
     bool m_mouseWasCaptured = false;

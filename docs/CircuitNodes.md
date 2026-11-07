@@ -40,6 +40,36 @@ Plays a clip that follows an entity.
 - In `clip` String, required
 - In `target` Entity, default self
 
+## Campaign
+
+### Campaign.Complete
+
+Records that something happened, once per campaign: first the first time, already after. Give a reward only on first.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `first` `already`
+- In `id` String, required
+
+### Campaign.Get
+
+A value kept with Campaign.Set (or game.campaign() in C++).
+
+- Changes: authority
+- In `key` String, required
+- Out `value` String
+- Out `has` Bool
+
+### Campaign.Set
+
+Keeps a value for the whole game: it survives travel and goes into saves.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `key` String, required
+- In `value` String
+
 ## Circuit
 
 ### Circuit.Send
@@ -6683,6 +6713,19 @@ How far the action is pressed, 0 to 1.
 
 ## Level
 
+### Level.FinishLevel
+
+Leaves this level for good: travels to the next one and autosaves the campaign with it, so a crash in between neither loses nor repeats a completion.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `accepted` `refused`
+- In `level` String, required
+- In `spawn` String
+- Out `accepted` Bool
+- Out `ticket` Int
+- Out `code` String
+
 ### Level.OnTravelFinished
 
 A travel ended. Runs in the level playing afterwards: the new one when it succeeded, this one when it failed or was cancelled before this level ended.
@@ -6697,6 +6740,16 @@ A travel ended. Runs in the level playing afterwards: the new one when it succee
 - Out `code` String
 - Out `message` String
 
+### Level.ReachCheckpoint
+
+Saves at this level's Checkpoint with that id. Restart checkpoint goes back to it once it's written.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `saving` `refused`
+- In `id` String, required
+- Out `code` String
+
 ### Level.RequestTravel
 
 Asks to go to a catalog level, at a LevelSpawn there (empty: its default). accepted means a ticket, not that it arrived.
@@ -6708,6 +6761,15 @@ Asks to go to a catalog level, at a LevelSpawn there (empty: its default). accep
 - In `spawn` String
 - Out `accepted` Bool
 - Out `ticket` Int
+- Out `code` String
+
+### Level.RestartCheckpoint
+
+Loads the last checkpoint written in this campaign.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `loading` `refused`
 - Out `code` String
 
 ### Level.RestartLevel

@@ -304,6 +304,7 @@ void Player::startLevels(const std::string& level, shockwave::StartReason reason
                 break;
             }
         m_levels->setMenuLevel(menu);
+        m_levels->setRememberDestroyed(m_project.rememberDestroyed);
         m_levels->onLoadReport = [this](const shockwave::LoadReport& report) { recordLoad(report); };
         m_levels->onResult = [this](const shockwave::TravelResult& result) {
             if (result.status == shockwave::TravelStatus::Failed)

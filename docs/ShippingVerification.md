@@ -727,3 +727,63 @@ Full local suite: 100 of 100 pass on Linux, gpu included.
   world with the snapshot and calls `afterLoad`.
 - **The editor's Save Games window** shows saves as before. It doesn't show
   compatibility, backups or conflicts yet.
+
+## S06: checkpoints and lasting progress, part 2
+
+### What was built
+
+- **Checkpoints.** `SaveGames::checkpoint(id)` finds an enabled `Checkpoint` in the level
+  and saves to the `checkpoint` slot, with the checkpoint's id, its spawn and the
+  campaign id.
+  - Its state is `Saving`, then `Saved` or `Failed`, set by the writer once the file is
+    on disk. A failed write leaves the previous checkpoint as the restart point.
+  - `hasCheckpoint` and `restartCheckpoint` accept only a checkpoint from the current
+    campaign (`campaign_id`); otherwise they fail with `NoCheckpoint`.
+  - A checkpoint in another level travels there with reason `Checkpoint`.
+  - The shell's Restart checkpoint is enabled from that check when the pause screen
+    opens, and `flow.checkpoint_state` follows the state.
+- **The campaign** now carries an id, completions and destroyed identities, besides its
+  values.
+  - `complete(id)` is true once per campaign.
+  - New game clears everything and makes a new id.
+  - Restart level restores the whole campaign as it was on entry, completions included.
+  - A save's campaign is in before the level's session starts.
+- **Finishing a level.** `GameContext::finishLevel(next, spawn)` requests the travel. Once
+  it's accepted, it writes the `autosave` slot as a `fresh` save: the campaign and the
+  destination, with no world. Loading a fresh save always travels, starts the level as
+  authored (`StartReason::Fresh`) and applies only the campaign.
+- **Things that stay gone.** When a level is left (not restarted), `LevelHost` records its
+  authored `PersistentIdentity` ids that are no longer alive. When the level is entered
+  again, those entities and their children are destroyed before its session starts. It
+  is switched by the project key `remember_destroyed`, which defaults to true, and
+  `LevelHost::setRememberDestroyed`; the editor follows the key too.
+- **Format 2 lines:** `fresh`, `campaign_id`, `completed`, and `destroyed <level> <ids>`.
+  The reader bounds them, and `--save-migrate` rewrites them.
+- **Circuits:** `Level.ReachCheckpoint`, `Level.RestartCheckpoint`, `Level.FinishLevel`,
+  `Campaign.Complete`, `Campaign.Set` and `Campaign.Get`. The node references are
+  regenerated.
+- **Plugin ABI 19**, for part 1's `GameInstance::migrateSave` and `GameContext` changes.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `save_checkpoints` | unit | An unknown checkpoint is refused, and none yet gives `NoCheckpoint`. A checkpoint goes Saving to Saved and restores the level as it was. A checkpoint whose replace fails is `Failed`, and Restart still goes to the previous one. From B, Restart checkpoint travels to A with reason `Checkpoint`. `complete` is once only, and saves keep completions. Restart level undoes completions and rewards made since entry. `finishLevel` writes a fresh autosave with no entities, the completion, the reward and the next level. In a "next launch" it resumes B as authored (`Fresh`) with the reward given once. The autosave loaded from inside B travels again, to a new epoch. |
+| `save_destroyed` | unit | An enemy killed in A is gone when A is entered again, and the other stays. Restart level brings back this visit's kills but not an earlier visit's. A save made in B carries A's destroyed list into a new run. New game brings everything back. With `setRememberDestroyed(false)`, A comes back as authored. |
+| `game_flow` | unit | Restart checkpoint is disabled until a checkpoint is written, then `checkpoint_state` reads `saved`, and the button restores the level and closes the pause screen. |
+| `circuit_check`, `network_check` | integration | the regenerated node references match the six new nodes |
+
+Full local suite: 102 of 102 pass on Linux, gpu included.
+
+### Still unverified
+
+- **Restore is still the legacy exact mode.** A dedicated restore hook and stable-ID
+  remapping (plan 14.1, steps 4 and 6) aren't built. A restore runs `beginPlay` with
+  `RestoreSave`, then swaps the snapshot in and calls `afterLoad`; games skip fresh
+  spawning by checking `startReason`.
+- **Prefab copies.** Only an entity's own `PersistentIdentity` id is tracked, not the
+  combined identity of a part inside a prefab copy.
+- **Runtime-spawned entities** don't get tombstones; only the save snapshot holds them.
+- **Quit during Saving** waits for the write (the `SaveGames` destructor drains it) with no
+  timeout or on-screen "Saving..." yet.
+- **The editor's Save Games window** is unchanged.

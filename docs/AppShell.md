@@ -35,8 +35,9 @@ What each button does:
 - **Continue** loads the newest save this game and profile can load, travelling to its
   level ([Save games](SaveGames.md#saves-from-another-level)). Without one it's disabled,
   saying why ("No saved game to continue yet", or why the newest can't load).
-- **Restart checkpoint** is disabled for now, saying why, until checkpoints arrive (S06
-  part 2).
+- **Restart checkpoint** loads the last checkpoint reached in this campaign
+  ([Save games](SaveGames.md#checkpoints)), and returns to the game. Until one is
+  written it's disabled, saying why.
 - **Settings** opens a page that says player settings aren't available yet. They arrive
   with S08.
 - **Restart level** goes to the same level again, at the spawn it was entered at.
@@ -105,6 +106,7 @@ files, so the error screen still shows when the project's files are what's broke
 | `title`, `level`, `credits` | the project's name, the level playing, the credits text |
 | `destination`, `phase`, `progress`, `percent`, `progress_width`, `has_progress`, `can_cancel` | the travel under way: where to, its phase, 0..1, 0..100, `"45%"` for a bar's width |
 | `error_code`, `error_message`, `error_level`, `can_dismiss` | the failure: its stable code (`LoadFailed`, ...), why, which level |
+| `checkpoint_state` | the last checkpoint's save: `saving`, `saved`, `failed`, or empty |
 | `can_new_game`, `new_game_reason`, `can_continue`, `continue_reason`, `can_restart_checkpoint`, `checkpoint_reason`, `can_level_select`, `levels`, `settings_reason` | what the buttons can do now, and why not |
 | `message` | the last refusal, like Busy |
 

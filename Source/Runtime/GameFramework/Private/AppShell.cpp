@@ -218,6 +218,7 @@ void AppShell::choose() {
     }
     if (next != m_screen) {
         if (next == ShellScreen::Menu) refreshContinue();   // a save may have been made since
+        if (next == ShellScreen::Pause) refreshCheckpoint();
         // A screen opens on its first page, without the last one's complaint.
         if (next == ShellScreen::Menu || next == ShellScreen::Pause) m_page = "main";
         if (m_screen != ShellScreen::None || next != ShellScreen::None) m_message.clear();
@@ -238,6 +239,16 @@ void AppShell::refreshContinue() {
     } catch (const std::exception& e) {
         m_continueReason = e.what();
     }
+}
+
+void AppShell::refreshCheckpoint() {
+    const SaveGames* saves = m_levels.session() ? m_levels.session()->saves() : nullptr;
+    if (!saves) {
+        m_checkpointReason = "No checkpoint reached yet";
+        return;
+    }
+    std::string why;
+    m_checkpointReason = saves->hasCheckpoint(&why) ? std::string() : why;
 }
 
 void AppShell::publish() {
@@ -277,10 +288,18 @@ void AppShell::publish() {
     ui.setValue("new_game_reason", std::string_view(newGame ? "" : "This game has no first level to start in"));
     ui.setValue("can_continue", m_continueReason.empty());
     ui.setValue("continue_reason", std::string_view(m_continueReason));
-    // Checkpoints arrive with S06 part 2, settings with S08: the buttons are there,
-    // disabled, saying why.
-    ui.setValue("can_restart_checkpoint", false);
-    ui.setValue("checkpoint_reason", std::string_view("No checkpoint reached yet"));
+    ui.setValue("can_restart_checkpoint", m_checkpointReason.empty());
+    ui.setValue("checkpoint_reason", std::string_view(m_checkpointReason));
+    // The last checkpoint's save, for a HUD: "", "saving", "saved" or "failed".
+    const SaveGames* saves = m_levels.session() ? m_levels.session()->saves() : nullptr;
+    const auto state = saves ? saves->checkpointState() : SaveGames::CheckpointState::None;
+    ui.setValue(
+        "checkpoint_state", std::string_view(
+                                state == SaveGames::CheckpointState::Saving   ? "saving"
+                                : state == SaveGames::CheckpointState::Saved  ? "saved"
+                                : state == SaveGames::CheckpointState::Failed ? "failed"
+                                                                              : ""));
+    // Settings arrive with S08: the button is there, disabled, saying why.
     ui.setValue("settings_reason", std::string_view("Player settings aren't available in this build yet"));
     ui.setValue("credits", std::string_view(m_setup.credits.empty() ? "Made with Shockwave" : m_setup.credits));
     UIValue levels = UIValue::list();
@@ -443,7 +462,15 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
         return true;
     }
     if (command == "resume") return resume() || refuse(why, "Nothing is paused");
-    if (command == "restart_checkpoint") return refuse(why, "No checkpoint reached yet");
+    if (command == "restart_checkpoint") {
+        refreshCheckpoint();
+        SaveGames* saves = m_levels.session() ? m_levels.session()->saves() : nullptr;
+        if (!m_checkpointReason.empty() || !saves) return refuse(why, m_checkpointReason);
+        if (!saves->restartCheckpoint()) return refuse(why, saves->lastError());
+        // It goes in at the next frame (or travels, from another level): back to the game.
+        resume();
+        return true;
+    }
     if (command == "restart_level") {
         TravelRequest r = to(m_levels.current().level, TravelReason::Restart);
         r.spawn = m_levels.current().spawn;

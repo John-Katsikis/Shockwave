@@ -108,6 +108,27 @@ void buildLevel(World& world, const std::string& id) {
     const Entity crate = world.create();
     world.add<Name>(crate, Name{"crate"});
     world.add<Transform>(crate, Transform{{0, 0, 0}});
+    // A checkpoint at the spawn, and two enemies with identities (S06 part 2).
+    world.add<Checkpoint>(spawn, Checkpoint{"cp1", "start", true});
+    for (int i = 1; i <= 2; ++i) {
+        const Entity enemy = world.create();
+        world.add<Name>(enemy, Name{"enemy" + std::to_string(i)});
+        world.add<PersistentIdentity>(enemy, PersistentIdentity{id + "-enemy-" + std::to_string(i)});
+    }
+}
+
+bool hasEntity(World& world, const std::string& name) {
+    bool found = false;
+    world.each<const Name>([&](Entity, const Name& n) { found = found || n.value == name; });
+    return found;
+}
+
+void destroyNamed(World& world, const std::string& name) {
+    Entity found = kNullEntity;
+    world.each<const Name>([&](Entity e, const Name& n) {
+        if (n.value == name) found = e;
+    });
+    if (found != kNullEntity) world.destroy(found);
 }
 
 float crateX(World& world) {
@@ -551,6 +572,202 @@ void testDurability() {
     fs::remove_all(folder);
 }
 
+// ---- save_checkpoints ---------------------------------------------------------------------
+
+void testCheckpoints() {
+    Assets assets;
+    std::string error;
+    const fs::path folder = tempFolder("save-checkpoints");
+    const SaveIdentity id = identity();
+    World world;
+    JobSystem jobs(2);
+    Instance instance;
+    LevelHost host(world, jobs, instance, nullptr, hooks(folder, id));
+    host.setMenuLevel("menu");
+    buildLevel(world, "a");
+    host.start({"a", "start"});
+    tick(host);
+    SaveGames* saves = host.session()->saves();
+    CampaignState& campaign = host.campaign();
+
+    // A checkpoint saves, and is the restart point only once written.
+    std::string why;
+    CHECK(!saves->hasCheckpoint(&why) && !why.empty());
+    CHECK(!saves->checkpoint("nope") && saveErrorOf(saves->lastError()) == SaveError::Invalid);
+    CHECK(!saves->restartCheckpoint() && saveErrorOf(saves->lastError()) == SaveError::NoCheckpoint);
+    moveCrate(world, 1);
+    CHECK(saves->checkpoint("cp1"));
+    CHECK(saves->checkpointState() != SaveGames::CheckpointState::None && saves->checkpointId() == "cp1");
+    saves->wait();
+    CHECK(saves->checkpointState() == SaveGames::CheckpointState::Saved && saves->hasCheckpoint());
+    SaveInfo info;
+    CHECK(readSaveInfo(folder / "checkpoint.swsave", info, error));
+    CHECK(info.checkpoint == "cp1" && info.spawn == "start" && info.campaignId == campaign.id());
+    moveCrate(world, 2);
+    CHECK(saves->restartCheckpoint());
+    finishLoad(host);
+    CHECK(crateX(world) == 1 && host.currentLevel().level == "a");
+
+    // A checkpoint that fails to write leaves the previous one as the restart point.
+    setSaveFaultForTesting([](std::string_view at) { return at == "replace"; });
+    moveCrate(world, 3);
+    CHECK(saves->checkpoint("cp1"));
+    saves->wait();
+    setSaveFaultForTesting({});
+    CHECK(saves->checkpointState() == SaveGames::CheckpointState::Failed && saves->hasCheckpoint());
+    CHECK(saves->restartCheckpoint());
+    finishLoad(host);
+    CHECK(crateX(world) == 1);
+
+    // From another level, Restart checkpoint travels back (reason Checkpoint).
+    CHECK(host.request(to("b")));
+    host.process();
+    tick(host);
+    CHECK(host.session()->saves()->restartCheckpoint());
+    finishLoad(host);
+    CHECK(host.currentLevel().level == "a" && crateX(world) == 1 && reasons["a"] == StartReason::RestoreSave);
+    CHECK(host.status(host.results().back().id)->request.reason == TravelReason::Checkpoint);
+    tick(host);
+
+    // Completions: once per campaign, kept by saves, undone by Restart level (with the
+    // rewards that came with them) when they came after entering it.
+    saves = host.session()->saves();
+    CHECK(campaign.complete("found_key") && !campaign.complete("found_key") && campaign.completed("found_key"));
+    CHECK(!campaign.complete("not an id"));
+    CHECK(saves->save("keyed"));
+    saves->wait();
+    CHECK(readSaveInfo(folder / "keyed.swsave", info, error) && info.completed.count("found_key"));
+    CHECK(campaign.complete("opened_door"));
+    campaign.set("gold", 10);
+    CHECK(host.restartLevel());
+    host.process();
+    // Both came after entering A, so both are undone; the key can be found again.
+    CHECK(!campaign.completed("opened_door") && !campaign.has("gold") && !campaign.completed("found_key"));
+    CHECK(campaign.complete("found_key"));
+    tick(host);
+
+    // Finishing a level: the completion and the next level go into one autosave first. A
+    // crash right after resumes in B as authored, the reward given once.
+    CHECK(campaign.complete("a_done"));
+    campaign.set("gold", 100);
+    moveCrate(world, 8);
+    const TravelTicket finished = host.session()->context().finishLevel("b");
+    CHECK(finished);
+    host.session()->saves()->wait();
+    CHECK(readSaveInfo(folder / "autosave.swsave", info, error));
+    CHECK(info.fresh && info.level == "b" && info.completed.count("a_done") && info.campaign["gold"] == "100");
+    CHECK(info.entities == 0);
+    host.process();
+    CHECK(host.currentLevel().level == "b");
+    host.stop();
+    {
+        World next;
+        LevelHost later(next, jobs, instance, nullptr, hooks(folder, id));
+        buildLevel(next, "menu");
+        later.start({"menu"});
+        auto restore = std::make_shared<SaveRestore>();
+        CHECK(readSaveRestore(folder / "autosave.swsave", assets, id, *restore, error));
+        TravelRequest resume;
+        resume.level = restore->info.level;
+        resume.reason = TravelReason::LoadSave;
+        resume.restore = restore;
+        CHECK(later.request(resume));
+        later.process();
+        CHECK(later.currentLevel().level == "b" && crateX(next) == 0 && reasons["b"] == StartReason::Fresh);
+        CHECK(later.campaign().getInt("gold") == 100 && !later.campaign().complete("a_done"));
+        // The autosave, loaded from inside a level, travels too, even to the same level.
+        CHECK(later.session()->saves()->load("autosave"));
+        finishLoad(later);
+        CHECK(later.currentLevel().level == "b" && later.epoch() > 1 && crateX(next) == 0);
+        later.stop();
+    }
+    fs::remove_all(folder);
+}
+
+// ---- save_destroyed -----------------------------------------------------------------------
+
+void testDestroyed() {
+    Assets assets;
+    std::string error;
+    const fs::path folder = tempFolder("save-destroyed");
+    const SaveIdentity id = identity();
+    World world;
+    JobSystem jobs(2);
+    Instance instance;
+    LevelHost host(world, jobs, instance, nullptr, hooks(folder, id));
+    buildLevel(world, "a");
+    host.start({"a", "start"});
+    tick(host);
+
+    // Killed in A, gone when A is entered again.
+    destroyNamed(world, "enemy1");
+    CHECK(host.request(to("b")));
+    host.process();
+    CHECK(host.campaign().destroyed("a").count("a-enemy-1") && host.campaign().destroyed("a").size() == 1);
+    CHECK(host.request(to("a")));
+    host.process();
+    CHECK(!hasEntity(world, "enemy1") && hasEntity(world, "enemy2"));
+    tick(host);
+
+    // Restart level brings back what this visit destroyed, not what an earlier one did.
+    destroyNamed(world, "enemy2");
+    CHECK(host.restartLevel());
+    host.process();
+    CHECK(!hasEntity(world, "enemy1") && hasEntity(world, "enemy2"));
+
+    // Saves carry it: a save made in B, loaded in a fresh run, still knows.
+    CHECK(host.request(to("b")));
+    host.process();
+    CHECK(host.session()->saves()->save("inB"));
+    host.session()->saves()->wait();
+    SaveInfo info;
+    CHECK(readSaveInfo(folder / "inB.swsave", info, error) && info.destroyed["a"].count("a-enemy-1"));
+    host.stop();
+    {
+        World next;
+        LevelHost later(next, jobs, instance, nullptr, hooks(folder, id));
+        buildLevel(next, "menu");
+        later.start({"menu"});
+        auto restore = std::make_shared<SaveRestore>();
+        CHECK(readSaveRestore(folder / "inB.swsave", assets, id, *restore, error));
+        TravelRequest r;
+        r.level = "b";
+        r.reason = TravelReason::LoadSave;
+        r.restore = restore;
+        CHECK(later.request(r));
+        later.process();
+        CHECK(later.request(to("a")));
+        later.process();
+        CHECK(!hasEntity(next, "enemy1") && hasEntity(next, "enemy2"));
+
+        // New game brings everything back.
+        TravelRequest fresh = to("a");
+        fresh.reason = TravelReason::NewGame;
+        fresh.resetCampaign = true;
+        CHECK(later.request(fresh));
+        later.process();
+        CHECK(hasEntity(next, "enemy1") && hasEntity(next, "enemy2") && later.campaign().empty());
+        later.stop();
+    }
+
+    // Switched off, every level comes back as authored.
+    {
+        World off;
+        LevelHost host2(off, jobs, instance, nullptr, hooks(folder, id));
+        host2.setRememberDestroyed(false);
+        buildLevel(off, "a");
+        host2.start({"a", "start"});
+        destroyNamed(off, "enemy1");
+        CHECK(host2.request(to("b")));
+        host2.process();
+        CHECK(host2.request(to("a")));
+        host2.process();
+        CHECK(hasEntity(off, "enemy1") && host2.campaign().destroyed("a").empty());
+        host2.stop();
+    }
+    fs::remove_all(folder);
+}
+
 }   // namespace
 
 int main(int argc, char** argv) {
@@ -558,6 +775,8 @@ int main(int argc, char** argv) {
     if (which == "travel" || which == "all") testTravel();
     if (which == "migration" || which == "all") testMigration();
     if (which == "durability" || which == "all") testDurability();
+    if (which == "checkpoints" || which == "all") testCheckpoints();
+    if (which == "destroyed" || which == "all") testDestroyed();
     if (failures) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
