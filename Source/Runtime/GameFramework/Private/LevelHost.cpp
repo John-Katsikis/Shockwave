@@ -183,6 +183,7 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     load.startMs = msSince(clock);
     report(load);
     arrived();
+    m_entryCampaign = m_campaign.values();
     deliver();
 }
 
@@ -194,6 +195,7 @@ void LevelHost::startSession(StartReason reason, const LevelArrival& arrival) {
     m_session->setLevelEpoch(m_epoch);
     m_session->setFlow(this);
     m_session->setArrival(arrival);
+    m_session->setCampaign(&m_campaign);
     if (m_hooks.configure) m_hooks.configure(*m_session, m_current);
     m_starting = true;
     try {
@@ -315,6 +317,7 @@ TravelTicket LevelHost::request(TravelRequest r) {
     TravelProgress progress;
     progress.ticket = id;
     progress.request = r;
+    progress.request.restore.reset();   // the pending request holds the save; tickets only describe it
     progress.from = m_current.level;
     progress.epoch = m_epoch;
     m_tickets[id] = progress;
@@ -627,7 +630,7 @@ bool LevelHost::commit(Candidate candidate) {
     load.uploadMs = msSince(clock);
     setPhase(next.id, TravelPhase::Starting);
     try {
-        startSession(StartReason::Fresh, levelArrival(m_world, m_current.spawn));
+        startLevel(next.request);
     } catch (const std::exception& e) {
         load.startMs = msSince(clock);
         failStarted(
@@ -639,6 +642,26 @@ bool LevelHost::commit(Candidate candidate) {
     arrived();
     finish(next.id, TravelStatus::Succeeded, TravelError::None, {});
     return true;
+}
+
+// The campaign as the request leaves it, the session, and a save to put in: what every
+// change does once the new level's world is in place.
+void LevelHost::startLevel(const TravelRequest& request) {
+    // New game, confirmed, starts the campaign over; Restart level goes back to how it
+    // was on entering, so rewards taken since aren't kept (and then taken again).
+    if (request.reason == TravelReason::NewGame && request.resetCampaign) m_campaign.clear();
+    if (request.reason == TravelReason::Restart) m_campaign.replace(m_entryCampaign);
+    const bool restoring = request.reason == TravelReason::LoadSave && request.restore;
+    startSession(restoring ? StartReason::RestoreSave : StartReason::Fresh, levelArrival(m_world, m_current.spawn));
+    if (restoring) {
+        try {
+            m_session->restore(std::move(*request.restore));   // before the first tick or frame
+        } catch (...) {
+            endSession();
+            throw;
+        }
+    }
+    m_entryCampaign = m_campaign.values();
 }
 
 void LevelHost::failStarted(const Pending& next, LoadReport& load, TravelError code, const std::string& why) {
@@ -715,7 +738,7 @@ bool LevelHost::travelOnDemand(Candidate& candidate, Clock::time_point& clock) {
     load.epoch = m_epoch;
     setPhase(next.id, TravelPhase::Starting);
     try {
-        startSession(StartReason::Fresh, levelArrival(m_world, m_current.spawn));
+        startLevel(next.request);
     } catch (const std::exception& e) {
         load.startMs = msSince(clock);
         failStarted(

@@ -30,9 +30,13 @@ What each button does:
 
 - **New game** goes to the menu level's `next` level, or else to the catalog's first
   gameplay level. If the game has progress to lose, it asks first, on the menu's
-  confirm page.
-- **Continue** and **Restart checkpoint** are disabled for now. Each shows why ("No saved
-  game to continue yet") until campaign saves arrive (S06).
+  confirm page. That's when the campaign (`game.campaign()`) holds something; confirming
+  clears it.
+- **Continue** loads the newest save this game and profile can load, travelling to its
+  level ([Save games](SaveGames.md#saves-from-another-level)). Without one it's disabled,
+  saying why ("No saved game to continue yet", or why the newest can't load).
+- **Restart checkpoint** is disabled for now, saying why, until checkpoints arrive (S06
+  part 2).
 - **Settings** opens a page that says player settings aren't available yet. They arrive
   with S08.
 - **Restart level** goes to the same level again, at the spawn it was entered at.

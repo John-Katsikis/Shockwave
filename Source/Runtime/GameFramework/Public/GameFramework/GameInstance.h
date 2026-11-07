@@ -7,8 +7,11 @@
 #include <GameFramework/GameMode.h>
 
 #include <memory>
+#include <string>
 
 namespace shockwave {
+
+struct SaveInfo;
 
 class GameInstance {
 public:
@@ -20,6 +23,17 @@ public:
     virtual std::unique_ptr<GameMode> createGameMode(const World& scene) {
         (void)scene;
         return std::make_unique<GameMode>();
+    }
+    // Steps an older save's data up one schema, fromSchema to fromSchema + 1, when the
+    // project's save_schema has gone up (docs/SaveGames.md#compatibility). It runs on a job
+    // worker with the save detached from any world: change only `save` (its values,
+    // campaign, title), touch nothing else. False, with error, refuses the save. The
+    // default leaves the data as it was.
+    virtual bool migrateSave(int fromSchema, SaveInfo& save, std::string& error) const {
+        (void)fromSchema;
+        (void)save;
+        (void)error;
+        return true;
     }
     // Subsystems that live as long as the instance.
     SubsystemCollection& subsystems() { return m_subsystems; }

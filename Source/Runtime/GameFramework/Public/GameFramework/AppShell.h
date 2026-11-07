@@ -87,8 +87,14 @@ public:
         std::filesystem::path content;
         std::string credits;   // the Credits page's text
         std::function<void()> quit;   // Quit
-        // There is progress New game would reset: it asks first. Unset: none (S06 adds it).
+        // There is progress New game would reset: it asks first. Unset: none.
         std::function<bool()> hasProgress;
+        // Continue (S06): why it can't, "" when it can. Asked each time the menu opens and
+        // after a travel ends. Unset: Continue stays off.
+        std::function<std::string()> continueReason;
+        // The request Continue sends: the newest save this game and profile can load,
+        // read, as a LoadSave travel. False, with why, when there's none.
+        std::function<bool(TravelRequest& request, std::string& why)> continueGame;
     };
 
     // engine: where to draw and read input; null in tests (documents still load and
@@ -159,6 +165,7 @@ private:
     bool isMenuLevel(const std::string& level) const;
     void choose();   // which screen shows now
     void publish();   // the flow model
+    void refreshContinue();   // asks Setup::continueReason
     bool refuse(std::string* why, std::string reason);
 
     Engine* m_engine;
@@ -176,6 +183,7 @@ private:
     uint64_t m_lastTicket = 0;
     std::optional<Failure> m_failure;
     std::string m_message;
+    std::string m_continueReason = "No saved game to continue yet";
     std::vector<std::string> m_problems;
     // Mouse capture while a screen shows, given back when it goes in the same level.
     bool m_mouseWasCaptured = false;

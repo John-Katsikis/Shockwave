@@ -21,6 +21,7 @@
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 #include <Projects/Project.h>
+#include <Projects/ReleaseSettings.h>
 
 #include <SDL3/SDL.h>
 
@@ -526,45 +527,197 @@ int listDevices(double seconds) {
     return code;
 }
 
-int listSaves(const shockwave::Project& project, const fs::path& folder, const fs::path& jsonFile) {
-    const auto saves = folder.empty() ? std::vector<shockwave::SaveInfo>{} : shockwave::listSaveGames(folder);
-    if (saves.empty()) std::printf("No save games in %s\n", project.relative(folder).c_str());
-    for (const shockwave::SaveInfo& save : saves) {
-        std::printf(
-            "%-16s %s  %8.1f s  %5zu entities  %s%s%s\n", save.slot.c_str(), save.savedAt.c_str(), save.playTime,
-            save.entities, save.scene.c_str(), save.title.empty() ? "" : "  ", save.title.c_str());
-    }
-    if (jsonFile.empty()) return 0;
-    auto quote = [](const std::string& text) {
-        std::string out = "\"";
-        for (char c : text) {
-            if (c == '"' || c == '\\') out += '\\';
-            if (c == '\n') {
-                out += "\\n";
-                continue;
-            }
-            out += c;
+namespace {
+
+std::string jsonText(const std::string& text) {
+    std::string out = "\"";
+    for (char c : text) {
+        if (c == '"' || c == '\\') out += '\\';
+        if (c == '\n') {
+            out += "\\n";
+            continue;
         }
-        return out + "\"";
-    };
-    std::ofstream json(jsonFile, std::ios::trunc);
-    json << "[";
-    for (size_t i = 0; i < saves.size(); ++i) {
-        const shockwave::SaveInfo& save = saves[i];
-        json << (i ? ",\n " : "\n ") << "{\"slot\": " << quote(save.slot)
-             << ", \"file\": " << quote(project.relative(save.file)) << ", \"title\": " << quote(save.title)
-             << ", \"scene\": " << quote(save.scene) << ", \"saved_at\": " << quote(save.savedAt)
-             << ", \"play_time\": " << save.playTime << ", \"entities\": " << save.entities << ", \"values\": {";
-        size_t n = 0;
-        for (const auto& [key, value] : save.values) json << (n++ ? ", " : "") << quote(key) << ": " << quote(value);
-        json << "}}";
+        if (static_cast<unsigned char>(c) < 0x20) continue;
+        out += c;
     }
-    json << "\n]\n";
+    return out + "\"";
+}
+
+std::string jsonValues(const std::map<std::string, std::string>& values) {
+    std::string out = "{";
+    size_t n = 0;
+    for (const auto& [key, value] : values) out += (n++ ? ", " : "") + jsonText(key) + ": " + jsonText(value);
+    return out + "}";
+}
+
+// One save as a JSON object: its envelope, and whether this game can load it.
+std::string
+saveJson(const shockwave::Project& project, const shockwave::SaveInfo& save, const shockwave::SaveIdentity& identity) {
+    std::string problem = save.problem;
+    if (problem.empty()) shockwave::checkSaveCompatible(save, identity, problem);
+    std::ostringstream o;
+    o << "{\"slot\": " << jsonText(save.slot) << ", \"file\": " << jsonText(project.relative(save.file))
+      << ", \"loadable\": " << (problem.empty() ? "true" : "false") << ", \"problem\": " << jsonText(problem)
+      << ", \"code\": " << jsonText(shockwave::saveErrorName(shockwave::saveErrorOf(problem)))
+      << ", \"format\": " << save.format << ", \"application\": " << jsonText(save.application)
+      << ", \"schema\": " << save.schema << ", \"content\": " << jsonText(save.content)
+      << ", \"profile\": " << jsonText(save.profile) << ", \"revision\": " << save.revision
+      << ", \"checksum\": " << (save.checksum ? "true" : "false") << ", \"level\": " << jsonText(save.level)
+      << ", \"spawn\": " << jsonText(save.spawn) << ", \"checkpoint\": " << jsonText(save.checkpoint)
+      << ", \"title\": " << jsonText(save.title) << ", \"scene\": " << jsonText(save.scene)
+      << ", \"saved_at\": " << jsonText(save.savedAt) << ", \"play_time\": " << save.playTime
+      << ", \"entities\": " << save.entities << ", \"values\": " << jsonValues(save.values)
+      << ", \"campaign\": " << jsonValues(save.campaign) << "}";
+    return o.str();
+}
+
+int writeJson(const fs::path& jsonFile, const std::string& text) {
+    if (jsonFile == "-") {
+        std::fputs(text.c_str(), stdout);
+        return 0;
+    }
+    std::ofstream json(jsonFile, std::ios::trunc | std::ios::binary);
+    json << text;
+    json.close();
     if (!json) {
         std::fprintf(stderr, "Player: can't write %s\n", jsonFile.string().c_str());
         return 1;
     }
     std::printf("Wrote %s\n", jsonFile.string().c_str());
+    return 0;
+}
+
+}   // namespace
+
+shockwave::SaveIdentity saveIdentityFor(const shockwave::Project& project, const shockwave::UserPaths* paths) {
+    shockwave::SaveIdentity identity;
+    identity.application = applicationIdFor(project);
+    identity.profile = paths ? paths->profile() : std::string("default");
+    identity.schema = project.saveSchema;
+    // The release version, for information: a save from another version still loads.
+    shockwave::ReleaseFile release;
+    shockwave::Diagnostic ignored;
+    const fs::path contract = shockwave::releasePath(project);
+    std::error_code ec;
+    if (fs::exists(contract, ec) && shockwave::readRelease(contract, project.relative(contract), release, ignored))
+        identity.content = release.settings.releaseVersion;
+    return identity;
+}
+
+int listSaves(
+    const shockwave::Project& project, const fs::path& folder, const shockwave::SaveIdentity& identity,
+    const fs::path& jsonFile) {
+    const auto saves = folder.empty() ? std::vector<shockwave::SaveInfo>{} : shockwave::listSaveGames(folder, true);
+    if (saves.empty()) std::printf("No save games in %s\n", project.relative(folder).c_str());
+    for (const shockwave::SaveInfo& save : saves) {
+        std::string problem = save.problem;
+        if (problem.empty()) shockwave::checkSaveCompatible(save, identity, problem);
+        if (!save.problem.empty()) {
+            std::printf("%-16s can't load: %s\n", save.slot.c_str(), problem.c_str());
+            continue;
+        }
+        const std::string where = save.level.empty() ? save.scene : "level " + save.level;
+        std::printf(
+            "%-16s %s  %8.1f s  %5zu entities  %s%s%s%s%s\n", save.slot.c_str(), save.savedAt.c_str(), save.playTime,
+            save.entities, where.c_str(), save.title.empty() ? "" : "  ", save.title.c_str(),
+            problem.empty() ? "" : "  can't load: ", problem.c_str());
+    }
+    if (jsonFile.empty()) return 0;
+    std::string json = "[";
+    for (size_t i = 0; i < saves.size(); ++i) json += (i ? ",\n " : "\n ") + saveJson(project, saves[i], identity);
+    json += "\n]\n";
+    return writeJson(jsonFile, json);
+}
+
+int saveInfo(
+    const shockwave::Project& project, const fs::path& file, const shockwave::SaveIdentity& identity,
+    const fs::path& jsonFile) {
+    shockwave::SaveInfo info;
+    std::string error;
+    if (!shockwave::readSaveInfo(file, info, error)) {
+        info.slot = file.stem().string();
+        info.file = file;
+        info.problem = error.empty() ? "can't read it" : error;
+    }
+    std::string problem = info.problem;
+    if (problem.empty()) shockwave::checkSaveCompatible(info, identity, problem);
+    if (info.problem.empty()) {
+        std::printf("%s\n", project.relative(file).c_str());
+        std::printf(
+            "  format %d, schema %d, revision %llu, checksum %s\n", info.format, info.schema,
+            static_cast<unsigned long long>(info.revision), info.checksum ? "ok" : "none (edited by hand?)");
+        std::printf(
+            "  application %s, profile %s, content %s\n", info.application.empty() ? "-" : info.application.c_str(),
+            info.profile.empty() ? "-" : info.profile.c_str(), info.content.empty() ? "-" : info.content.c_str());
+        std::printf(
+            "  level %s, spawn %s, scene %s\n", info.level.empty() ? "-" : info.level.c_str(),
+            info.spawn.empty() ? "-" : info.spawn.c_str(), info.scene.empty() ? "-" : info.scene.c_str());
+        std::printf(
+            "  saved %s, play time %.1f s, %zu entities, %zu values, %zu campaign values\n",
+            info.savedAt.empty() ? "-" : info.savedAt.c_str(), info.playTime, info.entities, info.values.size(),
+            info.campaign.size());
+    }
+    if (problem.empty())
+        std::printf("loadable\n");
+    else
+        std::fprintf(stderr, "can't load: %s\n", problem.c_str());
+    int code = problem.empty() ? 0 : 1;
+    if (!jsonFile.empty() && writeJson(jsonFile, saveJson(project, info, identity) + "\n")) code = 1;
+    return code;
+}
+
+int saveMigrate(
+    const shockwave::Project& project, const fs::path& file, const fs::path& output,
+    const shockwave::SaveIdentity& identity) {
+    if (output.empty()) {
+        std::fprintf(stderr, "Player: --save-migrate needs --output newfile.swsave\n");
+        return 2;
+    }
+    std::error_code ec;
+    if (fs::absolute(file).lexically_normal() == fs::absolute(output).lexically_normal() ||
+        (fs::exists(output, ec) && fs::equivalent(file, output, ec))) {
+        std::fprintf(stderr, "Player: --save-migrate never writes over the save it reads; pick another --output\n");
+        return 2;
+    }
+    if (fs::exists(output, ec)) {
+        std::fprintf(
+            stderr, "Player: %s already exists; remove it or pick another --output\n", output.string().c_str());
+        return 2;
+    }
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        std::fprintf(stderr, "Player: can't read %s\n", file.string().c_str());
+        return 1;
+    }
+    std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    const int fromFormat = [&] {
+        shockwave::SaveInfo before;
+        std::string ignored;
+        return shockwave::readSaveInfo(file, before, ignored) ? before.format : 0;
+    }();
+    // An older save names its scene, not its level: the catalog's level for that scene.
+    shockwave::LevelCatalog catalog;
+    std::vector<shockwave::Diagnostic> ignored;
+    if (!shockwave::projectLevels(project, catalog, ignored)) catalog = shockwave::implicitLevelCatalog(project);
+    auto upgrade = [&](shockwave::SaveInfo& save) {
+        if (!save.level.empty() || save.scene.empty()) return;
+        const fs::path wanted = fs::absolute(project.root / save.scene).lexically_normal();
+        for (const shockwave::LevelEntry& level : catalog.levels)
+            if (fs::absolute(project.root / level.scene).lexically_normal() == wanted) save.level = level.id;
+    };
+    shockwave::SaveInfo result;
+    std::string error;
+    if (!shockwave::migrateSaveText(text, file.string(), identity, upgrade, result, error)) {
+        std::fprintf(stderr, "Player: %s\n", error.c_str());
+        return 1;
+    }
+    if (!shockwave::writeSaveFile(output, text, error)) {
+        std::fprintf(stderr, "Player: %s\n", error.c_str());
+        return 1;
+    }
+    std::printf(
+        "Wrote %s (format %d to %d, schema %d, level %s)\n", output.string().c_str(), fromFormat, result.format,
+        result.schema, result.level.empty() ? "-" : result.level.c_str());
     return 0;
 }
 

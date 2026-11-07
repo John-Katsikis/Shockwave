@@ -1,6 +1,7 @@
 // The application shell (docs/AppShell.md) and --flow-test (docs/FlowTest.md).
 #include "Player.h"
 
+#include <GameFramework/SaveGame.h>
 #include <GameUI/UIWorld.h>
 
 #include <cstdio>
@@ -21,6 +22,13 @@ void Player::startShell() {
     setup.screens = screens;
     setup.content = m_project.assetFolder;
     setup.quit = [this] { engine().quit(); };
+    // S06: New game asks first when the campaign holds progress; Continue loads the newest
+    // save this game and profile can load.
+    setup.hasProgress = [this] { return m_levels && !m_levels->campaign().empty(); };
+    setup.continueReason = [this] { return continueReason(); };
+    setup.continueGame = [this](shockwave::TravelRequest& request, std::string& why) {
+        return continueRequest(request, why);
+    };
     // New game goes where the menu level says next, else to the first gameplay level.
     for (const shockwave::LevelEntry& level : m_catalog.levels) {
         shockwave::AppShell::Level l;
@@ -37,6 +45,39 @@ void Player::startShell() {
                 break;
             }
     m_shell = std::make_unique<shockwave::AppShell>(&engine(), *m_levels, std::move(setup));
+}
+
+std::string Player::continueReason() {
+    const fs::path folder = saveFolder();
+    if (folder.empty()) return "Saving is off in this run";
+    std::string passed;
+    if (shockwave::newestCompatibleSave(folder, saveIdentity(), &passed)) return {};
+    return passed.empty() ? "No saved game to continue yet" : "No save to continue: " + passed;
+}
+
+// Read here, on the main thread, while the menu shows: a save is one file, and the loading
+// screen covers the rest of the travel.
+bool Player::continueRequest(shockwave::TravelRequest& request, std::string& why) {
+    std::string passed;
+    const auto newest = shockwave::newestCompatibleSave(saveFolder(), saveIdentity(), &passed);
+    if (!newest) {
+        why = passed.empty() ? "No saved game to continue yet" : "No save to continue: " + passed;
+        return false;
+    }
+    auto restore = std::make_shared<shockwave::SaveRestore>();
+    std::vector<std::string> warnings;
+    if (!shockwave::readSaveRestore(newest->file, engine().assets(), saveIdentity(), *restore, why, &warnings))
+        return false;
+    for (const std::string& warning : warnings) SW_LOG(shockwave::LogGame, Warning, "{}", warning);
+    // Saves from before S06 don't name their level: the one whose scene they came from.
+    request.level = restore->info.level;
+    if (request.level.empty() && !restore->info.scene.empty())
+        request.level = levelForScene(m_project.root / restore->info.scene);
+    request.spawn = restore->info.spawn;
+    request.restore = std::move(restore);
+    if (!passed.empty()) SW_LOG(shockwave::LogGame, Warning, "Continue: {}", passed);
+    SW_LOG(shockwave::LogGame, Info, "Continue from {}", m_project.relative(newest->file));
+    return true;
 }
 
 void Player::startFlowTest() {
