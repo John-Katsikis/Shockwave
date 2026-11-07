@@ -87,6 +87,19 @@ int main(int argc, char** argv) {
         };
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
+            // Before the long chain below, which is at MSVC's limit of nested blocks.
+            if (arg == "--app-shell" && i + 1 < argc) {
+                tool.appShell = argv[++i];
+                shockwave::AppShellScreens screens;
+                std::string error;
+                if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
+                    throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            if (arg == "--flow-test" && i + 1 < argc) {
+                tool.flowTest = argv[++i];
+                continue;
+            }
             if (arg == "--graphics" && i + 1 < argc)
                 graphicsFile = argv[++i];
             else if (arg == "--graphics-schema" && i + 1 < argc)
@@ -417,14 +430,7 @@ int main(int argc, char** argv) {
                 tool.assetResidency = false;
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
-            } else if (arg == "--app-shell" && i + 1 < argc) {
-                tool.appShell = argv[++i];
-                shockwave::AppShellScreens screens;
-                std::string error;
-                if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
-                    throw player::UsageError("--app-shell: " + error);
-            } else if (arg == "--flow-test" && i + 1 < argc) {
-                tool.flowTest = argv[++i];
+
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
                 if (tool.assetLoading != "all" && tool.assetLoading != "levels")
