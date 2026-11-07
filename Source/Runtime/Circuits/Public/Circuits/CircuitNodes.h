@@ -72,6 +72,40 @@ public:
     virtual Ticket returnToMenu() = 0;
     virtual Ticket useExit(Entity exit) = 0;
     virtual Status status(int32_t ticket) const = 0;
+
+    // ---- Checkpoints and the campaign (S06, docs/SaveGames.md) ----
+    // Each fails with a code ("NotPlaying" without a session that saves) and does nothing.
+    struct Result {
+        bool ok = false;
+        std::string code;   // a SaveError name: "None" when it worked
+    };
+    virtual Result reachCheckpoint(const std::string& id) {
+        (void)id;
+        return {false, "NotPlaying"};
+    }
+    virtual Result restartCheckpoint() { return {false, "NotPlaying"}; }
+    virtual Ticket finishLevel(const std::string& level, const std::string& spawn) {
+        (void)level;
+        (void)spawn;
+        return {0, "NotPlaying", "no level travel here"};
+    }
+    // The campaign's values and completions (game.campaign()).
+    virtual bool completeOnce(const std::string& id) {
+        (void)id;
+        return false;
+    }
+    virtual bool campaignHas(const std::string& key) const {
+        (void)key;
+        return false;
+    }
+    virtual std::string campaignGet(const std::string& key) const {
+        (void)key;
+        return {};
+    }
+    virtual void campaignSet(const std::string& key, const std::string& value) {
+        (void)key;
+        (void)value;
+    }
 };
 
 // What circuits can reach while they run: the session's services. Any may be null (tools

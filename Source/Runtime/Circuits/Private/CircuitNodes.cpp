@@ -881,6 +881,57 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
                 c.out(4) = Value::boolean(s.cancellable);
                 return 0;
             }));
+        // ---- Checkpoints and the campaign (S06, docs/SaveGames.md)
+        auto setResult = [](CircuitCall& c, const CircuitTravel::Result& r) {
+            c.out(0) = Value::string(r.code);
+            return r.ok ? 0 : 1;
+        };
+        list.push_back(action(
+            "Level.ReachCheckpoint",
+            "Saves at this level's Checkpoint with that id. Restart checkpoint goes back to it once it's written.",
+            {required("id", S)}, {pin("code", S)},
+            [setResult](CircuitCall& c) {
+                return setResult(
+                    c, c.host.travel ? c.host.travel->reachCheckpoint(c.text(0))
+                                     : CircuitTravel::Result{false, "NotPlaying"});
+            },
+            {"saving", "refused"}));
+        list.push_back(action(
+            "Level.RestartCheckpoint", "Loads the last checkpoint written in this campaign.", {}, {pin("code", S)},
+            [setResult](CircuitCall& c) {
+                return setResult(
+                    c, c.host.travel ? c.host.travel->restartCheckpoint() : CircuitTravel::Result{false, "NotPlaying"});
+            },
+            {"loading", "refused"}));
+        list.push_back(action(
+            "Level.FinishLevel",
+            "Leaves this level for good: travels to the next one and autosaves the campaign with it, so a crash "
+            "in between neither loses nor repeats a completion.",
+            {required("level", S), pin("spawn", S)}, ticketOutputs(),
+            [setTicket, none](CircuitCall& c) {
+                return setTicket(c, c.host.travel ? c.host.travel->finishLevel(c.text(0), c.text(1)) : none());
+            },
+            {"accepted", "refused"}));
+        list.push_back(action(
+            "Campaign.Complete",
+            "Records that something happened, once per campaign: first the first time, already after. Give a "
+            "reward only on first.",
+            {required("id", S)}, {},
+            [](CircuitCall& c) { return c.host.travel && c.host.travel->completeOnce(c.text(0)) ? 0 : 1; },
+            {"first", "already"}));
+        list.push_back(action(
+            "Campaign.Set", "Keeps a value for the whole game: it survives travel and goes into saves.",
+            {required("key", S), pin("value", S)}, {}, [](CircuitCall& c) {
+                if (c.host.travel) c.host.travel->campaignSet(c.text(0), c.text(1));
+                return 0;
+            }));
+        list.push_back(pure(
+            "Campaign.Get", "A value kept with Campaign.Set (or game.campaign() in C++).", {required("key", S)},
+            {pin("value", S), pin("has", B)}, [](CircuitCall& c) {
+                c.out(0) = Value::string(c.host.travel ? c.host.travel->campaignGet(c.text(0)) : std::string());
+                c.out(1) = Value::boolean(c.host.travel && c.host.travel->campaignHas(c.text(0)));
+                return 0;
+            }));
         list.push_back(event(
             "Level.OnTravelFinished", CircuitEvent::TravelFinished,
             "A travel ended. Runs in the level playing afterwards: the new one when it succeeded, this one when "

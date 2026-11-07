@@ -112,6 +112,11 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (count == 0 || (alone && count > 1))
                     return fail("app_shell takes off, all, or any of menu, level_select, pause, loading, error");
                 result.appShell = words;
+            } else if (key == "remember_destroyed") {
+                std::string value;
+                row >> value;
+                if (value != "true" && value != "false") return fail("remember_destroyed must be true or false");
+                result.rememberDestroyed = value == "true";
             } else if (key == "save_schema") {
                 if (!(row >> result.saveSchema) || result.saveSchema < 1 || result.saveSchema > 1000000)
                     return fail("save_schema takes a version from 1");
@@ -222,6 +227,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.levelTravel != "staged") out << "level_travel " << project.levelTravel << "\n";
     if (project.appShell != "loading error") out << "app_shell " << project.appShell << "\n";
     if (project.saveSchema != 1) out << "save_schema " << project.saveSchema << "\n";
+    if (!project.rememberDestroyed) out << "remember_destroyed false\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";
     if (project.lodErrorPixels != 1.0) out << "lod_error_pixels " << project.lodErrorPixels << "\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";

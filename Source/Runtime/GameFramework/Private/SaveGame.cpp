@@ -3,6 +3,7 @@
 #include <Assets/Assets.h>
 #include <Core/Jobs.h>
 #include <Core/Log.h>
+#include <Engine/Levels.h>
 #include <Engine/SceneFile.h>
 
 #include <algorithm>
@@ -201,6 +202,26 @@ bool readHeader(
             ls >> std::quoted(info.checkpoint);
         } else if (key == "profile") {
             ls >> std::quoted(info.profile);
+        } else if (key == "fresh") {
+            info.fresh = true;
+        } else if (key == "campaign_id") {
+            ls >> std::quoted(info.campaignId);
+        } else if (key == "completed") {
+            std::string id;
+            if (!(ls >> std::quoted(id)) || !validSaveKey(id))
+                return fail("completed takes an id (letters, digits, _ - .)");
+            if (info.completed.size() >= kMaxSaveValues)
+                return fail("more than " + std::to_string(kMaxSaveValues) + " completions", SaveError::TooLarge);
+            info.completed.insert(id);
+        } else if (key == "destroyed") {
+            std::string level, id;
+            if (!(ls >> level)) return fail("destroyed takes a level and PersistentIdentity ids");
+            auto& ids = info.destroyed[level];
+            while (ls >> id) {
+                if (ids.size() >= kMaxSaveEntities)
+                    return fail("more than " + std::to_string(kMaxSaveEntities) + " destroyed", SaveError::TooLarge);
+                ids.insert(id);
+            }
         } else if (key == "revision") {
             if (!(ls >> info.revision)) return fail("revision takes a count");
         } else if (key == "title") {
@@ -314,6 +335,7 @@ const char* saveErrorName(SaveError error) {
     case SaveError::Conflict: return "Conflict";
     case SaveError::WriteFailed: return "WriteFailed";
     case SaveError::Busy: return "Busy";
+    case SaveError::NoCheckpoint: return "NoCheckpoint";
     case SaveError::UnavailableDuringNetworkPlay: return "UnavailableDuringNetworkPlay";
     case SaveError::Invalid: return "Invalid";
     }
@@ -404,13 +426,25 @@ void writeHeaderLines(std::ostream& o, const SaveInfo& info, size_t entities) {
     if (!info.level.empty()) o << "level " << std::quoted(info.level) << "\n";
     if (!info.spawn.empty()) o << "spawn " << std::quoted(info.spawn) << "\n";
     if (!info.checkpoint.empty()) o << "checkpoint " << std::quoted(info.checkpoint) << "\n";
+    if (info.fresh) o << "fresh\n";
     if (!info.title.empty()) o << "title " << std::quoted(info.title) << "\n";
     if (!info.scene.empty()) o << "scene " << std::quoted(info.scene) << "\n";
     if (!info.savedAt.empty()) o << "saved_at " << std::quoted(info.savedAt) << "\n";
     o << "play_time " << std::fixed << std::setprecision(3) << info.playTime << std::defaultfloat
       << std::setprecision(6) << "\n";
     o << "entities " << entities << "\n";
+    if (!info.campaignId.empty()) o << "campaign_id " << std::quoted(info.campaignId) << "\n";
     for (const auto& [key, value] : info.campaign) o << "campaign " << key << ' ' << std::quoted(value) << "\n";
+    for (const std::string& id : info.completed) o << "completed " << std::quoted(id) << "\n";
+    for (const auto& [level, ids] : info.destroyed) {
+        size_t n = 0;
+        for (const std::string& id : ids) {   // wrapped like entity_ids
+            if (n % kIdsPerLine == 0) o << (n ? "\n" : "") << "destroyed " << level;
+            o << ' ' << id;
+            ++n;
+        }
+        if (n) o << "\n";
+    }
     for (const auto& [key, value] : info.values) o << "value " << key << ' ' << std::quoted(value) << "\n";
 }
 
@@ -469,8 +503,9 @@ bool migrateSaveText(
     // The entities and anything else above them stay as they were; only the save's own
     // header lines are replaced.
     static const std::set<std::string> ownKeys = {
-        "save_game",  "checksum", "application", "schema",   "content",   "profile",  "revision", "level",   "spawn",
-        "checkpoint", "title",    "scene",       "saved_at", "play_time", "entities", "value",    "campaign"};
+        "save_game", "checksum", "application", "schema", "content",     "profile",   "revision",
+        "level",     "spawn",    "checkpoint",  "title",  "scene",       "saved_at",  "play_time",
+        "entities",  "value",    "campaign",    "fresh",  "campaign_id", "completed", "destroyed"};
     std::ostringstream header;
     writeHeaderLines(header, info, blocks);
     std::string out;
@@ -726,12 +761,15 @@ struct SaveJobs {
         std::shared_ptr<const World> snapshot;
         SaveInfo info;
         const Assets* assets = nullptr;
+        bool checkpoint = false;   // the checkpoint's state follows it
     };
     std::deque<Write> writes;
     bool writing = false;
     size_t inFlight = 0;   // queued and being written
     // The revision each slot had when this session last read or wrote it.
     std::map<std::string, uint64_t> revisions;
+    SaveGames::CheckpointState checkpoint = SaveGames::CheckpointState::None;
+    std::string checkpointId;
 };
 
 namespace {
@@ -740,7 +778,7 @@ constexpr size_t kMaxSavesInFlight = 2;
 
 // One save: the slot's revision is checked against what this session last saw, then the
 // file is written durably. Called by the writer job, one at a time.
-void writeOne(SaveJobs& shared, SaveJobs::Write& job) {
+bool writeOne(SaveJobs& shared, SaveJobs::Write& job) {
     SaveInfo& info = job.info;
     std::error_code ec;
     std::optional<uint64_t> expected;
@@ -770,11 +808,12 @@ void writeOne(SaveJobs& shared, SaveJobs::Write& job) {
         SW_LOG(LogGame, Info, "Saved {} ({} entities, revision {})", info.file.string(), info.entities, info.revision);
         std::lock_guard lock(shared.mutex);
         shared.revisions[info.slot] = info.revision;
-        return;
+        return true;
     }
     SW_LOG(LogGame, Warning, "Save games: {}", error);
     std::lock_guard lock(shared.mutex);
     shared.lastError = error;
+    return false;
 }
 
 }   // namespace
@@ -794,7 +833,7 @@ void SaveGames::fail(std::string message) {
 
 fs::path SaveGames::fileFor(std::string_view slot) const { return m_folder / (std::string(slot) + ".swsave"); }
 
-bool SaveGames::save(std::string_view slot, std::string_view title) {
+bool SaveGames::canSave(std::string_view slot) {
     if (m_networkPlay) {
         fail(kUnavailableDuringNetworkPlay);
         return false;
@@ -808,15 +847,16 @@ bool SaveGames::save(std::string_view slot, std::string_view title) {
             SaveError::Invalid, "'" + std::string(slot) + "' isn't a slot name: use letters, digits, spaces, - and _"));
         return false;
     }
-    {
-        std::lock_guard lock(m_shared->mutex);
-        if (m_shared->inFlight >= kMaxSavesInFlight) {
-            m_shared->lastError = coded(SaveError::Busy, "two saves are still being written; try again shortly");
-            SW_LOG(LogGame, Warning, "Save games: {}", m_shared->lastError);
-            return false;
-        }
+    std::lock_guard lock(m_shared->mutex);
+    if (m_shared->inFlight >= kMaxSavesInFlight) {
+        m_shared->lastError = coded(SaveError::Busy, "two saves are still being written; try again shortly");
+        SW_LOG(LogGame, Warning, "Save games: {}", m_shared->lastError);
+        return false;
     }
-    if (beforeSave) beforeSave();
+    return true;
+}
+
+SaveInfo SaveGames::envelope(std::string_view slot, std::string_view title) const {
     SaveInfo info;
     info.slot = slot;
     info.file = fileFor(slot);
@@ -831,16 +871,22 @@ bool SaveGames::save(std::string_view slot, std::string_view title) {
     info.scene = m_scene;
     info.savedAt = nowUtc();
     info.playTime = m_playTime;
-    info.entities = m_world.entityCount();
     info.values = m_values;
-    if (m_campaign) info.campaign = m_campaign->values();
-    // The copy is the only part on this thread; it's what makes the save consistent.
-    auto snapshot = std::make_shared<const World>(m_world);
+    if (m_campaign) m_campaign->write(info);
+    return info;
+}
+
+void SaveGames::enqueue(SaveInfo info, std::shared_ptr<const World> snapshot, bool checkpoint) {
+    info.entities = snapshot->entityCount();
     bool start = false;
     {
         std::lock_guard lock(m_shared->mutex);
         m_shared->lastError.clear();
-        m_shared->writes.push_back({std::move(snapshot), std::move(info), m_assets});
+        if (checkpoint) {
+            m_shared->checkpoint = CheckpointState::Saving;
+            m_shared->checkpointId = info.checkpoint;
+        }
+        m_shared->writes.push_back({std::move(snapshot), std::move(info), m_assets, checkpoint});
         ++m_shared->inFlight;
         start = !m_shared->writing;
         m_shared->writing = true;
@@ -859,12 +905,99 @@ bool SaveGames::save(std::string_view slot, std::string_view title) {
                         job = std::move(shared->writes.front());
                         shared->writes.pop_front();
                     }
-                    writeOne(*shared, job);
+                    const bool ok = writeOne(*shared, job);
                     std::lock_guard lock(shared->mutex);
                     --shared->inFlight;
+                    // Only once it's on disk is it the place Restart checkpoint goes back to.
+                    if (job.checkpoint && shared->checkpointId == job.info.checkpoint)
+                        shared->checkpoint = ok ? CheckpointState::Saved : CheckpointState::Failed;
                 }
             },
             &m_shared->counter);
+}
+
+bool SaveGames::save(std::string_view slot, std::string_view title) {
+    if (!canSave(slot)) return false;
+    if (beforeSave) beforeSave();
+    SaveInfo info = envelope(slot, title);
+    // The copy is the only part on this thread; it's what makes the save consistent.
+    enqueue(std::move(info), std::make_shared<const World>(m_world), false);
+    return true;
+}
+
+bool SaveGames::checkpoint(std::string_view id) {
+    Entity found = kNullEntity;
+    const Checkpoint* point = nullptr;
+    m_world.each<const Checkpoint>([&](Entity e, const Checkpoint& c) {
+        if (c.id == id && !point) {
+            found = e;
+            point = &c;
+        }
+    });
+    if (!point || !point->enabled) {
+        fail(coded(
+            SaveError::Invalid, std::string(point ? "the Checkpoint \"" : "this level has no Checkpoint \"") +
+                                    std::string(id) + (point ? "\" is disabled" : "\"")));
+        return false;
+    }
+    (void)found;
+    if (!canSave(kCheckpointSlot)) return false;
+    if (beforeSave) beforeSave();
+    SaveInfo info = envelope(kCheckpointSlot, "Checkpoint");
+    info.checkpoint = id;
+    if (!point->spawn.empty()) info.spawn = point->spawn;
+    enqueue(std::move(info), std::make_shared<const World>(m_world), true);
+    return true;
+}
+
+SaveGames::CheckpointState SaveGames::checkpointState() const {
+    std::lock_guard lock(m_shared->mutex);
+    return m_shared->checkpoint;
+}
+
+std::string SaveGames::checkpointId() const {
+    std::lock_guard lock(m_shared->mutex);
+    return m_shared->checkpointId;
+}
+
+bool SaveGames::hasCheckpoint(std::string* why) const {
+    auto no = [&](std::string reason) {
+        if (why) *why = std::move(reason);
+        return false;
+    };
+    if (m_folder.empty()) return no("Saving is off here");
+    SaveInfo info;
+    std::string error;
+    std::error_code ec;
+    if (!fs::is_regular_file(fileFor(kCheckpointSlot), ec)) return no("No checkpoint reached yet");
+    if (!readSaveInfo(fileFor(kCheckpointSlot), info, error)) return no("The checkpoint can't be read: " + error);
+    if (!checkSaveCompatible(info, m_identity, error)) return no("The checkpoint can't be loaded: " + error);
+    if (info.checkpoint.empty() || (m_campaign && info.campaignId != m_campaign->id()))
+        return no("No checkpoint reached in this game yet");
+    if (why) why->clear();
+    return true;
+}
+
+bool SaveGames::restartCheckpoint() {
+    std::string why;
+    if (!hasCheckpoint(&why)) {
+        fail(coded(SaveError::NoCheckpoint, why));
+        return false;
+    }
+    return loadFile(fileFor(kCheckpointSlot));
+}
+
+bool SaveGames::saveTransition(std::string_view slot, std::string level, std::string spawn) {
+    if (!canSave(slot)) return false;
+    if (beforeSave) beforeSave();
+    SaveInfo info = envelope(slot, "Autosave");
+    info.level = std::move(level);
+    info.spawn = std::move(spawn);
+    info.fresh = true;   // the next level as authored: nothing of this one's world
+    info.values.clear();
+    info.scene.clear();
+    info.playTime = m_playTime;
+    enqueue(std::move(info), std::make_shared<const World>(), false);
     return true;
 }
 
@@ -928,12 +1061,14 @@ std::optional<SaveRestore> SaveGames::takeLoaded() {
 }
 
 void SaveGames::apply(SaveRestore restore) {
-    restore.world.setLevelEpoch(m_world.levelEpoch());   // the same level, loaded: refs stay valid
-    m_world = std::move(restore.world);
+    if (!restore.info.fresh) {   // a fresh save keeps the level as authored
+        restore.world.setLevelEpoch(m_world.levelEpoch());   // the same level, loaded: refs stay valid
+        m_world = std::move(restore.world);
+    }
     m_values = std::move(restore.info.values);
     m_playTime = restore.info.playTime;
     // Older saves carry no campaign: what the game has now stays.
-    if (m_campaign && restore.info.format >= 2) m_campaign->replace(std::move(restore.info.campaign));
+    if (m_campaign && restore.info.format >= 2) m_campaign->read(restore.info);
     {
         std::lock_guard lock(m_shared->mutex);
         if (!restore.info.slot.empty()) m_shared->revisions[restore.info.slot] = restore.info.revision;
@@ -1032,6 +1167,48 @@ bool SaveValues::getBool(std::string_view key, bool fallback) const {
 }
 
 void CampaignState::badKey(std::string message) { SW_LOG(LogGame, Warning, "Campaign: {}", message); }
+
+CampaignState::CampaignState() : m_id(newPersistentId()) {}
+
+bool CampaignState::complete(std::string_view id) {
+    if (!validSaveKey(id)) {
+        badKey(coded(
+            SaveError::Invalid, "'" + std::string(id) + "' isn't a completion id: use letters, digits, _ - and ."));
+        return false;
+    }
+    return m_completed.insert(std::string(id)).second;
+}
+
+const std::set<std::string>& CampaignState::destroyed(const std::string& level) const {
+    static const std::set<std::string> none;
+    const auto it = m_destroyed.find(level);
+    return it != m_destroyed.end() ? it->second : none;
+}
+
+void CampaignState::addDestroyed(const std::string& level, const std::set<std::string>& ids) {
+    if (!ids.empty()) m_destroyed[level].insert(ids.begin(), ids.end());
+}
+
+void CampaignState::clear() {
+    m_values.clear();
+    m_completed.clear();
+    m_destroyed.clear();
+    m_id = newPersistentId();
+}
+
+void CampaignState::write(SaveInfo& save) const {
+    save.campaign = m_values;
+    save.campaignId = m_id;
+    save.completed = m_completed;
+    save.destroyed = m_destroyed;
+}
+
+void CampaignState::read(const SaveInfo& save) {
+    m_values = save.campaign;
+    m_completed = save.completed;
+    m_destroyed = save.destroyed;
+    if (!save.campaignId.empty()) m_id = save.campaignId;
+}
 
 bool importSaveGames(
     const std::filesystem::path& from, const std::filesystem::path& to, bool preview, SaveImport& result,

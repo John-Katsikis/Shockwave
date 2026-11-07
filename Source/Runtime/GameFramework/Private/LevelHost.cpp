@@ -3,6 +3,7 @@
 #include <Circuits/CircuitWorld.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
+#include <Engine/Hierarchy.h>
 #include <Engine/Levels.h>
 #include <Input/Input.h>
 
@@ -165,6 +166,7 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     const LevelArrival arrival = levelArrival(m_world, m_current.spawn);
     if (!m_current.spawn.empty() && arrival.entity == kNullEntity)
         SW_LOG(LogGame, Warning, "Level \"{}\" has no LevelSpawn \"{}\"", m_current.level, m_current.spawn);
+    noteAuthored();
     try {
         startSession(reason, arrival);
     } catch (const std::exception& e) {
@@ -183,7 +185,7 @@ void LevelHost::start(LevelRequest level, StartReason reason) {
     load.startMs = msSince(clock);
     report(load);
     arrived();
-    m_entryCampaign = m_campaign.values();
+    m_entryCampaign = m_campaign;
     deliver();
 }
 
@@ -615,6 +617,7 @@ bool LevelHost::commit(Candidate candidate) {
     // lease is taken before the old one goes, so what both use keeps a ref throughout;
     // only the old level's own assets retire.
     setPhase(next.id, TravelPhase::Retiring);
+    recordDestroyed(next.request);
     endSession();
     AssetResidency::Lease arriving;
     if (m_residency && m_hooks.assets)
@@ -650,18 +653,64 @@ void LevelHost::startLevel(const TravelRequest& request) {
     // New game, confirmed, starts the campaign over; Restart level goes back to how it
     // was on entering, so rewards taken since aren't kept (and then taken again).
     if (request.reason == TravelReason::NewGame && request.resetCampaign) m_campaign.clear();
-    if (request.reason == TravelReason::Restart) m_campaign.replace(m_entryCampaign);
-    const bool restoring = request.reason == TravelReason::LoadSave && request.restore;
+    if (request.reason == TravelReason::Restart) m_campaign = m_entryCampaign;
+    // A save's campaign is in before anything of the level runs.
+    const std::shared_ptr<SaveRestore>& restore = request.restore;
+    if (restore && restore->info.format >= 2) m_campaign.read(restore->info);
+    const bool restoring = restore && !restore->info.fresh;
+    noteAuthored();
     startSession(restoring ? StartReason::RestoreSave : StartReason::Fresh, levelArrival(m_world, m_current.spawn));
     if (restoring) {
         try {
-            m_session->restore(std::move(*request.restore));   // before the first tick or frame
+            m_session->restore(std::move(*restore));   // before the first tick or frame
         } catch (...) {
             endSession();
             throw;
         }
     }
-    m_entryCampaign = m_campaign.values();
+    m_entryCampaign = m_campaign;
+}
+
+// ---- Destroyed authored entities (docs/SaveGames.md#things-that-stay-gone) ----------------
+
+namespace {
+
+std::set<std::string> persistentIds(World& world) {
+    std::set<std::string> ids;
+    world.each<const PersistentIdentity>([&](Entity, const PersistentIdentity& p) {
+        if (!p.id.empty()) ids.insert(p.id);
+    });
+    return ids;
+}
+
+}   // namespace
+
+// The level's authored identities, as it starts: what was destroyed in an earlier visit
+// is taken out first, so it doesn't come back.
+void LevelHost::noteAuthored() {
+    m_authored.clear();
+    if (!m_rememberDestroyed) return;
+    const std::set<std::string>& gone = m_campaign.destroyed(m_current.level);
+    if (!gone.empty()) {
+        std::vector<Entity> doomed;
+        m_world.each<const PersistentIdentity>([&](Entity e, const PersistentIdentity& p) {
+            if (gone.count(p.id)) doomed.push_back(e);
+        });
+        for (Entity e : doomed)
+            if (m_world.alive(e)) destroyWithChildren(m_world, e);
+    }
+    m_authored = persistentIds(m_world);
+}
+
+// Leaving the level (not restarting it): what was authored and isn't there any more
+// goes into the campaign.
+void LevelHost::recordDestroyed(const TravelRequest& next) {
+    if (!m_rememberDestroyed || !m_session || next.reason == TravelReason::Restart) return;
+    const std::set<std::string> alive = persistentIds(m_world);
+    std::set<std::string> gone;
+    for (const std::string& id : m_authored)
+        if (!alive.count(id)) gone.insert(id);
+    m_campaign.addDestroyed(m_current.level, gone);
 }
 
 void LevelHost::failStarted(const Pending& next, LoadReport& load, TravelError code, const std::string& why) {
@@ -694,6 +743,7 @@ bool LevelHost::travelOnDemand(Candidate& candidate, Clock::time_point& clock) {
     // Retire: the current level ends and its own assets unload (their GPU memory follows
     // once no frame reads it). The new lease is taken first, so shared assets stay in.
     setPhase(next.id, TravelPhase::Retiring);
+    recordDestroyed(next.request);
     endSession();
     AssetResidency::Lease arriving = m_residency->acquire(leaseOwner(load.request, m_epoch + 1), candidate.assets);
     m_lease.release();

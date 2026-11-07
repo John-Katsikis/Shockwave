@@ -45,6 +45,9 @@ struct Project {
     // when what the game keeps in saves changes meaning; older saves are then migrated
     // by the game, and newer ones refused.
     int saveSchema = 1;
+    // Authored entities with a PersistentIdentity that were destroyed stay destroyed when
+    // their level is entered again (remember_destroyed, docs/SaveGames.md).
+    bool rememberDestroyed = true;
     int meshLods = 4;   // simpler levels of detail per mesh, 0..7 (mesh_lods)
     double lodErrorPixels = 1.0;   // how far a level may stray on screen, 0 = always full detail (lod_error_pixels)
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)

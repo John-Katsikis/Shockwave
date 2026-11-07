@@ -54,6 +54,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -159,6 +160,11 @@ public:
     // brings back its own.
     CampaignState& campaign() { return m_campaign; }
     const CampaignState& campaign() const { return m_campaign; }
+    // Authored entities with a PersistentIdentity destroyed in a level stay destroyed when
+    // it's entered again (Restart level and New game bring them back). On by default; the
+    // player's project key remember_destroyed turns it off.
+    void setRememberDestroyed(bool on) { m_rememberDestroyed = on; }
+    bool rememberDestroyed() const { return m_rememberDestroyed; }
 
     // For tests: the epoch the next level would get. Overflow fails travel explicitly.
     void setEpochForTesting(uint64_t epoch) { m_epoch = epoch; }
@@ -192,6 +198,8 @@ private:
     TravelTicket refuse(TravelError code, std::string message, const TravelRequest& request) const;
     void startSession(StartReason reason, const LevelArrival& arrival);
     void startLevel(const TravelRequest& request);
+    void noteAuthored();
+    void recordDestroyed(const TravelRequest& next);
     void arrived();
     void endSession();
     void restoreSettings();
@@ -236,7 +244,9 @@ private:
     AssetResidency::Lease m_lease;   // the current level's
     std::vector<LoadReport> m_reports;
     CampaignState m_campaign;
-    std::map<std::string, std::string> m_entryCampaign;   // as the current level was entered
+    CampaignState m_entryCampaign;   // as the current level was entered
+    bool m_rememberDestroyed = true;
+    std::set<std::string> m_authored;   // the current level's PersistentIdentity ids at its start
 };
 
 }   // namespace shockwave

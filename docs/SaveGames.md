@@ -113,6 +113,77 @@ A save from the level you're in loads in place, as before.
 The shell's **Continue** loads the newest save this game and profile can load. It skips
 saves that are damaged or belong to someone else, and logs why.
 
+## Checkpoints
+
+Put a `Checkpoint` component in the level (an `id`, and the `LevelSpawn` it restarts
+at). When the player reaches it:
+
+```cpp
+game.saves().checkpoint("bridge");
+```
+
+This saves to the `checkpoint` slot in the background.
+
+- **Restart checkpoint** in the pause menu, or `game.saves().restartCheckpoint()`, loads
+  it. A checkpoint in another level travels there.
+- It only becomes the restart point once the file is written. If writing fails, the
+  previous checkpoint stays.
+- `checkpointState()` is `Saving`, then `Saved` or `Failed`, for a HUD. The shell has the
+  same as `flow.checkpoint_state`.
+- A checkpoint only restarts the campaign it was made in. After New game, there's none
+  until the next one is reached.
+
+## Rewards once
+
+`game.campaign().complete("boss_1")` is true the first time, and false ever after in that
+campaign, through saves and loads. Give a reward only when it's true:
+
+```cpp
+if (game.campaign().complete("boss_1")) game.campaign().set("gold", gold + 100);
+```
+
+Restart level undoes completions made since you entered the level, together with their
+rewards, so they can be earned again but never twice.
+
+## Finishing a level
+
+When a level is done for good, finish it instead of just travelling:
+
+```cpp
+if (game.campaign().complete("factory_done")) game.campaign().set("medals", medals + 1);
+game.finishLevel("ending");
+```
+
+It asks to travel to `ending`. Once that's accepted, it writes the `autosave` slot with
+the campaign and the next level, and no world.
+
+If the game crashes before `ending` starts, Continue picks the autosave. It starts
+`ending` as authored, with the completion already recorded, so the medal isn't given
+again.
+
+## Things that stay gone
+
+Authored entities with a `PersistentIdentity` stay destroyed when you come back to their
+level: enemies you beat, pickups you took. When you leave a level, the identities that
+are gone go into the campaign. When the level starts again, they're removed before
+`beginPlay`.
+
+- Restart level brings back what this visit destroyed.
+- New game brings everything back.
+- `remember_destroyed false` in the `.swproject` turns it off.
+
+Entities spawned at runtime aren't tracked; a save holds them while the level plays.
+
+## Circuits
+
+| Node | What it does |
+|---|---|
+| `Level.ReachCheckpoint` (id) | `checkpoint(id)`: exits `saving` or `refused`, with the code |
+| `Level.RestartCheckpoint` | `restartCheckpoint()` |
+| `Level.FinishLevel` (level, spawn) | `finishLevel`: a ticket, like `Level.RequestTravel` |
+| `Campaign.Complete` (id) | exits `first` the first time, `already` after |
+| `Campaign.Set` (key, value), `Campaign.Get` (key) | campaign values, as text |
+
 ## Compatibility
 
 Each save says which game it belongs to:
@@ -161,6 +232,7 @@ Every problem has a stable code at the start of its message (`lastError()`, the 
 | `Conflict` | Another copy of the game saved this slot since this one read it |
 | `WriteFailed` | The disk is full, read-only or refused the file |
 | `Busy` | Two saves are still being written |
+| `NoCheckpoint` | Restart checkpoint with no checkpoint written in this campaign |
 | `UnavailableDuringNetworkPlay` | Saving is off online |
 
 How a save is written:
@@ -301,13 +373,18 @@ end
 | `schema` | The game's `save_schema` when it was written |
 | `content` | The release version that wrote it, for information |
 | `revision` | How many times the slot has been written |
-| `level`, `spawn` | The level it was saved in, and the spawn that level was entered at |
+| `level`, `spawn` | The level it was saved in, and the spawn that level was entered at (a checkpoint's spawn) |
+| `checkpoint` | The checkpoint it was made at |
 | `title` | The title given to `save()`. Optional. |
 | `scene` | The level's scene, relative to the project |
 | `saved_at` | When it was saved, in UTC. |
 | `play_time` | Seconds of play, carried over through loads. |
 | `entities` | How many entities follow. Shown in lists. |
+| `fresh` | An autosave between levels: no world, the level starts as authored |
+| `campaign_id` | Which campaign it belongs to |
 | `campaign <key> "<text>"` | One value from `game.campaign()` |
+| `completed "<id>"` | One `complete()` already granted |
+| `destroyed <level> <id>...` | Authored entities destroyed in that level |
 | `value <key> "<text>"` | One value from `game.saves().set`. |
 | `entity_ids` | The handle of each entity block, in order: `index`, or `index:generation`. Long lists wrap onto more `entity_ids` lines. |
 
@@ -344,5 +421,6 @@ from the prefab when it loads.
   `afterLoad`.
 - Sounds that are already playing keep playing.
 - Saves are plain text and not compressed or encrypted.
-- A save is still a snapshot of the whole level. Checkpoints, rewards granted only once,
-  and enemies that stay dead in a level you come back to arrive with S06 part 2.
+- A save is a snapshot of the whole level, with the same entity handles. Loading one into
+  another level runs that level's `beginPlay` first (with `game.startReason` set to
+  `RestoreSave`, so skip spawning then), then swaps the snapshot in and calls `afterLoad`.

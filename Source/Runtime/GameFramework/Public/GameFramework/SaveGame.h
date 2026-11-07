@@ -35,6 +35,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,6 +60,7 @@ enum class SaveError {
     Conflict,   // another writer saved the slot since this one read it
     WriteFailed,   // the disk said no: full, read-only, no permission
     Busy,   // two saves are already being written
+    NoCheckpoint,   // Restart checkpoint: none written in this campaign yet
     UnavailableDuringNetworkPlay,
     Invalid,   // a bad slot name, saving off, a malformed line
 };
@@ -82,7 +84,10 @@ struct SaveInfo {
     std::string content;   // the release version that wrote it; for information only
     std::string level;   // the level it was saved in (format 2), "" for older saves
     std::string spawn;   // the spawn that level was entered at
-    std::string checkpoint;   // the checkpoint it restarts at ("" for now: S06 part 2)
+    std::string checkpoint;   // the Checkpoint it was made at, "" for other saves
+    // Only campaign progress and where to go next, no world: the level starts as authored
+    // (an autosave between levels, SaveGames::saveTransition).
+    bool fresh = false;
     std::string profile;   // the player profile it belongs to
     uint64_t revision = 0;   // counts the slot's writes: 1 for the first
     bool checksum = false;   // it carries a checksum, and it matched
@@ -93,6 +98,10 @@ struct SaveInfo {
     size_t entities = 0;
     std::map<std::string, std::string> values;   // SaveGames::set: the level's
     std::map<std::string, std::string> campaign;   // CampaignState: the whole game's
+    std::string campaignId;   // which campaign (a New game starts another)
+    std::set<std::string> completed;   // CampaignState::complete, each granted once
+    // Per level, the PersistentIdentity ids of authored entities destroyed there.
+    std::map<std::string, std::set<std::string>> destroyed;
     // Only in listSaveGames(folder, true): why it can't load ("Corrupt: ..."), else "".
     std::string problem;
 };
@@ -220,12 +229,39 @@ protected:
 // LevelHost owns it; a session without one has its own.
 class CampaignState final : public SaveValues {
 public:
+    CampaignState();   // with a new id
+
+    // Records that something happened once: true the first time for this id in this
+    // campaign, false after (and after a load that already had it). Grant a reward only
+    // on true, and it's never granted twice. Ids: letters, digits, _ - and '.'.
+    bool complete(std::string_view id);
+    bool completed(std::string_view id) const { return m_completed.count(std::string(id)) > 0; }
+    const std::set<std::string>& completions() const { return m_completed; }
+
+    // Authored entities (by PersistentIdentity) destroyed in a level, so they stay gone
+    // when it's entered again. LevelHost keeps these up to date.
+    const std::set<std::string>& destroyed(const std::string& level) const;
+    void addDestroyed(const std::string& level, const std::set<std::string>& ids);
+    const std::map<std::string, std::set<std::string>>& allDestroyed() const { return m_destroyed; }
+
+    // Which campaign this is. A New game starts a new one; a checkpoint only restarts the
+    // campaign it was made in.
+    const std::string& id() const { return m_id; }
+
+    // Everything back to a new campaign, with a new id.
+    void clear();
+    // Nothing recorded yet: New game has nothing to lose.
+    bool empty() const { return m_values.empty() && m_completed.empty() && m_destroyed.empty(); }
     void replace(std::map<std::string, std::string> values) { m_values = std::move(values); }
-    void clear() { m_values.clear(); }
-    bool empty() const { return m_values.empty(); }
+    // Into and out of a save.
+    void write(SaveInfo& save) const;
+    void read(const SaveInfo& save);
 
 private:
     void badKey(std::string message) override;
+    std::string m_id;
+    std::set<std::string> m_completed;
+    std::map<std::string, std::set<std::string>> m_destroyed;
 };
 
 // The save game service of one Play session, as game.saves(). PlaySession creates it.
@@ -248,6 +284,27 @@ public:
     // the loading screen (reason LoadSave). False when the slot doesn't exist.
     bool load(std::string_view slot);
     bool loadFile(const std::filesystem::path& file);   // any .swsave, by path
+
+    // ---- Checkpoints (docs/SaveGames.md#checkpoints) ----
+    static constexpr const char* kCheckpointSlot = "checkpoint";
+    enum class CheckpointState { None, Saving, Saved, Failed };
+    // Reached the Checkpoint with this id (a component in the level): saves to the
+    // checkpoint slot, at its spawn. Restart checkpoint goes back to it only once it is
+    // written; until then, and if writing fails, the previous one stays. False when the
+    // level has no enabled Checkpoint with that id, or saving is off.
+    bool checkpoint(std::string_view id);
+    // The last checkpoint's save: Saving, then Saved or Failed, for a HUD to show.
+    CheckpointState checkpointState() const;
+    std::string checkpointId() const;
+    // A checkpoint was written in this campaign and this game can load it (reads its
+    // header). why says why not.
+    bool hasCheckpoint(std::string* why = nullptr) const;
+    // Loads the last checkpoint written in this campaign, like load() (another level's
+    // travels there). False, with NoCheckpoint, when there's none.
+    bool restartCheckpoint();
+    // An autosave between levels: the campaign as it is now, and `level` to start fresh
+    // at `spawn`, with nothing of this level's world. GameContext::finishLevel uses it.
+    bool saveTransition(std::string_view slot, std::string level, std::string spawn = {});
     bool remove(std::string_view slot);
     bool exists(std::string_view slot) const;
     std::vector<SaveInfo> list() const;   // newest first
@@ -311,6 +368,9 @@ private:
     bool m_networkPlay = false;
     double m_playTime = 0;
     void badKey(std::string message) override { fail(std::move(message)); }
+    bool canSave(std::string_view slot);
+    SaveInfo envelope(std::string_view slot, std::string_view title) const;
+    void enqueue(SaveInfo info, std::shared_ptr<const World> snapshot, bool checkpoint);
 
     // Workers hand results back through these.
     std::shared_ptr<SaveJobs> m_shared;

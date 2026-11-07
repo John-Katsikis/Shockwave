@@ -289,6 +289,9 @@ struct ShellRig {
             buildLevel(into, request.level);
             return true;
         };
+        saveFolder = content.parent_path() / "ShellSaves";
+        fs::remove_all(saveFolder);
+        hooks.configure = [this](PlaySession& session, const LevelRequest&) { session.setSaveFolder(saveFolder); };
         host = std::make_unique<LevelHost>(world, jobs, instance, nullptr, hooks);
         host->setStaged(true);
         host->setMenuLevel("menu");
@@ -336,6 +339,7 @@ struct ShellRig {
     bool quit = false;
     bool progress = false;
     std::string continueReason = "No saved game to continue yet";
+    fs::path saveFolder;
 };
 
 void testShellScreens(const fs::path& content) {
@@ -476,6 +480,26 @@ void testShellFlow(const fs::path& content) {
     for (int i = 0; i < 3; ++i) rig.frame();
     CHECK(host.current().level == "b" && host.session()->context().startReason == StartReason::RestoreSave);
     CHECK(findEntity(host.session()->world(), "restored") && host.campaign().get("chapter") == "2");
+
+    // Restart checkpoint (S06 part 2): off until a checkpoint is written, then it takes the
+    // level back to it and closes the pause screen.
+    rig.frame();
+    CHECK(shell.pause() && rig.value("can_restart_checkpoint") == "false");
+    CHECK(!shell.command("restart_checkpoint") && shell.screen() == ShellScreen::Pause);
+    CHECK(shell.command("resume"));
+    World& level = host.session()->world();
+    const Entity spawnPoint = findLevelSpawn(level, "start");
+    level.add<Checkpoint>(spawnPoint, Checkpoint{"cp", "start", true});
+    CHECK(host.session()->saves()->checkpoint("cp"));
+    host.session()->saves()->wait();
+    rig.frame();
+    CHECK(rig.value("checkpoint_state") == "saved");
+    level.get<Transform>(spawnPoint)->position.x = 42;
+    CHECK(shell.pause() && rig.value("can_restart_checkpoint") == "true");
+    CHECK(shell.click("restart_checkpoint") && shell.screen() == ShellScreen::None);
+    host.session()->saves()->wait();
+    rig.frame();
+    CHECK(host.current().level == "b" && host.session()->world().get<Transform>(spawnPoint)->position.x == 1);
 
     // Quit.
     CHECK(!shell.click("quit"));   // no screen shows in a playing level
