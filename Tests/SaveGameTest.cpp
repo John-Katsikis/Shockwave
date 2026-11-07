@@ -66,7 +66,7 @@ void roundTrip() {
     writeSaveGame(text, world, assets, info);
     const std::string written = text.str();
     check(written.find("shockwave_scene") != std::string::npos, "A save game is a scene file");
-    check(written.find("save_game 1") != std::string::npos, "It says it's a save game");
+    check(written.find("save_game 2") != std::string::npos, "It says it's a save game");
 
     World loaded;
     SaveInfo back;

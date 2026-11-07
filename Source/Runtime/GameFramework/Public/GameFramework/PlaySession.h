@@ -81,6 +81,15 @@ public:
     // The flow game.flow() reaches, and where the level was entered (game.arrival).
     void setFlow(GameFlow* flow) { m_context.flowHost = flow; }
     void setArrival(LevelArrival arrival) { m_context.arrival = std::move(arrival); }
+    // The campaign game.campaign() reaches (LevelHost's, so it survives travel). Unset,
+    // the session has its own. Before start(); it must outlive the session.
+    void setCampaign(CampaignState* campaign) { m_context.campaignState = campaign ? campaign : &m_ownCampaign; }
+    CampaignState& campaign() const { return *m_context.campaignState; }
+    // The game and profile its saves belong to (docs/SaveGames.md#compatibility).
+    void setSaveIdentity(SaveIdentity identity) { m_saveIdentity = std::move(identity); }
+    // Puts a save in now, between ticks (LevelHost, arriving with a LoadSave travel): the
+    // world, values and campaign, then physics, GameMode::afterLoad and the circuits.
+    void restore(SaveRestore restore);
     const GameContext& context() const { return m_context; }
     World& world() const { return m_context.world; }
 
@@ -116,6 +125,7 @@ public:
 private:
     void tearDown();
     void applyLoadedSave();
+    void applySave(SaveRestore restore);
 
     GameInstance& m_instance;
     SubsystemCollection m_subsystems;
@@ -126,6 +136,8 @@ private:
     std::optional<GraphicsSettings> m_graphicsSnapshot;
     std::filesystem::path m_saveFolder;   // setSaveFolder
     std::string m_saveScene;
+    SaveIdentity m_saveIdentity;
+    CampaignState m_ownCampaign;
     std::string m_gameCircuit;   // setGameCircuit
     Schedule m_schedule;
     State m_state = State::Editing;

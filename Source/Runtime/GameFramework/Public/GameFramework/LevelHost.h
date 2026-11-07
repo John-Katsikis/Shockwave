@@ -153,6 +153,13 @@ public:
     const std::vector<LoadReport>& loadReports() const { return m_reports; }
     std::function<void(const LoadReport&)> onLoadReport;
 
+    // ---- Campaign (S06, docs/SaveGames.md#campaign) ----
+    // game.campaign() of every level: it outlives each one. New game with resetCampaign
+    // clears it, Restart puts back what it held when the level was entered, and a save
+    // brings back its own.
+    CampaignState& campaign() { return m_campaign; }
+    const CampaignState& campaign() const { return m_campaign; }
+
     // For tests: the epoch the next level would get. Overflow fails travel explicitly.
     void setEpochForTesting(uint64_t epoch) { m_epoch = epoch; }
 
@@ -184,6 +191,7 @@ private:
     void deliver();
     TravelTicket refuse(TravelError code, std::string message, const TravelRequest& request) const;
     void startSession(StartReason reason, const LevelArrival& arrival);
+    void startLevel(const TravelRequest& request);
     void arrived();
     void endSession();
     void restoreSettings();
@@ -227,6 +235,8 @@ private:
     AssetResidency* m_residency = nullptr;
     AssetResidency::Lease m_lease;   // the current level's
     std::vector<LoadReport> m_reports;
+    CampaignState m_campaign;
+    std::map<std::string, std::string> m_entryCampaign;   // as the current level was entered
 };
 
 }   // namespace shockwave

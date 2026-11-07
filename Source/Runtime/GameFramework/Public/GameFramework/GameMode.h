@@ -21,6 +21,7 @@ namespace shockwave {
 class Engine;
 class Graphics;
 class SaveGames;
+class CampaignState;
 class Input;
 class PhysicsWorld;
 class AudioWorld;
@@ -72,6 +73,10 @@ struct GameContext {
     EntityRef spawn(std::string_view prefab, const glm::vec3& position) const;
     // Saving and loading the game (docs/SaveGames.md). Always there during Play.
     SaveGames& saves() const;
+    // Progress that belongs to the whole game and survives travel: unlocked levels, keys,
+    // the story so far (docs/SaveGames.md#campaign). Saved with every save. Always there
+    // during Play.
+    CampaignState& campaign() const { return *campaignState; }
     // Network play (docs/Networking.md). Always there during Play: offline it reports
     // local authority (role Offline) and does nothing.
     net::NetworkWorld& network() const;
@@ -100,6 +105,7 @@ struct GameContext {
     // Where this level was entered: the spawn asked for (or the catalog's default) and its
     // place. Place the player there in beginPlay; found is false when there's no spawn.
     LevelArrival arrival;
+    CampaignState* campaignState = nullptr;   // set by PlaySession: LevelHost's, or its own
 };
 
 class GameMode {

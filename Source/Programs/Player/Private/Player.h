@@ -152,8 +152,23 @@ int writeInputSchema(const fs::path& out);   // docs/InputSchema.md; "-" for std
 // Lists connected controllers, then for `seconds` prints each input pressed as the
 // binding text that would bind it ("pad south", "joy \"G29\" axis 2 full").
 int listDevices(double seconds);
-// --saves: the project's save games, newest first; json, when set, gets them as JSON too.
-int listSaves(const shockwave::Project& project, const fs::path& folder, const fs::path& json);
+// --saves: the project's save games, newest first, damaged ones too, with why; json, when
+// set, gets them as JSON too.
+int listSaves(
+    const shockwave::Project& project, const fs::path& folder, const shockwave::SaveIdentity& identity,
+    const fs::path& json);
+// The game and profile this run's saves belong to (docs/SaveGames.md#compatibility),
+// without the game's migrations.
+shockwave::SaveIdentity saveIdentityFor(const shockwave::Project& project, const shockwave::UserPaths* paths);
+// --save-info: one save's envelope, and whether this game and profile can load it.
+int saveInfo(
+    const shockwave::Project& project, const fs::path& file, const shockwave::SaveIdentity& identity,
+    const fs::path& json);
+// --save-migrate: a copy of the save at the format and schema this game writes now, with
+// the game's migrations run. Never writes over the original.
+int saveMigrate(
+    const shockwave::Project& project, const fs::path& file, const fs::path& output,
+    const shockwave::SaveIdentity& identity);
 
 // --package: makes a game folder for players (Packaging/Package.h). --output, --no-build
 // and --no-archive override Config/Package.swpackage for this run.
@@ -299,6 +314,8 @@ private:
     // --graphics-report: capabilities, requested and effective settings, memory by category.
     void graphicsReport();
     fs::path saveFolder() const { return m_tool.userPaths ? m_tool.userPaths->saves() : fs::path(); }
+    // The game and profile its saves belong to, its save schema and migrations.
+    shockwave::SaveIdentity saveIdentity();
 
     // Loads each scene the way the game would and reports every problem as file:line.
     int check(const std::vector<std::string>& importProblems);
@@ -409,6 +426,9 @@ private:
     void processTravel();
     // The application's screens over the levels (docs/AppShell.md), once levels have started.
     void startShell();
+    // The shell's Continue: why it can't ("" when it can), and the request it sends.
+    std::string continueReason();
+    bool continueRequest(shockwave::TravelRequest& request, std::string& why);
     // --flow-test: loads the scenario (throws a UsageError when it's bad), then each frame
     // runs it; writes the report and quits when it ends.
     void startFlowTest();
@@ -486,6 +506,7 @@ private:
     shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
+    std::optional<shockwave::SaveIdentity> m_saveIdentity;   // saveIdentity(), worked out once
     // After m_levels, so they go first: the shell holds a subscription to it.
     std::unique_ptr<shockwave::AppShell> m_shell;
     std::unique_ptr<shockwave::FlowTest> m_flowTest;
