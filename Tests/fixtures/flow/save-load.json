@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "name": "save and load inside a level",
+  "timeout": 30,
+  "steps": [
+    {"click": "new_game"},
+    {"wait_phase": "succeeded"},
+    {"save": "flow-test"},
+    {"press": "pause"},
+    {"load": "flow-test"},
+    {"assert_level": "a"},
+    {"quit": true}
+  ]
+}

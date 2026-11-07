@@ -95,6 +95,23 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 row >> result.levelTravel;
                 if (result.levelTravel != "staged" && result.levelTravel != "instant")
                     return fail("level_travel must be staged or instant");
+            } else if (key == "app_shell") {
+                std::string word, words;
+                int count = 0;
+                bool alone = false;
+                while (row >> word) {
+                    if (word != "off" && word != "all" && word != "menu" && word != "level_select" && word != "pause" &&
+                        word != "loading" && word != "error")
+                        return fail(
+                            "app_shell takes off, all, or any of menu, level_select, pause, loading, error (not " +
+                            word + ")");
+                    alone = alone || word == "off" || word == "all";
+                    words += (words.empty() ? "" : " ") + word;
+                    ++count;
+                }
+                if (count == 0 || (alone && count > 1))
+                    return fail("app_shell takes off, all, or any of menu, level_select, pause, loading, error");
+                result.appShell = words;
             } else if (key == "asset_loading") {
                 row >> result.assetLoading;
                 if (result.assetLoading != "all" && result.assetLoading != "levels")
@@ -200,6 +217,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.textureCompression != "high") out << "texture_compression " << project.textureCompression << "\n";
     if (project.assetLoading != "all") out << "asset_loading " << project.assetLoading << "\n";
     if (project.levelTravel != "staged") out << "level_travel " << project.levelTravel << "\n";
+    if (project.appShell != "loading error") out << "app_shell " << project.appShell << "\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";
     if (project.lodErrorPixels != 1.0) out << "lod_error_pixels " << project.lodErrorPixels << "\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";

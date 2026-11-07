@@ -305,6 +305,18 @@ void testStaged() {
     CHECK(host.status(boom.id)->code == TravelError::StartFailed && !host.playing());
     CHECK(host.failure().find("beginPlay of boom threw") != std::string::npos);
     CHECK(observer.all.back().to.empty());
+    // Nothing plays, but the application can still go somewhere (the error screen's Retry
+    // and Main menu); the level that didn't start can't.
+    TravelRequest fromBoom = to("a");
+    fromBoom.fromEpoch = host.epoch();
+    CHECK(host.request(fromBoom).error == TravelError::StaleLevel);
+    const TravelTicket recover = host.request(to("a"));
+    CHECK(recover.id != 0);
+    host.process();
+    host.process();
+    CHECK(host.playing() && host.current().level == "a" && host.failure().empty());
+    CHECK(host.status(recover.id)->phase == TravelPhase::Succeeded);
+    host.stop();
     CHECK(host.request(to("a")).error == TravelError::NotPlaying);
 
     // Every ticket ended exactly once; subscriptions end with their token.

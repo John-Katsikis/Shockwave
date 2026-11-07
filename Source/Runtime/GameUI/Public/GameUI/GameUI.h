@@ -149,11 +149,26 @@ struct UIStats {
     float layoutMs = 0;   // layout and building the draw list
 };
 
+// How a GameUI is set up. The level's UI uses the defaults; the application shell
+// (GameFramework/AppShell.h) makes a second, independent one: its own RmlUi context, data
+// model, focus and listener, so nothing leaks between the two.
+struct GameUIOptions {
+    std::string dataModel = "game";   // the data-model name documents bind: data-model="game"
+    bool forEngine = true;   // GameUI::forEngine finds it (game.ui()); one per engine
+};
+
+// Documents compiled into the program, for screens that must show even when the project's
+// files are missing or broken (the shell's fallback error view). A UIDocument whose document
+// is "builtin:<name>" reads the text given here instead of a file. Main thread only.
+inline constexpr std::string_view kBuiltinDocumentPrefix = "builtin:";
+void addBuiltinDocument(std::string name, std::string rml);
+bool hasBuiltinDocument(std::string_view name);
+
 class GameUI {
 public:
     // engine: where to draw and read input; null for tools and tests (documents still
     // load, lay out and report problems, nothing is drawn).
-    explicit GameUI(Engine* engine);
+    explicit GameUI(Engine* engine, GameUIOptions options = {});
     ~GameUI();
     GameUI(const GameUI&) = delete;
     GameUI& operator=(const GameUI&) = delete;
@@ -237,7 +252,8 @@ public:
     bool elementVisible(Entity documentEntity, std::string_view elementId);
     // Clicks the element as if with the mouse, and hands the events to the listener.
     bool click(Entity documentEntity, std::string_view elementId);
-    // The "game" data model, bound in documents with data-model="game": {{score}}.
+    // The "game" data model (GameUIOptions::dataModel), bound in documents with
+    // data-model="game": {{score}}.
     void setValue(std::string_view name, double value);
     void setValue(std::string_view name, bool value);
     void setValue(std::string_view name, std::string_view value);

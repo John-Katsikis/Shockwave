@@ -63,6 +63,17 @@ std::unordered_map<const Engine*, GameUI*>& registry() {
     return r;
 }
 
+std::map<std::string, std::string, std::less<>>& builtinDocuments() {
+    static std::map<std::string, std::string, std::less<>> documents;
+    return documents;
+}
+const std::string* builtinDocument(std::string_view path) {
+    if (path.substr(0, kBuiltinDocumentPrefix.size()) != kBuiltinDocumentPrefix) return nullptr;
+    const auto& documents = builtinDocuments();
+    const auto it = documents.find(path.substr(kBuiltinDocumentPrefix.size()));
+    return it == documents.end() ? nullptr : &it->second;
+}
+
 // Input::events codes are USB HID usages, which SDL scancodes are too.
 Rml::Input::KeyIdentifier rmlKey(uint16_t code) {
     using namespace Rml::Input;
@@ -303,6 +314,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
 
     GameUI& owner;
     Engine* engine;
+    GameUIOptions options;
     Rml::Context* context = nullptr;
     std::string contextName;
     fs::path content;
@@ -355,7 +367,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     std::map<std::pair<uintptr_t, uintptr_t>, GradientDraw> gradients;   // (shader, geometry)
     UIStats stats;
 
-    Impl(GameUI& o, Engine* e) : owner(o), engine(e) {
+    Impl(GameUI& o, Engine* e, GameUIOptions opts) : owner(o), engine(e), options(std::move(opts)) {
         ui::acquire();
         static int counter = 0;
         contextName = "shockwave-ui-" + std::to_string(++counter);
@@ -386,7 +398,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     }
 
     void createModel() {
-        model = context->CreateDataModel("game", nullptr, true);
+        model = context->CreateDataModel(options.dataModel, nullptr, true);
         modelHandle = model.GetModelHandle();
     }
 
@@ -495,8 +507,21 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
         ui::setCapture(&capture);
         std::error_code ec;
         const fs::path file = ui::resolve(d.path);
+        const bool builtin = d.path.rfind(kBuiltinDocumentPrefix, 0) == 0;
         if (d.path.empty()) {
             d.problems.push_back({d.path, "no document set"});
+        } else if (builtin) {
+            // Compiled in: no file to read or watch.
+            if (const std::string* text = builtinDocument(d.path)) {
+                for (const std::string& name : ui::referencedNames(*text)) bind(name);
+                // RmlUi reads "name:" as a URL scheme; the document's own URL has none.
+                d.doc =
+                    context->LoadDocumentFromMemory(*text, "builtin/" + d.path.substr(kBuiltinDocumentPrefix.size()));
+                if (!d.doc && d.problems.empty())
+                    d.problems.push_back({d.path, "RmlUi couldn't load the built-in document"});
+            } else {
+                d.problems.push_back({d.path, "no such built-in document"});
+            }
         } else if (fs::path(d.path).extension() != ".rml") {
             d.problems.push_back({d.path, "not an .rml document"});
         } else if (!fs::is_regular_file(file, ec)) {
@@ -520,7 +545,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
         ui::setCapture(nullptr);
         previewSource.clear();   // re-check this document's preview values
         // Watch the document even when it's missing, so creating it loads it.
-        opened.insert(file.lexically_normal());
+        if (!builtin) opened.insert(file.lexically_normal());
         for (const fs::path& path : opened) d.files.emplace_back(path, fs::last_write_time(path, ec));
         // RmlUi logs its own complaints; these are ours.
         if (!d.doc && !d.problems.empty() && opened.size() <= 1)
@@ -1370,9 +1395,12 @@ Rml::DataVariable SlotDefinition::Child(void* ptr, const Rml::DataAddressEntry& 
 
 // ---- GameUI -------------------------------------------------------------------------------
 
-GameUI::GameUI(Engine* engine) : m(std::make_unique<Impl>(*this, engine)) {
-    if (engine) {
-        bindDefaultControls(engine->input());
+void addBuiltinDocument(std::string name, std::string rml) { builtinDocuments()[std::move(name)] = std::move(rml); }
+bool hasBuiltinDocument(std::string_view name) { return builtinDocuments().count(name) != 0; }
+
+GameUI::GameUI(Engine* engine, GameUIOptions options) : m(std::make_unique<Impl>(*this, engine, options)) {
+    if (engine) bindDefaultControls(engine->input());
+    if (engine && options.forEngine) {
         std::lock_guard lock(registryMutex());
         registry()[engine] = this;
     }
@@ -1521,9 +1549,13 @@ std::vector<UIProblem> GameUI::validate(std::string_view document) {
     ui::setRoot(m->content);
     const fs::path file = ui::resolve(std::string(document));
     std::error_code ec;
+    const bool isBuiltin = document.substr(0, kBuiltinDocumentPrefix.size()) == kBuiltinDocumentPrefix;
+    const std::string* builtin = builtinDocument(document);
     if (document.empty()) return {{std::string(document), "no document set"}};
-    if (fs::path(document).extension() != ".rml") return {{std::string(document), "not an .rml document"}};
-    if (!fs::is_regular_file(file, ec)) return {{std::string(document), "file not found in Content"}};
+    if (isBuiltin && !builtin) return {{std::string(document), "no such built-in document"}};
+    if (!isBuiltin && fs::path(document).extension() != ".rml")
+        return {{std::string(document), "not an .rml document"}};
+    if (!isBuiltin && !fs::is_regular_file(file, ec)) return {{std::string(document), "file not found in Content"}};
     // Its own context, so nothing the game shows changes; the same render interface, so
     // fonts and images are shared.
     static int counter = 0;
@@ -1532,14 +1564,18 @@ std::vector<UIProblem> GameUI::validate(std::string_view document) {
     if (!check) return {{std::string(document), "RmlUi couldn't create a context"}};
     {
         // Every name it refers to exists, unset, as it would in the game.
-        Rml::DataModelConstructor model = check->CreateDataModel("game", nullptr, true);
+        Rml::DataModelConstructor model = check->CreateDataModel(m->options.dataModel, nullptr, true);
         static UIValue unset;
         for (const std::string& name : referencedValues(document))
             model.BindCustomDataVariable(name, Rml::DataVariable(&ValueDefinition::instance(), &unset));
     }
     ui::setCapture(&capture);
     m->discard = true;
-    if (Rml::ElementDocument* doc = check->LoadDocument(Rml::String(document))) {
+    Rml::ElementDocument* loaded =
+        builtin ? check->LoadDocumentFromMemory(
+                      *builtin, "builtin/" + std::string(document.substr(kBuiltinDocumentPrefix.size())))
+                : check->LoadDocument(Rml::String(document));
+    if (Rml::ElementDocument* doc = loaded) {
         doc->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);
         check->Update();
         check->Render();
@@ -1692,6 +1728,7 @@ void GameUI::setPreview(bool on) {
 bool GameUI::preview() const { return m->previewOn; }
 
 std::vector<std::string> GameUI::referencedValues(std::string_view document) const {
+    if (const std::string* builtin = builtinDocument(document)) return ui::referencedNames(*builtin);
     std::ifstream in(ui::resolve(std::string(document)), std::ios::binary);
     if (!in) return {};
     std::ostringstream text;

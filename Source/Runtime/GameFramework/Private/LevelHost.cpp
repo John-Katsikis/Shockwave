@@ -211,6 +211,7 @@ void LevelHost::startSession(StartReason reason, const LevelArrival& arrival) {
 // doesn't blend from the old level's view, and the time spent loading isn't caught up.
 // (The session's start already made every previous transform equal to its transform.)
 void LevelHost::arrived() {
+    m_failure.clear();   // something plays again
     if (!m_engine) return;
     m_engine->input().holdUntilReleased();
     m_engine->renderer().cutCamera();
@@ -252,6 +253,7 @@ void LevelHost::stop() {
     endSession();
     m_lease.release();   // after the session: nothing reads its assets any more
     restoreSettings();
+    m_failure.clear();   // Play has ended: there's nothing to recover
     m_redirects = 0;
     m_chain.clear();
     deliver();
@@ -272,8 +274,12 @@ uint64_t LevelHost::requestLevel(LevelRequest level) {
 }
 
 TravelTicket LevelHost::request(TravelRequest r) {
-    if (!m_session || (!m_session->active() && !m_starting))
+    // After a level failed to start nothing plays, but the application may still go
+    // somewhere (the error screen's Retry and Main menu); levels can't, they've ended.
+    const bool recovering = !m_failure.empty() && !m_session;
+    if (!recovering && (!m_session || (!m_session->active() && !m_starting)))
         return refuse(TravelError::NotPlaying, "nothing is playing", r);
+    if (recovering && r.fromEpoch) return refuse(TravelError::StaleLevel, "asked from a level that didn't start", r);
     if (r.fromEpoch && r.fromEpoch != m_epoch)
         return refuse(
             TravelError::StaleLevel,
@@ -283,7 +289,7 @@ TravelTicket LevelHost::request(TravelRequest r) {
     if (r.level.empty()) return refuse(TravelError::InvalidRequest, "no level named", r);
     if (r.resetCampaign && r.reason != TravelReason::NewGame)
         return refuse(TravelError::InvalidRequest, "only a new game resets the campaign", r);
-    if (m_session->online())
+    if (m_session && m_session->online())
         return refuse(
             TravelError::AuthorityRequired, "levels can't change during network play yet (map rotation is S11)", r);
     // One at a time; a level asking for another from its beginPlay is a redirect.
@@ -313,7 +319,10 @@ TravelTicket LevelHost::request(TravelRequest r) {
     progress.epoch = m_epoch;
     m_tickets[id] = progress;
     m_accepted[id] = Clock::now();
-    m_pending = Pending{id, std::move(r), m_starting || m_session->ticks() == 0};
+    // A level asking before it has ticked (from beginPlay) redirects; the application never
+    // does: its request gets the loading screen and the boundary like any other.
+    const bool redirect = m_starting || (r.fromEpoch && m_session && m_session->ticks() == 0);
+    m_pending = Pending{id, std::move(r), redirect};
     deliver();
     return {id, TravelError::None, {}};
 }
@@ -563,6 +572,7 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
     // Read: the next level loads beside the current one, which keeps playing if it fails.
     setPhase(next.id, TravelPhase::Reading);
     out.prepared = std::make_unique<World>();
+    const bool hadSession = m_session != nullptr;   // none after a failed start
     bool loaded = false;
     try {
         loaded = m_hooks.load && m_hooks.load(load.request, *out.prepared, error);
@@ -570,7 +580,7 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
     } catch (const std::exception& e) {
         error = e.what();
     }
-    if (!m_session)   // Stop (a quit, say) came while it loaded
+    if (m_stopped || (hadSession && !m_session))   // Stop (a quit, say) came while it loaded
         return fail(
             TravelStatus::Cancelled, TravelError::Cancelled, "Play stopped while it loaded", &LoadReport::readMs);
     if (!loaded)

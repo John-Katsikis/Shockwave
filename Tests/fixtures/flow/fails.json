@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "name": "fails at its second step",
+  "steps": [
+    {"assert_level": "menu"},
+    {"assert_level": "b"},
+    {"quit": true}
+  ]
+}

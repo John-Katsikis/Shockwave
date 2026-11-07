@@ -600,6 +600,28 @@ add_test(NAME level_check_cli COMMAND ${CMAKE_COMMAND}
 set_tests_properties(level_check_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 120 LABELS integration)
 endif()
+# --flow-test (S05, Tests/FlowCheck.cmake): the menu -> A -> B -> restart -> menu milestone
+# through the application shell's buttons, its failures and refusals, headless.
+if(TARGET game_sample)
+add_test(NAME game_flow_cli COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DSCENARIOS=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/flow
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/FlowCLI
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/FlowCheck.cmake)
+set_tests_properties(game_flow_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS integration)
+# The milestone again on the GPU: the shell's screens drawn over each level.
+add_test(NAME game_flow_vulkan COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DSCENARIOS=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/flow
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/FlowVulkan
+    -DRENDERER=vulkan
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/FlowCheck.cmake)
+set_tests_properties(game_flow_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
 # Asset dependencies and residency on the command line (S04, Tests/AssetDependencyCheck.cmake):
 # --asset-dependencies, --check's dependency problems, --load-report and budgets.
 if(TARGET game_sample)

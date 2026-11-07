@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "name": "refusals and a missing spawn",
+  "timeout": 30,
+  "steps": [
+    {"travel": "nowhere", "expect": "UnknownLevel"},
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"travel": "a", "spawn": "nope"},
+    {"wait_phase": "failed"},
+    {"assert_value": "flow.screen", "equals": "error"},
+    {"assert_value": "flow.error_code", "equals": "UnknownSpawn"},
+    {"assert_level": "menu"},
+    {"click": "dismiss"},
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"click": "continue"},
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"quit": true}
+  ]
+}

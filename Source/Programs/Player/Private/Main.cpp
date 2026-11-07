@@ -417,6 +417,14 @@ int main(int argc, char** argv) {
                 tool.assetResidency = false;
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
+            } else if (arg == "--app-shell" && i + 1 < argc) {
+                tool.appShell = argv[++i];
+                shockwave::AppShellScreens screens;
+                std::string error;
+                if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
+                    throw player::UsageError("--app-shell: " + error);
+            } else if (arg == "--flow-test" && i + 1 < argc) {
+                tool.flowTest = argv[++i];
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
                 if (tool.assetLoading != "all" && tool.assetLoading != "levels")
@@ -599,6 +607,12 @@ int main(int argc, char** argv) {
                     "player --level-schema file.md       write the level catalog reference (- for stdout)\n"
                     "player --instant-travel             change levels within one frame (level_travel instant):\n"
                     "                                    no frame between preparing a level and the old one ending\n"
+                    "player --app-shell screens          the menu, pause, loading and error screens: off, all, or\n"
+                    "                                    a list in quotes, \"menu pause loading\" (docs/AppShell.md)\n"
+                    "player --flow-test scenario.json [--json report]\n"
+                    "                                    play through the scenario's clicks, travel and checks in a\n"
+                    "                                    hidden window; exit 1 at the first failed step\n"
+                    "                                    (docs/FlowTest.md)\n"
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
@@ -1009,6 +1023,12 @@ int main(int argc, char** argv) {
             // project's frame_limit say how it should be paced.
             config.window.hidden = true;
             if (vsyncOverride < 0) config.window.vsync = false;
+        }
+        if (!tool.flowTest.empty()) {
+            // Hidden and reproducible; the scenario's timeouts end it.
+            config.window.hidden = true;
+            config.window.vsync = false;
+            config.simulationTime = shockwave::SimulationTime::Fixed;
         }
         if (tool.mode != Tool::Mode::Play || tool.optimise) {
             config.window.hidden = true;
