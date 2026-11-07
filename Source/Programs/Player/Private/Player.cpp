@@ -178,6 +178,8 @@ void Player::onStart() {
     }
     if (!m_tool.netPreview.empty()) startNetPreview();
     startLevels(levelForScene(m_project.startupScene), shockwave::StartReason::Fresh);
+    startShell();
+    if (!m_tool.flowTest.empty()) startFlowTest();
     if (!loadFile.empty()) {
         // Read now; the world is swapped in before the first tick.
         shockwave::SaveGames& saves = *session()->saves();
@@ -224,7 +226,19 @@ void Player::onUpdate(double dt) {
 
 void Player::onFrame(double dt) {
     m_frameDt = dt;
-    if (!session()) return;
+    // The shell first: its pause key and buttons come before the level's frame and UI,
+    // which wait while one of its screens shows.
+    if (m_shell) {
+        m_shell->update(dt);
+        m_ui->setInputEnabled(!m_shell->capturesInput());
+    }
+    if (!session()) {
+        // Nothing plays (a level didn't start): the error screen's Retry and Main menu
+        // still travel.
+        processTravel();
+        driveFlowTest();
+        return;
+    }
     for (const auto& change : m_assets->poll(dt)) {
         if (change.what == shockwave::AssetFolder::Change::What::Failed)
             SW_LOG(shockwave::LogEngine, Warning, "asset {}: {}", change.name, change.error);
@@ -246,6 +260,7 @@ void Player::onFrame(double dt) {
         engine().quit();
     }
     processTravel();   // after the frame's callbacks: travel never ends a GameMode mid-call
+    driveFlowTest();   // after travel, so a step sees what it did
 }
 
 void Player::saveAndQuit() {
@@ -417,6 +432,7 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     if (m_postProcess) shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     m_effects->render(renderer);
     if (session()) m_ui->render(renderer);   // over the tonemapped scene, at native resolution
+    if (m_shell) m_shell->render(renderer);   // the application's screens, over everything
     if (m_tool.showNavMesh && session() && session()->navigation()) {
         const shockwave::NavMeshOverlay::Style style;
         m_navOverlay.drawMesh(renderer, session()->navigation()->sharedNavMesh(), style);
@@ -430,6 +446,8 @@ void Player::onShutdown() {
     m_reflections.release();
     if (m_tool.printFrame) std::printf("Render graph (last frame):\n%s", engine().renderer().frameGraph().c_str());
     if (session()) SW_LOG(shockwave::LogGame, Info, "simulation ticks: {}", session()->ticks());
+    endFlowTest();   // a scenario still running when the player stops has failed
+    m_shell.reset();
     if (m_levels) m_levels->stop();
     m_levels.reset();
     m_applicationAssets.release();

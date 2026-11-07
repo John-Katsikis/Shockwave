@@ -503,6 +503,12 @@ This section is for the curious.
   and drawing), `UIWorld` (what `game.ui()` returns) and the `UIDocument` component. It
   links RmlUi, FreeType and HarfBuzz statically. The HarfBuzz font engine comes from
   RmlUi's own sample. `cmake/RmlUi.cmake` fetches all three at pinned versions.
+- **A second layer.** The application shell ([AppShell.md](AppShell.md)) has its own
+  `GameUI`, made with `GameUIOptions{"flow", false}`: its own RmlUi context, a data model
+  named `flow`, and not the one `game.ui()` finds. Focus, handlers and values can't leak
+  between it and the level's UI. A `UIDocument` whose document is `builtin:<name>` reads
+  text compiled into the program (`addBuiltinDocument`) instead of a file, which is how
+  the shell's screens show even when the project's files are broken.
 - **Hosts.** The editor and the player each own one `GameUI`. Every frame they call
   `update()`, which matches documents to the scene's `UIDocument`s, checks for changed
   files and feeds input. Then they call `render()`, which lays the documents out and

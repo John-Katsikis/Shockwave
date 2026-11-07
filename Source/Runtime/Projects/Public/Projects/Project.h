@@ -38,6 +38,9 @@ struct Project {
     // and the travel can be cancelled before the current level ends. "instant": all in one
     // frame, as before S05 (level_travel, docs/LevelLifetime.md).
     std::string levelTravel = "staged";
+    // The application's own screens (app_shell, docs/AppShell.md): "off", "all", or which
+    // of menu, level_select, pause, loading and error are on. Loading and error by default.
+    std::string appShell = "loading error";
     int meshLods = 4;   // simpler levels of detail per mesh, 0..7 (mesh_lods)
     double lodErrorPixels = 1.0;   // how far a level may stray on screen, 0 = always full detail (lod_error_pixels)
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)

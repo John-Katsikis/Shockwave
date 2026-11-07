@@ -8,6 +8,8 @@
 #include <Engine/BakedLighting.h>
 #include <Engine/ReflectionProbes.h>
 #include <Engine/Engine.h>
+#include <GameFramework/AppShell.h>
+#include <GameFramework/FlowTest.h>
 #include <GameFramework/GameModule.h>
 #include <GameFramework/LevelAssets.h>
 #include <GameFramework/LevelHost.h>
@@ -133,6 +135,11 @@ struct Tool {
     std::string assetLoading;
     // --instant-travel: the project's level_travel as instant (docs/LevelLifetime.md).
     bool instantTravel = false;
+    // --app-shell off|all|menu pause ...: the project's app_shell, overridden (docs/AppShell.md).
+    std::string appShell;
+    // --flow-test scenario.json [--json report]: run the scenario through the shell and the
+    // levels, write the report, exit 1 at the first failed step (docs/FlowTest.md).
+    fs::path flowTest;
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -397,8 +404,16 @@ private:
     std::string levelForScene(const fs::path& scene);
     void loadLevelCatalog();   // once
     fs::path sceneForLevel(const std::string& level) const;
-    // After the frame: carries out travel; a level that fails to start goes back to the entry.
+    // After the frame: carries out travel; a level that fails to start goes back to the entry
+    // (or, with the shell's error screen, stays on it with Retry and Main menu).
     void processTravel();
+    // The application's screens over the levels (docs/AppShell.md), once levels have started.
+    void startShell();
+    // --flow-test: loads the scenario (throws a UsageError when it's bad), then each frame
+    // runs it; writes the report and quits when it ends.
+    void startFlowTest();
+    void driveFlowTest();
+    void endFlowTest();
     shockwave::PlaySession* session() const { return m_levels ? m_levels->session() : nullptr; }
     shockwave::net::IOnlineServices* startSteam(std::string& error);
     shockwave::net::IOnlineServices* services() const {
@@ -471,6 +486,9 @@ private:
     shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
+    // After m_levels, so they go first: the shell holds a subscription to it.
+    std::unique_ptr<shockwave::AppShell> m_shell;
+    std::unique_ptr<shockwave::FlowTest> m_flowTest;
     shockwave::LevelCatalog m_catalog;   // where travel can go; the implicit "startup" without one
     bool m_catalogLoaded = false;
     // How the next level's session goes online (host, client, net preview), or offline.

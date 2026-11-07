@@ -5,13 +5,19 @@
 //     Level.TravelStatus reading the ended ticket;
 //   - a cancel before the boundary reaches the level that stays;
 //   - Level.UseExit, Level.RestartLevel and Level.ReturnToMenu;
-//   - a flow kept from an ended level, and a context without one, refuse.
+//   - a flow kept from an ended level, and a context without one, refuse;
+//   - the application shell (AppShell): menu, pause, loading and error screens, their
+//     buttons, a button pressed twice, cancel, failures before and after the boundary,
+//     a broken project screen replaced by the built-in one, and screens switched off;
+//   - flow test scenarios: parsing, and a run through the shell.
 #include <Assets/Assets.h>
 #include <Circuits/Circuit.h>
 #include <Circuits/CircuitWorld.h>
 #include <Engine/Components.h>
 #include <Engine/Levels.h>
 #include <Engine/Prefab.h>
+#include <GameFramework/AppShell.h>
+#include <GameFramework/FlowTest.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
@@ -20,6 +26,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <stdexcept>
 #include <string>
 
 using namespace shockwave;
@@ -118,6 +126,7 @@ public:
         flowLevel = game.flow().level();
         CHECK(game.flow().available() && game.flow().epoch() == game.levelEpoch);
         if (!kept.available()) kept = game.flow();
+        if (flowLevel == "boom") throw std::runtime_error("beginPlay of boom threw");
     }
 };
 
@@ -246,10 +255,317 @@ void testCircuits(const fs::path& content) {
     host.stop();
 }
 
+// ---- The application shell ---------------------------------------------------------------
+
+TravelRequest to_request(const char* level) {
+    TravelRequest r;
+    r.level = level;
+    return r;
+}
+
+struct ShellRig {
+    World world;
+    JobSystem jobs{1};
+    Instance instance;
+    std::unique_ptr<LevelHost> host;
+    std::unique_ptr<AppShell> shell;
+    std::map<uint64_t, int> heard;   // completions per ticket
+    GameFlow::Subscription subscription;
+
+    ShellRig(const fs::path& content, AppShellScreens screens = AppShellScreens{true, true, true, true, true}) {
+        LevelHost::Hooks hooks;
+        hooks.resolve = [](TravelRequest& request, TravelError& code, std::string& error) {
+            for (const char* known : {"menu", "a", "b", "broken", "boom"})
+                if (request.level == known) return true;
+            code = TravelError::UnknownLevel;
+            error = "no level \"" + request.level + "\"";
+            return false;
+        };
+        hooks.load = [](const LevelRequest& request, World& into, std::string& error) {
+            if (request.level == "broken") {
+                error = "Scenes/broken.swscene doesn't parse";
+                return false;
+            }
+            buildLevel(into, request.level);
+            return true;
+        };
+        host = std::make_unique<LevelHost>(world, jobs, instance, nullptr, hooks);
+        host->setStaged(true);
+        host->setMenuLevel("menu");
+        subscription = host->subscribe([this](const TravelCompletion& c) { ++heard[c.ticket]; });
+        buildLevel(world, "menu");
+        host->start({"menu"});
+        AppShell::Setup setup;
+        setup.title = "Shell test";
+        setup.screens = screens;
+        setup.content = content;
+        setup.newGameLevel = "a";
+        setup.levels = {
+            {"menu", "Menu", true, false},
+            {"a", "Level A", false, true},
+            {"b", "", false, true},
+            {"broken", "", false, true},
+            {"boom", "", false, true}};
+        setup.quit = [this] { quit = true; };
+        setup.hasProgress = [this] { return progress; };
+        shell = std::make_unique<AppShell>(nullptr, *host, setup);
+        frame();
+    }
+    ~ShellRig() {
+        shell.reset();
+        host->stop();
+    }
+    // One frame of the player: the shell, the level, then travel.
+    void frame() {
+        shell->update(1.0 / 60.0);
+        if (host->session()) host->session()->update(1.0 / 60.0);
+        host->process();
+    }
+    std::string value(const char* name) const { return shell->value(name).toText(); }
+    bool quit = false;
+    bool progress = false;
+};
+
+void testShellScreens(const fs::path& content) {
+    AppShellScreens s;
+    std::string error;
+    CHECK(parseAppShellScreens("off", s, error) && !s.any() && appShellScreensText(s) == "off");
+    CHECK(
+        parseAppShellScreens("all", s, error) && s.menu && s.pause && s.levelSelect && appShellScreensText(s) == "all");
+    CHECK(parseAppShellScreens("menu loading", s, error) && s.menu && s.loading && !s.pause && !s.error);
+    CHECK(appShellScreensText(s) == "menu loading");
+    CHECK(appShellScreensText(AppShellScreens{}) == "loading error");
+    CHECK(!parseAppShellScreens("menu shop", s, error) && error.find("shop") != std::string::npos);
+    CHECK(!parseAppShellScreens("off menu", s, error));
+    CHECK(!parseAppShellScreens("", s, error));
+
+    // The built-in screens lay out cleanly, with nothing but the engine's font.
+    ShellRig rig(content);
+    for (const ShellScreen screen : {ShellScreen::Menu, ShellScreen::Pause, ShellScreen::Loading, ShellScreen::Error}) {
+        const std::string name = std::string("builtin:shell/") + shellScreenName(screen);
+        const auto problems = rig.shell->ui().validate(name);
+        CHECK(problems.empty());
+        for (const auto& p : problems) std::fprintf(stderr, "  %s: %s\n", name.c_str(), p.message.c_str());
+    }
+    CHECK(!rig.shell->ui().validate("builtin:shell/nothing").empty());
+    CHECK(rig.shell->problems().empty());
+}
+
+void testShellFlow(const fs::path& content) {
+    ShellRig rig(content);
+    AppShell& shell = *rig.shell;
+    LevelHost& host = *rig.host;
+
+    // The menu shows over the menu level, its disabled buttons saying why.
+    CHECK(shell.screen() == ShellScreen::Menu && shell.capturesInput() && rig.value("screen") == "menu");
+    CHECK(rig.value("title") == "Shell test" && rig.value("can_continue") == "false");
+    CHECK(!rig.value("continue_reason").empty() && rig.value("can_level_select") == "true");
+    std::string why;
+    CHECK(!shell.command("continue", {}, &why) && !why.empty());
+    CHECK(!shell.pause());   // the menu level has the menu instead
+    CHECK(shell.command("credits") && shell.page() == "credits" && shell.command("back") && shell.page() == "main");
+    CHECK(shell.command("level_select") && shell.page() == "levels" && shell.command("back"));
+
+    // New game, pressed twice: one travel; the second is Busy and the first carries on.
+    CHECK(shell.click("new_game"));
+    const uint64_t first = shell.lastTicket();
+    CHECK(first != 0 && host.activeTicket() == first);
+    CHECK(!shell.command("new_game", {}, &why) && why.find("under way") != std::string::npos);
+    CHECK(!shell.failure());   // Busy isn't an error
+    rig.frame();   // prepared, at the boundary
+    CHECK(shell.screen() == ShellScreen::Loading && host.status(first)->phase == TravelPhase::AwaitingBoundary);
+    shell.update(1.0 / 60.0);   // the frame that renders between the two
+    CHECK(shell.screen() == ShellScreen::Loading && rig.value("phase") == "awaiting_boundary");
+    CHECK(rig.value("can_cancel") == "true" && rig.value("destination") == "a" && rig.value("percent") == "45");
+    CHECK(rig.value("progress_width") == "45%");
+    rig.frame();   // across
+    rig.frame();
+    CHECK(host.current().level == "a" && host.playing() && shell.screen() == ShellScreen::None);
+    CHECK(!shell.capturesInput() && rig.heard[first] == 1);
+
+    // Pause: the session pauses; Resume plays on.
+    CHECK(shell.pause() && shell.paused() && host.session()->state() == PlaySession::State::Paused);
+    rig.frame();
+    CHECK(shell.screen() == ShellScreen::Pause && rig.value("can_restart_checkpoint") == "false");
+    CHECK(shell.click("resume") && !shell.paused() && host.session()->state() == PlaySession::State::Playing);
+    rig.frame();
+    CHECK(shell.screen() == ShellScreen::None);
+
+    // Restart level from the pause screen, cancelled at the boundary: back to the pause
+    // screen, still paused, same level.
+    const uint64_t epoch = host.epoch();
+    CHECK(shell.pause());
+    rig.frame();
+    CHECK(shell.click("restart_level"));
+    const uint64_t restart = shell.lastTicket();
+    rig.frame();
+    shell.update(1.0 / 60.0);
+    CHECK(shell.screen() == ShellScreen::Loading);
+    CHECK(shell.click("cancel_travel") && host.status(restart)->phase == TravelPhase::Cancelled);
+    rig.frame();
+    CHECK(shell.screen() == ShellScreen::Pause && host.epoch() == epoch);
+    CHECK(host.session()->state() == PlaySession::State::Paused && rig.heard[restart] == 1);
+    CHECK(!shell.command("cancel_travel", {}, &why));   // nothing loading now
+
+    // Restart for real: a fresh, unpaused level, the pause screen gone.
+    CHECK(shell.click("restart_level"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(host.epoch() > epoch && host.current().level == "a" && !shell.paused());
+    CHECK(host.session()->state() == PlaySession::State::Playing && shell.screen() == ShellScreen::None);
+
+    // A level that doesn't load: the error screen, and the level plays on behind it.
+    CHECK(shell.pause());
+    rig.frame();
+    CHECK(shell.click("main_menu"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(host.current().level == "menu" && shell.screen() == ShellScreen::Menu);
+    CHECK(shell.command("play_level", "broken"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(shell.screen() == ShellScreen::Error && shell.failure() && shell.failure()->code == TravelError::LoadFailed);
+    CHECK(rig.value("error_code") == "LoadFailed" && rig.value("error_level") == "broken");
+    CHECK(rig.value("error_message").find("doesn't parse") != std::string::npos && rig.value("can_dismiss") == "true");
+    CHECK(shell.click("retry"));   // fails the same way
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(shell.screen() == ShellScreen::Error && host.current().level == "menu" && host.playing());
+    CHECK(shell.click("dismiss") && !shell.failure());
+    rig.frame();
+    CHECK(shell.screen() == ShellScreen::Menu);
+    CHECK(!shell.command("play_level", "menu", &why));   // not in Level select
+
+    // A level that doesn't start: nothing plays; Retry and Main menu still travel.
+    CHECK(shell.command("play_level", "boom"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(!host.playing() && shell.screen() == ShellScreen::Error && shell.failure()->code == TravelError::StartFailed);
+    CHECK(rig.value("can_dismiss") == "false" && !shell.command("dismiss", {}, &why));
+    CHECK(!shell.pause());
+    CHECK(shell.click("main_menu"));
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(host.playing() && host.current().level == "menu" && shell.screen() == ShellScreen::Menu && !shell.failure());
+
+    // New game over progress asks first; confirming resets the campaign.
+    rig.progress = true;
+    CHECK(shell.command("new_game") && shell.page() == "confirm" && host.activeTicket() == 0);
+    CHECK(shell.command("back") && shell.page() == "main");
+    CHECK(shell.command("new_game") && shell.click("confirm_new_game"));
+    const auto reset = host.status(shell.lastTicket());
+    CHECK(reset && reset->request.resetCampaign && reset->request.reason == TravelReason::NewGame);
+    for (int i = 0; i < 3; ++i) rig.frame();
+    CHECK(host.current().level == "a" && shell.screen() == ShellScreen::None);
+
+    // Quit.
+    CHECK(!shell.click("quit"));   // no screen shows in a playing level
+    CHECK(shell.command("quit") && rig.quit);
+    // Every ticket ended exactly once.
+    for (const auto& [ticket, n] : rig.heard) CHECK(n == 1);
+    CHECK(!shell.command("dance", {}, &why) && why.find("Unknown") != std::string::npos);
+}
+
+void testShellOverrides(const fs::path& content) {
+    // A project screen that loads replaces the built-in one; a broken one is replaced by it.
+    const fs::path project = content.parent_path() / "ShellContent";
+    fs::create_directories(project / "Shell");
+    std::ofstream(project / "Shell/menu.rml", std::ios::binary)
+        << "<rml><head><style>body { font-family: \"Noto Sans\"; } button { display: block; }</style></head>"
+           "<body data-model=\"flow\"><button id=\"go\" onclick=\"new_game\">Play {{title}}</button></body></rml>";
+    std::ofstream(project / "Shell/error.rml", std::ios::binary)
+        << "<rml><head><link type=\"text/rcss\" href=\"missing.rcss\"/></head>"
+           "<body data-model=\"flow\"><p>{{error_message}}</p></body></rml>";
+    {
+        ShellRig rig(project);
+        CHECK(rig.shell->problems().size() == 1);
+        CHECK(!rig.shell->problems().empty() && rig.shell->problems()[0].find("Shell/error.rml") == 0);
+        CHECK(rig.shell->click("go") && rig.shell->lastTicket() != 0);   // the project's own menu
+        for (int i = 0; i < 3; ++i) rig.frame();
+        CHECK(rig.host->current().level == "a");
+        CHECK(rig.shell->command("play_level", "broken"));
+        for (int i = 0; i < 3; ++i) rig.frame();
+        CHECK(rig.shell->screen() == ShellScreen::Error && rig.shell->click("retry"));   // the built-in one
+    }
+    // Screens switched off don't show; what's left still works.
+    {
+        AppShellScreens screens;   // loading and error
+        ShellRig rig(project, screens);
+        CHECK(rig.shell->screen() == ShellScreen::None && !rig.shell->pause());
+        CHECK(rig.host->request(to_request("a")).id != 0);
+        rig.frame();
+        rig.shell->update(1.0 / 60.0);
+        CHECK(rig.shell->screen() == ShellScreen::Loading);
+        rig.frame();
+        CHECK(rig.shell->screen() == ShellScreen::None && rig.host->current().level == "a");
+    }
+    {
+        ShellRig rig(project, AppShellScreens{false, false, false, false, false});
+        CHECK(rig.host->request(to_request("broken")).id != 0);
+        for (int i = 0; i < 3; ++i) rig.frame();
+        CHECK(rig.shell->screen() == ShellScreen::None && !rig.shell->failure());
+    }
+}
+
+// ---- Flow test scenarios -------------------------------------------------------------------
+
+void testScenarios(const fs::path& content) {
+    FlowScenario scenario;
+    std::string error;
+    CHECK(parseFlowScenario(
+        R"({"format": 1, "steps": [{"click": "new_game", "timeout": 2}, {"quit": true}]})", scenario, error));
+    CHECK(scenario.steps.size() == 2 && scenario.steps[0].timeout == 2 && scenario.timeout == 60);
+    auto refused = [&](const char* text, const char* says) {
+        FlowScenario ignored;
+        std::string why;
+        const bool ok = !parseFlowScenario(text, ignored, why) && why.find(says) != std::string::npos;
+        if (!ok) std::fprintf(stderr, "  scenario %s: \"%s\"\n", text, why.c_str());
+        return ok;
+    };
+    CHECK(refused(R"({"steps": []})", "format"));
+    CHECK(refused(R"({"format": 2, "steps": []})", "format must be 1"));
+    CHECK(refused(R"({"format": 1, "steps": [{"click": "a", "travel": "b"}]})", "only one"));
+    CHECK(refused(R"({"format": 1, "steps": [{"shell": "rm -rf /"}]})", "it needs one of"));
+    CHECK(refused(R"({"format": 1, "steps": [{"click": "a", "script": "x"}]})", "click has no \"script\""));
+    CHECK(refused(R"({"format": 1, "steps": [{"wait_phase": "done"}]})", "isn't a travel phase"));
+    CHECK(refused(R"({"format": 1, "steps": [{"travel": "a", "expect": "Nope"}]})", "isn't a travel code"));
+    CHECK(refused(R"({"format": 1, "steps": [{"assert_value": "score", "equals": "1"}]})", "flow.<value>"));
+    CHECK(refused(R"({"format": 1, "steps": [{"assert_value": "flow.screen"}]})", "needs \"equals\""));
+    CHECK(refused(R"({"format": 1, "timeout": 0, "steps": []})", "timeout"));
+    CHECK(refused(R"({"format": 1, "steps": [{"press": "jump"}]})", "press takes"));
+    CHECK(refused(R"({"format": 1, "steps": [{"quit": true}]} x)", "after"));
+    CHECK(refused(R"({"format": 1, "format": 1, "steps": []})", "twice"));
+
+    // A run: through the menu to a, a refusal, then a failing assertion stops it.
+    ShellRig rig(content);
+    CHECK(parseFlowScenario(
+        R"({"format": 1, "name": "rig", "steps": [
+            {"assert_value": "flow.screen", "equals": "menu"},
+            {"click": "new_game"},
+            {"assert_value": "flow.screen", "equals": "loading"},
+            {"wait_phase": "succeeded"},
+            {"assert_level": "a"},
+            {"travel": "nowhere", "expect": "UnknownLevel"},
+            {"press": "pause"},
+            {"assert_value": "flow.screen", "equals": "pause"},
+            {"assert_level": "b"},
+            {"quit": true}]})",
+        scenario, error));
+    FlowTest::Hooks hooks;
+    hooks.flow = rig.host.get();
+    hooks.shell = rig.shell.get();
+    hooks.playing = [&] { return rig.host->playing(); };
+    FlowTest test(scenario, hooks);
+    int frames = 0;
+    while (test.frame() == FlowTest::State::Running && frames++ < 100) rig.frame();
+    CHECK(test.state() == FlowTest::State::Failed && test.step() == 8);
+    CHECK(test.message().find("level \"a\" is playing") != std::string::npos);
+    const std::string report = test.reportJson();
+    CHECK(report.find("\"failed_step\": 9") != std::string::npos);
+    CHECK(report.find("\"screen\": \"pause\"") != std::string::npos);
+    CHECK(report.find("\"status\": \"succeeded\"") != std::string::npos);
+    if (test.state() != FlowTest::State::Failed) std::fprintf(stderr, "%s", report.c_str());
+}
+
 }   // namespace
 
 int main() {
     registerCircuitComponents();
+    registerGameUIComponents();
     const fs::path root =
         fs::temp_directory_path() /
         ("shockwave-game-flow-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -258,6 +574,10 @@ int main() {
     Assets assets;
     prefabs().setup(content, &assets);
     testCircuits(content);
+    testShellScreens(content);
+    testShellFlow(content);
+    testShellOverrides(content);
+    testScenarios(content);
     std::error_code ec;
     fs::remove_all(root, ec);
     if (failures) {

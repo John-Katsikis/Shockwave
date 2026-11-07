@@ -149,6 +149,12 @@ staged travel takes two frames. An `EntityRef` from an
 earlier level doesn't resolve. Editor Play runs on a copy of the authored scene, so code
 that edits the scene must check `playing()`.
 
+The player's own menu, pause, loading and error screens are `AppShell`
+(`docs/AppShell.md`, project key `app_shell`), with a separate UI context and a `flow`
+data model; never reach it from game code. Check a change to travel or menus with
+`player --flow-test scenario.json --json report.json` (`docs/FlowTest.md`,
+`Tests/fixtures/flow`); a click there runs the same handler as the button.
+
 ## Asset dependencies
 
 `Assets/AssetGraph.h` follows what every file refers to, through a provider per file kind

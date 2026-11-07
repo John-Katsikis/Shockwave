@@ -90,8 +90,14 @@ game.flow().useExit(door);   // a LevelExit: its destination and spawn
 
 **One travel at a time.** Another request while a ticket is active is refused as `Busy`,
 and the active ticket carries on. So a button pressed twice, or two exits touched in the
-same frame, travel once. A level asking for another from its `beginPlay` (a redirect) is
-the exception, as before.
+same frame, travel once. A level asking for another from its `beginPlay`, or before its
+first tick (a redirect), is the exception, as before. The application's own requests (the
+menu's buttons, `--flow-test`) are never redirects: they always get the boundary frame
+and the loading screen.
+
+**After a failed start.** When the new level doesn't start, nothing plays. The application
+can still ask for a level (the error screen's Retry and Main menu do). The level that
+failed can't: its requests are `StaleLevel`.
 
 **Phases.** A ticket goes `queued`, `validating`, `reading`, `preparing`,
 `awaiting_boundary`, `retiring`, `uploading`, `starting`, then ends `succeeded`, `failed`
@@ -190,8 +196,10 @@ The player's world is the runtime world. Its level comes from the catalog: the e
 level, `--level`, or the level whose scene is the startup scene. A project without a
 catalog plays its implicit `startup` level, and travel then has nowhere to go.
 
-If a level fails to start, the player goes back to the entry level once. If that fails
-too, the player exits with code 1. Online play (`--host`, joins, `--net-preview`) runs
+If a level fails to start and the application shell's error screen is on (the default,
+see [Application shell](AppShell.md)), the error screen shows with Retry, Main menu and
+Quit. Without it, the player goes back to the entry level once, and if that fails too,
+it exits with code 1. Online play (`--host`, joins, `--net-preview`) runs
 through the same host. A client that joins a match starts its level with `OnlineBaseline`.
 
 ## In the editor

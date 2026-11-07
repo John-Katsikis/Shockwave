@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "name": "a level that doesn't load",
+  "timeout": 30,
+  "steps": [
+    {"click": "new_game"},
+    {"wait_phase": "failed"},
+    {"assert_value": "flow.screen", "equals": "error"},
+    {"assert_value": "flow.error_code", "equals": "LoadFailed"},
+    {"click": "retry"},
+    {"wait_phase": "failed"},
+    {"assert_value": "flow.screen", "equals": "error"},
+    {"click": "main_menu"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "menu"},
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"quit": true}
+  ]
+}

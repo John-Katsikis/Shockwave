@@ -31,8 +31,11 @@
 //   - every accepted request ends exactly once (onResult, subscribe): Succeeded, Failed,
 //     or Cancelled when it's cancelled or Play stops first;
 //   - a request from an older level (a stale callback) is refused;
-//   - requests made before a level has ticked (from beginPlay, say) are redirects; more
-//     than kMaxRedirects in a row fail as a cycle instead of loading forever;
+//   - a level's requests made before it has ticked (from beginPlay, say) are redirects;
+//     more than kMaxRedirects in a row fail as a cycle instead of loading forever. The
+//     application's (fromEpoch 0) never are;
+//   - after a level failed to start nothing plays, but the application can still request
+//     a level (an error screen's Retry or Main menu); stop() ends that;
 //   - EntityRefs from an earlier level stop resolving (World::levelEpoch);
 //   - with a residency (setResidency), each level holds a lease on its dependency closure
 //     (Hooks::assets). The next level's is planned before the current one ends: one that

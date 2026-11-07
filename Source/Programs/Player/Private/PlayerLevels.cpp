@@ -305,6 +305,8 @@ void Player::processTravel() {
     if (!m_levels) return;
     m_levels->process();
     if (m_levels->playing() || m_levels->failure().empty()) return;
+    // The shell's error screen shows it, with Retry, Main menu and Quit.
+    if (m_shell && m_shell->failure()) return;
     // The level that failed to start has gone; go back to the entry, once.
     const std::string failed = m_levels->current().level;
     if (failed != m_catalog.entry) {

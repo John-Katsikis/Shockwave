@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "name": "menu, a, b, restart b, menu",
+  "timeout": 60,
+  "steps": [
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"assert_level": "menu"},
+    {"click": "new_game"},
+    {"assert_value": "flow.screen", "equals": "loading"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "a"},
+    {"assert_value": "flow.screen", "equals": "none"},
+    {"travel": "b", "spawn": "entrance"},
+    {"wait_phase": "awaiting_boundary"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "b"},
+    {"press": "pause"},
+    {"assert_value": "flow.screen", "equals": "pause"},
+    {"click": "restart_level"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "b"},
+    {"assert_value": "flow.screen", "equals": "none"},
+    {"press": "pause"},
+    {"click": "main_menu"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "menu"},
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"quit": true}
+  ]
+}

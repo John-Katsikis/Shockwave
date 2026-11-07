@@ -302,11 +302,18 @@ int Player::check(const std::vector<std::string>& importProblems) {
     }
     // Documents no scene shows yet can still be shown by game code: check them too.
     if (m_tool.scenes.empty()) {
+        // The shell's own screens (Content/Shell, docs/AppShell.md) bind its "flow" model.
+        std::unique_ptr<shockwave::GameUI> shellUI;
         for (const std::string& document : m_ui->documentFiles()) {
             if (std::find(checkedDocuments.begin(), checkedDocuments.end(), document) != checkedDocuments.end())
                 continue;
             const std::string shown = m_project.relative(m_project.assetFolder / document);
-            const auto uiProblems = m_ui->validate(document);
+            const bool shell = document.rfind("Shell/", 0) == 0;
+            if (shell && !shellUI) {
+                shellUI = std::make_unique<shockwave::GameUI>(nullptr, shockwave::GameUIOptions{"flow", false});
+                shellUI->setContentFolder(m_project.assetFolder);
+            }
+            const auto uiProblems = shell ? shellUI->validate(document) : m_ui->validate(document);
             for (const auto& problem : uiProblems) problems.push_back(shown + ": " + problem.message);
             if (uiProblems.empty()) std::printf("ok %s\n", shown.c_str());
         }

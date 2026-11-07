@@ -16,7 +16,7 @@ section says:
 | S02 level catalog | done | [below](#s02-level-catalog) |
 | S03 level lifetime | done | [below](#s03-level-lifetime) |
 | S04 assets and loading | done: dependencies, leases, budget, load report; loading on demand, deferred GPU frees | [part 1](#s04-asset-dependencies-and-residency-part-1), [part 2](#s04-loading-on-demand-part-2) |
-| S05 offline flow and travel | part 1 done: travel tickets, staged travel, spawns, exits, circuit nodes | [part 1](#s05-travel-tickets-part-1) |
+| S05 offline flow and travel | done: travel tickets, staged travel, spawns, exits, circuit nodes; the application shell's screens, `--flow-test` | [part 1](#s05-travel-tickets-part-1), [part 2](#s05-application-shell-and-flow-tests-part-2) |
 | S06-S15 | not started | none |
 
 ## S00: release contract
@@ -571,3 +571,75 @@ Full local suite: 95 of 95 pass on Linux, gpu included (`test_snapshot_delta` fa
   being refused before.
 - **Placing the player.** `game.arrival` says where; moving the player there is the
   game's `beginPlay`. Sample and Arena don't use it yet (S07's game will).
+
+## S05: application shell and flow tests, part 2
+
+### What was built
+
+- **The application shell** (`GameFramework/AppShell.h`, [AppShell.md](AppShell.md)): the
+  player's own main menu, pause, loading and error screens, drawn over the level.
+  - The menu has New game, Continue, Level select, Settings, Credits and Quit.
+  - Pause has Resume, Restart checkpoint, Restart level, Settings, Main menu and Quit.
+  - Loading shows the ticket's real phase and progress, with Cancel only while
+    cancelling is safe.
+  - Error shows the stable code and reason, with Retry, Back to the level (only when it
+    still plays), Main menu and Quit.
+  - New game over existing progress asks first, and confirming sets `resetCampaign`.
+- **Every screen can be switched off.** The project key `app_shell` takes `off`, `all`,
+  or any of `menu level_select pause loading error`; `player --app-shell` overrides it.
+  Without the key, only `loading` and `error` are on, and they only show during or after
+  travel. So Arena, Sample and RenderLab look the same as before.
+- **A separate UI layer.** The shell has its own `GameUI`, with its own RmlUi context, a
+  `flow` data model and no `forEngine` registration (`GameUIOptions`).
+  - The shell gets input first; the level's UI input is off while a screen shows.
+  - The key that opens a screen doesn't also press `ui_back` on it.
+  - A mouse the game captured is freed while a screen shows and captured again for the
+    same level.
+- **The zero-asset fallback.** `builtin:` documents are compiled into the program
+  (`addBuiltinDocument`), using only the engine's font. A project's `Content/Shell/*.rml`
+  replaces a built-in screen. If it doesn't load cleanly, the built-in one shows instead,
+  and the reason is logged. `player --check` checks those files against the `flow` model.
+- **Recovering from a failed start.** When a level doesn't start and nothing plays, the
+  application can still request travel (Retry, Main menu). The failed level can't: its
+  requests are `StaleLevel`. With the error screen on, the player stays on it instead of
+  jumping back to the entry level.
+- **Application requests are never redirects.** Before, a request made before a level's
+  first tick committed at once, with no boundary frame. Now that only applies to the
+  level's own requests, so the shell's buttons always get the loading screen.
+- **`player --flow-test scenario.json [--json report]`** ([FlowTest.md](FlowTest.md)).
+  - Steps: `click` (a shell button by id, or a level document's), `press pause`,
+    `travel` (with `expect` for a refusal), `wait_phase`, `assert_level`, `assert_value`
+    (`flow.*` and `game.*`), `save`, `load` and `quit`.
+  - Each step has a timeout, inside the scenario's total.
+  - The reader is strict, and there are no scripts.
+  - It exits 1 at the first failure. The report has every step, the state when it
+    ended, and every ticket.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `game_flow` | unit | `app_shell` parsing. The built-in screens validate clean. The menu shows over the menu level, its disabled buttons say why. New game pressed twice travels once (the second is `Busy`, not an error). Loading shows `awaiting_boundary` at 45% with Cancel. Pause pauses the session and Resume resumes it. Restart level cancelled at the boundary goes back to the paused pause screen, same epoch, still paused. Restart for real arrives unpaused. A level that doesn't load shows `LoadFailed` with the level still playing, Retry fails again, and Back returns to the menu. A level that doesn't start leaves nothing playing, and Main menu recovers. New game over progress asks, and confirming resets the campaign. A project screen replaces the built-in one, and a broken one falls back to it. Screens switched off don't show. Every ticket completes once. Scenario parsing refuses unknown keys, two kinds, bad phases and codes, shell-like steps and trailing text. A run stops at its first failed step, with the report. |
+| `level_travel` | unit | after a failed start, the application's request recovers to a playing level; the failed level's is `StaleLevel` |
+| `game_flow_cli` | integration | the milestone through the shell's buttons, headless: menu, New game, loading, A, B, Restart level from pause, Main menu (23 steps), from `--app-shell all` and from the project key. Also: refusals (unknown level, missing spawn, Continue); save, pause, load; a broken level A (error, Retry, Main menu); a broken menu scene (Main menu fails, the level plays on); a project menu screen with `--check`; a failing step's exit code and report; bad scenarios as usage errors; a click without the shell. |
+| `game_flow_vulkan` | gpu | the same milestone with every screen drawn by the Vulkan renderer (lavapipe) |
+
+Full local suite: 97 of 97 pass on Linux, gpu included. Five long GPU tests failed once when the player was rebuilt while they ran; all five passed when run again on their own.
+
+### Still unverified
+
+- **A person at a real build.** The plan's completion asks for someone to use the buttons
+  in a running build and watch for stale audio and memory growth. The milestone has run
+  only as a flow test: headless, then on lavapipe. On lavapipe the screens are drawn but
+  nothing compared the pictures; a screenshot of the menu was checked by eye. Audio and
+  memory over a long run weren't measured.
+- **The editor.** Editor Play doesn't run the shell yet; it plays levels as before.
+- **Continue, Restart checkpoint and Settings** are present but disabled, each with its
+  reason, until S06 (campaign saves and checkpoints) and S08 (settings).
+- **A menu scene that doesn't load at startup.** The first scene is loaded before the
+  levels start, so a broken entry scene still stops the player with exit 1. A broken menu
+  reached by travel shows the error screen.
+- **Shutdown in every phase** is as in part 1.
+- **The loading screen's length.** It shows for the frames travel really takes. Reading
+  is on the main thread, so that is usually two frames.
+- **`press`** knows only the pause action; other input isn't scripted in v1.

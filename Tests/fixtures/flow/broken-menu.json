@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "name": "the menu level doesn't load",
+  "timeout": 30,
+  "steps": [
+    {"assert_level": "a"},
+    {"press": "pause"},
+    {"click": "main_menu"},
+    {"wait_phase": "failed"},
+    {"assert_value": "flow.error_code", "equals": "LoadFailed"},
+    {"assert_value": "flow.can_dismiss", "equals": "true"},
+    {"click": "dismiss"},
+    {"assert_level": "a"},
+    {"assert_value": "flow.screen", "equals": "pause"},
+    {"press": "pause"},
+    {"assert_value": "flow.screen", "equals": "none"},
+    {"quit": true}
+  ]
+}
