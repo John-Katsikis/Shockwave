@@ -61,6 +61,7 @@ const char* circuitEventName(CircuitEvent event) {
     case CircuitEvent::NetworkReady: return "NetworkReady";
     case CircuitEvent::Disconnected: return "Disconnected";
     case CircuitEvent::GameEvent: return "GameEvent";
+    case CircuitEvent::TravelFinished: return "TravelFinished";
     }
     return "?";
 }
@@ -741,6 +742,8 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
         "Entity.Self",
         "Event.ActionPressed",
         "Event.ActionReleased",
+        "Level.OnTravelFinished",
+        "Level.TravelStatus",
         "Event.AfterLoad",
         "Event.BeforeSave",
         "Event.BeginPlay",
@@ -823,6 +826,69 @@ void addBuiltins(std::map<std::string, std::shared_ptr<const NodeDesc>>& nodes) 
         "Vector.Scale",
         "Vector.Subtract",
     };
+    // ---- Levels (S05, docs/LevelLifetime.md)
+    {
+        // accepted: the request has a ticket; travel happens after this frame, and
+        // Level.OnTravelFinished says how it ended, in the level playing then.
+        auto ticketOutputs = [&] { return std::vector<PinDesc>{pin("accepted", B), pin("ticket", I), pin("code", S)}; };
+        auto setTicket = [](CircuitCall& c, const CircuitTravel::Ticket& t) {
+            c.out(0) = Value::boolean(t.id != 0);
+            c.out(1) = Value::integer(t.id);
+            c.out(2) = Value::string(t.code);
+            return t.id != 0 ? 0 : 1;
+        };
+        auto none = [] { return CircuitTravel::Ticket{0, "NotPlaying", "no level travel here"}; };
+        list.push_back(action(
+            "Level.RequestTravel",
+            "Asks to go to a catalog level, at a LevelSpawn there (empty: its default). accepted means a ticket, "
+            "not that it arrived.",
+            {required("level", S), pin("spawn", S)}, ticketOutputs(),
+            [setTicket, none](CircuitCall& c) {
+                return setTicket(c, c.host.travel ? c.host.travel->request(c.text(0), c.text(1)) : none());
+            },
+            {"accepted", "refused"}));
+        list.push_back(action(
+            "Level.RestartLevel", "Asks to play this level again from where it was entered.", {}, ticketOutputs(),
+            [setTicket, none](CircuitCall& c) {
+                return setTicket(c, c.host.travel ? c.host.travel->restartLevel() : none());
+            },
+            {"accepted", "refused"}));
+        list.push_back(action(
+            "Level.ReturnToMenu", "Asks to go back to the game's menu level.", {}, ticketOutputs(),
+            [setTicket, none](CircuitCall& c) {
+                return setTicket(c, c.host.travel ? c.host.travel->returnToMenu() : none());
+            },
+            {"accepted", "refused"}));
+        list.push_back(action(
+            "Level.UseExit",
+            "Leaves through a LevelExit (self by default): its destination and spawn. A one-shot exit is used once.",
+            {self("exit")}, ticketOutputs(),
+            [setTicket, none](CircuitCall& c) {
+                return setTicket(c, c.host.travel ? c.host.travel->useExit(c.entity(0)) : none());
+            },
+            {"accepted", "refused"}));
+        list.push_back(pure(
+            "Level.TravelStatus", "Where a travel ticket is: its phase, progress 0..1 and, once ended, its code.",
+            {required("ticket", I)},
+            {pin("known", B), pin("phase", S), pin("progress", F), pin("code", S), pin("cancellable", B)},
+            [](CircuitCall& c) {
+                const CircuitTravel::Status s =
+                    c.host.travel ? c.host.travel->status(c.integer(0)) : CircuitTravel::Status{};
+                c.out(0) = Value::boolean(s.known);
+                c.out(1) = Value::string(s.phase);
+                c.out(2) = Value::number(s.progress);
+                c.out(3) = Value::string(s.code);
+                c.out(4) = Value::boolean(s.cancellable);
+                return 0;
+            }));
+        list.push_back(event(
+            "Level.OnTravelFinished", CircuitEvent::TravelFinished,
+            "A travel ended. Runs in the level playing afterwards: the new one when it succeeded, this one when "
+            "it failed or was cancelled before this level ended.",
+            {pin("ticket", I), pin("succeeded", B), pin("level", S), pin("from", S), pin("code", S),
+             pin("message", S)}));
+    }
+
     for (NodeDesc& node : list) {
         if (node.id.rfind("Transform.", 0) == 0) {
             node.component = componentId<Transform>();

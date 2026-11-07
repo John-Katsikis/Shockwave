@@ -6681,6 +6681,81 @@ How far the action is pressed, 0 to 1.
 - In `positive` String, required
 - Out `result` Float
 
+## Level
+
+### Level.OnTravelFinished
+
+A travel ended. Runs in the level playing afterwards: the new one when it succeeded, this one when it failed or was cancelled before this level ended.
+
+- Event: TravelFinished (entity and game circuits)
+- Changes: presentation
+- Exec out: `then`
+- Out `ticket` Int
+- Out `succeeded` Bool
+- Out `level` String
+- Out `from` String
+- Out `code` String
+- Out `message` String
+
+### Level.RequestTravel
+
+Asks to go to a catalog level, at a LevelSpawn there (empty: its default). accepted means a ticket, not that it arrived.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `accepted` `refused`
+- In `level` String, required
+- In `spawn` String
+- Out `accepted` Bool
+- Out `ticket` Int
+- Out `code` String
+
+### Level.RestartLevel
+
+Asks to play this level again from where it was entered.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `accepted` `refused`
+- Out `accepted` Bool
+- Out `ticket` Int
+- Out `code` String
+
+### Level.ReturnToMenu
+
+Asks to go back to the game's menu level.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `accepted` `refused`
+- Out `accepted` Bool
+- Out `ticket` Int
+- Out `code` String
+
+### Level.TravelStatus
+
+Where a travel ticket is: its phase, progress 0..1 and, once ended, its code.
+
+- Changes: presentation
+- In `ticket` Int, required
+- Out `known` Bool
+- Out `phase` String
+- Out `progress` Float
+- Out `code` String
+- Out `cancellable` Bool
+
+### Level.UseExit
+
+Leaves through a LevelExit (self by default): its destination and spawn. A one-shot exit is used once.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `accepted` `refused`
+- In `exit` Entity, default self
+- Out `accepted` Bool
+- Out `ticket` Int
+- Out `code` String
+
 ## Logic
 
 ### Logic.And

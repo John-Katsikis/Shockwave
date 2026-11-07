@@ -10,17 +10,26 @@
 //   host.process();                // after the frame's callbacks: travel happens here
 //   host.stop();
 //
-// Game code asks with game.requestLevel("b"). Nothing changes until process(), which the
-// application calls on the main thread once the frame's ticks, frame and UI callbacks
-// have returned, so a GameMode is never destroyed on its own call stack. process() loads
-// the next level into a separate world first: if that fails, the current level keeps
-// playing. Then it ends the current session (endPlay, subsystems), moves the new level
-// into the world with a new epoch, and starts a new session.
+// It is the GameFlow (GameFramework/GameFlow.h) game code reaches as game.flow(): game
+// code asks with game.flow().request("b") or game.requestLevel("b"), and gets a ticket.
+// Nothing changes until process(), which the application calls on the main thread once
+// the frame's ticks, frame and UI callbacks have returned, so a GameMode is never
+// destroyed on its own call stack. process() loads the next level into a separate world
+// first: if that fails, the current level keeps playing. Then it ends the current session
+// (endPlay, subsystems), moves the new level into the world with a new epoch, and starts
+// a new session.
+//
+// Staged (setStaged, S05; the player and editor's default): the change takes two frames.
+// The first process() validates, reads and prepares the next level and pauses the current
+// one (AwaitingBoundary); a frame renders, so a loading screen can show and the ticket can
+// still be cancelled; the next process() retires the old level and starts the new one.
+// Unstaged, all of it happens in one process(), as in S03.
 //
 // Rules:
-//   - one level simulates at a time;
-//   - every accepted request ends exactly once (onResult): Succeeded, Failed, or
-//     Cancelled when another request replaces it or Play stops first;
+//   - one level simulates at a time, and one travel is active at a time: another request
+//     meanwhile is refused as Busy (a redirect from beginPlay excepted);
+//   - every accepted request ends exactly once (onResult, subscribe): Succeeded, Failed,
+//     or Cancelled when it's cancelled or Play stops first;
 //   - a request from an older level (a stale callback) is refused;
 //   - requests made before a level has ticked (from beginPlay, say) are redirects; more
 //     than kMaxRedirects in a row fail as a cycle instead of loading forever;
@@ -33,11 +42,13 @@
 // Main thread only. Not copyable; the World and GameInstance must outlive it.
 
 #include <Assets/AssetResidency.h>
+#include <GameFramework/GameFlow.h>
 #include <GameFramework/LevelLifetime.h>
 #include <GameFramework/PlaySession.h>
 
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,9 +57,10 @@
 
 namespace shockwave {
 
-class LevelHost {
+class LevelHost final : public GameFlow {
 public:
     static constexpr int kMaxRedirects = 8;
+    static constexpr size_t kKeptTickets = 64;   // ended tickets status() still knows
 
     struct Hooks {
         // Loads the requested level's scene into `into`, an empty world. False, with the
@@ -56,8 +68,11 @@ public:
         std::function<bool(const LevelRequest&, World& into, std::string& error)> load;
         // Before each level's session starts: save folder, game circuit, online match.
         std::function<void(PlaySession&, const LevelRequest&)> configure;
-        // After a level's session started (Play or travel): place the player at the
-        // request's spawn, report physics problems.
+        // Before a request is accepted: is the level known (else false, with UnknownLevel
+        // or another code), and the spawn it arrives at when none was asked for (the
+        // catalog's default_spawn). Unset: every level is accepted, as asked.
+        std::function<bool(TravelRequest&, TravelError& code, std::string& error)> resolve;
+        // After a level's session started (Play or travel): report physics problems.
         std::function<void(PlaySession&, const LevelRequest&)> started;
         // Just before a level's session stops for travel or Stop.
         std::function<void(PlaySession&)> stopping;
@@ -76,7 +91,7 @@ public:
     };
 
     LevelHost(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine, Hooks hooks);
-    ~LevelHost();
+    ~LevelHost() override;
     LevelHost(const LevelHost&) = delete;
     LevelHost& operator=(const LevelHost&) = delete;
 
@@ -85,16 +100,36 @@ public:
     void start(LevelRequest level, StartReason reason = StartReason::Fresh);
     // Ends Play: a pending request is cancelled, the session ends. Safe to repeat.
     void stop();
-    // Queues travel. Returns the request's id, or 0 when refused (nothing is playing).
-    // A request already waiting is cancelled in its favour.
-    uint64_t request(LevelRequest level);
-    // Main thread, after the frame: carries out the waiting request, if any.
+    // Queues travel (GameFlow::request with reason Exit, from the application). Returns
+    // the ticket, or 0 when refused (why is logged).
+    uint64_t requestLevel(LevelRequest level);
+    // Main thread, after the frame: carries out the waiting request, if any (staged: one
+    // phase of it).
     void process();
+
+    // ---- GameFlow ----
+    TravelTicket request(TravelRequest request) override;
+    TravelError cancel(uint64_t ticket) override;
+    std::optional<TravelProgress> status(uint64_t ticket) const override;
+    uint64_t activeTicket() const override;
+    const LevelRequest& currentLevel() const override { return m_current; }
+    uint64_t currentEpoch() const override { return m_epoch; }
+    TravelTicket restartLevel(uint64_t fromEpoch = 0) override;
+    TravelTicket returnToMenu(uint64_t fromEpoch = 0) override;
+    TravelTicket useExit(Entity exit, uint64_t fromEpoch = 0) override;
+
+    // The level returnToMenu goes to (the player's: the catalog's menu level).
+    void setMenuLevel(std::string level) { m_menuLevel = std::move(level); }
+    const std::string& menuLevel() const { return m_menuLevel; }
+    // Two frames per change, with a frame between preparing and retiring (see above).
+    void setStaged(bool staged) { m_staged = staged; }
+    bool staged() const { return m_staged; }
 
     PlaySession* session() const { return m_session.get(); }
     bool playing() const { return m_session && m_session->active(); }
-    // A request is waiting for process(): hot reload and saving wait for it.
-    bool transitioning() const { return m_pending.has_value(); }
+    // A request is waiting for process(), or prepared and waiting for the frame boundary:
+    // hot reload and saving wait for it.
+    bool transitioning() const { return m_pending.has_value() || m_candidate.has_value(); }
     const LevelRequest& current() const { return m_current; }
     uint64_t epoch() const { return m_epoch; }
     // The last travel that failed and left nothing playing, or empty.
@@ -119,13 +154,34 @@ public:
     void setEpochForTesting(uint64_t epoch) { m_epoch = epoch; }
 
 private:
+    using Clock = std::chrono::steady_clock;
     struct Pending {
         uint64_t id;
-        LevelRequest request;
+        TravelRequest request;
         bool redirect;   // made before the current level ticked
     };
-    void finish(uint64_t id, const LevelRequest& request, TravelStatus status, std::string error);
-    void startSession(StartReason reason);
+    // A level prepared beside the current one, waiting for the frame boundary (staged).
+    struct Candidate {
+        Pending next;
+        std::unique_ptr<World> prepared;   // null on demand: it's read after the old level goes
+        std::vector<AssetCost> assets;
+        LoadReport load;
+        bool onDemand = false;
+        bool paused = false;   // the current session was paused for it
+    };
+    // The phases before the boundary. False: it ended (finished already).
+    bool prepare(const Pending& next, Candidate& out);
+    // From the boundary on. False: stop processing (nothing plays, or Play stopped).
+    bool commit(Candidate candidate);
+    // Before the boundary: puts the current level back as it was.
+    void resume(Candidate& candidate);
+    void setPhase(uint64_t id, TravelPhase phase);
+    void finish(uint64_t id, TravelStatus status, TravelError code, std::string error);
+    // Hands completions to onResult, observers and circuits, outside any change.
+    void deliver();
+    TravelTicket refuse(TravelError code, std::string message, const TravelRequest& request) const;
+    void startSession(StartReason reason, const LevelArrival& arrival);
+    void arrived();
     void endSession();
     void restoreSettings();
     bool planAssets(
@@ -133,9 +189,9 @@ private:
         std::string& error);
     void report(LoadReport report);
     // Travel when assets load on demand (Hooks::assets). False: stop processing (nothing plays).
-    bool travelOnDemand(const Pending& next, LoadReport& load, std::chrono::steady_clock::time_point& clock);
+    bool travelOnDemand(Candidate& candidate, Clock::time_point& clock);
     // After the current level ended: the new one didn't start, so nothing plays.
-    void failStarted(const Pending& next, LoadReport& load, const std::string& why);
+    void failStarted(const Pending& next, LoadReport& load, TravelError code, const std::string& why);
 
     World& m_world;
     JobSystem& m_jobs;
@@ -148,6 +204,15 @@ private:
     uint64_t m_nextId = 1;
     int m_redirects = 0;
     std::optional<Pending> m_pending;
+    std::optional<Candidate> m_candidate;   // staged: prepared, waiting for the boundary
+    uint64_t m_inFlight = 0;   // the ticket past the boundary, inside process()
+    std::map<uint64_t, TravelProgress> m_tickets;   // active
+    std::vector<TravelProgress> m_ended;   // the last kKeptTickets, oldest first
+    std::map<uint64_t, Clock::time_point> m_accepted;
+    std::vector<TravelCompletion> m_outbox;   // waiting for deliver()
+    bool m_delivering = false;
+    bool m_staged = false;
+    std::string m_menuLevel;
     bool m_processing = false;
     bool m_stopped = false;   // stop() came while process() was loading
     std::pair<uint64_t, uint64_t> m_countsAtStart{};   // the residency's loaded/unloaded when a change began

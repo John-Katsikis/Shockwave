@@ -415,6 +415,8 @@ int main(int argc, char** argv) {
                 tool.loadReport = argv[++i];
             } else if (arg == "--no-asset-residency") {
                 tool.assetResidency = false;
+            } else if (arg == "--instant-travel") {
+                tool.instantTravel = true;
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
                 if (tool.assetLoading != "all" && tool.assetLoading != "levels")
@@ -595,6 +597,8 @@ int main(int argc, char** argv) {
                     "                                    (docs/Levels.md); exit 1 on a broken link\n"
                     "player --level id                   play from this catalog level instead of the startup scene\n"
                     "player --level-schema file.md       write the level catalog reference (- for stdout)\n"
+                    "player --instant-travel             change levels within one frame (level_travel instant):\n"
+                    "                                    no frame between preparing a level and the old one ending\n"
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"

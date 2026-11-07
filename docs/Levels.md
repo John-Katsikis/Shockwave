@@ -6,8 +6,9 @@ starts in, and where each level leads. The scenes hold the doors and arrival poi
 between levels. Shockwave checks that all of it lines up before anyone plays it.
 
 This is S02 of [the shipping plan](ShippingImplementation.md). It adds the catalog and the
-checks. Moving between levels while the game runs (level travel, loading screens, carrying
-state) comes in S03 to S05. The file format, components and every diagnostic code are in
+checks. Moving between levels while the game runs is [Level lifetime](LevelLifetime.md)
+(S03 to S05): `game.flow()` travels to a level and spawn, `game.arrival` says where the
+new level was entered, and `game.flow().useExit` leaves through a `LevelExit`. The file format, components and every diagnostic code are in
 [LevelSchema.md](LevelSchema.md), which is generated.
 
 ## Turning it on, and off

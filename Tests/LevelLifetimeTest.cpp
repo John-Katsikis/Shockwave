@@ -20,6 +20,14 @@ using namespace shockwave;
 
 namespace {
 
+// A request from the application, by level and spawn.
+TravelRequest to(std::string level, std::string spawn = {}) {
+    TravelRequest r;
+    r.level = std::move(level);
+    r.spawn = std::move(spawn);
+    return r;
+}
+
 int failures = 0;
 #define CHECK(x)                                                                                                       \
     do {                                                                                                               \
@@ -47,7 +55,7 @@ struct Script {
 std::map<std::string, Script> scripts;
 // The last context a GameMode saw, so a "UI callback" can call game.requestLevel between frames.
 const GameContext* lastContext = nullptr;
-std::function<bool(const LevelRequest&)> staleTravel;   // kept from an earlier level
+LevelFlow staleTravel;   // kept from an earlier level
 
 std::string levelOf(const World& world) {
     std::string id;
@@ -126,7 +134,7 @@ void reset() {
     reasons.clear();
     scripts.clear();
     lastContext = nullptr;
-    staleTravel = nullptr;
+    staleTravel = {};
 }
 
 void tick(LevelHost& host, int n = 1) {
@@ -181,7 +189,7 @@ void testTravel(JobSystem& jobs) {
     }
     CHECK(counts["menu"].ended == 2 && counts["b"].destroyed == 1);
     host.stop();   // again: nothing
-    CHECK(host.request({"a"}) == 0);   // nothing playing
+    CHECK(host.requestLevel({"a"}) == 0);   // nothing playing
 }
 
 void testFailures(JobSystem& jobs) {
@@ -196,7 +204,7 @@ void testFailures(JobSystem& jobs) {
     tick(host);
 
     // A level that doesn't load: the current one keeps playing, untouched.
-    const uint64_t id = host.request({"nowhere"});
+    const uint64_t id = host.requestLevel({"nowhere"});
     CHECK(id != 0);
     host.process();
     CHECK(results.size() == 1 && results[0].id == id && results[0].status == TravelStatus::Failed);
@@ -205,7 +213,7 @@ void testFailures(JobSystem& jobs) {
 
     // endPlay throws: the level still ends and the next one starts.
     scripts["menu"].throwOnEnd = true;
-    host.request({"a"});
+    host.requestLevel({"a"});
     host.process();
     CHECK(host.current().level == "a" && results.back().status == TravelStatus::Succeeded);
     CHECK(counts["menu"].destroyed == 1);
@@ -213,7 +221,7 @@ void testFailures(JobSystem& jobs) {
     // beginPlay throws: nothing plays, the failure is reported once.
     scripts["boom"].throwOnBegin = true;
     tick(host);
-    host.request({"boom"});
+    host.requestLevel({"boom"});
     host.process();
     CHECK(!host.playing() && results.back().status == TravelStatus::Failed);
     CHECK(host.failure().find("beginPlay of boom threw") != std::string::npos);
@@ -225,17 +233,15 @@ void testFailures(JobSystem& jobs) {
     host.start({"menu"});
     CHECK(host.playing() && host.failure().empty());
 
-    // Replaced and stopped requests are cancelled, each exactly once.
+    // A second request while one waits is refused (Busy, S05): the first carries on. A
+    // stopped request is cancelled, exactly once.
     tick(host);
     const size_t before = results.size();
-    const uint64_t first = host.request({"a"});
-    const uint64_t second = host.request({"b"});
-    CHECK(
-        results.size() == before + 1 && results.back().id == first && results.back().status == TravelStatus::Cancelled);
-    const uint64_t third = host.request({"a"});
-    CHECK(results.back().id == second && results.back().status == TravelStatus::Cancelled);
+    const uint64_t first = host.requestLevel({"a"});
+    CHECK(first != 0 && host.requestLevel({"b"}) == 0 && host.request(to("b")).error == TravelError::Busy);
+    CHECK(results.size() == before && host.activeTicket() == first);
     host.stop();
-    CHECK(results.back().id == third && results.back().status == TravelStatus::Cancelled);
+    CHECK(results.back().id == first && results.back().status == TravelStatus::Cancelled);
     CHECK(results.back().error.find("stopped") != std::string::npos);
     std::map<uint64_t, int> seen;
     for (const auto& r : results) ++seen[r.id];
@@ -265,10 +271,10 @@ void testStaleAndRefs(JobSystem& jobs) {
     // An EntityRef and a travel callback kept from level A.
     EntityRef first(world, world.entityAt(0));
     CHECK(first && first.get<Name>().value == "level:a");
-    staleTravel = lastContext->travel;
-    CHECK(bool(staleTravel));
+    staleTravel = lastContext->flow();
+    CHECK(staleTravel.available());
 
-    host.request({"b"});
+    host.requestLevel({"b"});
     host.process();
     CHECK(host.current().level == "b");
     // Level B's first entity has the same handle, but the old ref doesn't reach it.
@@ -276,14 +282,14 @@ void testStaleAndRefs(JobSystem& jobs) {
     EntityRef fresh(world, world.entityAt(0));
     CHECK(fresh && fresh.get<Name>().value == "level:b");
     // The old level's callback is refused.
-    CHECK(!staleTravel(LevelRequest{"a", {}}) && !host.transitioning());
+    CHECK(!staleTravel.request("a") && !host.transitioning());
 
     // A save game loaded in place keeps refs: copies keep the epoch.
     World copy = world;
     CHECK(copy.levelEpoch() == world.levelEpoch());
 
     // Hot reload has to wait while a request is pending.
-    host.request({"a"});
+    host.requestLevel({"a"});
     CHECK(host.transitioning());
     host.process();
     CHECK(!host.transitioning());
@@ -303,7 +309,7 @@ void testStaleAndRefs(JobSystem& jobs) {
     std::vector<TravelResult> results;
     quitter.onResult = [&](const TravelResult& r) { results.push_back(r); };
     quitter.start({"menu"});
-    quitter.request({"a"});
+    quitter.requestLevel({"a"});
     quitter.process();
     CHECK(!quitter.playing() && results.size() == 1 && results[0].status == TravelStatus::Cancelled);
     CHECK(levelOf(w2) == "menu");   // nothing was moved in
@@ -313,7 +319,7 @@ void testStaleAndRefs(JobSystem& jobs) {
     tick(host);
     std::vector<TravelResult> last;
     host.onResult = [&](const TravelResult& r) { last.push_back(r); };
-    host.request({"b"});
+    host.requestLevel({"b"});
     host.process();
     CHECK(
         last.size() == 1 && last[0].status == TravelStatus::Failed && last[0].error.find("epoch") != std::string::npos);
@@ -354,7 +360,7 @@ void testRedirects(JobSystem& jobs) {
     scripts[host.current().level].onBegin.clear();
     for (auto& [id, script] : scripts) script.onBegin.clear();
     tick(host);
-    host.request({"a"});
+    host.requestLevel({"a"});
     host.process();
     CHECK(results.back().status == TravelStatus::Succeeded && host.current().level == "a");
 }

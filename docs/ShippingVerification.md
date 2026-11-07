@@ -16,7 +16,8 @@ section says:
 | S02 level catalog | done | [below](#s02-level-catalog) |
 | S03 level lifetime | done | [below](#s03-level-lifetime) |
 | S04 assets and loading | done: dependencies, leases, budget, load report; loading on demand, deferred GPU frees | [part 1](#s04-asset-dependencies-and-residency-part-1), [part 2](#s04-loading-on-demand-part-2) |
-| S05-S15 | not started | none |
+| S05 offline flow and travel | part 1 done: travel tickets, staged travel, spawns, exits, circuit nodes | [part 1](#s05-travel-tickets-part-1) |
+| S06-S15 | not started | none |
 
 ## S00: release contract
 
@@ -503,3 +504,70 @@ Run here on Linux (llvmpipe for Vulkan).
   `--asset-loading levels --renderer null --frames 30` both start, load their startup
   scene's assets (9 and 6) and unload them all at exit with no frees pending, but nobody
   has played them that way on screen. The loading screen that would show progress is S05.
+
+## S05: travel tickets, part 1
+
+### What was built
+
+- **`GameFlow`** (`GameFramework/GameFlow.h`), which `LevelHost` implements and game code
+  reaches as `game.flow()`. A request gets a ticket with a phase, a progress that only
+  goes up (1 only once it succeeded), and a stable code when it ends. `cancel`, `status`,
+  `restartLevel`, `returnToMenu` and `useExit` are there too. Observers subscribe with a
+  token. Completions are delivered after the change, never during it. The last 64 ended
+  tickets stay queryable.
+- **One travel at a time.** A second request is refused as `Busy`; a redirect from
+  `beginPlay` still works. This replaces S03's "the newer request wins".
+- **Staged travel.** `level_travel staged` (the default) in the project. The first frame
+  prepares the next level and pauses the current one; a frame renders; the next frame
+  retires and starts. Until the boundary, cancel leaves the current level playing,
+  unpaused and untouched. After it, cancel returns `TooLateToCancel`. `level_travel
+  instant` or `player --instant-travel` does it all in one frame. The editor follows the
+  project's setting.
+- **Codes** for every refusal and failure: `Busy`, `NotPlaying`, `StaleLevel`,
+  `UnknownLevel`, `UnknownSpawn`, `InvalidRequest`, `AuthorityRequired`, `LoadFailed`,
+  `BudgetExceeded`, `StartFailed`, `Cancelled`, `RedirectCycle`, plus `UnknownTicket`,
+  `AlreadyFinished` and `TooLateToCancel` for `cancel`.
+- **Spawns.** An empty spawn is the catalog's `default_spawn`. A named one that the
+  destination doesn't have fails as `UnknownSpawn` before the current level ends. The new
+  level sees `game.arrival`: the spawn and its world transform.
+- **Exits.** `useExit` travels through a `LevelExit` and disables a one-shot exit once its
+  request is accepted. A disabled exit is refused.
+- **Arriving clean.** Actions held through the change read as released until they're let
+  go (`Input::holdUntilReleased`), the camera history is cut, and the loading time isn't
+  caught up in ticks (`Engine::discardFrameTime`).
+- **Online.** A request during network play is refused (`AuthorityRequired`) instead of
+  disconnecting the peers; S11 adds map rotation.
+- **Circuit nodes**: `Level.RequestTravel`, `Level.RestartLevel`, `Level.ReturnToMenu`,
+  `Level.UseExit` (accepted and refused outputs), `Level.TravelStatus` and
+  `Level.OnTravelFinished`, which runs only in the level playing afterwards. `player
+  --check` fails literal levels and spawns that don't exist. The node references are
+  regenerated.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `level_travel` | unit | staged phases and progress; A to B to A; explicit and default spawns; restart and menu; every refusal code; a UI action fired twice travels once; cancel queued and at the boundary leaves the level playing with the same epoch; `TooLateToCancel` from the new level's `beginPlay`; a user's pause kept through a cancel; two exits in one frame travel once and a one-shot exit is used once; a stale `game.flow()`; a missing spawn and a broken scene fail before the boundary; a start failure after it leaves nothing playing; Stop while queued, while reading and at the boundary; each ticket completes exactly once, after the change; unsubscribing; history bounded at 64; instant mode; a redirect from `beginPlay` |
+| `game_flow` | unit | a game circuit using every `Level.*` node: tickets and codes from the outputs, `Level.OnTravelFinished` once in the new level with `Level.TravelStatus` reading `succeeded`, a refusal reaching the refused output, a cancel heard by the level that stays, exits, restart and menu from circuits, stale and missing flows refusing |
+| `input` | unit | a key held through a level change reads as up, with no release event, until it's let go; other actions count at once |
+| `level_check_cli` | integration | `--check` passes a good `Level.RequestTravel` and fails an unknown level or spawn, with the line |
+| `level_lifetime`, `asset_residency` | unit | S03 and S04 behaviour still holds, with the Busy rule replacing "the newer request wins" |
+| `level_lifetime_editor` | gpu | the editor's 100 Play/travel/Stop cycles, now with staged travel |
+
+Full local suite: 95 of 95 pass on Linux, gpu included (`test_snapshot_delta` failed once under `ctest -j8` and passed three times alone, as it has before).
+
+### Still unverified
+
+- **No loading screen yet.** The frame at the boundary is there for one, but the
+  application's menu, pause, loading and error screens come in part 2, with
+  `--flow-test`.
+- **Shutdown in every phase.** Stop is tested while queued, while reading and at the
+  boundary. Retiring, uploading and starting all happen inside one `process()` call, so
+  there is no moment between them for Stop to arrive from outside.
+- **Reading isn't on a worker.** The scene is read on the main thread, inside the first
+  frame. Section 6.1 allows that until scene parsing is split from world construction.
+- **Spawns on demand.** With `asset_loading levels` the scene is read after the old level
+  has gone, so a missing spawn fails the start (`UnknownSpawn`, nothing plays) instead of
+  being refused before.
+- **Placing the player.** `game.arrival` says where; moving the player there is the
+  game's `beginPlay`. Sample and Arena don't use it yet (S07's game will).

@@ -34,6 +34,10 @@ struct Project {
     // What the player imports (docs/AssetResidency.md): "all" at start, or "levels", each
     // level's assets when it needs them, unloaded when no level holds them (asset_loading).
     std::string assetLoading = "all";
+    // "staged" (the default): a level change takes two frames, so a loading screen shows
+    // and the travel can be cancelled before the current level ends. "instant": all in one
+    // frame, as before S05 (level_travel, docs/LevelLifetime.md).
+    std::string levelTravel = "staged";
     int meshLods = 4;   // simpler levels of detail per mesh, 0..7 (mesh_lods)
     double lodErrorPixels = 1.0;   // how far a level may stray on screen, 0 = always full detail (lod_error_pixels)
     bool lowLatency = false;   // wait for each frame to reach the screen before the next (Engine::setLowLatency)

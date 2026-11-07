@@ -351,8 +351,13 @@ void Engine::run(Application& app) {
         }
 
         // Start of the previous frame to the start of this one.
-        const double rawFrameTime = static_cast<double>(frameStart - previous) / freq;
+        double rawFrameTime = static_cast<double>(frameStart - previous) / freq;
         previous = frameStart;
+        if (m_discardFrameTime) {   // a level loaded: none of that time is owed
+            m_discardFrameTime = false;
+            m_clock.reset();
+            rawFrameTime = 1.0 / m_config.tickRate;
+        }
         m_frameStartSeconds = static_cast<double>(frameStart - runStart) / freq;
         // Read every frame: an editor switching projects can change the tick rate.
         const double dt = 1.0 / m_config.tickRate;

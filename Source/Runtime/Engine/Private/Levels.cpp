@@ -29,6 +29,29 @@ std::string newPersistentId() {
     return text;
 }
 
+Entity findLevelSpawn(const World& constWorld, std::string_view id) {
+    World& world = const_cast<World&>(constWorld);   // each() has no const form; this only reads
+    Entity found = kNullEntity;
+    world.each<const LevelSpawn>([&](Entity e, const LevelSpawn& spawn) {
+        if (spawn.id == id && (found == kNullEntity || e.index < found.index)) found = e;
+    });
+    return found;
+}
+
+LevelArrival levelArrival(const World& world, const std::string& spawn) {
+    LevelArrival arrival;
+    arrival.entity = findLevelSpawn(world, spawn.empty() ? std::string_view("start") : std::string_view(spawn));
+    if (arrival.entity != kNullEntity)
+        arrival.spawn = spawn.empty() ? "start" : spawn;
+    else
+        arrival.spawn = spawn;
+    if (arrival.entity != kNullEntity && world.get<Transform>(arrival.entity)) {
+        arrival.found = true;
+        arrival.transform = Transform::fromMatrix(worldMatrix(world, arrival.entity));
+    }
+    return arrival;
+}
+
 LevelSceneFacts levelSceneFacts(const World& constWorld) {
     // World::each has no const form; these visits only read.
     World& world = const_cast<World&>(constWorld);

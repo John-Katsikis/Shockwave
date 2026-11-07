@@ -91,6 +91,10 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (result.textureCompression != "high" && result.textureCompression != "small" &&
                     result.textureCompression != "off")
                     return fail("texture_compression must be high, small or off");
+            } else if (key == "level_travel") {
+                row >> result.levelTravel;
+                if (result.levelTravel != "staged" && result.levelTravel != "instant")
+                    return fail("level_travel must be staged or instant");
             } else if (key == "asset_loading") {
                 row >> result.assetLoading;
                 if (result.assetLoading != "all" && result.assetLoading != "levels")
@@ -195,6 +199,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.lowLatency) out << "low_latency true\n";
     if (project.textureCompression != "high") out << "texture_compression " << project.textureCompression << "\n";
     if (project.assetLoading != "all") out << "asset_loading " << project.assetLoading << "\n";
+    if (project.levelTravel != "staged") out << "level_travel " << project.levelTravel << "\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";
     if (project.lodErrorPixels != 1.0) out << "lod_error_pixels " << project.lodErrorPixels << "\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";
