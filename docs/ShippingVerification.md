@@ -18,7 +18,7 @@ section says:
 | S04 assets and loading | done: dependencies, leases, budget, load report; loading on demand, deferred GPU frees | [part 1](#s04-asset-dependencies-and-residency-part-1), [part 2](#s04-loading-on-demand-part-2) |
 | S05 offline flow and travel | done: travel tickets, staged travel, spawns, exits, circuit nodes; the application shell's screens, `--flow-test` | [part 1](#s05-travel-tickets-part-1), [part 2](#s05-application-shell-and-flow-tests-part-2) |
 | S06 campaign saves | done: save format 2, campaign travel, migration, durable writes, Continue; checkpoints, finishing a level, things that stay gone | [part 1](#s06-campaign-saves-part-1), [part 2](#s06-checkpoints-and-lasting-progress-part-2) |
-| S07 finishable reference game | part 1 done: Reactor Run, real-input flow steps, the whole game played by keyboard and mouse and by gamepad, save/quit/continue; part 2 (editor authoring, package, playtest) not started | [part 1](#s07-reactor-run-part-1) |
+| S07 finishable reference game | done: Reactor Run, real-input flow steps, the whole game by keyboard and mouse and by gamepad, save/quit/continue, from the build and from a package; editor level authoring, failures by kind, game content checks in `--check` | [part 1](#s07-reactor-run-part-1), [part 2](#s07-reactor-run-part-2) |
 | S08-S15 | not started | none |
 
 ## S00: release contract
@@ -839,15 +839,64 @@ Full local suite: 104 of 104 pass on Linux, gpu included.
 
 ### Still unverified
 
-- **Part 2 isn't built**: editor level authoring (create and duplicate a level, place
-  spawns, exits and checkpoints, pick destinations, objective ids, play from the
-  current level, failures by kind), `Config/Package.swpackage` and the packaged demo,
-  and the human playtest on hardware.
-- **`--check` doesn't run the game's own content checks**; they run when a level
-  starts.
+- **Part 2** is below: editor authoring, failures by kind, the game's checks in
+  `--check` and the packaged demo.
 - **Drawn on a GPU.** The flow tests run with `--renderer null`; nobody has looked at the
   levels, HUD and screens on a real display yet.
 - **Controller-only menus.** The gamepad run plays the levels on a pad but clicks the
   shell's buttons; menu navigation on a pad alone is S08.
 - **The enemy AI** walks straight at what it sees; there's no navigation mesh, so a
   sentry can be stuck behind a crate.
+
+## S07: Reactor Run, part 2
+
+### What was built
+
+- **Failures by kind.** `player --check` lists every problem under the kind of fix it
+  needs: missing or broken content, navigation, circuit errors, physics setup, gameplay
+  code and rules, or project settings (`ProblemKind`, `problemKindOf` from a diagnostic's
+  code). The editor's Validate shows the same kinds, with a filter for each, and each
+  finding's code. See [Levels.md](Levels.md#checks).
+- **The game's own checks in `--check`.** `GameInstance::checkScene` (plugin ABI 21)
+  returns one line per content problem; `--check` and the editor's Validate run it on
+  every scene, loaded but not playing, as gameplay problems. Reactor Run returns
+  `DemoRules::validate`. A game that then refuses the same content isn't reported again
+  as "gameplay failed to start".
+- **Editor level authoring** (Project > Levels and the Create menu):
+  - **New level** writes a playable scene and adds it to the catalog; **Duplicate level**
+    copies the selected level's scene and catalog entry; **Play from entry** plays the
+    game from its start, beside **Play level** for the selected one.
+  - **Create > Level**: a level spawn (`start` first), a level exit aimed at the catalog's
+    next level, and a checkpoint with its own spawn.
+  - In the Inspector, an exit's `destination` picks from the catalog's levels and a
+    checkpoint's `spawn` from the scene's spawns.
+  - **Validate** also runs the scene checks: the game's rules, circuits that are missing or
+    don't compile, a stale or missing navigation mesh, physics and navigation setup, and
+    references that didn't resolve. Double-click a finding to open its scene.
+  - `editor --level-authoring` drives these actions for tests.
+- **`Config/Package.swpackage`**: Reactor Run, program `ReactorRun`, version 1.0.0,
+  without its docs and tests. The packaged game plays through from outside the source
+  tree.
+- **Playtest script** (`Games/ShippingDemo/Docs/Playtest.md`): starts from the package,
+  and has a section for level makers.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `shipping_demo_flow` | integration | as in part 1, then (in modular builds off Windows) `player --package` makes `ReactorRun` without Docs, Tests or Source, and the packaged launcher plays the whole game, then save and quit in the factory and Continue in a second run, each from a fresh profile |
+| `shipping_demo_authoring` | gpu | on a copy of the game, `editor --level-authoring` adds a level, places a spawn, checkpoint and exit in it, duplicates training, saves, and Validate finds no errors, and `player --check` passes on what the editor wrote; on a copy broken three ways, Validate names the missing entity under content, the missing circuit under circuit and the objective without a target under gameplay, and `--check` lists each under its heading, plus the exit to an unknown level under content, without "gameplay failed to start" |
+| `level_catalog` | unit | each diagnostic code maps to its kind, and every kind has its own name and heading |
+
+Full local suite: 105 of 105 pass on Linux, gpu included.
+
+### Still unverified
+
+- **The human playtest.** The script is written; nobody has played the package on a
+  display with a real keyboard, mouse and gamepad yet.
+- **The editor by hand.** The authoring actions are tested through
+  `editor --level-authoring`, not by clicking the window; the Inspector's destination
+  picker has no automated test.
+- **Packaging on Windows**, like every package test (docs/Packaging.md).
+- **Navigation and physics findings** in Validate are only as good as the engine's own
+  diagnostics; Reactor Run's levels have no navigation mesh to go stale.

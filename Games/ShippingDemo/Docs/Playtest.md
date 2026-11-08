@@ -5,9 +5,14 @@ about ten minutes. Note anything that surprised you, and the step it happened at
 
 The automated version of this script is `Tests/flow/full-run.json` (keyboard and mouse),
 `Tests/flow/gamepad-run.json` (gamepad) and `Tests/flow/resume-quit.json` followed by
-`Tests/flow/resume-continue.json` (save, quit and continue), run by `shipping_demo_flow`.
+`Tests/flow/resume-continue.json` (save, quit and continue), run by `shipping_demo_flow`, both from the build and from a package.
 
 ## Before you start
+
+- Use the package if you were given one (start `ReactorRun` in its folder), or make one
+  with `player --package --project Games/ShippingDemo/ShippingDemo.swproject`. Nothing in
+  this script needs a terminal or editing a file once the game is running, except the
+  rebinding check at the end.
 
 - Delete or rename your Reactor Run saves so New game starts clean (the player's
   `--user-dir` folder, or the OS's save folder for the game).
@@ -46,3 +51,16 @@ The automated version of this script is `Tests/flow/full-run.json` (keyboard and
   and Main menu, each doing what it says.
 - Rebind Use in `Config/Input.swinput` (say to `key F`) and restart: **expect** the
   prompt to say F.
+
+## For level makers
+
+1. Open the project in the editor and open **Project > Levels**. Press **Validate**.
+   **Expect** "Every level loads, every link resolves and every check passes", apart
+   from any unreachable-level warnings.
+2. Press **New level**, then open its scene. From **Create > Level**, add a level spawn,
+   a checkpoint and a level exit. Pick the exit's destination from the arrow beside it.
+   Save the scene and the catalog, and Validate again. **Expect** only a warning that the
+   new level can't be reached yet.
+3. In training, clear the target of the objective "Walk to the firing line" and press
+   Validate. **Expect** the problem under "Gameplay code and rules", not a generic error.
+   Undo it.

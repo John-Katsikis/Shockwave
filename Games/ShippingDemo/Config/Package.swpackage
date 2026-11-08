@@ -1,0 +1,5 @@
+shockwave_package 1
+name "Reactor Run"
+executable "ReactorRun"
+version "1.0.0"
+exclude "*.blend" "Docs" "Tests"

@@ -436,10 +436,37 @@ void Editor::drawField(const Field& f, void* data, Entity e) {
         }
         break;
     }
-    case FieldType::String:
-        ImGui::InputText(label.c_str(), static_cast<std::string*>(data));
+    case FieldType::String: {
+        auto* text = static_cast<std::string*>(data);
+        // Level links pick from what exists: an exit's destination from the catalog's
+        // levels, a checkpoint's spawn from this scene's spawns. Typing still works.
+        std::vector<std::string> choices;
+        const auto* exit = m_world.get<shockwave::LevelExit>(e);
+        const auto* checkpoint = m_world.get<shockwave::Checkpoint>(e);
+        if (exit && text == &exit->destination) {
+            choices = catalogLevelIds();
+        } else if (checkpoint && text == &checkpoint->spawn) {
+            m_world.each<const shockwave::LevelSpawn>(
+                [&](Entity, const shockwave::LevelSpawn& spawn) { choices.push_back(spawn.id); });
+        }
+        if (!choices.empty()) {
+            ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemInnerSpacing.x);
+        }
+        ImGui::InputText(label.c_str(), text);
         trackEdit();
+        if (!choices.empty()) {
+            ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
+            if (ImGui::BeginCombo("##choices", nullptr, ImGuiComboFlags_NoPreview | ImGuiComboFlags_PopupAlignLeft)) {
+                for (const std::string& choice : choices)
+                    if (ImGui::Selectable(choice.c_str(), choice == *text) && choice != *text) {
+                        pushUndo(m_world);
+                        *text = choice;
+                    }
+                ImGui::EndCombo();
+            }
+        }
         break;
+    }
     case FieldType::Mesh: {
         auto* mesh = static_cast<shockwave::MeshHandle*>(data);
         assetCombo(engine().assets().meshes(), mesh->id, [&](shockwave::MeshHandle h) { *mesh = h; });

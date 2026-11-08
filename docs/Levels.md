@@ -92,6 +92,43 @@ and follows the links between them:
 A level nothing leads to from the entry is a warning, not an error, because a game may
 reach it some other way.
 
+### Checks
+
+Every problem `--check` finds is listed under the kind of fix it needs, so a failure is
+never just "the level won't run":
+
+| Kind | Heading | What it covers |
+|---|---|---|
+| `content` | Missing or broken content | Files, scenes, prefabs, assets, UI, materials, a name that matches no entity, links between levels |
+| `navigation` | Navigation | A navigation mesh that's unreadable or out of date, agents and areas that don't fit it |
+| `circuit` | Circuit errors | A circuit that doesn't exist or doesn't compile, variables it doesn't declare, travel to a level that isn't there |
+| `physics` | Physics setup | Bodies and characters that can't be built |
+| `gameplay` | Gameplay code and rules | The game's own checks on its content, and a game that throws when it starts |
+| `settings` | Project settings | The renderer, input bindings, packaging, release and network settings |
+
+```text
+Missing or broken content (1, content):
+Scenes/training.swscene:276: no entity named 'Nowhere'; left empty
+Circuit errors (1, circuit):
+Scenes/training.swscene: entity 'Training exit': Circuit: Circuits/Missing.swcircuit doesn't exist in Content
+Gameplay code and rules (1, gameplay):
+Scenes/training.swscene: objective "training.line" (reach) needs a target with a Transform
+3 problems in 4 scenes
+```
+
+The gameplay checks are the game's own. Override `GameInstance::checkScene` and return
+one line per problem (without the file name). `--check` and the editor's Validate call it
+on each scene, loaded but not playing:
+
+```cpp
+std::vector<std::string> checkScene(const shockwave::World& scene) const override {
+    return MyRules::validate(scene);   // "objective \"core\" needs a target", ...
+}
+```
+
+A game that refuses content its check already listed isn't reported a second time as
+"gameplay failed to start".
+
 `--levels` lists the levels with their spawns and exits, then the same diagnostics. With
 `--json` it gives the same as JSON (format 1), with stable diagnostic codes. Both exit 1
 when anything is wrong.
@@ -115,12 +152,41 @@ writes one with a single level, `main`, and adds the `levels` key to the project
 - The table lists every level. Double-click one to open its scene.
 - For the selected level you can set its ID (with **Rename**), whether it's the entry, its
   scene, kind, default spawn and next level, and its preloads.
-- **Open scene**, **Play level** and **Remove level** act on the selected level.
-- **Validate** runs the same checks as `--check` and fills the spawn lists from the scenes.
+- **New level** writes a new scene with a sky, a camera and ground in `Scenes/`, and adds
+  it as a gameplay level.
+- **Open scene**, **Play level**, **Duplicate level** and **Remove level** act on the
+  selected level. Duplicate level copies its scene to a new file beside it and adds a level
+  with the same kind, spawn, next level and preloads. Link to it with an exit or a `next`.
+- **Play from entry** opens the entry level's scene and plays the game from its start.
+- **Validate** runs the same checks as `--check` on every level's scene: the links between
+  levels, the game's own rules, circuits, navigation and physics. It lists what it finds
+  under the kind of fix each needs, with a filter for each kind (see [Checks](#checks)).
+  Hover a finding for its code, and double-click one to open its scene. It also fills the
+  spawn lists from the scenes.
 - **Save** writes the file safely (through a temporary file). **Revert** throws edits
   away. Edits undo and redo.
 - If the file changes on disk, the panel says so. Revert loads it; Save overwrites it.
 - Everything that writes is off during Play.
+
+### Authoring in the editor
+
+The **Create** menu (and the Hierarchy's right-click menu) has a **Level** section:
+
+- **Level spawn**: where players arrive. The scene's first one is `start`, the level's
+  default; later ones get `spawn-2` and so on.
+- **Level exit**: a way out, aimed at the catalog's next level for this scene. In the
+  Inspector, the arrow beside `destination` lists the catalog's levels. What triggers the
+  exit is the game's: a trigger and a circuit's `Level.UseExit`, or game code.
+- **Checkpoint**: a checkpoint with its own spawn on the same entity. The arrow beside its
+  `spawn` lists the scene's spawns.
+
+Objective IDs and the rest of a game's own components are fields in the Inspector, like
+any other component. Prefabs open in their own tab to preview and edit.
+
+`editor --level-authoring` runs these actions without anyone at the keyboard, on whatever
+project it opens (tests use a copy): New level, a spawn, checkpoint and exit in it,
+Duplicate level, Save, then Validate. It prints each finding as `level authoring: <kind>
+<severity>: <finding> [<code>]` and exits 1 on any error.
 
 **Rename** changes the ID in the catalog only (its `entry` and every `next`). Exits in
 scenes that still use the old ID show up in Validate, so you can fix them.

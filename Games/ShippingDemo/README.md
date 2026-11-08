@@ -17,6 +17,15 @@ cmake --build build --target player game_shippingdemo
 
 Choose **New game** on the main menu.
 
+Or package it and play it the way a tester gets it, from outside the source tree:
+
+```sh
+./build/bin/player --package --project Games/ShippingDemo/ShippingDemo.swproject
+```
+
+`Config/Package.swpackage` names the game Reactor Run and its program `ReactorRun`, and
+leaves the docs and tests out. The command prints where the package is and how to run it.
+
 | Action | Keyboard and mouse | Gamepad |
 | --- | --- | --- |
 | Move | W A S D | left stick |
@@ -83,7 +92,16 @@ The level content is all components, so it's edited in the Inspector:
 
 A level whose content doesn't add up doesn't start: the error lists each problem, such
 as an objective counting a group nothing has, or a gate waiting for an objective that
-isn't there.
+isn't there. `player --check` and the editor's **Project > Levels > Validate** list the
+same problems under "Gameplay code and rules", apart from missing files, circuits and
+navigation (the game's `GameInstance::checkScene`, see
+[Checks](../../docs/Levels.md#checks)).
+
+To make a new level in the editor: **Project > Levels > New level** (or **Duplicate
+level** on training or the factory to start from one), then the **Create > Level** menu
+for its spawn, checkpoint and exit, and the components above for its objectives. Set the
+exit's destination from the arrow beside it, then **Validate**. See
+[Authoring in the editor](../../docs/Levels.md#authoring-in-the-editor).
 
 ## How it plays by itself
 
@@ -94,4 +112,7 @@ ctest --test-dir build -R shipping_demo
 `shipping_demo_flow` plays the whole game through the player with real input: keys,
 mouse movement and a virtual gamepad go in at the device boundary and are read through
 the bindings. No step can set the game's success flag; the scenarios win by playing.
-See [Flow tests](../../docs/FlowTest.md#real-input).
+See [Flow tests](../../docs/FlowTest.md#real-input). It then packages the game and plays the whole run, and save,
+quit and Continue, again from the package. `shipping_demo_authoring` makes, furnishes and
+duplicates levels in the editor and checks that broken content is reported under the
+right kind.
