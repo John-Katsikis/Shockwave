@@ -94,6 +94,27 @@ std::filesystem::path cookManifestPath(const std::filesystem::path& projectRoot,
 // line per problem: "Content/a.png: missing", "...: changed since the cook".
 std::vector<std::string> verifyCookedFiles(const CookManifest& manifest, const std::filesystem::path& root);
 
+// What a project's cook says, for the editor's Package window: the manifest at
+// cookManifestPath(), each level's share of it, and (with verify) the files changed since.
+struct CookReport {
+    std::filesystem::path file;
+    bool cooked = false;   // a manifest is there and reads
+    std::string error;   // why it doesn't read, when there is one
+    CookManifest manifest;
+    struct Level {
+        std::string id, scene;
+        size_t assets = 0;   // in its closure, the scene included
+        uint64_t bytes = 0;
+        size_t shared = 0;   // of those, reached by other levels too
+    };
+    std::vector<Level> levels;   // in the manifest's order
+    size_t files = 0;   // assets that are files (not built in)
+    uint64_t bytes = 0;   // their total size
+    bool verified = false;   // verify ran
+    std::vector<std::string> changed;   // verifyCookedFiles against the project
+};
+CookReport cookReport(const std::filesystem::path& projectRoot, std::string_view target, bool verify);
+
 // The targets this engine can cook for: only the one it was built for, since a cook
 // records the engine and its modules. "linux-x86_64".
 std::vector<std::string> cookTargets();

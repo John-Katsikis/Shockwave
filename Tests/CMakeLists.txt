@@ -140,6 +140,19 @@ foreach(part reproducibility dependencies)
     set_tests_properties(cook_${part} PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 240 LABELS integration)
 endforeach()
 endif()
+# Release packages (S09 part 2, docs/Cooking.md#release-packages): only the cook ships, from
+# a clean copy in a folder with spaces and non-ASCII letters; moved and read-only it plays
+# A -> B -> save -> resume; missing code says so; a failed cook keeps the last good package.
+# Packaging needs a modular build off Windows, like package_cli.
+if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_shippingdemo)
+    add_test(NAME package_release COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/PackageRelease
+        -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageReleaseCheck.cmake)
+    set_tests_properties(package_release PROPERTIES TIMEOUT 300 LABELS integration)
+endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)
 add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}
@@ -703,4 +716,14 @@ add_test(NAME editor_player_settings COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/EditorPlayerSettingsCheck.cmake)
 set_tests_properties(editor_player_settings PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 300 LABELS gpu)
+# Build > Package game with Release ticked (S09 part 2): the window's own release package.
+if(SHOCKWAVE_MODULAR AND NOT WIN32)
+add_test(NAME editor_package_release COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/EditorPackageRelease
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/EditorPackageReleaseCheck.cmake)
+set_tests_properties(editor_package_release PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
 endif()

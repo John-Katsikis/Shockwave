@@ -23,6 +23,7 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
     shockwave::PackageOptions options;
     const shockwave::net::ProjectSteamUse steam = shockwave::net::projectSteamUse(project);
     options.steam = {steam.uses, steam.appId, command.development};
+    options.release = command.release;
     // Progress and results on standard output, for people and scripts alike; problems
     // are marked so they stand out.
     options.log = [](shockwave::LogLevel level, std::string_view line) {
@@ -42,6 +43,10 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
     const shockwave::PackageResult result = shockwave::packageProject(project, settings, options);
     if (!result.ok) return 1;
     std::printf("package %s\n", result.folder.string().c_str());
+    if (result.release)
+        std::printf(
+            "cook %s (%zu assets; %zu project files left out)\n", result.cook.string().c_str(), result.cookedAssets,
+            result.leftOut);
     if (!result.archive.empty()) std::printf("archive %s\n", result.archive.string().c_str());
     std::printf("run %s\n", result.launcher.string().c_str());
     return 0;

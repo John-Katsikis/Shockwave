@@ -112,13 +112,15 @@ void PackageWindow::start(const shockwave::Project& project) {
     m_jobProject = project;
     m_jobSettings = m_edit;
     const shockwave::net::ProjectSteamUse steam = shockwave::net::projectSteamUse(project);
-    m_jobSteam = {steam.uses, steam.appId, m_development};
+    m_jobSteam = {steam.uses, steam.appId, m_development && !m_release};
+    m_jobRelease = m_release;
     m_cancel = false;
     m_running = true;
     m_thread = std::thread([this] {
         shockwave::PackageOptions options;
         options.cancel = &m_cancel;
         options.steam = m_jobSteam;
+        options.release = m_jobRelease;
         options.log = [this](shockwave::LogLevel level, std::string_view text) {
             // Problems also go to the Console, where the rest of the editor's are.
             if (level >= shockwave::LogLevel::Warning) shockwave::logMessage(shockwave::LogPackage, level, text);
@@ -137,6 +139,20 @@ void PackageWindow::start(const shockwave::Project& project) {
         m_result = std::move(result);
         m_running = false;
     });
+}
+
+void PackageWindow::startRelease(const shockwave::Project& project) {
+    open = true;
+    load(project);
+    m_release = true;
+    m_development = false;
+    start(project);
+}
+
+std::optional<shockwave::PackageResult> PackageWindow::result() {
+    if (m_running) return std::nullopt;
+    std::lock_guard lock(m_mutex);
+    return m_result;
 }
 
 // ---- Window -------------------------------------------------------------------------
@@ -159,6 +175,7 @@ void PackageWindow::draw(const shockwave::Project& project) {
         return;
     }
     drawSettings(project);
+    drawCook(project);
     ImGui::Spacing();
 
     const bool running = m_running;
@@ -166,8 +183,11 @@ void PackageWindow::draw(const shockwave::Project& project) {
     ImGui::BeginDisabled(running || !problems.empty());
     if (gui::button("Package")) start(project);
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Save these settings, then build, check, copy, verify and archive the game\n"
-                          "(the same as: player --package)");
+    ImGui::SetItemTooltip(
+        m_release ? "Save these settings, then build, check, cook, copy only what the cook lists,\n"
+                    "verify every file against it and archive (the same as: player --package --release)"
+                  : "Save these settings, then build, check, copy, verify and archive the game\n"
+                    "(the same as: player --package)");
     ImGui::SameLine();
     if (running) {
         if (gui::button("Cancel")) m_cancel = true;
@@ -238,15 +258,102 @@ void PackageWindow::drawSettings(const shockwave::Project& project) {
     ImGui::Checkbox("##cpp_runtime", &m_edit.cppRuntime);
     ImGui::SetItemTooltip("Include this machine's C++ runtime, used only on older systems whose own is too old\n"
                           "for the game (cpp_runtime)");
+    gui::propertyLabel("Release");
+    if (ImGui::Checkbox("##release", &m_release) && m_release) m_development = false;
+    ImGui::SetItemTooltip("Ship only what the cook says the game needs, after the release checks: an optimised\n"
+                          "engine, nothing a level needs left out, no absolute paths, no test AppID, every\n"
+                          "license (player --package --release, docs/Cooking.md). Never saved");
     gui::propertyLabel("Development package");
+    ImGui::BeginDisabled(m_release);
     ImGui::Checkbox("##development", &m_development);
+    ImGui::EndDisabled();
     ImGui::SetItemTooltip("A test build: allows Steam AppID 480 (Valve's shared test app). Never saved, so a\n"
                           "release can't ship as one by mistake (player --package --dev-package)");
+    gui::propertyLabel("Target");
+    ImGui::TextUnformatted(shockwave::packagePlatform());
+    ImGui::SetItemTooltip("The platform this engine was built for: an engine packages and cooks for its own\n"
+                          "platform only (docs/Cooking.md)");
     ImGui::EndDisabled();
     gui::propertyLabel("Makes");
     ImGui::TextWrapped(
         "%s", (m_edit.outputFolder(project) / shockwave::packageFolderName(project, m_edit)).string().c_str());
     ImGui::EndTable();
+}
+
+// ---- Cook ---------------------------------------------------------------------------
+
+void PackageWindow::refreshCook(const shockwave::Project& project, bool verify) {
+    m_cook = shockwave::cookReport(project.root, shockwave::packagePlatform(), verify);
+    m_cookProject = project.file;
+    std::error_code ec;
+    m_cookTime = fs::last_write_time(m_cook.file, ec);
+}
+
+void PackageWindow::drawCook(const shockwave::Project& project) {
+    // The manifest changes when a release package or `player --cook` runs, here or elsewhere.
+    const double now = seconds();
+    if (m_cookProject != project.file) {
+        refreshCook(project, false);
+    } else if (now >= m_nextCookCheck && !m_running) {
+        m_nextCookCheck = now + 1.0;
+        std::error_code ec;
+        if (fs::last_write_time(m_cook.file, ec) != m_cookTime) refreshCook(project, false);
+    }
+    const gui::Theme& theme = gui::currentTheme();
+    if (!ImGui::CollapsingHeader("Cook", m_release ? ImGuiTreeNodeFlags_DefaultOpen : 0)) return;
+    if (!m_cook.error.empty()) {
+        ImGui::TextColored(
+            gui::semanticColor(theme.error), "%s: %s", project.relative(m_cook.file).c_str(), m_cook.error.c_str());
+        return;
+    }
+    if (!m_cook.cooked) {
+        ImGui::TextDisabled(
+            "Not cooked for %s yet: a release package cooks first (or player --cook)", shockwave::packagePlatform());
+        return;
+    }
+    const shockwave::CookManifest& m = m_cook.manifest;
+    ImGui::Text(
+        "%s cook: %zu levels, %zu files (%.1f MB), %zu roots", m.release ? "Release" : "Development", m.levels.size(),
+        m_cook.files, static_cast<double>(m_cook.bytes) / (1024.0 * 1024.0), m.roots.size());
+    ImGui::TextDisabled(
+        "content %s, build %s, %s", shockwave::hex64(m.contentId).c_str(), shockwave::hex64(m.buildId).c_str(),
+        m.buildConfig.c_str());
+    if (ImGui::BeginTable("##cook_levels", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Level");
+        ImGui::TableSetupColumn("Files");
+        ImGui::TableSetupColumn("Shared");
+        ImGui::TableSetupColumn("Size");
+        ImGui::TableHeadersRow();
+        for (const shockwave::CookReport::Level& level : m_cook.levels) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s%s", level.id.c_str(), level.id == m.entryLevel ? " (entry)" : "");
+            ImGui::SetItemTooltip("%s", level.scene.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", level.assets);
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", level.shared);
+            ImGui::SetItemTooltip("Files other levels reach too");
+            ImGui::TableNextColumn();
+            ImGui::Text("%.2f MB", static_cast<double>(level.bytes) / (1024.0 * 1024.0));
+        }
+        ImGui::EndTable();
+    }
+    ImGui::BeginDisabled(m_running);
+    if (gui::button("Verify files")) refreshCook(project, true);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Check every file the cook lists is still there, byte for byte\n"
+                          "(the same as: player --cook-info <manifest> --verify <project>)");
+    if (m_cook.verified) {
+        ImGui::SameLine();
+        if (m_cook.changed.empty())
+            ImGui::TextColored(gui::accent(), "every file matches the cook");
+        else
+            ImGui::TextColored(
+                gui::semanticColor(theme.warning), "%zu changed since the cook: package again", m_cook.changed.size());
+        for (const std::string& line : m_cook.changed)
+            ImGui::TextColored(gui::semanticColor(theme.warning), "%s", line.c_str());
+    }
 }
 
 void PackageWindow::drawProgress() {
@@ -297,6 +404,10 @@ void PackageWindow::drawResult() {
     ImGui::TextColored(
         gui::accent(), "Packaged in %.1f s: %.1f MB, %zu files", result->seconds,
         static_cast<double>(result->bytes) / (1024.0 * 1024.0), result->files);
+    if (result->release)
+        ImGui::Text(
+            "Release: %zu files from the cook, every one checked against it; %zu project files left out",
+            result->cookedAssets, result->leftOut);
     if (!result->minimumGlibc.empty())
         ImGui::TextDisabled("Runs on Linux with glibc %s or newer", result->minimumGlibc.c_str());
     if (!result->warnings.empty())

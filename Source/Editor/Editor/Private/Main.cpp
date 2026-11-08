@@ -31,6 +31,7 @@
 //   --levels               show Project > Levels on startup
 //   --residency            show Window > Resource residency on startup
 //   --player-settings      show Window > Player Settings on startup
+//   --package-release      package the game for release from Build > Package game, then exit (tests)
 //   --preview-language fr  preview the game's text in a language (Player Settings)
 //   --preview-ui-scale 1.5 preview an interface size (Player Settings)
 //   --graphics-guide-path  print the guide path and exit without starting the engine
@@ -91,6 +92,8 @@ int main(int argc, char** argv) {
                 options.showResidency = true;
             else if (arg == "--player-settings")
                 options.showPlayerSettings = true;
+            else if (arg == "--package-release")
+                options.packageRelease = true;
             else if (arg == "--preview-language")
                 options.previewLanguage = value();
             else if (arg == "--preview-ui-scale") {

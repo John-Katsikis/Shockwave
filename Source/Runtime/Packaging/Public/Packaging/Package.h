@@ -9,6 +9,7 @@
 //     Binaries/               the player, renamed, with the engine's libraries,
 //                             renderer plugins, the game module, shaders and fonts
 //     Game/                   the project: its .swproject, Content/, Scenes/, Config/
+//                             (a release package: only what its Cook.swcook lists)
 //     Licenses/               the engine's and its libraries' licenses
 //
 // How a project is packaged lives in Config/Package.swpackage, a small text file that
@@ -113,6 +114,10 @@ struct PackageOptions {
     // Set from any thread to stop at the next file; the half-made package is removed.
     const std::atomic<bool>* cancel = nullptr;
     PackageSteam steam;
+    // A release package (docs/Cooking.md): cooks with the release policy first, ships only
+    // what the cook says the game needs, plus the manifest (Game/Cook.swcook), and checks
+    // every shipped file against it. Refuses an unoptimised engine and a development package.
+    bool release = false;
 };
 
 struct PackageResult {
@@ -127,6 +132,11 @@ struct PackageResult {
     double seconds = 0;
     // The oldest system the package runs on (Linux): glibc and the C++ runtime it needs.
     std::string minimumGlibc, minimumCppRuntime;
+    // A release package: its cook, how many assets it ships and how many project files a
+    // development package would have shipped that it leaves out.
+    bool release = false;
+    std::filesystem::path cook;
+    size_t cookedAssets = 0, leftOut = 0;
 };
 
 // The Steam runtime library's file name on this platform ("libsteam_api.so"); a

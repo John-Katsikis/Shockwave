@@ -116,6 +116,7 @@ From the command line, these options change one run without editing the file:
 | `--no-build` | Don't build first |
 | `--no-archive` | Don't make the `.tar.gz` |
 | `--dev-package` | A development package: allows Steam AppID 480 (see [Steam](#steam)) |
+| `--release` | A release package: only what the cook says the game needs, checked against it ([Cooking](Cooking.md#release-packages)) |
 
 ## What packaging checks
 

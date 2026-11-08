@@ -10,6 +10,7 @@ player --project Games/ShippingDemo --cook --release     # held to the release p
 player --project Games/ShippingDemo --check --release    # the policy, without writing
 player --cook-info Games/ShippingDemo/Saved/Cook/linux-x86_64/Cook.swcook
 player --cook-info Cook.swcook --verify Games/ShippingDemo   # every file still matches
+player --project Games/ShippingDemo --package --release  # a package of only what the cook lists
 ```
 
 `--json report.json` writes what the cook found (with `--cook-info`, the manifest as
@@ -68,6 +69,7 @@ A level's closure is what its scene refers to, all the way down. The game also r
 | `Content/Localization/*.swstrings` | the game's text |
 | fonts (`.ttf`, `.otf`) anywhere in `Content` | any document may use one |
 | `Content/Shell/*.rml` | the shell's own screens |
+| `Content/Shell/credits.txt` | the Credits page's text |
 | what `include` patterns name | what game code loads by name |
 
 Game code that loads a file by name, like `audio.playClip("Audio/shot.wav")`, can't be
@@ -99,6 +101,51 @@ include pattern that matches nothing is a warning.
 A development cook reports the same problems except the release-only ones, which it
 lets through.
 
+## Release packages
+
+`player --package --release` (or **Release** in the editor's Package window) makes a
+package from the cook:
+
+1. After the usual build and checks, it cooks with the release policy (as
+   `--cook --release`), so a release package needs an optimised engine and passes every
+   rule above. It can't also be a `--dev-package`.
+2. `Game/` gets only what the cook lists, plus the cook itself as `Game/Cook.swcook` and
+   the compressed textures made from those files. Docs, tools, notes, test files and
+   anything else no level or root reaches stay behind. The packager says how many files it
+   left out.
+3. Before the package replaces the last one, every file in `Game/` is checked against
+   the cook, byte for byte, and anything the cook doesn't list fails the package.
+4. `Binaries/shockwave-package.txt` records `release true` and the cook's `content_id`
+   and `build_id`, so the folder and its archive say which content they hold.
+
+A failed release (a cook problem, a missing file, a cancel) leaves the last good package
+as it was. Anyone can check a release later with its own player:
+
+```sh
+ReactorRun-1.0.0-linux-x86_64/Binaries/ReactorRun --cook-info Game/Cook.swcook --verify Game
+```
+
+A development package (`--package` without `--release`) still ships the whole project
+folder, less what [Packaging](Packaging.md#change-the-package-settings) leaves out.
+
+## In the editor
+
+**Build > Package game** has a **Release** checkbox, never saved with the settings, like
+**Development package**, and the two can't both be on. It also shows:
+
+- **Target**: the platform this engine packages and cooks for.
+- **Cook**: the project's last cook for that target. It shows whether it's a release cook,
+  how many levels, files and roots it has, its size, and its content and build IDs. Under
+  that is a table with each level's files, how many of those it shares with other levels,
+  and its size. **Verify files** checks the project's files against the cook and lists any
+  that changed since, which means it's time to package again. The section rereads the
+  manifest whenever a package or `player --cook` writes it.
+- After a release package: how many files came from the cook, every one checked, and how
+  many project files were left out.
+
+`editor --package-release` presses the window's Package button with Release ticked, prints
+the result and exits, which is how the `editor_package_release` test drives it.
+
 ## Targets
 
 `--target` picks the platform; the default is the one the engine was built for. A cook
@@ -113,3 +160,19 @@ non-ASCII letters from another working folder, give the same manifest; `--verify
 three levels and the content ID; a file changed after the cook, an edited manifest, a
 missing texture, an excluded document, a code-played sound without its include pattern,
 an absolute path in release, `--check --release`, and the wrong target).
+
+`package_release` packages a clean copy, with no `Saved/` folder, in a folder with spaces
+and non-ASCII letters, from another working folder. It checks that only cooked files ship,
+that the marker's build ID is the cook's, and that the packaged player's `--verify` passes.
+Then it moves the package and makes it read-only, and plays menu, training and factory,
+saves, quits and resumes from it. It also checks the failures:
+
+- a missing game module tells players to install again, not to build;
+- a missing engine library is named by the system;
+- an absolute path, or a missing texture, fails the release and keeps the last good
+  package with nothing half-made;
+- `--release --dev-package` is refused.
+
+The `package` unit test checks that a cancelled package keeps the last one, that an engine
+folder without a player says so, and the cook report the editor shows.
+`editor_package_release` makes a release package from the window.

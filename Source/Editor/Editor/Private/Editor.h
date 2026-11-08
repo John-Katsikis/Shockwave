@@ -90,6 +90,9 @@ struct EditorOptions {
     // duplicate the entry's next level, then Validate and print the findings by kind; exit 1
     // on any error.
     bool levelAuthoring = false;
+    // --package-release (tests, docs/Cooking.md#in-the-editor): Build > Package game with
+    // Release ticked, pressed once; prints the result and exits 1 if it failed.
+    bool packageRelease = false;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
 };
 
@@ -285,6 +288,8 @@ private:
     shockwave::Entity createCheckpoint(shockwave::Entity parent);
     shockwave::Entity placeLevelEntity(const std::string& name, shockwave::Entity parent);
     void runLevelAuthoring();   // --level-authoring
+    void runPackageRelease();   // --package-release
+    bool m_packageReleaseStarted = false;
     LevelsPanel::Hooks levelsHooks();
     // The catalog's level ids, read again when the file changes (for exit destinations).
     const std::vector<std::string>& catalogLevelIds();
