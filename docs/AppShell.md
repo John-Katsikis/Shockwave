@@ -74,6 +74,23 @@ you return to the same level.
 The arrow keys, Enter and Escape (and the d-pad, South and East) move around the screens,
 the same as in any game UI (see [Game UI](GameUI.md#menus-with-the-keyboard-and-gamepad)).
 
+The shell raises an [input layer](Input.md#who-has-the-input) while a screen shows (`menu`,
+`loading`, or `modal` for an error), so the game's `gameplayFocused()` is false under it.
+
+The Settings page's Controls tab rebinds the game's actions
+([Input](Input.md#the-players-own-bindings)): `bind_key` and `bind_pad` with the action
+listen for a press, `cancel_listen` stops, and `reset_bindings` puts the project's back.
+Its values are `settings_bindings` (each with `action`, `label`, `keyboard`, `gamepad`
+and `conflict`), `listening` and `listening_text`.
+
+When the gamepad in use is unplugged during a level, the shell pauses it and says so
+([Input](Input.md#controllers-coming-and-going)); `Setup::pauseOnControllerLoss = false`
+turns that off. `Setup::input` and `Setup::controlsFile` say whose input it reads and
+where the player's bindings go (the engine's, and beside the preferences, by default).
+
+A page too tall for the screen (a long Controls list at 720p, a large Interface size)
+scrolls inside its panel, and moving the focus scrolls it into view.
+
 ## Your own screens
 
 Put `Content/Shell/menu.rml`, `pause.rml`, `loading.rml` or `error.rml` in the project,

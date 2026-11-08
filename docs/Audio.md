@@ -203,6 +203,13 @@ When you save a sound file, it reimports in the background and swaps in between 
 
 The first import when a project opens finishes before validation or Play starts.
 
+## When the audio device goes away
+
+Headphones unplugged, a USB headset switched off, the system's audio restarted: the game
+keeps running silently, and the engine tries to open the device again every 2 seconds.
+When it's back, sound carries on where the game is now. Nothing to set up; tested by
+`audio` (the device made to fail, then come back).
+
 ## Limits
 
 - Sounds are loaded fully into memory. There is no streaming, so this isn't meant for

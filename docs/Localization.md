@@ -77,11 +77,27 @@ A catalog translates them like the game's own: `shell.new_game "Nouvelle partie"
 - a key a locale has that neither the default language nor the engine has;
 - a translation whose placeholders differ from the default's;
 - a document's `{{text.key}}` that no catalog has;
-- keys a locale hasn't translated yet, as a warning.
+- keys a locale hasn't translated yet, as a warning;
+- text with characters no font draws: they'd show blank. The engine's Noto Sans has
+  Latin, Greek and Cyrillic; for Chinese, Japanese, Korean, Arabic and the rest, put a
+  font that has them (`.ttf`, `.otf`) anywhere in `Content`, and every document can use it.
+
+### Does it fit
+
+Translations run longer than English (German by a third or more) and some words don't
+break. `GameUI::layoutProblems()` lists text that runs past its box, a box that runs out
+of the one it's in, and text partly off the screen, in the documents shown. The shell's
+screens are tested with it in English, a long pseudo-German and Greek letters, at 720p,
+1080p, 1440p and 4K at 200%, and at Interface sizes 1.5 and 2. In the editor, Player
+Settings previews a language and a size, and **Check layout** runs the same check on the
+game's own documents ([Preferences](Preferences.md#in-the-editor)).
 
 ## Tests
 
 `player_preferences` (keys, placeholders, the file, the fallback order, `format()`,
-`check()`), `game_flow` (the shell in French, falling back to English) and
+`check()`), `game_flow` (the shell in French, falling back to English; the shell's layout
+in long and Greek text at every size above, and every character having a font),
+`localization_glyphs` (`--check` failing on a Japanese catalog with no font for it),
+`editor_player_settings` (the editor previewing French) and
 `shipping_demo_flow` (Reactor Run switched to French on its Settings page, its HUD in
 French, from the source tree and from a package).

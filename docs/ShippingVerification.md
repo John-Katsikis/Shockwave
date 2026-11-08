@@ -956,5 +956,66 @@ Full local suite: 107 of 107 pass on Linux, gpu included.
   driver); nobody has switched modes on a monitor, and the resolution list there is
   empty.
 - **Reading the page by hand**: long labels, a large interface size and non-Latin text are
-  part 2's layout tests.
+  part 2's layout tests (below).
 - **Subtitles**: the preferences exist, but no game has speech yet.
+
+## S08: Input, rebinding and reliability, part 2
+
+### What was built
+
+- **Input layers** (`InputLayer`, [Input](Input.md#who-has-the-input)): gameplay, HUD,
+  menu, loading and modal, raised by their owners. The shell raises its screens' layer;
+  any game UI with keyboard focus raises `menu`. `gameplayFocused()` is what gameplay
+  checks; Reactor Run does.
+- **No stray presses**: a change of the top layer to or from one above the HUD is a
+  barrier, and so are the window losing focus and a controller being plugged in, so the
+  press that closes a menu never also fires.
+- **Rebinding** on the Settings page's Controls tab: keyboard and gamepad per action,
+  listening for 10 seconds, Escape or Start to cancel, conflicts named on both actions,
+  Default controls. Saved as `<config>/Controls.swinput` (only what differs from the
+  project's), loaded at start, kept by action id across game updates.
+- **Controller unplugged**: the shell pauses the level (offline) and says so, and says when
+  it's back; `Setup::pauseOnControllerLoss = false` turns it off. Flow tests unplug with
+  `{"unplug": "gamepad"}`.
+- **Audio device recovery**: the engine retries opening a lost audio device every 2 s
+  ([Audio](Audio.md#when-the-audio-device-goes-away)).
+- **Editor: Window > Player Settings** ([Preferences](Preferences.md#in-the-editor)):
+  edits `Config/Preferences.swprefs`, and previews Interface size, Language and High
+  contrast in the viewport without saving them; Check layout. The editor now loads the
+  game's catalogs, so `{{text.*}}` shows the game's text, and reloads them on save.
+  `--player-settings`, `--preview-language`, `--preview-ui-scale`.
+- **Layout checks**: `GameUI::layoutProblems()` (text past its box, a box out of its
+  parent, text off the screen) and `missingGlyphs()`; `GameUI::setDensity()` for tests.
+  `player --check` names catalog text with characters no font draws.
+- **The shell's panel** is centred by flex, never larger than the screen, and scrolls
+  (with a styled bar); rows are flex, so long labels wrap instead of pushing the buttons
+  out. The layout tests found the Settings page running off a 720p screen on the Controls
+  tab, and labels and values running out of their rows in long text.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `input` | unit | layers and their order; the barrier when a menu closes, none for the same layer again or HUD changes, the barrier on focus loss; the devices version; the last-used device; labels; the player's bindings over the project's, and actions the game dropped ignored |
+| `game_flow` | unit | the shell's layers while its screens show; the Controls tab: listening, a press from the wrong device ignored, Escape cancelling, the timeout, conflicts, Apply saving only what differs, Default controls; the pad in use unplugged pausing the level; the main menu, level select, every Settings tab, listening and credits laid out in English, pseudo-German and Greek at 720p, 1080p, 1440p and 4K at 200%, and Interface sizes 1.5 and 2, with no problems, while a 320 x 200 screen has some; every character of the three catalogs has a font, CJK doesn't |
+| `audio` | unit | the audio device failing to open, then reopening by itself |
+| `localization_glyphs` | unit | `player --check` passes on Reactor Run and fails on a Japanese catalog it has no font for, naming the characters |
+| `editor_player_settings` | gpu | the editor previewing Reactor Run in French at 1.5x reads the French catalog, and writes nothing into the project |
+| `shipping_demo_flow` | integration | as in part 1, plus fire rebound to F and a pad listen cancelled, the saved `Controls.swinput` holding exactly that; the pad unplugged mid-level pausing it, the message, Enter carrying on, then pause and resume from the pad |
+
+Full local suite: 109 of 109 pass on Linux, gpu included. The first full run caught a
+focus left on the hidden loading screen holding the `menu` layer, so Reactor Run ignored
+W after the first travel; a focus only counts while its element is visible.
+
+### Still unverified
+
+- **Real controllers**: unplugging is tested with the virtual pad; a real pad's connect
+  barrier and a Bluetooth pad sleeping haven't been tried by hand.
+- **A real audio device** going away: the test makes SDL's driver fail; nobody has pulled
+  headphones out.
+- **Fonts for other scripts**: `--check` says when one is missing, but no font for CJK,
+  Arabic or Indic text ships, and right-to-left layout hasn't been tested.
+- **The game's own documents**: the shell's screens are tested at every size; Reactor
+  Run's HUD has only been checked in the editor with Check layout.
+- **The editor window by hand**: its preview is tested from the command line; editing
+  the shipped values through the window hasn't been driven by a test.

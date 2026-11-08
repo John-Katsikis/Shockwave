@@ -146,8 +146,9 @@ bool bindingIsGamepad(const InputBinding& binding);   // a gamepad button or axi
 
 // Who has the input (S08, docs/Input.md): the highest layer something has raised. A
 // menu over the game raises Menu; the loading screen Loading; an error or a question that
-// must be answered Modal. Nothing raised: Gameplay. Every change of the top layer is a
-// barrier (holdUntilReleased), so the button that closed a menu never also fires the gun.
+// must be answered Modal. Nothing raised: Gameplay. A change of the top layer to or from
+// one above Hud is a barrier (holdUntilReleased), so the button that closed a menu never
+// also fires the gun. So is the window losing focus, and a controller being plugged in.
 enum class InputLayer : uint8_t { Gameplay, Hud, Menu, Loading, Modal };
 const char* inputLayerName(InputLayer layer);   // "gameplay", "hud", "menu", "loading", "modal"
 

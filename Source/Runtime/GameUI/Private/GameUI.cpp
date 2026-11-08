@@ -745,7 +745,10 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     bool wantsKeyboard() const {
         if (!context) return false;
         Rml::Element* focus = const_cast<Rml::Context*>(context)->GetFocusElement();
-        return focus && focus != context->GetRootElement() && focus != focus->GetOwnerDocument();
+        // Focus left on a screen that has since been hidden (the loading screen's Cancel)
+        // isn't a menu that's open.
+        return focus && focus != context->GetRootElement() && focus != focus->GetOwnerDocument() &&
+               focus->IsVisible(true);
     }
 
     // ---- Menu navigation ----
