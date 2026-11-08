@@ -57,6 +57,7 @@ button.disabled { color: #7d8693; background-color: #232932; }
 .row button { display: inline-block; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
 .row .value { display: inline-block; width: 110dp; text-align: center; font-size: 15dp; }
 .actions button { display: inline-block; margin-right: 6dp; }
+.row button.bind { width: 96dp; margin-right: 4dp; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 body.high_contrast { background-color: #000000f4; }
 body.high_contrast .panel { background-color: #000000; border: 2dp #ffffff; }
 body.high_contrast button { background-color: #000000; border: 2dp #ffffff; }
@@ -91,6 +92,16 @@ const char* kSettings = R"(
       <button data-attr-id="'next-' + row.key" onclick="pref_next" data-class-disabled="!row.can_change">&gt;</button>
       <p class="reason" data-if="!row.can_change">{{row.reason}}</p>
     </div>
+    <div data-if="settings_tab == 'controls'">
+      <div class="row" data-for="bind : settings_bindings">
+        <span class="label">{{bind.label}}</span>
+        <button class="bind" data-attr-id="'bindkey-' + bind.action" onclick="bind_key">{{bind.keyboard}}</button>
+        <button class="bind" data-attr-id="'bindpad-' + bind.action" onclick="bind_pad">{{bind.gamepad}}</button>
+        <p class="reason" data-if="bind.conflict != ''">{{bind.conflict}}</p>
+      </div>
+      <button id="reset_bindings" onclick="reset_bindings" data-if="settings_bindings.size > 0">{{text.shell.reset_bindings}}</button>
+    </div>
+    <p class="message" data-if="listening">{{listening_text}}</p>
     <div class="actions">
       <button id="apply_settings" onclick="apply_settings" data-class-disabled="!settings_changed">{{text.shell.apply}}</button>
       <button id="reset_settings" onclick="reset_settings">{{text.shell.defaults}}</button>
@@ -162,6 +173,15 @@ std::vector<std::pair<std::string, std::string>> AppShell::builtinText() {
         {"shell.settings_unavailable", "Settings aren't available here"},
         {"shell.settings_saved", "Settings saved"},
         {"shell.one_language", "This game has one language"},
+        {"shell.reset_bindings", "Default controls"},
+        {"shell.unbound", "Not bound"},
+        {"shell.binding_conflict", "{binding} also does {other}"},
+        {"shell.listen_key", "Press a key or mouse button for {action} ({seconds}). Escape cancels."},
+        {"shell.listen_pad", "Press a gamepad button for {action} ({seconds}). Start cancels."},
+        {"shell.listen_timed_out", "Nothing was pressed: the control is as it was"},
+        {"shell.listening_busy", "Press the new control first, or cancel"},
+        {"shell.controller_lost", "Controller disconnected. Plug it back in, or carry on with the keyboard and mouse."},
+        {"shell.controller_back", "Controller connected"},
         {"shell.settings_not_saved", "Applied for now, but not saved: {why}"},
         {"shell.settings_failed", "Nothing changed: {why}"},
         {"shell.tab.display", "Display"},

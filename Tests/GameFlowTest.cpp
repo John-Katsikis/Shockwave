@@ -18,6 +18,7 @@
 #include <Engine/Prefab.h>
 #include <GameFramework/AppShell.h>
 #include <Engine/Localization.h>
+#include <Input/Input.h>
 #include <Engine/Preferences.h>
 #include <GameFramework/FlowTest.h>
 #include <GameFramework/GameInstance.h>
@@ -266,6 +267,7 @@ TravelRequest to_request(const char* level) {
 }
 
 struct ShellRig {
+    Input input;   // the shell's: pause, rebinding, controllers
     World world;
     JobSystem jobs{1};
     Instance instance;
@@ -334,6 +336,11 @@ struct ShellRig {
         setup.graphics = &graphics;
         text.addBuiltin("en", AppShell::builtinText());
         setup.localization = &text;
+        input.bindAction("fire", MouseButton::Left);
+        input.bindAction("fire", GamepadAxis::RightTrigger, InputBinding::Range::Positive);
+        input.bindAction("reload", Key::R);
+        input.bindAction("use", GamepadButton::South);
+        setup.input = &input;
         shell = std::make_unique<AppShell>(nullptr, *host, setup);
         frame();
     }
@@ -348,6 +355,8 @@ struct ShellRig {
     }
     // One frame of the player: the shell, the level, then travel.
     void frame() {
+        input.beginFrame();
+        input.update(1.0 / 60.0);
         shell->update(1.0 / 60.0);
         if (host->session()) host->session()->update(1.0 / 60.0);
         host->process();
@@ -612,6 +621,133 @@ void testShellSettings(const fs::path& content) {
     CHECK(shell.command("pref_next", "language") && shell.draftPreferences().language == "fr");
 }
 
+// S08 part 2: the shell has the input over the level while a screen shows, the press
+// that closes it never reaches the game, controls are rebound on the Settings page, and
+// the gamepad in use going away pauses the level.
+void testShellControls(const fs::path& content) {
+    ShellRig rig(content);
+    AppShell& shell = *rig.shell;
+    Input& input = rig.input;
+    std::string why;
+    using S = InputBinding::Source;
+    const InputBinding south{.source = S::GamepadButton, .code = uint16_t(GamepadButton::South)};
+    const InputBinding keyF{.source = S::Key, .code = uint16_t(Key::F)};
+    const InputBinding escape{.source = S::Key, .code = uint16_t(Key::Escape)};
+    // The menu has the input; travel's loading screen too.
+    CHECK(input.layer() == InputLayer::Menu && !input.gameplayFocused());
+    CHECK(shell.command("new_game"));
+    rig.frame();
+    CHECK(input.layer() == InputLayer::Loading);
+    for (int i = 0; i < 4; ++i) rig.frame();
+    CHECK(rig.host->current().level == "a" && input.gameplayFocused());
+    // Closing the pause screen with the button that is also "use": the game doesn't see it.
+    CHECK(shell.pause() && input.layer() == InputLayer::Menu);
+    input.inject(south, 1);
+    rig.frame();
+    CHECK(shell.command("resume") && input.gameplayFocused());
+    CHECK(!input.isActionDown("use") && !input.wasActionPressed("use"));
+    rig.frame();
+    CHECK(!input.isActionDown("use"));
+    input.inject(south, 0);
+    rig.frame();
+
+    // The gamepad in use unplugged mid-level: paused, and the screen says why.
+    CHECK(input.lastUsedGamepad() && shell.screen() == ShellScreen::None);
+    input.removeVirtualGamepad();
+    rig.frame();
+    CHECK(shell.screen() == ShellScreen::Pause && rig.value("message").find("Controller disconnected") == 0);
+    input.inject(south, 1);   // plugged back in
+    rig.frame();
+    CHECK(rig.value("message") == "Controller connected");
+    input.inject(south, 0);
+    rig.frame();
+    CHECK(shell.resume());
+    // Off: unplugging changes nothing.
+    {
+        ShellRig quiet(content);
+        quiet.shell.reset();
+        AppShell::Setup setup;
+        setup.input = &quiet.input;
+        setup.pauseOnControllerLoss = false;
+        setup.screens = AppShellScreens{true, true, true, true, true};
+        setup.levels = {{"menu", "Menu", true, false}, {"a", "A", false, true}};
+        setup.newGameLevel = "a";
+        quiet.shell = std::make_unique<AppShell>(nullptr, *quiet.host, setup);
+        quiet.shell->command("new_game");
+        for (int i = 0; i < 5; ++i) quiet.frame();
+        quiet.input.inject(south, 1);
+        quiet.frame();
+        quiet.input.inject(south, 0);
+        quiet.frame();
+        quiet.input.removeVirtualGamepad();
+        quiet.frame();
+        CHECK(quiet.host->current().level == "a" && quiet.shell->screen() == ShellScreen::None);
+    }
+
+    // Rebinding: the page lists the game's actions, not the menus' or pause.
+    CHECK(shell.pause() && shell.command("settings") && shell.command("settings_tab", "controls"));
+    rig.frame();
+    const auto& draft = shell.draftBindings();
+    CHECK(draft.count("fire") && draft.count("reload") && !draft.count("pause") && !draft.count("ui_confirm"));
+    CHECK(AppShell::rebindable("fire") && !AppShell::rebindable("ui_back") && !AppShell::rebindable("pause"));
+    CHECK(rig.value("settings_bindings").find("Left mouse") != std::string::npos);
+    // Listen for a key: the next press is the binding, and only on that device.
+    CHECK(shell.click("bindkey-fire") && shell.listening() && rig.value("listening") == "true");
+    CHECK(rig.value("listening_text").find("Fire") != std::string::npos);
+    CHECK(!shell.command("apply_settings", {}, &why));   // press first, or cancel
+    input.inject(south, 1);   // a gamepad button: not what's asked for
+    rig.frame();
+    CHECK(shell.listening());
+    input.inject(south, 0);
+    input.inject(keyF, 1);
+    rig.frame();
+    CHECK(!shell.listening());
+    CHECK(shell.draftBindings().at("fire").size() == 2);   // F, and the trigger kept
+    CHECK(std::count(shell.draftBindings().at("fire").begin(), shell.draftBindings().at("fire").end(), keyF) == 1);
+    CHECK(input.isActionDown("fire") == false || input.actions().at("fire")[0].source == S::Mouse);   // not applied yet
+    input.inject(keyF, 0);
+    rig.frame();
+    // A conflict is said: R is reload's.
+    CHECK(shell.command("bind_key", "fire"));
+    input.inject({.source = S::Key, .code = uint16_t(Key::R)}, 1);
+    rig.frame();
+    CHECK(rig.value("message").find("also does Reload") != std::string::npos);
+    input.inject({.source = S::Key, .code = uint16_t(Key::R)}, 0);
+    rig.frame();
+    // Escape always cancels, and can't be bound; nor can Start.
+    CHECK(shell.command("bind_key", "reload"));
+    input.inject(escape, 1);
+    rig.frame();
+    CHECK(!shell.listening() && shell.draftBindings().at("reload")[0].code == uint16_t(Key::R));
+    input.inject(escape, 0);
+    rig.frame();
+    CHECK(shell.page() == "settings");   // the cancel didn't also leave the page
+    // Ten seconds of nothing: cancelled.
+    CHECK(shell.command("bind_pad", "use"));
+    for (int i = 0; i < 11 * 60 && shell.listening(); ++i) rig.frame();
+    CHECK(!shell.listening() && rig.value("message").find("Nothing was pressed") == 0);
+    // Apply: in use now, and saved beside the preferences by action id.
+    CHECK(shell.command("bind_key", "fire"));
+    input.inject(keyF, 1);
+    rig.frame();
+    input.inject(keyF, 0);
+    rig.frame();
+    CHECK(shell.command("apply_settings", {}, &why));
+    const fs::path controls = rig.preferences.profileFile().parent_path() / "Controls.swinput";
+    CHECK(fs::exists(controls));
+    InputBindings saved;
+    CHECK(loadInputBindings(controls, saved, why) && !saved.binds.empty());
+    bool firesWithF = false;
+    for (const auto& [action, binding] : saved.binds) firesWithF |= action == "fire" && binding == keyF;
+    CHECK(firesWithF);
+    for (const auto& [action, binding] : saved.binds) CHECK(action == "fire");   // only what changed
+    CHECK(input.actions().at("fire").size() == 2);
+    // Default controls: back to the project's, and the file goes on Apply.
+    CHECK(shell.command("reset_bindings") && shell.draftBindings().at("fire")[0].source == S::Mouse);
+    CHECK(shell.command("apply_settings") && !fs::exists(controls));
+    CHECK(input.playerBindings().binds.empty());
+}
+
 void testShellOverrides(const fs::path& content) {
     // A project screen that loads replaces the built-in one; a broken one is replaced by it.
     const fs::path project = content.parent_path() / "ShellContent";
@@ -751,6 +887,7 @@ int main() {
     testShellScreens(content);
     testShellFlow(content);
     testShellSettings(content);
+    testShellControls(content);
     testShellOverrides(content);
     testScenarios(content);
     std::error_code ec;

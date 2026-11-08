@@ -60,6 +60,7 @@ Use `--app-shell all` when the project doesn't turn on the screens the scenario 
 | `{"hold": "pad_axis left_y +", "value": 0.8, "seconds": 1.5}` | holds it, this far (0 to 1), for that many seconds of game time |
 | `{"tap": "key E"}` | presses it for one frame, then lets go |
 | `{"look": [120, -20], "frames": 4}` | moves the mouse that many pixels, spread over frames (default 1) |
+| `{"unplug": "gamepad"}` | pulls the virtual gamepad's cable: its held buttons are let go and it's gone until a gamepad binding is pressed again |
 | `{"wait": 0.5}` | waits that many seconds of game time |
 | `{"wait_value": "game.objective", "equals": "done"}` | waits until a value is that |
 | `{"quit": true}` | ends the run, passed |

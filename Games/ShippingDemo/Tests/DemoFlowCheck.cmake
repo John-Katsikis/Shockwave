@@ -37,6 +37,9 @@ flow(resume-continue resume)
 # The Settings page (S08): a volume, the language and a display change, applied and kept;
 # then the saved profile, as the next run and --preferences read it.
 flow(settings settings)
+# S08 part 2: the gamepad in use unplugged mid-level pauses and says so; the keyboard
+# carries on, and the pad works again once it's back.
+flow(controller controller)
 file(GLOB_RECURSE profiles "${TEMP}/settings/*Preferences.swprefs")
 list(LENGTH profiles count)
 if(NOT count EQUAL 1)
@@ -63,6 +66,16 @@ execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --user-dir "${TEMP}/s
     RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(code EQUAL 0 OR NOT "${out}${err}" MATCHES "ui_scale")
     message(FATAL_ERROR "player --pref ui_scale=9 should fail, saying why (${code}):\n${out}\n${err}")
+endif()
+# The rebound control: saved by action id beside the preferences, and only that one.
+file(GLOB_RECURSE controls "${TEMP}/settings/*Controls.swinput")
+if(NOT controls)
+    message(FATAL_ERROR "the Settings flow saved no Controls.swinput")
+endif()
+file(READ "${controls}" saved)
+if(NOT saved MATCHES "bind demo_fire key F" OR NOT saved MATCHES "bind demo_fire pad_axis right_trigger" OR
+   saved MATCHES "demo_reload")
+    message(FATAL_ERROR "the saved controls aren't the one rebound:\n${saved}")
 endif()
 message(STATUS "preferences from the Settings page: ok")
 

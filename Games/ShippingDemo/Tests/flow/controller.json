@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "name": "the gamepad in use unplugged mid-level: paused, said, and the keyboard carries on",
+  "timeout": 120,
+  "steps": [
+    {"assert_level": "menu"},
+    {"click": "new_game"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "training"},
+    {"wait_value": "game.demo_objective_id", "equals": "training.line"},
+    {"hold": "pad_axis left_y +", "value": 0.8, "seconds": 0.5},
+    {"unplug": "gamepad"},
+    {"assert_value": "flow.screen", "equals": "pause"},
+    {"assert_value": "flow.message", "equals": "Controller disconnected. Plug it back in, or carry on with the keyboard and mouse."},
+    {"tap": "key Enter"},
+    {"assert_value": "flow.screen", "equals": "none"},
+    {"press": "pause"},
+    {"assert_value": "flow.screen", "equals": "pause"},
+    {"tap": "pad south"},
+    {"assert_value": "flow.screen", "equals": "none"},
+    {"quit": true}
+  ]
+}

@@ -1417,6 +1417,7 @@ GameUI::GameUI(Engine* engine, GameUIOptions options) : m(std::make_unique<Impl>
 }
 
 GameUI::~GameUI() {
+    if (m->engine) m->engine->input().lowerLayer(this);
     if (m->engine) {
         std::lock_guard lock(registryMutex());
         if (auto it = registry().find(m->engine); it != registry().end() && it->second == this) registry().erase(it);
@@ -1497,6 +1498,13 @@ void GameUI::update(World& world, double frameDt) {
     m->feedInput();
     m->pollNavigation(frameDt);
     m->dispatch();
+    // A focused button means a menu is open (docs/Input.md): it has the input over gameplay.
+    if (m->engine) {
+        if (m->inputEnabled && m->wantsKeyboard())
+            m->engine->input().raiseLayer(this, InputLayer::Menu);
+        else
+            m->engine->input().lowerLayer(this);
+    }
     m->stats.documents = 0;
     m->stats.visible = 0;
     for (const auto& d : m->documents) {

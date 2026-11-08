@@ -117,6 +117,11 @@ void AppShell::bindDefaultControls(Input& input) {
 AppShell::AppShell(Engine* engine, LevelHost& levels, Setup setup)
     : m_engine(engine), m_levels(levels), m_setup(std::move(setup)) {
     registerBuiltins();
+    m_input = m_setup.input ? m_setup.input : engine ? &engine->input() : nullptr;
+    if (m_input) {
+        m_devicesVersion = m_input->devicesVersion();
+        for (const InputDevice& d : m_input->devices()) m_pads += d.kind == InputDevice::Kind::Gamepad;
+    }
     // The Settings page edits the engine's preferences and graphics unless told otherwise.
     m_preferences = m_setup.preferences ? m_setup.preferences : engine ? &engine->preferences() : nullptr;
     m_graphics = m_setup.graphics ? m_setup.graphics : engine ? &engine->graphics() : nullptr;
@@ -171,12 +176,13 @@ AppShell::AppShell(Engine* engine, LevelHost& levels, Setup setup)
     m_ui->setEventListener([this](const UIEvent& event) { onUIEvent(event); });
     m_ui->setInputEnabled(engine != nullptr);
     m_subscription = m_levels.subscribe([this](const TravelCompletion& c) { onTravelFinished(c); });
-    if (engine) bindDefaultControls(engine->input());
+    if (m_input) bindDefaultControls(*m_input);
     choose();
     publish();
 }
 
 AppShell::~AppShell() {
+    if (m_input) m_input->lowerLayer(this);
     m_subscription.reset();
     if (m_ui) m_ui->setEventListener({});
 }
@@ -188,9 +194,12 @@ bool AppShell::isMenuLevel(const std::string& level) const {
 }
 
 void AppShell::update(double frameDt) {
-    if (m_engine) {
-        Input& input = m_engine->input();
-        if (input.wasActionPressed(kPauseAction)) {
+    if (m_input) {
+        Input& input = *m_input;
+        watchControllers();
+        if (m_listen) {
+            listen(frameDt);   // the press is the binding's, not the pause action's
+        } else if (input.wasActionPressed(kPauseAction)) {
             const bool changed = m_paused ? (m_page == "main" ? resume() : (m_page = "main", true)) : pause();
             // The same press mustn't also reach the screen that just opened (Escape is
             // ui_back too) or the game underneath.
@@ -212,6 +221,7 @@ void AppShell::update(double frameDt) {
             if (m_mouseWasCaptured && m_captureEpoch == m_levels.epoch()) input.setMouseCaptured(true);
         }
     }
+    if (m_listen && m_page != "settings") stopListening();
     m_ui->update(m_world, frameDt);
     // A click may have changed what shows: the next frame's update shows it.
     choose();
@@ -244,6 +254,18 @@ void AppShell::choose() {
         if (next == ShellScreen::Menu || next == ShellScreen::Pause) m_page = "main";
         if (m_screen != ShellScreen::None || next != ShellScreen::None) m_message.clear();
         m_screen = next;
+    }
+    // The shell's screens have the input over the level (docs/Input.md): an error over the
+    // loading screen, over a menu. Changing it is a barrier, so the press that closed a
+    // screen doesn't reach the game.
+    if (m_input) {
+        if (m_screen == ShellScreen::None)
+            m_input->lowerLayer(this);
+        else
+            m_input->raiseLayer(
+                this, m_screen == ShellScreen::Error     ? InputLayer::Modal
+                      : m_screen == ShellScreen::Loading ? InputLayer::Loading
+                                                         : InputLayer::Menu);
     }
     for (int s = 1; s < 5; ++s)
         if (m_documents[s].valid())
@@ -377,7 +399,7 @@ void AppShell::onUIEvent(const UIEvent& event) {
     if (event.command.empty()) return;
     std::string argument;
     // Buttons made by data-for carry their argument in their id: "level-<id>",
-    // "tab-<tab>", "next-<key>" and "prev-<key>".
+    // "tab-<tab>", "next-<key>", "prev-<key>", "bindkey-<action>" and "bindpad-<action>".
     auto after = [&](std::string_view prefix) {
         if (event.element.rfind(prefix, 0) == 0) argument = std::string(event.element.substr(prefix.size()));
     };
@@ -385,6 +407,8 @@ void AppShell::onUIEvent(const UIEvent& event) {
     if (event.command == "settings_tab") after("tab-");
     if (event.command == "pref_next") after("next-");
     if (event.command == "pref_prev") after("prev-");
+    if (event.command == "bind_key") after("bindkey-");
+    if (event.command == "bind_pad") after("bindpad-");
     std::string why;
     command(event.command, argument, &why);
 }

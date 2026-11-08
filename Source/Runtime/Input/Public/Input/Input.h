@@ -138,6 +138,19 @@ struct InputDevice {
     std::string buttonLabel(GamepadButton button) const;
 };
 
+// A binding as players read it, for prompts and the Settings page: "W", "Left mouse",
+// "Cross" on a PlayStation pad (pad: the one to name buttons for; null: Xbox names),
+// "Left stick", "R2". "Joystick" for joystick bindings.
+std::string bindingLabel(const InputBinding& binding, const InputDevice* pad = nullptr);
+bool bindingIsGamepad(const InputBinding& binding);   // a gamepad button or axis
+
+// Who has the input (S08, docs/Input.md): the highest layer something has raised. A
+// menu over the game raises Menu; the loading screen Loading; an error or a question that
+// must be answered Modal. Nothing raised: Gameplay. Every change of the top layer is a
+// barrier (holdUntilReleased), so the button that closed a menu never also fires the gun.
+enum class InputLayer : uint8_t { Gameplay, Hud, Menu, Loading, Modal };
+const char* inputLayerName(InputLayer layer);   // "gameplay", "hud", "menu", "loading", "modal"
+
 // Keyboard, mouse, gamepads and joysticks, behind named actions that games bind inputs to.
 // Game code asks "is jump held?" rather than "is Space held?", so controls can be remapped
 // in Config/Input.swinput (see InputBinding.h) or the editor without touching gameplay.
@@ -186,7 +199,18 @@ public:
     void holdUntilReleased();
     bool heldUntilReleased(const std::string& action) const { return m_barred.count(action) > 0; }
 
-    // Every action and its bindings as they apply now (built-in, then the file's).
+    // ---- Who has the input (InputLayer) ----
+    // Raises `layer` for `owner` (a menu, the shell), replacing what that owner raised;
+    // lowerLayer takes it away. Main thread.
+    void raiseLayer(const void* owner, InputLayer layer);
+    void lowerLayer(const void* owner);
+    InputLayer layer() const;   // the top one now
+    // Gameplay may read actions: nothing above the HUD is raised. Online games keep
+    // simulating under a menu but send neutral input while this is false.
+    bool gameplayFocused() const { return layer() <= InputLayer::Hud; }
+
+    // Every action and its bindings as they apply now (built-in, then the file's, then the
+    // player's).
     const std::map<std::string, std::vector<InputBinding>>& actions() const { return m_actions; }
     InputBindings currentBindings() const;   // the same, as a bindings file would hold them
     float deadzone() const { return m_deadzoneOverride >= 0 ? m_deadzoneOverride : m_deadzone; }
@@ -199,6 +223,14 @@ public:
     bool loadBindingsFile(const std::filesystem::path& path, std::string& error);
     void setBindings(const InputBindings& bindings);   // what the editor applies before saving
     void clearBindingsFile();   // back to the built-in bindings only
+    // The player's own bindings (S08, the Settings page's Controls), over the project's:
+    // each action they name replaces that action's bindings. Kept by action id, so a
+    // game update that renames nothing keeps them; actions the game no longer has are
+    // ignored. Saved as <config>/Controls.swinput.
+    void setPlayerBindings(const InputBindings& bindings);
+    const InputBindings& playerBindings() const { return m_player; }
+    // The actions as the project binds them, without the player's.
+    std::map<std::string, std::vector<InputBinding>> projectActions() const;
     const std::filesystem::path& bindingsFile() const { return m_bindingsPath; }
     const std::string& bindingsError() const { return m_bindingsError; }   // the last reload's
     uint32_t bindingsVersion() const { return m_bindingsVersion; }   // bumps on every change
@@ -209,6 +241,11 @@ public:
     // The first input pressed this frame, as a binding: what the editor's Listen button
     // records. Joystick axes count once they move halfway from where they rested.
     const std::optional<InputBinding>& lastPressed() const { return m_lastPressed; }
+    // The kind of device the player pressed something on last, any frame: prompts show
+    // its buttons, and the shell notices when the gamepad in use is unplugged.
+    bool lastUsedGamepad() const { return m_lastUsedGamepad; }
+    // Bumps whenever a controller is plugged in or unplugged.
+    uint32_t devicesVersion() const { return m_devicesVersion; }
 
     // Feedback, from any thread. player -1: every gamepad. Strengths 0..1.
     void rumble(float low, float high, double seconds, int player = -1);
@@ -307,6 +344,12 @@ private:
     std::optional<InputBinding> m_lastPressed;
     std::set<std::string, std::less<>> m_barred;   // holdUntilReleased: held, read as up
     std::set<std::string, std::less<>> m_freed;   // let go this frame: no Released either
+    std::map<const void*, InputLayer> m_layers;   // raiseLayer, by owner
+    InputLayer m_topLayer = InputLayer::Gameplay;
+    bool m_barrierPending = false;   // a device came or went: holdUntilReleased at update
+    bool m_lastUsedGamepad = false;
+    uint32_t m_devicesVersion = 0;
+    InputBindings m_player;
 
     std::vector<Injection> m_injections;
     glm::vec2 m_injectedMotion{0.0f};

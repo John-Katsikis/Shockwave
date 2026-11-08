@@ -64,15 +64,67 @@ void Input::clearAction(const std::string& action) {
     rebuildActions();
 }
 
-void Input::rebuildActions() {
-    m_actions = m_builtIn;
-    m_deadzone = m_hasFile ? m_file.deadzone : 0.15f;
+std::map<std::string, std::vector<InputBinding>> Input::projectActions() const {
+    std::map<std::string, std::vector<InputBinding>> actions = m_builtIn;
     if (m_hasFile) {
         std::map<std::string, std::vector<InputBinding>> fromFile;
         for (const auto& [action, binding] : m_file.binds) fromFile[action].push_back(binding);
-        for (auto& [action, bindings] : fromFile) m_actions[action] = std::move(bindings);
+        for (auto& [action, bindings] : fromFile) actions[action] = std::move(bindings);
     }
+    return actions;
+}
+
+void Input::rebuildActions() {
+    m_actions = projectActions();
+    m_deadzone = m_hasFile ? m_file.deadzone : 0.15f;
+    // The player's own, for actions the game still has.
+    std::map<std::string, std::vector<InputBinding>> mine;
+    for (const auto& [action, binding] : m_player.binds)
+        if (m_actions.count(action)) mine[action].push_back(binding);
+    for (auto& [action, bindings] : mine) m_actions[action] = std::move(bindings);
     ++m_bindingsVersion;
+}
+
+void Input::setPlayerBindings(const InputBindings& bindings) {
+    m_player = bindings;
+    rebuildActions();
+}
+
+const char* inputLayerName(InputLayer layer) {
+    switch (layer) {
+    case InputLayer::Gameplay: return "gameplay";
+    case InputLayer::Hud: return "hud";
+    case InputLayer::Menu: return "menu";
+    case InputLayer::Loading: return "loading";
+    case InputLayer::Modal: return "modal";
+    }
+    return "gameplay";
+}
+
+InputLayer Input::layer() const { return m_topLayer; }
+
+void Input::raiseLayer(const void* owner, InputLayer layer) {
+    m_layers[owner] = layer;
+    InputLayer top = InputLayer::Gameplay;
+    for (const auto& [o, l] : m_layers) top = std::max(top, l);
+    if (top != m_topLayer) {
+        // Between gameplay and the HUD nothing changes hands: no barrier.
+        const bool barrier = std::max(top, m_topLayer) > InputLayer::Hud;
+        m_topLayer = top;
+        if (barrier) holdUntilReleased();
+    }
+}
+
+void Input::lowerLayer(const void* owner) {
+    if (!m_layers.erase(owner)) return;
+    InputLayer top = InputLayer::Gameplay;
+    for (const auto& [o, l] : m_layers) top = std::max(top, l);
+    if (top != m_topLayer) {
+        // Between gameplay and the HUD nothing changes hands: no barrier.
+        const bool barrier = std::max(top, m_topLayer) > InputLayer::Hud;
+        m_topLayer = top;
+        if (barrier) holdUntilReleased();
+    }
 }
 
 InputBindings Input::currentBindings() const {
@@ -281,6 +333,8 @@ void Input::beginFrame() {
 
 void Input::notePressed(const InputBinding& binding) {
     if (!m_lastPressed) m_lastPressed = binding;
+    using S = InputBinding::Source;
+    m_lastUsedGamepad = binding.source == S::GamepadButton || binding.source == S::GamepadAxis;
 }
 
 void Input::handleEvent(const SDL_Event& event) {
@@ -363,6 +417,7 @@ void Input::handleEvent(const SDL_Event& event) {
         for (uint8_t& k : m_keys) k = (k & Down) ? Released : 0;
         for (uint8_t& b : m_mouse) b = (b & Down) ? Released : 0;
         setMouseCaptured(false);
+        m_barrierPending = true;   // a gamepad button held through it doesn't count either
         break;
     default: break;
     }
@@ -373,6 +428,13 @@ void Input::update(double frameDt) {
     pollDevices();
     applyFeedback();
     checkBindingsFile(frameDt);
+    // A controller plugged in with a trigger held, or the window coming back with a key
+    // down: none of it counts until it's let go.
+    if (m_barrierPending) {
+        m_barrierPending = false;
+        holdUntilReleased();
+        return;
+    }
     // Barred actions that were let go count again from the next press.
     m_freed.clear();
     for (auto it = m_barred.begin(); it != m_barred.end();) {
@@ -438,6 +500,7 @@ int Input::virtualGamepad(bool create) {
     h.restAxes = d.axes;
     m_devices.push_back(std::move(d));
     m_handles.push_back(std::move(h));
+    ++m_devicesVersion;
     return static_cast<int>(m_devices.size()) - 1;
 }
 
@@ -476,6 +539,8 @@ void Input::applyInjections() {
                 if (b.range == InputBinding::Range::Negative) raw = -raw;
                 if (b.range == InputBinding::Range::Full) raw = i.value * 2.0f - 1.0f;
                 if (b.invert) raw = -raw;
+                // Pushed halfway: a press, as a real stick reads in pollDevices.
+                if (std::abs(raw) >= 0.5f && std::abs(d.axes[b.code]) < 0.5f) notePressed(b);
                 d.axes[b.code] = std::clamp(raw, -1.0f, 1.0f);
             }
         }
@@ -577,6 +642,8 @@ void Input::openDevice(uint32_t id) {
     h.previousHats = d.hats;
     m_devices.push_back(std::move(d));
     m_handles.push_back(std::move(h));
+    ++m_devicesVersion;
+    if (!m_handles.back().synthetic) m_barrierPending = true;
 }
 
 void Input::closeDevice(uint32_t id) {
@@ -589,6 +656,7 @@ void Input::closeDevice(uint32_t id) {
         SDL_CloseJoystick(h.joystick);
     m_devices.erase(m_devices.begin() + i);
     m_handles.erase(m_handles.begin() + i);
+    ++m_devicesVersion;   // what it held is gone with it: nothing to bar
 }
 
 void Input::pollDevices() {
@@ -706,6 +774,44 @@ std::string InputDevice::buttonLabel(GamepadButton button) const {
     static const char* xb[] = {"A",  "B",  "X",  "Y",    "View", "Xbox",  "Menu",  "LS", "RS",
                                "LB", "RB", "Up", "Down", "Left", "Right", "Share", "-"};
     return xb[static_cast<size_t>(button)];
+}
+
+bool bindingIsGamepad(const InputBinding& binding) {
+    return binding.source == InputBinding::Source::GamepadButton || binding.source == InputBinding::Source::GamepadAxis;
+}
+
+std::string bindingLabel(const InputBinding& b, const InputDevice* pad) {
+    using S = InputBinding::Source;
+    const bool ps5 = pad && pad->type == GamepadType::PlayStation5;
+    switch (b.source) {
+    case S::Key: {
+        const std::string_view name = keyName(b.code);
+        return name.empty() ? "?" : std::string(name);
+    }
+    case S::Mouse:
+        return b.code == 1   ? "Left mouse"
+               : b.code == 3 ? "Right mouse"
+               : b.code == 2 ? "Middle mouse"
+                             : "Mouse " + std::to_string(b.code);
+    case S::GamepadButton: {
+        const auto button = static_cast<GamepadButton>(b.code);
+        if (pad) return pad->buttonLabel(button);
+        InputDevice xbox;
+        xbox.type = GamepadType::Xbox;
+        return xbox.buttonLabel(button);
+    }
+    case S::GamepadAxis:
+        switch (static_cast<GamepadAxis>(b.code)) {
+        case GamepadAxis::LeftX:
+        case GamepadAxis::LeftY: return "Left stick";
+        case GamepadAxis::RightX:
+        case GamepadAxis::RightY: return "Right stick";
+        case GamepadAxis::LeftTrigger: return ps5 ? "L2" : "Left trigger";
+        case GamepadAxis::RightTrigger: return ps5 ? "R2" : "Right trigger";
+        default: return "?";
+        }
+    default: return "Joystick";
+    }
 }
 
 }   // namespace shockwave

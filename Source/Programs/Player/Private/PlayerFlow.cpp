@@ -141,6 +141,7 @@ void Player::startFlowTest() {
         return engine().input().inject(binding, value);
     };
     hooks.look = [this](float x, float y) { engine().input().injectMouseMotion({x, y}); };
+    hooks.unplug = [this] { engine().input().removeVirtualGamepad(); };
     m_flowTest = std::make_unique<shockwave::FlowTest>(std::move(scenario), std::move(hooks));
     SW_LOG(shockwave::LogGame, Info, "Flow test {}", m_project.relative(fs::absolute(m_tool.flowTest)));
 }

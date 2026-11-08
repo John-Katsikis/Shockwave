@@ -313,6 +313,98 @@ static void testInject() {
     CHECK(!input.isActionDown("use"));   // NaN reads as let go
 }
 
+// S08: who has the input. Raising and lowering layers is a barrier, so the press that
+// closes a menu never also reaches gameplay; focus loss and a pad plugged in with a
+// trigger held count the same way.
+static void testLayers() {
+    Input input;
+    input.bindAction("use", GamepadButton::South);   // also what confirms a menu button
+    input.bindAction("fire", Key::Space);
+    InputBinding south{.source = InputBinding::Source::GamepadButton, .code = uint16_t(GamepadButton::South)};
+    int menu = 0, shell = 0;   // owners
+    CHECK(input.layer() == InputLayer::Gameplay && input.gameplayFocused());
+    input.raiseLayer(&menu, InputLayer::Menu);
+    CHECK(input.layer() == InputLayer::Menu && !input.gameplayFocused());
+    input.raiseLayer(&shell, InputLayer::Modal);
+    CHECK(input.layer() == InputLayer::Modal && std::string(inputLayerName(input.layer())) == "modal");
+    input.lowerLayer(&shell);
+    CHECK(input.layer() == InputLayer::Menu);
+    // The confirm press closes the menu: it's barred for gameplay until let go.
+    input.inject(south, 1);
+    frame(input);
+    CHECK(input.wasActionPressed("use") && input.lastUsedGamepad());
+    input.lowerLayer(&menu);
+    CHECK(input.gameplayFocused() && !input.isActionDown("use") && !input.wasActionPressed("use"));
+    frame(input);
+    CHECK(!input.isActionDown("use"));
+    input.inject(south, 0);
+    frame(input);
+    input.inject(south, 1);
+    frame(input);
+    CHECK(input.wasActionPressed("use"));   // a new press counts
+    input.inject(south, 0);
+    frame(input);
+    // Raising the same layer again changes nothing, so it's no barrier.
+    key(input, SDL_SCANCODE_SPACE, true);
+    input.raiseLayer(&menu, InputLayer::Hud);
+    CHECK(input.gameplayFocused() && input.isActionDown("fire"));
+    input.raiseLayer(&menu, InputLayer::Hud);
+    CHECK(input.isActionDown("fire"));
+    input.lowerLayer(&menu);
+    // Focus lost with a key held: it's let go.
+    SDL_Event lost{};
+    lost.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    input.beginFrame();
+    input.handleEvent(lost);
+    input.update(1.0);
+    CHECK(!input.isActionDown("fire"));
+    key(input, SDL_SCANCODE_SPACE, false);
+    // Devices: the version bumps as pads come and go.
+    uint32_t before = input.devicesVersion();
+    input.removeVirtualGamepad();
+    frame(input);
+    CHECK(input.devicesVersion() > before && !input.isActionDown("use"));
+    before = input.devicesVersion();
+    input.inject(south, 1);
+    frame(input);
+    CHECK(input.devicesVersion() > before);
+    input.inject(south, 0);
+    frame(input);
+    key(input, SDL_SCANCODE_SPACE, true);
+    CHECK(!input.lastUsedGamepad());
+    key(input, SDL_SCANCODE_SPACE, false);
+    // Labels players read.
+    CHECK(
+        bindingLabel(south) == "A" && bindingLabel({.source = InputBinding::Source::Mouse, .code = 1}) == "Left mouse");
+    InputDevice ps5;
+    ps5.type = GamepadType::PlayStation5;
+    CHECK(bindingLabel(south, &ps5) == "Cross");
+    CHECK(
+        bindingLabel(
+            {.source = InputBinding::Source::GamepadAxis, .code = uint16_t(GamepadAxis::RightTrigger)}, &ps5) == "R2");
+}
+
+// S08: the player's own bindings, over the project's, by action id.
+static void testPlayerBindings() {
+    Input input;
+    input.bindAction("fire", MouseButton::Left);
+    input.bindAction("jump", Key::Space);
+    InputBindings mine;
+    InputBinding f{.source = InputBinding::Source::Key, .code = uint16_t(Key::F)};
+    mine.binds = {{"fire", f}, {"gone", f}};   // "gone": an action the game no longer has
+    input.setPlayerBindings(mine);
+    CHECK(input.actions().at("fire") == std::vector<InputBinding>{f});
+    CHECK(input.actions().count("gone") == 0 && input.actions().at("jump").size() == 1);
+    CHECK(input.projectActions().at("fire")[0].source == InputBinding::Source::Mouse);
+    // The project's file arriving later keeps the player's on top.
+    InputBindings file;
+    file.binds = {{"fire", {.source = InputBinding::Source::Key, .code = uint16_t(Key::G)}}};
+    input.setBindings(file);
+    CHECK(input.actions().at("fire") == std::vector<InputBinding>{f});
+    input.setPlayerBindings({});
+    CHECK(input.actions().at("fire")[0].code == uint16_t(Key::G));
+}
+
 int main() {
     if (!SDL_Init(SDL_INIT_EVENTS)) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -324,6 +416,8 @@ int main() {
     testVirtualJoystick();
     testHoldUntilReleased();
     testInject();
+    testLayers();
+    testPlayerBindings();
     SDL_Quit();
     if (failures) {
         std::fprintf(stderr, "%d input check(s) failed\n", failures);

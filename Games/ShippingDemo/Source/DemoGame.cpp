@@ -172,7 +172,8 @@ public:
                     last->source == InputBinding::Source::GamepadAxis;
         const CampaignProgress* level = m_rules->progress();
         const bool playing = level && level->state == CampaignProgress::Playing;
-        const bool active = playing && !game.ui().capturesInput();
+        // Nothing over gameplay has the input (a menu, the shell; docs/Input.md).
+        const bool active = playing && !game.ui().capturesInput() && input.gameplayFocused();
         const float dt = float(std::clamp(frameDt, 0.0, 0.1));
         if (active) {
             if (game.engine && !input.isMouseCaptured()) input.setMouseCaptured(true);
