@@ -37,7 +37,7 @@ uint64_t textStamp(const fs::path& folder) {
         const auto size = entry.file_size(ec);
         const auto time = entry.last_write_time(ec).time_since_epoch().count();
         for (const uint64_t part :
-             {std::hash<std::string>{}(entry.path().filename().string()), uint64_t(size), uint64_t(time)})
+             {uint64_t(std::hash<std::string>{}(entry.path().filename().string())), uint64_t(size), uint64_t(time)})
             stamp = (stamp ^ part) * 1099511628211ull;
     }
     return stamp;
