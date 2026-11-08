@@ -176,7 +176,7 @@ float Input::bindingValue(const InputBinding& b, bool previous, uint8_t sources)
                 if (b.code < h.buttonFlags.size()) best = std::max(best, flagValue(h.buttonFlags[b.code]));
             } else if (b.code < m_devices[i].axes.size()) {
                 const float raw = previous ? h.previousAxes[b.code] : m_devices[i].axes[b.code];
-                best = std::max(best, shapeAxis(raw, b, b.code >= 4 ? 0.05f : m_deadzone));
+                best = std::max(best, shapeAxis(raw, b, b.code >= 4 ? 0.05f : deadzone()));
             }
         }
         return best;
@@ -193,7 +193,7 @@ float Input::bindingValue(const InputBinding& b, bool previous, uint8_t sources)
             } else if (b.source == S::JoystickAxis) {
                 if (b.code < d.axes.size()) {
                     const float raw = previous ? h.previousAxes[b.code] : d.axes[b.code];
-                    best = std::max(best, shapeAxis(raw, b, m_deadzone));
+                    best = std::max(best, shapeAxis(raw, b, deadzone()));
                 }
             } else if (const size_t hat = b.code / 4u; hat < d.hats.size()) {
                 const uint8_t bits = previous ? h.previousHats[hat] : d.hats[hat];

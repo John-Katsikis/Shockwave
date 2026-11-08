@@ -138,7 +138,7 @@ void PlaySession::start() {
                     return AudioRayHit{hit->entity, hit->distance};
                 return std::nullopt;
             });
-        if (m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
+        if (m_context.engine) applyVolumes();
         // Finds or bakes the navigation mesh, when the scene has NavAgents or NavMeshSettings.
         m_subsystems.add<NavigationWorld>(
             world, m_context.jobs, m_context.engine ? &m_context.engine->assets() : nullptr);
@@ -280,7 +280,15 @@ void PlaySession::frame(double dt) {
         animation()->update(dt);   // after game code, so a clip it picks shows this frame
         audio()->synchronize();
     }
-    if (active() && m_context.engine) audio()->mixer().setMasterVolume(m_context.engine->masterVolume());
+    if (active() && m_context.engine) applyVolumes();
+}
+
+// The player's volumes (docs/Preferences.md): master, then each category on top.
+void PlaySession::applyVolumes() {
+    auto& mixer = audio()->mixer();
+    mixer.setMasterVolume(m_context.engine->masterVolume());
+    for (int c = 0; c < kAudioCategories; ++c)
+        mixer.setCategoryVolume(AudioCategory(c), m_context.engine->categoryVolume(c));
 }
 
 void PlaySession::pumpNetwork(double nowSeconds) {

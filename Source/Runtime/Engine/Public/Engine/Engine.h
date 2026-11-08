@@ -9,6 +9,8 @@
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/GraphicsSettings.h>
+#include <Engine/Localization.h>
+#include <Engine/Preferences.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Schedule.h>
 #include <Engine/SimulationClock.h>
@@ -20,6 +22,7 @@
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
+#include <array>
 #include <atomic>
 #include <filesystem>
 #include <memory>
@@ -125,10 +128,19 @@ public:
     Window& window() { return *m_window; }
     Renderer& renderer() { return *m_renderer; }
     Graphics& graphics() { return m_graphics; }
+    // The player's preferences (docs/Preferences.md): the host configures them.
+    Preferences& preferences() { return m_preferences; }
+    // The game's text in the player's language (docs/Localization.md): the host loads it.
+    Localization& localization() { return m_localization; }
     Input& input() { return *m_input; }
     Assets& assets() { return *m_assets; }
     void setMasterVolume(float volume);   // any thread; 0..1
     float masterVolume() const { return m_masterVolume.load(); }
+    // The player's category volumes (Audio's AudioCategory: effects, music, ui, voice), on
+    // top of the master volume; sessions pass them to their mixer. Any thread; 0..1.
+    static constexpr int kVolumeCategories = 4;
+    void setCategoryVolume(int category, float volume);
+    float categoryVolume(int category) const;
 
     // Switches the UI theme (a .swtheme path, found like EngineConfig::guiTheme) from the
     // next frame on. Main thread.
@@ -196,6 +208,8 @@ private:
     void pollGuiTheme(double frameDt);
 
     Graphics m_graphics{this};
+    Preferences m_preferences{this};
+    Localization m_localization;
     EngineConfig m_config;
     std::unique_ptr<JobSystem> m_jobs;
     std::unique_ptr<Window> m_window;
@@ -203,6 +217,7 @@ private:
     std::unique_ptr<Input> m_input;
     std::unique_ptr<Assets> m_assets;
     std::atomic<float> m_masterVolume{1};
+    std::array<std::atomic<float>, kVolumeCategories> m_categoryVolume{1, 1, 1, 1};
     bool m_running = false;
     double m_fps = 0.0;
     double m_interpolationAlpha = 1.0;

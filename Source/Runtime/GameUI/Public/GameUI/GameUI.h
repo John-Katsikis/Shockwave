@@ -164,6 +164,8 @@ inline constexpr std::string_view kBuiltinDocumentPrefix = "builtin:";
 void addBuiltinDocument(std::string name, std::string rml);
 bool hasBuiltinDocument(std::string_view name);
 
+class Localization;
+
 class GameUI {
 public:
     // engine: where to draw and read input; null for tools and tests (documents still
@@ -184,6 +186,11 @@ public:
     // Once per frame: shows, hides, loads and orders documents to match the world's
     // UIDocuments, reloads changed files, and feeds input to the UI.
     void update(World& world, double frameDt);
+    // Where the "text" value comes from (docs/Localization.md): documents show
+    // {{text.menu.new_game}}. The engine's catalog by default; null for none. update() keeps
+    // it current when the language changes.
+    void setLocalization(const Localization* localization);
+    void refreshText();
     // Lays out and draws the visible documents (from Application::onRender).
     void render(Renderer& renderer);
     // Lays out and builds this frame's draw list without drawing it (render() does both).

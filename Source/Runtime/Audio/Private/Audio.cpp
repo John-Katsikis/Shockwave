@@ -35,9 +35,9 @@ bool valid(const AudioSpatial& s) {
     return ok;
 }
 bool valid(const AudioPlayback& p) {
-    return std::isfinite(p.volume) && p.volume >= 0 && p.volume <= 1 && std::isfinite(p.pitch) && p.pitch >= .125f &&
-           p.pitch <= 8 && std::isfinite(p.gains.x) && std::isfinite(p.gains.y) && p.gains.x >= 0 && p.gains.y >= 0 &&
-           (!p.positional || valid(p.position));
+    return int(p.category) >= 0 && int(p.category) < kAudioCategories && std::isfinite(p.volume) && p.volume >= 0 &&
+           p.volume <= 1 && std::isfinite(p.pitch) && p.pitch >= .125f && p.pitch <= 8 && std::isfinite(p.gains.x) &&
+           std::isfinite(p.gains.y) && p.gains.x >= 0 && p.gains.y >= 0 && (!p.positional || valid(p.position));
 }
 bool validDistances(const AudioSource& s) {
     return std::isfinite(s.minDistance) && std::isfinite(s.maxDistance) && s.minDistance >= 0 &&
@@ -47,6 +47,7 @@ uint64_t key(Entity e) { return (uint64_t(e.generation) << 32) | e.index; }
 AudioPlayback playback(const AudioSource& s, const AudioSpatial& heard) {
     AudioPlayback p;
     p.volume = s.volume;
+    p.category = s.category;
     p.pitch = s.pitch;
     p.loop = s.loop;
     p.spatial = s.spatial;
@@ -73,7 +74,8 @@ void registerAudioComponents() {
          field("directivity_power", &AudioSource::directivityPower, .05f, 0, 16),
          field("occlusion", &AudioSource::occlusion),
          field("occlusion_radius", &AudioSource::occlusionRadius, .01f, 0, 10),
-         field("transmission", &AudioSource::transmission, .01f, 0, 1)},
+         field("transmission", &AudioSource::transmission, .01f, 0, 1),
+         enumField("category", &AudioSource::category, {"Effects", "Music", "UI", "Voice"})},
         "Audio");
     registerComponent<AudioListener>("AudioListener", {}, "Audio");
 }
@@ -144,6 +146,8 @@ struct AudioMixer::Impl {
     std::array<std::atomic<AudioVoice>, kVoices> playing{};
     std::atomic<AudioVoice> consumed{0};   // the newest voice id the audio thread has seen
     std::atomic<float> master{1};
+    std::array<std::atomic<float>, kAudioCategories> categories{1, 1, 1, 1};
+    float gainOf(const AudioPlayback& p) const { return p.volume * categories[size_t(p.category)].load(); }
     std::atomic<bool> paused{false};
     // Steam Audio bus: effects made here, before the device can call back.
     steam::Renderer spatial;
@@ -304,7 +308,7 @@ struct AudioMixer::Impl {
             }
             std::fill(mono.begin() + f, mono.end(), 0.0f);
             spatial.process(
-                voice.slot, mono.data(), p.position, p.volume, hrtf, bilinear, busLeft.data(), busRight.data());
+                voice.slot, mono.data(), p.position, gainOf(p), hrtf, bilinear, busLeft.data(), busRight.data());
             if (ended) {
                 voice.id = 0;
                 playing[v].store(0);
@@ -328,7 +332,7 @@ struct AudioMixer::Impl {
             const auto& samples = voice.clip->samples;
             const auto n = voice.clip->frames();
             const auto& p = voice.options;
-            const auto gain = p.gains * (p.volume * volume);
+            const auto gain = p.gains * (gainOf(p) * volume);
             for (size_t f = 0; f < frames; ++f) {
                 if (voice.cursor >= n) {
                     if (p.loop)
@@ -427,6 +431,23 @@ void AudioMixer::setMasterVolume(float value) {
     if (std::isfinite(value)) m_impl->master.store(std::clamp(value, 0.0f, 1.0f));
 }
 float AudioMixer::masterVolume() const { return m_impl->master.load(); }
+void AudioMixer::setCategoryVolume(AudioCategory category, float value) {
+    if (int(category) < 0 || int(category) >= kAudioCategories || !std::isfinite(value)) return;
+    m_impl->categories[size_t(category)].store(std::clamp(value, 0.0f, 1.0f));
+}
+float AudioMixer::categoryVolume(AudioCategory category) const {
+    if (int(category) < 0 || int(category) >= kAudioCategories) return 0.0f;
+    return m_impl->categories[size_t(category)].load();
+}
+const char* audioCategoryName(AudioCategory category) {
+    switch (category) {
+    case AudioCategory::Effects: return "effects";
+    case AudioCategory::Music: return "music";
+    case AudioCategory::UI: return "ui";
+    case AudioCategory::Voice: return "voice";
+    }
+    return "effects";
+}
 void AudioMixer::pause(bool value) { m_impl->paused.store(value); }
 bool AudioMixer::available() const { return m_impl->offline || m_impl->stream; }
 const std::string& AudioMixer::error() const { return m_impl->problem; }

@@ -4,6 +4,7 @@
 #include <Core/Log.h>
 #include <Engine/Components.h>
 #include <Engine/Engine.h>
+#include <Engine/Localization.h>
 #include <GameFramework/LevelHost.h>
 #include <Input/Input.h>
 
@@ -116,8 +117,28 @@ void AppShell::bindDefaultControls(Input& input) {
 AppShell::AppShell(Engine* engine, LevelHost& levels, Setup setup)
     : m_engine(engine), m_levels(levels), m_setup(std::move(setup)) {
     registerBuiltins();
+    // The Settings page edits the engine's preferences and graphics unless told otherwise.
+    m_preferences = m_setup.preferences ? m_setup.preferences : engine ? &engine->preferences() : nullptr;
+    m_graphics = m_setup.graphics ? m_setup.graphics : engine ? &engine->graphics() : nullptr;
+    if (m_preferences) m_draft = m_preferences->current();
+    if (m_graphics) m_draftGraphics = m_graphics->requested();
+    // The screens' words: the given catalog, else the engine's, else the built-in English.
+    // The built-in text goes under whichever it is, so a missing key still reads.
+    if (m_setup.localization) {
+        m_text = m_setup.localization;
+    } else if (engine) {
+        engine->localization().addBuiltin("en", builtinText());
+        m_text = &engine->localization();
+    } else {
+        m_ownText = std::make_unique<Localization>();
+        m_ownText->addBuiltin("en", builtinText());
+        m_text = m_ownText.get();
+    }
+    m_continueReason = tr("shell.no_continue");
+    m_checkpointReason = tr("shell.no_checkpoint");
     // Its own context and data model; not the engine's game.ui().
     m_ui = std::make_unique<GameUI>(engine, GameUIOptions{"flow", false});
+    m_ui->setLocalization(m_text);
     if (!m_setup.content.empty()) m_ui->setContentFolder(m_setup.content);
     for (const ShellScreen s : {ShellScreen::Menu, ShellScreen::Pause, ShellScreen::Loading, ShellScreen::Error}) {
         if (!screenOn(m_setup.screens, s)) continue;
@@ -231,7 +252,7 @@ void AppShell::choose() {
 
 void AppShell::refreshContinue() {
     if (!m_setup.continueReason) {
-        m_continueReason = "No saved game to continue yet";
+        m_continueReason = tr("shell.no_continue");
         return;
     }
     try {
@@ -244,7 +265,7 @@ void AppShell::refreshContinue() {
 void AppShell::refreshCheckpoint() {
     const SaveGames* saves = m_levels.session() ? m_levels.session()->saves() : nullptr;
     if (!saves) {
-        m_checkpointReason = "No checkpoint reached yet";
+        m_checkpointReason = tr("shell.no_checkpoint");
         return;
     }
     std::string why;
@@ -282,10 +303,15 @@ void AppShell::publish() {
     ui.setValue("error_code", std::string_view(m_failure ? travelErrorName(m_failure->code) : ""));
     ui.setValue("error_message", std::string_view(m_failure ? m_failure->message : std::string()));
     ui.setValue("error_level", std::string_view(m_failure ? m_failure->request.level : std::string()));
+    ui.setValue(
+        "error_detail", std::string_view(
+                            m_failure ? tr("shell.error_detail", {{"code", travelErrorName(m_failure->code)},
+                                                                  {"level", m_failure->request.level}})
+                                      : std::string()));
     ui.setValue("can_dismiss", m_failure && m_failure->levelPlays && m_levels.playing());
     const bool newGame = !m_setup.newGameLevel.empty();
     ui.setValue("can_new_game", newGame);
-    ui.setValue("new_game_reason", std::string_view(newGame ? "" : "This game has no first level to start in"));
+    ui.setValue("new_game_reason", std::string_view(newGame ? std::string() : tr("shell.no_new_game")));
     ui.setValue("can_continue", m_continueReason.empty());
     ui.setValue("continue_reason", std::string_view(m_continueReason));
     ui.setValue("can_restart_checkpoint", m_checkpointReason.empty());
@@ -299,9 +325,8 @@ void AppShell::publish() {
                                 : state == SaveGames::CheckpointState::Saved  ? "saved"
                                 : state == SaveGames::CheckpointState::Failed ? "failed"
                                                                               : ""));
-    // Settings arrive with S08: the button is there, disabled, saying why.
-    ui.setValue("settings_reason", std::string_view("Player settings aren't available in this build yet"));
-    ui.setValue("credits", std::string_view(m_setup.credits.empty() ? "Made with Shockwave" : m_setup.credits));
+    publishSettings();
+    ui.setValue("credits", std::string_view(m_setup.credits.empty() ? tr("shell.credits_default") : m_setup.credits));
     UIValue levels = UIValue::list();
     if (m_setup.screens.levelSelect)
         for (const Level& l : m_setup.levels)
@@ -351,8 +376,15 @@ void AppShell::onUIEvent(const UIEvent& event) {
     if (event.type != "click" && event.type != "back") return;
     if (event.command.empty()) return;
     std::string argument;
-    if (event.command == "play_level" && event.element.rfind("level-", 0) == 0)
-        argument = std::string(event.element.substr(6));
+    // Buttons made by data-for carry their argument in their id: "level-<id>",
+    // "tab-<tab>", "next-<key>" and "prev-<key>".
+    auto after = [&](std::string_view prefix) {
+        if (event.element.rfind(prefix, 0) == 0) argument = std::string(event.element.substr(prefix.size()));
+    };
+    if (event.command == "play_level") after("level-");
+    if (event.command == "settings_tab") after("tab-");
+    if (event.command == "pref_next") after("next-");
+    if (event.command == "pref_prev") after("prev-");
     std::string why;
     command(event.command, argument, &why);
 }
@@ -419,12 +451,12 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
         return true;
     };
     if (command == "new_game") {
-        if (m_setup.newGameLevel.empty()) return refuse(why, "This game has no first level to start in");
+        if (m_setup.newGameLevel.empty()) return refuse(why, tr("shell.no_new_game"));
         if (m_setup.hasProgress && m_setup.hasProgress()) return page("confirm");
         return request(to(m_setup.newGameLevel, TravelReason::NewGame), send);
     }
     if (command == "confirm_new_game") {
-        if (m_setup.newGameLevel.empty()) return refuse(why, "This game has no first level to start in");
+        if (m_setup.newGameLevel.empty()) return refuse(why, tr("shell.no_new_game"));
         return request(to(m_setup.newGameLevel, TravelReason::NewGame, true), send);
     }
     if (command == "continue") {
@@ -433,7 +465,7 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
         TravelRequest r;
         std::string reason;
         if (!m_setup.continueGame(r, reason)) {
-            m_continueReason = reason.empty() ? "No saved game to continue yet" : reason;
+            m_continueReason = reason.empty() ? tr("shell.no_continue") : reason;
             return refuse(why, m_continueReason);
         }
         r.reason = TravelReason::LoadSave;
@@ -449,9 +481,15 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
                 return request(to(l.id, TravelReason::NewGame), send);
         return refuse(why, "\"" + std::string(argument) + "\" isn't in Level select");
     }
-    if (command == "settings") return page("settings");
+    bool handled = false;
+    const bool settings = settingsCommand(command, argument, why, handled);
+    if (handled) return settings;
     if (command == "credits") return page("credits");
     if (command == "back") {
+        // Back from Settings drops the draft, as Cancel does; a display waiting to be kept
+        // goes back to the one that worked.
+        if (m_page == "settings" && m_preferences && m_preferences->displayPending()) m_preferences->revertDisplay();
+        if (m_page == "settings") openSettings();
         if (m_page != "main") return page("main");
         if (m_screen == ShellScreen::Pause) return resume();
         return true;

@@ -189,7 +189,10 @@ public:
     // Every action and its bindings as they apply now (built-in, then the file's).
     const std::map<std::string, std::vector<InputBinding>>& actions() const { return m_actions; }
     InputBindings currentBindings() const;   // the same, as a bindings file would hold them
-    float deadzone() const { return m_deadzone; }
+    float deadzone() const { return m_deadzoneOverride >= 0 ? m_deadzoneOverride : m_deadzone; }
+    // The player's stick dead zone (docs/Preferences.md), over the bindings file's. A
+    // negative value goes back to the file's.
+    void setDeadzoneOverride(float deadzone) { m_deadzoneOverride = deadzone >= 0 && deadzone < 1 ? deadzone : -1.0f; }
 
     // The project's bindings. Loading remembers the path and reloads when the file changes.
     // A file that fails to load leaves the previous bindings in place.
@@ -292,6 +295,7 @@ private:
     InputBindings m_file;
     bool m_hasFile = false;
     float m_deadzone = 0.15f;
+    float m_deadzoneOverride = -1.0f;
     std::filesystem::path m_bindingsPath;
     std::filesystem::file_time_type m_bindingsTime{};
     double m_bindingsCheckTimer = 0.0;

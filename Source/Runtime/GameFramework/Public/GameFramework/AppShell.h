@@ -27,6 +27,8 @@
 // The buttons call command(): onclick="new_game" in a document, and the same command
 // from --flow-test (FlowTest.h) and from code. Main thread only.
 
+#include <Engine/GraphicsSettings.h>
+#include <Engine/Preferences.h>
 #include <Engine/World.h>
 #include <GameFramework/GameFlow.h>
 #include <GameUI/GameUI.h>
@@ -45,6 +47,7 @@ namespace shockwave {
 class Engine;
 class Input;
 class LevelHost;
+class Localization;
 class Renderer;
 
 // Which of the shell's screens are on. The project key app_shell is "off", "all", or the
@@ -95,6 +98,13 @@ public:
         // The request Continue sends: the newest save this game and profile can load,
         // read, as a LoadSave travel. False, with why, when there's none.
         std::function<bool(TravelRequest& request, std::string& why)> continueGame;
+        // The Settings page (S08, docs/Preferences.md) edits these; null: the engine's. With
+        // neither (no engine), Settings stays off, saying why.
+        Preferences* preferences = nullptr;
+        Graphics* graphics = nullptr;   // null without an engine: no Graphics tab
+        // The screens' text ({{text.shell.*}}); null: the engine's, or the built-in English.
+        const Localization* localization = nullptr;
+        bool settings = true;   // false turns the Settings page off
     };
 
     // engine: where to draw and read input; null in tests (documents still load and
@@ -121,6 +131,9 @@ public:
     // why ("No checkpoint yet", "Busy: ..."). The commands:
     //   menu:    new_game, confirm_new_game, continue, level_select, play_level <id>,
     //            settings, credits, back, quit
+    //   settings (menu and pause): settings_tab <tab>, pref_next <key>, pref_prev <key>,
+    //            apply_settings, cancel_settings, reset_settings, keep_display, revert_display
+    //            (keys as in preferenceInfo(), graphics ones as "graphics.<key>")
     //   pause:   resume, restart_checkpoint, restart_level, settings, main_menu, quit
     //   loading: cancel_travel
     //   error:   retry, main_menu, dismiss (when the level still plays), quit
@@ -135,8 +148,16 @@ public:
     // The "flow" data model the screens show: screen, page, title, level, destination,
     // phase, progress (0..1), percent, can_cancel, error_code, error_message, error_level,
     // can_dismiss, can_new_game, new_game_reason, can_continue, continue_reason,
-    // can_restart_checkpoint, checkpoint_reason, checkpoint_state, can_level_select, levels, settings_reason,
-    // credits, message (the last refusal).
+    // can_restart_checkpoint, checkpoint_reason, checkpoint_state, can_level_select, levels, error_detail,
+    // credits, message (the last refusal); the Settings page's can_settings, settings_reason,
+    // settings_tab, settings_tabs [{id, label}], settings_rows [{key, label, value, tooltip,
+    // can_change, reason}], settings_changed, display_pending, display_countdown; and "text",
+    // the screens' words (text.shell.new_game).
+    // A setting's value on the page, as it shows: "On", "75%", "1920 x 1080".
+    std::string settingValue(std::string_view key) const;
+    // The Settings page's draft: what Apply would use.
+    const PlayerPreferences& draftPreferences() const { return m_draft; }
+    const GraphicsSettings& draftGraphics() const { return m_draftGraphics; }
     const UIValue& value(std::string_view name) const;
     GameUI& ui() { return *m_ui; }
     // The last ticket a shell command got (0: none yet).
@@ -156,6 +177,9 @@ public:
     static void bindDefaultControls(Input& input);
     // The built-in screens' documents ("builtin:shell/menu", ...), for tools and tests.
     static std::string builtinDocument(ShellScreen screen);
+    // The built-in screens' English text, keys "shell.*": the engine adds it under every
+    // catalog (Localization::addBuiltin), so a project translates the shell like its own text.
+    static std::vector<std::pair<std::string, std::string>> builtinText();
 
 private:
     void onTravelFinished(const TravelCompletion& completion);
@@ -168,6 +192,20 @@ private:
     void refreshContinue();   // asks Setup::continueReason
     void refreshCheckpoint();   // asks the level's SaveGames
     bool refuse(std::string* why, std::string reason);
+    std::string tr(std::string_view key) const;
+    std::string tr(std::string_view key, const std::vector<std::pair<std::string, std::string>>& values) const;
+    // The Settings page (AppShellSettings.cpp).
+    std::string settingsReason() const;
+    std::vector<std::string> languageChoices() const;   // "" when the page can be used
+    void openSettings();   // a fresh draft from what runs now
+    bool settingsCommand(std::string_view command, std::string_view argument, std::string* why, bool& handled);
+    bool stepSetting(std::string_view key, int direction, std::string* why);
+    void publishSettings();
+    struct SettingRow {
+        std::string key, label, tooltip, reason;
+        bool canChange = true;
+    };
+    std::vector<SettingRow> settingRows(std::string_view tab) const;
 
     Engine* m_engine;
     LevelHost& m_levels;
@@ -187,6 +225,13 @@ private:
     std::string m_continueReason = "No saved game to continue yet";
     std::string m_checkpointReason = "No checkpoint reached yet";
     std::vector<std::string> m_problems;
+    Preferences* m_preferences = nullptr;
+    Graphics* m_graphics = nullptr;
+    const Localization* m_text = nullptr;
+    std::unique_ptr<Localization> m_ownText;   // the built-in English, when nothing else gives text
+    PlayerPreferences m_draft;
+    GraphicsSettings m_draftGraphics;
+    std::string m_tab = "display";
     // Mouse capture while a screen shows, given back when it goes in the same level.
     bool m_mouseWasCaptured = false;
     uint64_t m_captureEpoch = 0;

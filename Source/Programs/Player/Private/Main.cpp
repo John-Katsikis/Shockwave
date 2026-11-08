@@ -45,6 +45,9 @@ int main(int argc, char** argv) {
         std::filesystem::path gameModuleFile;   // --game-module
         std::filesystem::path graphicsFile, graphicsSchema, materialSchema;
         bool graphicsInfo = false, noUserGraphics = false;
+        bool preferencesInfo = false, noUserPreferences = false;   // --preferences, --no-user-preferences
+        std::filesystem::path preferencesSchema;   // --preferences-schema
+        bool audioVolumeSet = false;
         bool noPipelineCache = false, clearPipelineCache = false;
         std::string graphicsPresetArg;   // --graphics-preset low|medium|high|ultra
         float renderScaleOverride = -1;
@@ -95,6 +98,27 @@ int main(int argc, char** argv) {
                 std::string error;
                 if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
                     throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            // Player preferences (docs/Preferences.md).
+            if (arg == "--pref" && i + 1 < argc) {
+                const std::string value = argv[++i];
+                const auto equals = value.find('=');
+                if (equals == std::string::npos || equals == 0 || !shockwave::findPreference(value.substr(0, equals)))
+                    throw player::UsageError(
+                        "--pref takes key=value with a preference key, like master_volume=0.5 (player "
+                        "--preferences lists them)");
+                tool.preferenceSets.emplace_back(value.substr(0, equals), value.substr(equals + 1));
+                continue;
+            }
+            if (arg == "--preferences" || arg == "--no-user-preferences" ||
+                (arg == "--preferences-schema" && i + 1 < argc)) {
+                if (arg == "--preferences")
+                    preferencesInfo = true;
+                else if (arg == "--no-user-preferences")
+                    noUserPreferences = true;
+                else
+                    preferencesSchema = argv[++i];
                 continue;
             }
             if (arg == "--flow-test" && i + 1 < argc) {
@@ -154,6 +178,7 @@ int main(int argc, char** argv) {
                 if (ec != std::errc{} || end != value.data() + value.size() || !std::isfinite(audioVolume) ||
                     audioVolume < 0 || audioVolume > 1)
                     throw std::runtime_error("--audio-volume requires a number in 0..1");
+                audioVolumeSet = true;
             } else if (arg == "--renderer" && i + 1 < argc) {
                 renderer = argv[++i];
             } else if (arg == "--renderers") {
@@ -815,6 +840,18 @@ int main(int argc, char** argv) {
         if (!lightingSchema.empty()) return player::lightingSchema(lightingSchema);
         if (!lightingExport.empty()) return player::lightingExport(lightingExport, output);
         if (!lightingImport.empty()) return player::lightingImport(lightingImport, output);
+        if (!preferencesSchema.empty()) {
+            const auto schema = shockwave::preferencesSchema();
+            if (preferencesSchema == "-")
+                std::fputs(schema.c_str(), stdout);
+            else {
+                std::ofstream out(preferencesSchema);
+                out << schema;
+                out.close();
+                if (!out) throw std::runtime_error("can't write " + preferencesSchema.string());
+            }
+            return 0;
+        }
         if (!graphicsSchema.empty()) {
             const auto schema = shockwave::graphicsSettingsSchema();
             if (graphicsSchema == "-")
@@ -944,6 +981,20 @@ int main(int argc, char** argv) {
         for (const auto& [key, value] : graphicsSets)
             if (!shockwave::setGraphicsSetting(tool.graphics, key, value, error))
                 throw std::runtime_error("--graphics-set: " + error);
+        // The player's preferences file, under the same rule as the graphics one: tools and
+        // reproducible runs leave it alone.
+        if (!noUserPreferences && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
+            tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested &&
+            !tool.captureReflections && tool.userPaths)
+            tool.preferencesFile = tool.userPaths->config() / "Preferences.swprefs";
+        if (audioVolumeSet) tool.preferenceSets.emplace_back("master_volume", std::to_string(audioVolume));
+        if (preferencesInfo) {
+            // Every preference, its value and the layer it came from (docs/Preferences.md).
+            if (!tool.userPaths) throw std::runtime_error("--preferences needs a profile folder (--user-dir)");
+            const auto profile =
+                noUserPreferences ? std::filesystem::path() : tool.userPaths->config() / "Preferences.swprefs";
+            return player::preferencesInfo(project, profile, tool.preferenceSets, tool.benchmarkJson);
+        }
         if (graphicsInfo) {
             const auto preset = shockwave::matchingGraphicsPreset(tool.graphics);
             if (!tool.benchmarkJson.empty()) {
@@ -1081,7 +1132,6 @@ int main(int argc, char** argv) {
             if (ec) throw std::runtime_error("couldn't delete " + folder + ": " + ec.message());
         }
         shockwave::Engine engine(config);
-        engine.setMasterVolume(audioVolume);
         Player player(std::move(project), std::move(tool), gameModule->module());
         engine.run(player);
         if (player.exitCode() != 0) return player.exitCode();

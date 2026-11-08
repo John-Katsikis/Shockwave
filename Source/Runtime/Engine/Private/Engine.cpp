@@ -105,6 +105,15 @@ void Engine::setMasterVolume(float value) {
     if (std::isfinite(value)) m_masterVolume.store(std::clamp(value, 0.0f, 1.0f));
 }
 
+void Engine::setCategoryVolume(int category, float value) {
+    if (category >= 0 && category < kVolumeCategories && std::isfinite(value))
+        m_categoryVolume[size_t(category)].store(std::clamp(value, 0.0f, 1.0f));
+}
+
+float Engine::categoryVolume(int category) const {
+    return category >= 0 && category < kVolumeCategories ? m_categoryVolume[size_t(category)].load() : 0.0f;
+}
+
 void Engine::initGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -309,6 +318,7 @@ void Engine::run(Application& app) {
 
     while (m_running) {
         m_graphics.commit();   // apply UI/game requests before any frame recording
+        m_preferences.update();   // a display change nobody kept goes back; mute in the background
         // The swap's stall isn't counted as frame time.
         // Network play keeps the ticks steady: swaps wait until it's over.
         if (m_clock.source() == SimulationTime::Smoothed && (!m_pendingRenderer.empty() || m_autoReloadRenderer) &&

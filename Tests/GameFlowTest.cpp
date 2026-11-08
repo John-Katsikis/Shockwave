@@ -17,6 +17,8 @@
 #include <Engine/Levels.h>
 #include <Engine/Prefab.h>
 #include <GameFramework/AppShell.h>
+#include <Engine/Localization.h>
+#include <Engine/Preferences.h>
 #include <GameFramework/FlowTest.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/LevelHost.h>
@@ -322,9 +324,24 @@ struct ShellRig {
             r.restore->info.campaign["chapter"] = "2";
             return true;
         };
+        // The Settings page edits these, with no engine.
+        std::string error;
+        fs::remove_all(content.parent_path() / "ShellConfig");
+        fs::create_directories(content.parent_path() / "ShellConfig");
+        preferences.setClock(&ShellRig::clock);
+        CHECK(preferences.configure({}, content.parent_path() / "ShellConfig" / "Preferences.swprefs", {}, error));
+        setup.preferences = &preferences;
+        setup.graphics = &graphics;
+        text.addBuiltin("en", AppShell::builtinText());
+        setup.localization = &text;
         shell = std::make_unique<AppShell>(nullptr, *host, setup);
         frame();
     }
+    static inline double now = 100;
+    static double clock() { return now; }
+    Preferences preferences;
+    Graphics graphics;
+    Localization text;
     ~ShellRig() {
         shell.reset();
         host->stop();
@@ -509,6 +526,92 @@ void testShellFlow(const fs::path& content) {
     CHECK(!shell.command("dance", {}, &why) && why.find("Unknown") != std::string::npos);
 }
 
+// The Settings page: tabs and rows from the preference table, a draft that Apply uses and
+// saves, Back that drops it, Defaults, the display keep-or-revert, and translated text.
+void testShellSettings(const fs::path& content) {
+    ShellRig rig(content);
+    AppShell& shell = *rig.shell;
+    std::string why;
+    CHECK(rig.value("can_settings") == "true");
+    CHECK(shell.value("text").field("shell") && shell.value("text").field("shell")->field("new_game"));
+    CHECK(!shell.command("pref_next", "master_volume", &why));   // the page isn't open
+    CHECK(shell.click("settings") && shell.page() == "settings" && rig.value("settings_tab") == "display");
+    rig.frame();
+    // Display first: window mode and one Resolution row (width and height together).
+    const UIValue& rows = shell.value("settings_rows");
+    CHECK(rows.size() == 2 && rows[1].field("key")->text() == "resolution");
+    CHECK(shell.value("settings_tabs").size() == 6);
+
+    // Audio: < and > step the volume, as the mouse would click them.
+    CHECK(shell.click("tab-audio") && rig.value("settings_tab") == "audio");
+    CHECK(shell.settingValue("master_volume") == "100%" && rig.value("settings_changed") == "false");
+    CHECK(shell.click("prev-master_volume"));
+    CHECK(shell.click("prev-master_volume"));
+    CHECK(shell.settingValue("master_volume") == "80%" && rig.value("settings_changed") == "true");
+    CHECK(rig.preferences.current().masterVolume == 1);   // only the draft so far
+    CHECK(shell.command("pref_next", "mute_when_unfocused") && shell.settingValue("mute_when_unfocused") == "On");
+    CHECK(!shell.command("pref_next", "no_such_thing", &why) && why.find("no_such_thing") != std::string::npos);
+    // Back drops the draft.
+    CHECK(shell.command("back") && shell.page() == "main" && rig.preferences.current().masterVolume == 1);
+    CHECK(shell.command("settings") && shell.settingValue("master_volume") == "100%");
+    // Apply uses it and saves it to the profile.
+    CHECK(shell.command("settings_tab", "audio") && shell.command("pref_prev", "music_volume"));
+    CHECK(shell.command("apply_settings", {}, &why));
+    CHECK(std::abs(rig.preferences.current().musicVolume - 0.9f) < 1e-4f && rig.value("message") == "Settings saved");
+    CHECK(fs::exists(rig.preferences.profileFile()));
+    CHECK(rig.preferences.stack().layer(PreferenceLayer::Profile).count("music_volume") == 1);
+    CHECK(rig.value("settings_changed") == "false");
+    // Steps stop at the ends of the range.
+    for (int i = 0; i < 15; ++i) shell.command("pref_next", "music_volume");
+    CHECK(shell.settingValue("music_volume") == "100%");
+    // Field of view: the game's own, then 50..120.
+    CHECK(shell.command("settings_tab", "controls") && shell.settingValue("field_of_view") == "Game default");
+    CHECK(shell.command("pref_next", "field_of_view") && shell.draftPreferences().fieldOfView == 50);
+    CHECK(shell.command("pref_prev", "field_of_view") && shell.draftPreferences().fieldOfView == 0);
+    // Graphics: presets cycle, and the frame cap through its list.
+    CHECK(shell.command("settings_tab", "graphics"));
+    CHECK(shell.command("pref_next", "graphics.frame_limit") && shell.draftGraphics().frameLimit == 30);
+    CHECK(shell.settingValue("graphics.frame_limit") == "30 fps");
+    CHECK(shell.command("pref_next", "graphics.preset"));
+    CHECK(!shell.command("settings_tab", "shop", &why));
+    // Defaults: the shipped values, still a draft.
+    CHECK(shell.command("reset_settings") && shell.draftPreferences().musicVolume == 1);
+    CHECK(shell.command("cancel_settings") && shell.page() == "main");
+
+    // A display change waits to be kept; the page counts down, then goes back by itself.
+    CHECK(shell.command("settings") && shell.command("pref_next", "window_mode"));
+    CHECK(shell.draftPreferences().windowMode == WindowMode::Borderless);
+    CHECK(shell.command("apply_settings", {}, &why) && rig.preferences.displayPending());
+    rig.frame();
+    CHECK(rig.value("display_pending") == "true" && rig.value("display_countdown").find("15") != std::string::npos);
+    CHECK(!shell.command("pref_next", "master_volume", &why));   // keep or go back first
+    // The saved profile has the display that worked until it's kept.
+    CHECK(rig.preferences.stack().layer(PreferenceLayer::Profile).count("window_mode") == 0);
+    CHECK(shell.command("keep_display") && !rig.preferences.displayPending());
+    CHECK(rig.preferences.stack().layer(PreferenceLayer::Profile).at("window_mode") == "borderless");
+    CHECK(shell.command("pref_prev", "window_mode") && shell.command("apply_settings"));
+    ShellRig::now += Preferences::kKeepSeconds + 1;
+    rig.preferences.update();
+    rig.frame();
+    CHECK(!rig.preferences.displayPending() && rig.preferences.current().windowMode == WindowMode::Borderless);
+    CHECK(rig.value("display_pending") == "false");
+
+    // The shell's words come from the catalog: a French one replaces the built-in English.
+    const fs::path folder = content.parent_path() / "ShellText";
+    fs::create_directories(folder);
+    {
+        std::ofstream(folder / "fr.swstrings")
+            << "swstrings 1\nshell.new_game \"Nouvelle partie\"\nshell.no_new_game \"Pas de premier niveau\"\n";
+    }
+    rig.text.load(folder, "en");
+    rig.text.setLocale("fr");
+    rig.frame();
+    CHECK(shell.value("text").field("shell")->field("new_game")->text() == "Nouvelle partie");
+    CHECK(shell.value("text").field("shell")->field("resume")->text() == "Resume");   // falls back
+    CHECK(shell.command("settings") && shell.command("settings_tab", "language"));
+    CHECK(shell.command("pref_next", "language") && shell.draftPreferences().language == "fr");
+}
+
 void testShellOverrides(const fs::path& content) {
     // A project screen that loads replaces the built-in one; a broken one is replaced by it.
     const fs::path project = content.parent_path() / "ShellContent";
@@ -647,6 +750,7 @@ int main() {
     testCircuits(content);
     testShellScreens(content);
     testShellFlow(content);
+    testShellSettings(content);
     testShellOverrides(content);
     testScenarios(content);
     std::error_code ec;

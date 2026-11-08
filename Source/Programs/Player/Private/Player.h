@@ -90,6 +90,10 @@ struct Tool {
     bool showNavMesh = false;   // --view navmesh: the lit scene with the navigation mesh and agents' paths
     shockwave::GraphicsSettings graphics, graphicsDefaults;
     fs::path graphicsFile;
+    // Player preferences (docs/Preferences.md): the profile's file (empty: not read or
+    // saved) and --pref overrides for this run.
+    fs::path preferencesFile;
+    std::vector<std::pair<std::string, std::string>> preferenceSets;
     // Where this run writes (PlayerUserPaths.cpp, docs/UserPaths.md): saves, settings,
     // caches. Empty when no per-user folder could be found; tools then only read.
     std::optional<shockwave::UserPaths> userPaths;
@@ -216,6 +220,15 @@ int releaseInfo(
     const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
 int releaseSchema(const fs::path& file);
 int levelSchema(const fs::path& file);
+// --preferences: every player preference, its value and the layer it came from
+// (PlayerPreferences.cpp, docs/Preferences.md); with --json, as JSON.
+int preferencesInfo(
+    const shockwave::Project& project, const fs::path& profile,
+    const std::vector<std::pair<std::string, std::string>>& session, const fs::path& json);
+// --check: the project's Config/Preferences.swprefs.
+void checkPreferences(const shockwave::Project& project, std::vector<std::string>& problems);
+// --check: Content/Localization's catalogs, and every {{text.key}} the documents show.
+void checkLocalization(const shockwave::Project& project, std::vector<std::string>& problems);
 // --level: the catalog level's scene becomes the startup scene. Throws with the levels
 // there are when the id isn't one.
 void applyStartLevel(shockwave::Project& project, const std::string& level);
