@@ -12,6 +12,9 @@
 #include <Navigation/Navigation.h>
 #include <Physics/Physics.h>
 
+#include <Engine/Localization.h>
+#include <Engine/Preferences.h>
+
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +47,25 @@ net::NetworkWorld* PlaySession::network() const { return m_subsystems.find<net::
 bool PlaySession::online() const {
     const net::NetworkWorld* network = this->network();
     return network && network->online();
+}
+
+const PlayerPreferences& GameContext::preferences() const {
+    if (engine) return engine->preferences().current();
+    static const PlayerPreferences defaults;
+    return defaults;
+}
+
+const Localization& GameContext::localization() const {
+    if (engine) return engine->localization();
+    static const Localization none;
+    return none;
+}
+
+std::string GameContext::text(std::string_view key) const { return localization().text(key); }
+
+std::string
+GameContext::format(std::string_view key, const std::vector<std::pair<std::string, std::string>>& values) const {
+    return localization().format(key, values);
 }
 
 Input& GameContext::input() const {

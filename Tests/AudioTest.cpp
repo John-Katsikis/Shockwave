@@ -152,6 +152,35 @@ void spatial() {
     gains = spatialAudioGains({6, 0, 0}, {}, {-1, 0, 0}, 1, 11);
     check(near(gains.x, .5f) && near(gains.y, 0), "listener rotation reverses pan");
 }
+// S08: each sound's category (effects, music, UI, voice) has its own volume on top of the
+// master, and one category's volume never touches another's.
+void categories() {
+    AudioMixer mixer(false);
+    std::array<float, 16> buffer{};
+    auto clip = constant();
+    check(std::string(audioCategoryName(AudioCategory::Music)) == "music", "category names");
+    const auto music = mixer.play(clip, {.volume = 1, .loop = true, .category = AudioCategory::Music});
+    mixer.render(buffer);
+    check(near(buffer[0], .2f), "a category at full volume plays as it is");
+    mixer.setCategoryVolume(AudioCategory::Effects, 0);
+    mixer.render(buffer);
+    check(near(buffer[0], .2f), "turning effects down leaves music alone");
+    mixer.setCategoryVolume(AudioCategory::Music, .5f);
+    mixer.render(buffer);
+    check(near(buffer[0], .1f) && near(mixer.categoryVolume(AudioCategory::Music), .5f), "music volume applies");
+    mixer.setMasterVolume(.5f);
+    mixer.render(buffer);
+    check(near(buffer[0], .05f), "category and master volume multiply");
+    const auto shot = mixer.play(clip, {.volume = 1, .loop = true});   // effects, the default
+    mixer.render(buffer);
+    check(near(buffer[0], .05f), "an effect plays silent while effects are at 0");
+    mixer.stop(music);
+    mixer.stop(shot);
+    AudioPlayback bad;
+    bad.category = AudioCategory(9);
+    check(mixer.play(clip, bad) == 0, "an unknown category is refused");
+}
+
 void mixing() {
     AudioMixer mixer(false);
     std::array<float, 16> buffer{};
@@ -285,6 +314,7 @@ int main(int argc, char** argv) {
         roundTrip();
         spatial();
         mixing();
+        categories();
         worldAudio();
         device();
         std::cout << "Audio tests passed\n";

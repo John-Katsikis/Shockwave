@@ -323,7 +323,10 @@ std::vector<std::string> Localization::check() const {
     for (const auto& c : m_catalogs) {
         if (&c == base) continue;
         for (const auto& [key, value] : c.entries) {
+            // The engine's own text (the shell's "shell.*") can be translated too.
             const std::string* original = base->find(key);
+            for (const auto& builtin : m_builtin)
+                if (!original && (builtin.locale == m_default || builtin.locale == "en")) original = builtin.find(key);
             if (!original) {
                 out.push_back(
                     where(c, key) + ": " + key + " isn't in " + m_default + ".swstrings, the default language");

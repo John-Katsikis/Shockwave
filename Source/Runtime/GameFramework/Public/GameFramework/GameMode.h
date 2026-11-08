@@ -14,12 +14,17 @@
 #include <glm/vec3.hpp>
 
 #include <functional>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace shockwave {
 
 class Engine;
 class Graphics;
+class Localization;
+struct PlayerPreferences;
 class SaveGames;
 class CampaignState;
 class Input;
@@ -46,6 +51,17 @@ struct GameContext {
         return subsystems.find<T>();
     }
     Graphics& graphics() const;   // player quality and pacing; main thread, see docs/Graphics.md
+    // The player's choices (S08, docs/Preferences.md): look sensitivity, inverted look, field
+    // of view, camera shake, reduced flashes, subtitles. Games read them every frame, so a
+    // change on the Settings page shows at once. The defaults without an engine.
+    const PlayerPreferences& preferences() const;
+    // The game's text in the player's language (docs/Localization.md), from
+    // Content/Localization/<locale>.swstrings: text("hud.find_exit"), and whole sentences
+    // with their values filled: format("hud.ammo", {{"count", "12"}}). Without an engine,
+    // only the engine's own text (the game's keys show as "[missing: key]").
+    const Localization& localization() const;
+    std::string text(std::string_view key) const;
+    std::string format(std::string_view key, const std::vector<std::pair<std::string, std::string>>& values) const;
     // This frame's camera jumped (a teleport, a respawn, a cut between shots): temporal
     // anti-aliasing starts afresh instead of smearing the old view into the new one
     // (docs/TemporalAntiAliasing.md). Main thread; does nothing without a window.

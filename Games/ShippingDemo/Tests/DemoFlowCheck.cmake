@@ -1,7 +1,8 @@
 # Reactor Run through the player (S07): --check on the project, then the whole game with
 # real input through the device boundary (keyboard and mouse, then a gamepad), each from
 # a fresh profile; then save and quit in the factory and Continue in a second run. Then
-# the same from a package (Config/Package.swpackage), run from outside the source tree,
+# the Settings page and the profile it saves. Then the same from a package
+# (Config/Package.swpackage), run from outside the source tree,
 # the way a tester gets it: the whole game, and save, quit and Continue.
 # cmake -DPLAYER=... -DPROJECT=... -DFLOWS=... -DTEMP=... [-DPACKAGE=ON] -P DemoFlowCheck.cmake
 foreach(var PLAYER PROJECT FLOWS TEMP)
@@ -32,6 +33,38 @@ flow(full-run keyboard)
 flow(gamepad-run gamepad)
 flow(resume-quit resume)
 flow(resume-continue resume)
+
+# The Settings page (S08): a volume, the language and a display change, applied and kept;
+# then the saved profile, as the next run and --preferences read it.
+flow(settings settings)
+file(GLOB_RECURSE profiles "${TEMP}/settings/*Preferences.swprefs")
+list(LENGTH profiles count)
+if(NOT count EQUAL 1)
+    message(FATAL_ERROR "the Settings flow saved ${count} profiles: ${profiles}")
+endif()
+file(READ "${profiles}" profile)
+foreach(saved "music_volume 0.8" "language fr" "window_mode borderless")
+    if(NOT profile MATCHES "${saved}")
+        message(FATAL_ERROR "the saved preferences don't have ${saved}:\n${profile}")
+    endif()
+endforeach()
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --user-dir "${TEMP}/settings" --preferences
+    RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT code EQUAL 0 OR NOT out MATCHES "language +fr +# profile" OR NOT out MATCHES "ui_scale +1 +# default")
+    message(FATAL_ERROR "player --preferences (${code}) doesn't show the saved profile:\n${out}\n${err}")
+endif()
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --user-dir "${TEMP}/settings" --pref language=en
+        --pref ui_scale=1.5 --preferences --json -
+    RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT code EQUAL 0 OR NOT out MATCHES "\"key\": *\"ui_scale\", *\"group\": *\"Accessibility\", *\"value\": *\"1.5\", *\"origin\": *\"session\"")
+    message(FATAL_ERROR "player --pref ... --preferences --json (${code}):\n${out}\n${err}")
+endif()
+execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --user-dir "${TEMP}/settings" --pref ui_scale=9 --preferences
+    RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(code EQUAL 0 OR NOT "${out}${err}" MATCHES "ui_scale")
+    message(FATAL_ERROR "player --pref ui_scale=9 should fail, saying why (${code}):\n${out}\n${err}")
+endif()
+message(STATUS "preferences from the Settings page: ok")
 
 # The packaged game (S07 completion): packaged through the real CLI without rebuilding,
 # then played from the package's own launcher with a fresh profile.
@@ -68,3 +101,5 @@ endfunction()
 package_flow(full-run keyboard)
 package_flow(resume-quit resume)
 package_flow(resume-continue resume)
+# The packaged Settings page: the catalogs went into the package (the French reply).
+package_flow(settings settings)

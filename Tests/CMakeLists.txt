@@ -112,6 +112,15 @@ shockwave_warnings(game_flow_test)
 add_test(NAME game_flow COMMAND game_flow_test)
 set_tests_properties(game_flow PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 
+# Player preferences and localization (S08, docs/Preferences.md, docs/Localization.md): the
+# .swprefs format, layers and origins, apply and save kept apart, the display keep-or-revert
+# (and after a crash), text catalogs, the fallback chain, placeholders and check().
+add_executable(preferences_test PreferencesTest.cpp)
+target_link_libraries(preferences_test PRIVATE Shockwave::Engine)
+shockwave_warnings(preferences_test)
+add_test(NAME player_preferences COMMAND preferences_test)
+set_tests_properties(player_preferences PROPERTIES TIMEOUT 60 LABELS unit)
+
 # Asset dependencies and residency (S04, docs/AssetResidency.md): the graph's providers,
 # problems, cycles and hashes over a project made on disk; leases, budgets and level travel
 # holding them, without a window.

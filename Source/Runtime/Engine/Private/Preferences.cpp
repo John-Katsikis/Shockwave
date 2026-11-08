@@ -583,7 +583,7 @@ bool Preferences::configure(
     m_current.windowMode = WindowMode::Windowed;
     applyNow(start);
     const Display display = displayOf(start);
-    if (m_engine && (display.mode != WindowMode::Windowed || display.width > 0)) {
+    if (display.mode != WindowMode::Windowed || display.width > 0) {
         if (!applyDisplay(display, problem))
             SW_LOG(LogPreferences, Warning, "Couldn't use the saved display ({}); staying windowed", problem);
         else

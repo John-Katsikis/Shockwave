@@ -18,6 +18,8 @@ body { font-family: "Noto Sans"; font-size: 16dp; color: #edf4f5; width: 100%; h
 #controls { position: absolute; left: 0; bottom: 14dp; width: 100%; text-align: center; font-size: 12dp; color: #b8cbd0; }
 #damage { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 #damage.hurt { background-color: #d8381830; }
+/* Reduce flashes (the player's preference): a faint edge instead of a red screen. */
+#damage.hurt_soft { background-color: #d838180a; }
 #badge { position: absolute; left: 24dp; top: 120dp; }
 #badge img { width: 40dp; height: 40dp; }
 #badge span { font-size: 12dp; color: #b8cbd0; margin-left: 8dp; }
