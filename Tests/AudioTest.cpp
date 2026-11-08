@@ -181,6 +181,24 @@ void categories() {
     check(mixer.play(clip, bad) == 0, "an unknown category is refused");
 }
 
+// S08: no output device at first (none plugged in), then one appears: reopen() brings
+// sound back without a restart, keeping the volumes.
+void recovery() {
+    SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "no_such_driver", SDL_HINT_OVERRIDE);
+    {
+        AudioMixer mixer(true);
+        check(!mixer.available() && !mixer.error().empty(), "no device: unavailable, saying why");
+        mixer.setCategoryVolume(AudioCategory::Music, .25f);
+        check(mixer.play(constant(), {}) == 0, "nothing plays without a device");
+        check(!mixer.reopen(), "still none");
+        SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
+        check(mixer.reopen() && mixer.available() && mixer.error().empty(), "a device appears: sound is back");
+        check(near(mixer.categoryVolume(AudioCategory::Music), .25f), "volumes kept");
+        check(mixer.play(constant(), {}) != 0, "plays again");
+    }
+    SDL_ResetHint(SDL_HINT_AUDIO_DRIVER);
+}
+
 void mixing() {
     AudioMixer mixer(false);
     std::array<float, 16> buffer{};
@@ -309,6 +327,7 @@ void device() {
 int main(int argc, char** argv) {
     try {
         check(argc == 2, "source root argument");
+        recovery();   // first: before anything else has started SDL's audio
         loading(argv[1]);
         reload(argv[1]);
         roundTrip();
