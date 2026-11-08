@@ -30,6 +30,9 @@
 //   --release              show Project > Release readiness on startup
 //   --levels               show Project > Levels on startup
 //   --residency            show Window > Resource residency on startup
+//   --player-settings      show Window > Player Settings on startup
+//   --preview-language fr  preview the game's text in a language (Player Settings)
+//   --preview-ui-scale 1.5 preview an interface size (Player Settings)
 //   --graphics-guide-path  print the guide path and exit without starting the engine
 //   --prefs file           preferences file to use instead of the user's (tests)
 //   --play                 press Play once the scene is open (tests)
@@ -86,7 +89,15 @@ int main(int argc, char** argv) {
                 options.showLevels = true;
             else if (arg == "--residency")
                 options.showResidency = true;
-            else if (arg == "--lighting")
+            else if (arg == "--player-settings")
+                options.showPlayerSettings = true;
+            else if (arg == "--preview-language")
+                options.previewLanguage = value();
+            else if (arg == "--preview-ui-scale") {
+                options.previewUiScale = std::stof(value());
+                if (!(options.previewUiScale >= 0.75f && options.previewUiScale <= 2.0f))
+                    throw std::runtime_error("--preview-ui-scale is 0.75..2");
+            } else if (arg == "--lighting")
                 options.showLighting = true;
             else if (arg == "--graphics-guide-path") {
                 const auto path = editor::graphicsGuidePath();

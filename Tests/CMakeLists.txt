@@ -669,3 +669,14 @@ add_test(NAME level_lifetime_editor COMMAND ${CMAKE_COMMAND}
 set_tests_properties(level_lifetime_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 300 LABELS gpu)
 endif()
+# The editor's Player Settings previews (S08): the game's text in French at 1.5x, from the
+# command line, and nothing written into the project. Draws its interface: gpu.
+if(TARGET game_shippingdemo AND TARGET editor)
+add_test(NAME editor_player_settings COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/EditorPlayerSettings
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/EditorPlayerSettingsCheck.cmake)
+set_tests_properties(editor_player_settings PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
