@@ -133,6 +133,11 @@ Each item links to the guide that covers it in detail.
   [input schema](docs/InputSchema.md).
 - **Save the game.** Save and load the whole running world to slots, from game code, the
   editor or the command line. See [Save games](docs/SaveGames.md).
+- **Let players choose.** A Settings page for display, graphics, audio, controls,
+  accessibility and language, saved per player, with a display change that reverts
+  unless kept. See [Preferences](docs/Preferences.md).
+- **Translate the game.** Text catalogs per language, with placeholders and a fallback to
+  the default language. See [Localization](docs/Localization.md).
 - **Keep frames smooth.** A precise frame limiter, a low-latency mode and frame
   statistics. See [Frame pacing](docs/FramePacing.md).
 - **Use the right GPU.** Shockwave says which GPU it picked and why, warns when your screen

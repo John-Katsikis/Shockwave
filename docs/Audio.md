@@ -84,6 +84,20 @@ Preview ignores position, so it works without a listener. A few rules:
 
 If a source is set up wrong, the error appears beneath the component in the Inspector.
 
+## Volume by category
+
+Every sound has a category: `effects` (the default), `music`, `ui` or `voice`. Each has
+its own volume on top of the master, set by the player on the Settings page
+([Preferences](Preferences.md)): `effects_volume`, `music_volume`, `ui_volume`,
+`voice_volume`. Turning one down never touches another.
+
+Set it on a sound source (`category Music` in a scene, Category in the Inspector), or
+when playing from code:
+
+```cpp
+game.audio().playClip("Audio/theme.wav", {.loop = true, .category = AudioCategory::Music});
+```
+
 ## Change the master volume
 
 In the editor, go to Preferences, then Audio, then Master volume. It controls preview
@@ -97,7 +111,8 @@ build/bin/player Games/Sample/Sample.swproject --audio-volume 0.5 --frames 120
 ```
 
 This runs the sample at half volume for 120 frames, then quits. An invalid value fails
-before the engine starts.
+before the engine starts. It's the same as `--pref master_volume=0.5`: the player's own
+master volume is a preference, on the Settings page.
 
 ## Check a scene for audio mistakes
 

@@ -733,6 +733,7 @@ Every field of the entity's AudioSource; found is false when it has none.
 - Out `occlusion` Bool
 - Out `occlusion_radius` Float
 - Out `transmission` Float
+- Out `category` Int
 
 ### Component.AudioSource.Get.air_absorption
 
@@ -741,6 +742,14 @@ The entity's AudioSource air_absorption.
 - Changes: presentation
 - In `target` Entity, default self
 - Out `air_absorption` Bool
+
+### Component.AudioSource.Get.category
+
+The entity's AudioSource category.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `category` Int
 
 ### Component.AudioSource.Get.clip
 
@@ -894,6 +903,7 @@ Sets the fields given (connected or written) of the entity's AudioSource; the re
 - In `occlusion` Bool
 - In `occlusion_radius` Float
 - In `transmission` Float
+- In `category` Int, options 0=Effects; 1=Music; 2=UI; 3=Voice
 
 ### Component.AudioSource.Set.air_absorption
 
@@ -904,6 +914,16 @@ Sets the entity's AudioSource air_absorption.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `air_absorption` Bool, required
+
+### Component.AudioSource.Set.category
+
+Sets the entity's AudioSource category.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `category` Int, options 0=Effects; 1=Music; 2=UI; 3=Voice, required
 
 ### Component.AudioSource.Set.clip
 

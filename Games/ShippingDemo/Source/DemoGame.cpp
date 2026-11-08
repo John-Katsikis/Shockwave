@@ -193,7 +193,14 @@ public:
                 input.actionValue(kRight) - input.actionValue(kLeft),
                 input.actionValue(kForward) - input.actionValue(kBack)};
             m_command.fire = input.isActionDown(kFire);
-            m_command.sprint = input.isActionDown(kSprint);
+            // Toggle instead of hold (Settings > Controls): one press starts sprinting, the next stops.
+            if (prefs.toggleHold) {
+                if (input.wasActionPressed(kSprint)) m_sprintToggled = !m_sprintToggled;
+                m_command.sprint = m_sprintToggled;
+            } else {
+                m_sprintToggled = false;
+                m_command.sprint = input.isActionDown(kSprint);
+            }
             m_command.reload |= input.wasActionPressed(kReload);
             m_command.use |= input.wasActionPressed(kUse);
         } else {
@@ -448,7 +455,8 @@ private:
     PlayerCommand m_command;
     bool m_pad = false;   // the player used a gamepad last: prompts show its buttons
     float m_recoil = 0, m_hitFlash = 0, m_hurtFlash = 0;
-    float m_sceneFov = 0;   // the camera's own field of view, before the player's
+    float m_sceneFov = 0;
+    bool m_sprintToggled = false;   // the camera's own field of view, before the player's
     std::set<std::string> m_reached;
     bool m_finishing = false;
 };

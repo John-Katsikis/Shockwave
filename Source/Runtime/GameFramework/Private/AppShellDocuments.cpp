@@ -57,6 +57,11 @@ button.disabled { color: #7d8693; background-color: #232932; }
 .row button { display: inline-block; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
 .row .value { display: inline-block; width: 110dp; text-align: center; font-size: 15dp; }
 .actions button { display: inline-block; margin-right: 6dp; }
+body.high_contrast { background-color: #000000f4; }
+body.high_contrast .panel { background-color: #000000; border: 2dp #ffffff; }
+body.high_contrast button { background-color: #000000; border: 2dp #ffffff; }
+body.high_contrast button:focus-visible { border-color: #ffd23f; }
+body.high_contrast .reason, body.high_contrast .code { color: #e6eaf0; }
 .reason { font-size: 13dp; color: #8a94a3; margin: -4dp 0 10dp 4dp; }
 .message { font-size: 14dp; color: #ffb27a; margin-top: 8dp; }
 .code { font-size: 13dp; color: #8a94a3; }

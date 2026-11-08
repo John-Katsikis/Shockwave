@@ -120,6 +120,11 @@ target_link_libraries(preferences_test PRIVATE Shockwave::Engine)
 shockwave_warnings(preferences_test)
 add_test(NAME player_preferences COMMAND preferences_test)
 set_tests_properties(player_preferences PROPERTIES TIMEOUT 60 LABELS unit)
+add_test(NAME preferences_schema COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/PreferencesSchema.md
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/PreferencesSchemaCheck.cmake)
+set_tests_properties(preferences_schema PROPERTIES TIMEOUT 60 LABELS unit)
 
 # Asset dependencies and residency (S04, docs/AssetResidency.md): the graph's providers,
 # problems, cycles and hashes over a project made on disk; leases, budgets and level travel

@@ -1323,6 +1323,9 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
             want = engine->renderer().uiOutputSize();
             const float scale = SDL_GetWindowDisplayScale(engine->window().handle());
             if (scale > 0.0f && std::isfinite(scale)) ratio = scale;
+            // The player's Interface size (docs/Preferences.md): every dp unit grows with it.
+            const float uiScale = engine->preferences().current().uiScale;
+            if (uiScale > 0.0f && std::isfinite(uiScale)) ratio *= uiScale;
         }
         want = glm::max(want, glm::uvec2(1));
         if (want != size || !context->GetDimensions().x) {
@@ -1486,6 +1489,11 @@ void GameUI::update(World& world, double frameDt) {
     m->resize();
     m->pollFiles(frameDt);
     m->sync(world);
+    // High contrast (docs/Preferences.md): a class on every document's body, so the shell's
+    // and the game's styles can strengthen colours and outlines with body.high_contrast.
+    const bool contrast = m->engine && m->engine->preferences().current().highContrast;
+    for (const auto& d : m->documents)
+        if (d.doc && d.doc->IsClassSet("high_contrast") != contrast) d.doc->SetClass("high_contrast", contrast);
     m->feedInput();
     m->pollNavigation(frameDt);
     m->dispatch();
