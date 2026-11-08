@@ -9,6 +9,7 @@
 #include <Engine/Localization.h>
 #include <Engine/Preferences.h>
 #include <GameFramework/AppShell.h>
+#include <GameUI/GameUI.h>
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -189,6 +190,16 @@ void Editor::drawPlayerSettingsWindow() {
     }
     ImGui::EndDisabled();
     if (changed) applyPlayerSettings();
+    gui::toolbarNext(gui::buttonWidth("Check layout"));
+    if (gui::button("Check layout") && m_gameUI) {
+        // The documents in the viewport now, at this size and in this language.
+        const auto problems = m_gameUI->layoutProblems();
+        for (const auto& problem : problems) warn(problem.file + ": " + problem.message);
+        log(problems.empty() ? "The game's UI fits: no text runs past its box or off the screen"
+                             : std::format("The game's UI: {} things don't fit (above)", problems.size()));
+    }
+    ImGui::SetItemTooltip("Look for text that runs past its box or off the screen in the documents shown\n"
+                          "in the viewport, as previewed. Try the longest language and the largest size.");
 
     // ---- The catalogs' state ----
     const std::vector<std::string> checks = text.check();

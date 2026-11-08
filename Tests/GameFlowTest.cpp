@@ -24,11 +24,13 @@
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
+#include <GameUI/GameUI.h>
 
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -621,6 +623,136 @@ void testShellSettings(const fs::path& content) {
     CHECK(shell.command("pref_next", "language") && shell.draftPreferences().language == "fr");
 }
 
+// Text applied letter by letter, leaving {placeholders} alone.
+std::string transformText(const std::string& text, const std::function<std::string(char)>& letter) {
+    std::string out;
+    int depth = 0;
+    for (char c : text) {
+        if (c == '{') ++depth;
+        out += depth == 0 ? letter(c) : std::string(1, c);
+        if (c == '}' && depth > 0) --depth;
+    }
+    return out;
+}
+
+// A catalog of every shell.* text, for the layout test: "de" is pseudo-German (accents,
+// half again as long, with one long compound word), "el" is the Latin letters as Greek.
+void writeLayoutCatalogs(const fs::path& folder) {
+    fs::create_directories(folder);
+    std::ofstream de(folder / "de.swstrings"), el(folder / "el.swstrings");
+    de << "swstrings 1\n";
+    el << "swstrings 1\n";
+    static const std::map<char, std::string> accents = {{'a', "ä"}, {'e', "é"}, {'i', "ï"}, {'o', "ö"}, {'u', "ü"},
+                                                        {'n', "ñ"}, {'s', "ß"}, {'A', "Ä"}, {'O', "Ö"}};
+    static const char* greek[26] = {"α", "β", "ψ", "δ", "ε", "φ", "γ", "η", "ι", "ξ", "κ", "λ", "μ",
+                                    "ν", "ο", "π", "θ", "ρ", "σ", "τ", "υ", "ω", "ς", "χ", "υ", "ζ"};
+    auto quote = [](const std::string& text) {
+        std::string out = "\"";
+        for (char c : text) out += c == '"' || c == '\\' ? std::string("\\") + c : std::string(1, c);
+        return out + "\"";
+    };
+    for (const auto& [key, english] : AppShell::builtinText()) {
+        std::string longer = transformText(english, [](char c) {
+            const auto it = accents.find(c);
+            return it != accents.end() ? it->second : std::string(1, c);
+        });
+        // Half again as long, in words a line can break between, and one that can't.
+        size_t extra = english.size() / 2;
+        if (english.size() > 6) longer += " Einstellungsmenü";
+        for (size_t added = 0; added < extra; added += 5) longer += " wört";
+        de << key << " " << quote(longer) << "\n";
+        el << key << " " << quote(transformText(english, [](char c) {
+            if (c >= 'a' && c <= 'z') return std::string(greek[c - 'a']);
+            if (c >= 'A' && c <= 'Z') return std::string(greek[c - 'A']);
+            return std::string(1, c);
+        })) << "\n";
+    }
+}
+
+// S08 part 2: the shell's screens fit in English, in long text and in Greek letters, at
+// 720p, 1080p, high-DPI and the largest Interface size, and every glyph has a font.
+void testShellLayout(const fs::path& content) {
+    ShellRig rig(content);
+    AppShell& shell = *rig.shell;
+    GameUI& ui = shell.ui();
+    const fs::path folder = content.parent_path() / "LayoutText";
+    writeLayoutCatalogs(folder);
+    rig.text.load(folder, "en");
+    for (const std::string& problem : rig.text.problems()) std::fprintf(stderr, "  catalog: %s\n", problem.c_str());
+    CHECK(rig.text.problems().empty());
+    // The fonts the shell ships with draw Latin with accents, Greek and Cyrillic; not CJK.
+    CHECK(ui.missingGlyphs("Ñéŵ ĝàɱé αβγ Русский €").empty());
+    CHECK(ui.missingGlyphs("新しいゲーム") == U"新しいゲーム");
+    CHECK(ui.missingGlyphs("ab新") == U"新");
+    const struct {
+        glm::uvec2 size;
+        float density;
+        const char* name;
+    } screens[] = {
+        {{1280, 720}, 1.0f, "720p"},
+        {{1920, 1080}, 1.0f, "1080p"},
+        {{2560, 1440}, 2.0f, "1440p at 200%"},
+        {{3840, 2160}, 2.0f, "4K at 200%"},
+        {{1280, 720}, 1.5f, "720p, Interface size 1.5"},
+        {{1920, 1080}, 2.0f, "1080p, Interface size 2"},
+    };
+    int checked = 0;
+    for (const char* locale : {"en", "de", "el"}) {
+        rig.text.setLocale(locale);
+        rig.frame();
+        for (const auto& screen : screens) {
+            ui.setSize(screen.size);
+            ui.setDensity(screen.density);
+            auto look = [&](const std::string& where) {
+                rig.frame();
+                for (const UIProblem& problem : ui.layoutProblems()) {
+                    std::fprintf(
+                        stderr, "  %s, %s, %s: %s\n", locale, screen.name, where.c_str(), problem.message.c_str());
+                    ++failures;
+                }
+                ++checked;
+            };
+            CHECK(shell.page() == "main");
+            look("main menu");
+            CHECK(shell.command("level_select"));
+            look("level select");
+            CHECK(shell.command("back") && shell.command("settings"));
+            for (const char* tab : {"display", "graphics", "audio", "controls", "accessibility", "language"}) {
+                CHECK(shell.command("settings_tab", tab));
+                look(std::string("settings, ") + tab);
+            }
+            CHECK(shell.command("settings_tab", "controls") && shell.command("bind_key", "fire"));
+            look("settings, listening for a key");
+            CHECK(shell.command("cancel_listen") && shell.command("cancel_settings") && shell.page() == "main");
+            CHECK(shell.command("credits"));
+            look("credits");
+            CHECK(shell.command("back"));
+        }
+        // Every glyph of the catalog's text has a font.
+        for (const auto& [key, text] : rig.text.all()) {
+            const std::u32string missing = ui.missingGlyphs(text);
+            if (!missing.empty()) {
+                std::fprintf(
+                    stderr, "  %s: %s has %zu characters no font draws\n", locale, key.c_str(), missing.size());
+                ++failures;
+            }
+        }
+    }
+    CHECK(checked == 3 * 6 * 10);
+    // The check finds what doesn't fit: Settings on a screen far too small for it.
+    rig.text.setLocale("de");
+    ui.setSize({320, 200});
+    ui.setDensity(2.0f);
+    CHECK(shell.command("settings"));
+    rig.frame();
+    const std::vector<UIProblem> cramped = ui.layoutProblems();
+    CHECK(!cramped.empty());
+    CHECK(shell.command("cancel_settings"));
+    ui.setSize({1280, 720});
+    ui.setDensity(1.0f);
+    rig.text.setLocale("");
+}
+
 // S08 part 2: the shell has the input over the level while a screen shows, the press
 // that closes it never reaches the game, controls are rebound on the Settings page, and
 // the gamepad in use going away pauses the level.
@@ -888,6 +1020,7 @@ int main() {
     testShellFlow(content);
     testShellSettings(content);
     testShellControls(content);
+    testShellLayout(content);
     testShellOverrides(content);
     testScenarios(content);
     std::error_code ec;

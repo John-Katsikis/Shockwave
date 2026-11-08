@@ -125,6 +125,15 @@ add_test(NAME preferences_schema COMMAND ${CMAKE_COMMAND}
     -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/PreferencesSchema.md
     -P ${CMAKE_CURRENT_SOURCE_DIR}/PreferencesSchemaCheck.cmake)
 set_tests_properties(preferences_schema PROPERTIES TIMEOUT 60 LABELS unit)
+# player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
+if(TARGET game_shippingdemo)
+add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/LocalizationGlyphs
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/LocalizationGlyphsCheck.cmake)
+set_tests_properties(localization_glyphs PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
+endif()
 
 # Asset dependencies and residency (S04, docs/AssetResidency.md): the graph's providers,
 # problems, cycles and hashes over a project made on disk; leases, budgets and level travel

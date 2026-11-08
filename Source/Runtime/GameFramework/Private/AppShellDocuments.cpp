@@ -21,18 +21,28 @@ body {
     width: 100%;
     height: 100%;
     background-color: #0b0e12e0;
+    /* The panel in the middle, however tall its page is. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Long words (German compounds) break rather than run out of their box. */
+    word-break: break-word;
 }
+/* Never wider or taller than the screen: a long page scrolls inside it. */
 .panel {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 380dp;
-    margin-left: -190dp;
-    margin-top: -220dp;
+    width: 440dp;
+    max-width: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
     padding: 22dp 26dp;
     background-color: #1a1f27;
     border-top: 3dp #ff8c33;
 }
+/* The bar a long page scrolls with. */
+scrollbarvertical { width: 6dp; margin-left: 4dp; }
+scrollbarvertical slidertrack { background-color: #232932; }
+scrollbarvertical sliderbar { background-color: #4a5566; min-height: 24dp; }
 h1 { display: block; font-size: 22dp; font-weight: bold; color: #ff8c33; margin-bottom: 16dp; }
 h2 { display: block; font-size: 14dp; font-weight: bold; color: #aab3c0; margin: 4dp 0 10dp; }
 p { display: block; margin-bottom: 8dp; }
@@ -52,12 +62,14 @@ button:focus-visible { border-color: #ff8c33; }
 button.disabled { color: #7d8693; background-color: #232932; }
 .tabs button { display: inline-block; margin: 0 4dp 8dp 0; padding: 5dp 9dp; font-size: 14dp; }
 .tabs button.selected { color: #ff8c33; }
-.row { display: block; margin-bottom: 6dp; }
-.row .label { display: inline-block; width: 150dp; font-size: 15dp; }
-.row button { display: inline-block; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
-.row .value { display: inline-block; width: 110dp; text-align: center; font-size: 15dp; }
+/* A row: its label takes what the < value > or the bindings leave; a reason goes under it. */
+.row { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 6dp; }
+.row .label { flex: 1 1 0; min-width: 0; font-size: 15dp; margin-right: 6dp; }
+.row button { flex: 0 0 auto; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
+.row .value { flex: 0 0 120dp; text-align: center; font-size: 15dp; }
+.row .reason { flex: 0 0 100%; }
 .actions button { display: inline-block; margin-right: 6dp; }
-.row button.bind { width: 96dp; margin-right: 4dp; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.row button.bind { flex: 0 0 104dp; margin-right: 4dp; text-align: center; }
 body.high_contrast { background-color: #000000f4; }
 body.high_contrast .panel { background-color: #000000; border: 2dp #ffffff; }
 body.high_contrast button { background-color: #000000; border: 2dp #ffffff; }

@@ -54,6 +54,8 @@ bool loadFont(const std::filesystem::path& path, bool fallback);
 // The font shipped with the engine (build/bin/fonts): Noto Sans, regular and bold.
 void loadDefaultFonts();
 const std::string& defaultFontsError();
+// Whether any font loaded so far can draw the character.
+bool hasGlyph(char32_t c);
 
 // Maps a context back to the GameUI that owns it, for inline event handlers.
 struct ContextOwner {
