@@ -19,6 +19,11 @@
 
 namespace shockwave {
 class Assets;
+// Which of the player's volumes a sound follows (S08, docs/Preferences.md): each is a
+// factor on top of the master volume. Voice is speech, which subtitles can follow.
+enum class AudioCategory { Effects, Music, UI, Voice };
+inline constexpr int kAudioCategories = 4;
+const char* audioCategoryName(AudioCategory category);   // "effects", "music", "ui", "voice"
 struct AudioSource {
     std::string clip{};
     float volume = 1.0f, pitch = 1.0f;
@@ -32,6 +37,7 @@ struct AudioSource {
     bool occlusion = false;   // rays against physics colliders muffle the sound behind walls
     float occlusionRadius = 0.5f;   // source size for occlusion rays; 0 casts one ray
     float transmission = 0.1f;   // how much gets through a wall (low frequencies more)
+    AudioCategory category = AudioCategory::Effects;   // the player's volume it follows
 };
 void registerAudioComponents();
 std::vector<std::string> validateAudioSource(const AudioSource& source, const Assets& assets);
@@ -47,6 +53,7 @@ struct AudioPlayback {
     // spatial slot is free; otherwise `gains` apply as for spatial.
     bool positional = false;
     AudioSpatial position{};
+    AudioCategory category = AudioCategory::Effects;   // the player's volume it follows
 };
 // What the mixer is doing, for the Stats window and player --audio-mix.
 struct AudioMixerStats {
@@ -76,6 +83,9 @@ public:
     AudioMixerStats stats() const;
     void setMasterVolume(float volume);
     float masterVolume() const;
+    // A category's volume, 0..1, on top of the master volume. Any thread.
+    void setCategoryVolume(AudioCategory category, float volume);
+    float categoryVolume(AudioCategory category) const;
     void pause(bool paused);
     bool available() const;
     const std::string& error() const;

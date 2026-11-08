@@ -1,0 +1,37 @@
+swstrings 1
+# Reactor Run's text in English (docs/Localization.md). Another language is another file
+# beside this one, fr.swstrings say, with the same keys; what it leaves out shows in English.
+
+# ---- HUD ----
+hud.objective_caption "OBJECTIVE {done} / {total}"
+hud.all_objectives_done "Every objective is complete"
+hud.find_exit "Find the way out"
+hud.open_gate "Go through the open gate"
+hud.progress_count "{count} / {needed}"
+hud.progress_seconds "{seconds} s"
+hud.prompt "[{binding}] {prompt}"
+hud.mouse "Mouse"
+hud.controls "Move [{move}]   Look [{look}]   Fire [{fire}]   Reload [{reload}]   Use [{use}]"
+hud.checkpoint_saving "Checkpoint: saving"
+hud.checkpoint_reached "Checkpoint reached"
+hud.checkpoint_failed "Checkpoint not saved"
+hud.health "HEALTH"
+hud.sidearm "SIDEARM"
+hud.reloading "RELOADING"
+hud.empty "EMPTY: [{binding}] RELOAD"
+
+# ---- Going down ----
+down.title "You went down"
+down.text "Pick up where you left off, or start the level again."
+down.retry_checkpoint "Restart from checkpoint"
+down.no_checkpoint "No checkpoint yet: this restarts the level."
+down.retry_level "Restart level"
+down.menu "Main menu"
+
+# ---- Results ----
+results.title "Factory secured"
+results.time "Time {time}"
+results.kills "Sentries and guards taken out {kills}"
+results.shots "Shots fired {shots}, accuracy {accuracy}"
+results.continue "Continue"
+results.cant_go_on "Can't go on to {level}: {why}"

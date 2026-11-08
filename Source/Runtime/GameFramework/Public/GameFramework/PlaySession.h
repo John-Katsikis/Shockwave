@@ -123,6 +123,7 @@ public:
     void setAudioDevice(bool open) { m_audioDevice = open; }
 
 private:
+    void applyVolumes();   // the engine's master and category volumes to the mixer
     void tearDown();
     void applyLoadedSave();
     void applySave(SaveRestore restore);

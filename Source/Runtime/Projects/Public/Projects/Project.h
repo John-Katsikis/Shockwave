@@ -41,6 +41,9 @@ struct Project {
     // The application's own screens (app_shell, docs/AppShell.md): "off", "all", or which
     // of menu, level_select, pause, loading and error are on. Loading and error by default.
     std::string appShell = "loading error";
+    // The language the game is written in (default_language, docs/Localization.md): text a
+    // locale doesn't have falls back to it.
+    std::string defaultLanguage = "en";
     // The game's save data schema (save_schema, docs/SaveGames.md#compatibility): raise it
     // when what the game keeps in saves changes meaning; older saves are then migrated
     // by the game, and newer ones refused.

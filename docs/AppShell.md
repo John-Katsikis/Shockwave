@@ -38,8 +38,9 @@ What each button does:
 - **Restart checkpoint** loads the last checkpoint reached in this campaign
   ([Save games](SaveGames.md#checkpoints)), and returns to the game. Until one is
   written it's disabled, saying why.
-- **Settings** opens a page that says player settings aren't available yet. They arrive
-  with S08.
+- **Settings** opens the Settings page: display, graphics, audio, controls, accessibility
+  and language, with Apply, Defaults and Back ([Preferences](Preferences.md#the-settings-page)).
+  A display change asks to be kept within 15 seconds.
 - **Restart level** goes to the same level again, at the spawn it was entered at.
 - **Main menu** goes to the catalog's first menu level.
 - **Cancel** cancels the travel. Until the old level starts ending, it plays on as if
@@ -97,6 +98,7 @@ files, so the error screen still shows when the project's files are what's broke
 | --- | --- |
 | `new_game`, `confirm_new_game`, `continue`, `level_select`, `play_level` (on an element with `id="level-<id>"`), `settings`, `credits`, `back`, `quit` | the menu |
 | `resume`, `restart_checkpoint`, `restart_level`, `settings`, `main_menu`, `quit` | pause |
+| `settings_tab` (on `id="tab-<tab>"`), `pref_next` and `pref_prev` (on `id="next-<key>"`, `id="prev-<key>"`; graphics keys as `graphics.<key>`), `apply_settings`, `cancel_settings`, `reset_settings`, `keep_display`, `revert_display` | the Settings page, from the menu and pause |
 | `cancel_travel` | loading |
 | `retry`, `dismiss`, `main_menu`, `quit` | error |
 
@@ -107,7 +109,10 @@ files, so the error screen still shows when the project's files are what's broke
 | `destination`, `phase`, `progress`, `percent`, `progress_width`, `has_progress`, `can_cancel` | the travel under way: where to, its phase, 0..1, 0..100, `"45%"` for a bar's width |
 | `error_code`, `error_message`, `error_level`, `can_dismiss` | the failure: its stable code (`LoadFailed`, ...), why, which level |
 | `checkpoint_state` | the last checkpoint's save: `saving`, `saved`, `failed`, or empty |
-| `can_new_game`, `new_game_reason`, `can_continue`, `continue_reason`, `can_restart_checkpoint`, `checkpoint_reason`, `can_level_select`, `levels`, `settings_reason` | what the buttons can do now, and why not |
+| `can_new_game`, `new_game_reason`, `can_continue`, `continue_reason`, `can_restart_checkpoint`, `checkpoint_reason`, `can_level_select`, `levels` | what the buttons can do now, and why not |
+| `can_settings`, `settings_reason`, `settings_tab`, `settings_tabs` (`id`, `label`), `settings_rows` (`key`, `label`, `value`, `tooltip`, `can_change`, `reason`), `settings_changed`, `display_pending`, `display_countdown` | the Settings page |
+| `error_detail` | the error's code and level, as one sentence |
+| `text` | the screens' words, by key: `{{text.shell.new_game}}` ([Localization](Localization.md)) |
 | `message` | the last refusal, like Busy |
 
 ## How it works

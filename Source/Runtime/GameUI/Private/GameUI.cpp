@@ -2,6 +2,8 @@
 // drawn through Renderer::drawUi. RmlUi's process-wide side is in RmlRuntime.cpp.
 #include <GameUI/GameUI.h>
 
+#include <Engine/Localization.h>
+
 #include "RmlRuntime.h"
 #include "UIEffects.h"
 #include "UIText.h"
@@ -315,6 +317,10 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     GameUI& owner;
     Engine* engine;
     GameUIOptions options;
+    // The "text" value (docs/Localization.md): the catalog's keys as nested records, kept
+    // up to date with the locale.
+    const Localization* localization = nullptr;
+    uint64_t textVersion = 0;
     Rml::Context* context = nullptr;
     std::string contextName;
     fs::path content;
@@ -1317,6 +1323,9 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
             want = engine->renderer().uiOutputSize();
             const float scale = SDL_GetWindowDisplayScale(engine->window().handle());
             if (scale > 0.0f && std::isfinite(scale)) ratio = scale;
+            // The player's Interface size (docs/Preferences.md): every dp unit grows with it.
+            const float uiScale = engine->preferences().current().uiScale;
+            if (uiScale > 0.0f && std::isfinite(uiScale)) ratio *= uiScale;
         }
         want = glm::max(want, glm::uvec2(1));
         if (want != size || !context->GetDimensions().x) {
@@ -1400,6 +1409,7 @@ bool hasBuiltinDocument(std::string_view name) { return builtinDocuments().count
 
 GameUI::GameUI(Engine* engine, GameUIOptions options) : m(std::make_unique<Impl>(*this, engine, options)) {
     if (engine) bindDefaultControls(engine->input());
+    if (engine) setLocalization(&engine->localization());
     if (engine && options.forEngine) {
         std::lock_guard lock(registryMutex());
         registry()[engine] = this;
@@ -1440,14 +1450,50 @@ void GameUI::setSize(glm::uvec2 size) {
 
 glm::uvec2 GameUI::size() const { return m->size; }
 
+void GameUI::setLocalization(const Localization* localization) {
+    m->localization = localization;
+    m->textVersion = 0;
+    refreshText();
+}
+
+void GameUI::refreshText() {
+    if (!m->localization || m->localization->version() == m->textVersion) return;
+    m->textVersion = m->localization->version();
+    // "menu.new_game" -> text.menu.new_game: a record per part.
+    UIValue text = UIValue::record();
+    for (const auto& [key, value] : m->localization->all()) {
+        UIValue* node = &text;
+        size_t start = 0;
+        while (true) {
+            const size_t dot = key.find('.', start);
+            const std::string part = key.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
+            if (dot == std::string::npos) {
+                node->set(part, UIValue(value));
+                break;
+            }
+            const UIValue* child = node->field(part);
+            if (!child || !child->isRecord()) node->set(part, UIValue::record());
+            node = const_cast<UIValue*>(node->field(part));
+            start = dot + 1;
+        }
+    }
+    setValue("text", std::move(text));
+}
+
 void GameUI::update(World& world, double frameDt) {
     SW_PROFILE_SCOPE("Game UI update");
     const auto start = Clock::now();
+    refreshText();
     ui::setRoot(m->content);
     m->flushRetired(false);
     m->resize();
     m->pollFiles(frameDt);
     m->sync(world);
+    // High contrast (docs/Preferences.md): a class on every document's body, so the shell's
+    // and the game's styles can strengthen colours and outlines with body.high_contrast.
+    const bool contrast = m->engine && m->engine->preferences().current().highContrast;
+    for (const auto& d : m->documents)
+        if (d.doc && d.doc->IsClassSet("high_contrast") != contrast) d.doc->SetClass("high_contrast", contrast);
     m->feedInput();
     m->pollNavigation(frameDt);
     m->dispatch();
@@ -1692,13 +1738,15 @@ std::optional<glm::vec4> GameUI::elementRect(Entity e, std::string_view id) {
 }
 
 bool GameUI::elementVisible(Entity e, std::string_view id) {
+    // Values set since the last frame first: a data-for may have made or removed the element.
+    m->context->Update();
     Rml::Element* el = m->element(e, id);
     if (!el) return false;
-    m->context->Update();
     return el->IsVisible(true);
 }
 
 bool GameUI::click(Entity e, std::string_view id) {
+    m->context->Update();
     Rml::Element* el = m->element(e, id);
     if (!el) return false;
     el->Click();

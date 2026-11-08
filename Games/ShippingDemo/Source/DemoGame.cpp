@@ -138,6 +138,7 @@ public:
             game.world.get<DemoPlayer>(m_rules->player())->yaw = std::atan2(-f.x, -f.z);
         }
         m_camera = game.find("Demo Camera").entity();
+        m_sceneFov = 0;
         m_gun = game.find("Demo Gun").entity();
         m_flash = game.find("Demo Muzzle").entity();
         readAim(game);
@@ -154,6 +155,7 @@ public:
         m_rules.emplace(game.world, &game.physics(), m_tickRate);
         m_rules->scan();
         m_camera = game.find("Demo Camera").entity();
+        m_sceneFov = 0;
         m_gun = game.find("Demo Gun").entity();
         m_flash = game.find("Demo Muzzle").entity();
         readAim(game);
@@ -175,20 +177,30 @@ public:
         if (active) {
             if (game.engine && !input.isMouseCaptured()) input.setMouseCaptured(true);
             const auto* p = game.world.get<DemoPlayer>(m_rules->player());
-            const float sensitivity = glm::radians(p ? p->sensitivity : 0.12f);
-            const float stick = glm::radians(p ? p->stickSpeed : 150.0f) * dt;
+            // The player's look sensitivity and inverted look (Settings > Controls).
+            const PlayerPreferences& prefs = game.preferences();
+            const float sensitivity = glm::radians(p ? p->sensitivity : 0.12f) * prefs.lookSensitivity;
+            const float stick = glm::radians(p ? p->stickSpeed : 150.0f) * dt * prefs.lookSensitivity;
+            const float vertical = prefs.invertLookY ? -1.0f : 1.0f;
             if (input.isMouseCaptured() || !game.engine) {
                 m_yaw -= input.mouseDelta().x * sensitivity;
-                m_pitch -= input.mouseDelta().y * sensitivity;
+                m_pitch -= input.mouseDelta().y * sensitivity * vertical;
             }
             m_yaw -= (input.actionValue(kLookRight) - input.actionValue(kLookLeft)) * stick;
-            m_pitch += (input.actionValue(kLookUp) - input.actionValue(kLookDown)) * stick;
+            m_pitch += (input.actionValue(kLookUp) - input.actionValue(kLookDown)) * stick * vertical;
             m_pitch = std::clamp(m_pitch, -1.45f, 1.45f);
             m_command.move = {
                 input.actionValue(kRight) - input.actionValue(kLeft),
                 input.actionValue(kForward) - input.actionValue(kBack)};
             m_command.fire = input.isActionDown(kFire);
-            m_command.sprint = input.isActionDown(kSprint);
+            // Toggle instead of hold (Settings > Controls): one press starts sprinting, the next stops.
+            if (prefs.toggleHold) {
+                if (input.wasActionPressed(kSprint)) m_sprintToggled = !m_sprintToggled;
+                m_command.sprint = m_sprintToggled;
+            } else {
+                m_sprintToggled = false;
+                m_command.sprint = input.isActionDown(kSprint);
+            }
             m_command.reload |= input.wasActionPressed(kReload);
             m_command.use |= input.wasActionPressed(kUse);
         } else {
@@ -271,7 +283,8 @@ private:
         m_finishing = bool(ticket);
         if (!ticket) {
             SW_LOG(LogGame, Warning, "Can't go on to {}: {}", level->next, ticket.message);
-            game.ui().set("demo_message", "Can't go on to " + level->next + ": " + ticket.message);
+            game.ui().set(
+                "demo_message", game.format("results.cant_go_on", {{"level", level->next}, {"why", ticket.message}}));
         }
     }
 
@@ -305,7 +318,14 @@ private:
         const double alpha = game.engine ? game.engine->interpolationAlpha() : 1.0;
         camera->position =
             presentedTransform(game.world, player, alpha).position + glm::vec3(0, p ? p->eyeHeight : 1.55f, 0);
-        camera->rotation = glm::quat(glm::vec3(m_pitch + m_recoil * 0.01f, m_yaw, 0));
+        // The recoil kick is camera shake: the player's Camera shake scales it, 0 stills it.
+        const PlayerPreferences& prefs = game.preferences();
+        camera->rotation = glm::quat(glm::vec3(m_pitch + m_recoil * 0.01f * prefs.cameraShake, m_yaw, 0));
+        // Field of view: the player's, or the scene's own when they leave it at 0.
+        if (auto* lens = game.world.get<Camera>(m_camera)) {
+            if (m_sceneFov <= 0) m_sceneFov = lens->fov;
+            lens->fov = prefs.fieldOfView > 0 ? prefs.fieldOfView : m_sceneFov;
+        }
         useCurrentPose(game.world, m_camera);
         const auto* gun = game.world.get<Loadout>(player);
         if (auto* model = game.world.get<Transform>(m_gun)) {
@@ -340,30 +360,37 @@ private:
             ++total;
             done += game.world.get<ObjectiveProgress>(e)->complete;
         }
-        std::string text = "Every objective is complete", id, progress;
+        std::string text = game.text("hud.all_objectives_done"), id, progress;
         if (const auto* o = game.world.get<ObjectiveProgress>(active)) {
             text = o->text;
             id = o->id;
             if (o->kind == ObjectiveKind::Destroy || o->kind == ObjectiveKind::Collect) {
                 const int needed = o->required > 0 ? std::min(o->required, o->total) : o->total;
-                progress = std::to_string(std::min(o->count, needed)) + " / " + std::to_string(needed);
+                progress = game.format(
+                    "hud.progress_count",
+                    {{"count", std::to_string(std::min(o->count, needed))}, {"needed", std::to_string(needed)}});
             } else if (o->kind == ObjectiveKind::Hold) {
                 const int left = std::max(0, m_rules->ticksFor(o->seconds) - o->ticks);
-                progress = std::to_string(int(std::ceil(float(left) / m_tickRate))) + " s";
+                progress = game.format(
+                    "hud.progress_seconds", {{"seconds", std::to_string(int(std::ceil(float(left) / m_tickRate)))}});
             }
         } else if (level && state == CampaignProgress::Playing) {
-            text = level->results ? "Find the way out" : "Go through the open gate";
+            text = game.text(level->results ? "hud.find_exit" : "hud.open_gate");
         }
         ui.set("demo_objective", text);
         ui.set("demo_objective_id", id.empty() ? std::string("done") : id);
         ui.set("demo_progress", progress);
         ui.set("demo_objectives_done", done);
         ui.set("demo_objectives_total", total);
+        ui.set(
+            "demo_objective_caption",
+            game.format("hud.objective_caption", {{"done", std::to_string(done)}, {"total", std::to_string(total)}}));
         // What's in reach, with the key or button that uses it.
         const Entity near = m_rules->usable();
         std::string prompt, nearName;
         if (const auto* t = game.world.get<InteractionTarget>(near)) {
-            prompt = "[" + bindingLabel(input, t->action, m_pad) + "] " + t->prompt;
+            prompt =
+                game.format("hud.prompt", {{"binding", bindingLabel(input, t->action, m_pad)}, {"prompt", t->prompt}});
             const auto* n = game.world.get<Name>(near);
             nearName = n ? n->value : "something";
         }
@@ -377,25 +404,36 @@ private:
                                      bindingLabel(input, kBack, false) + " " + bindingLabel(input, kRight, false);
         ui.set(
             "demo_controls",
-            "Move [" + move + "]   Look [" + (m_pad ? bindingLabel(input, kLookRight, true) : "Mouse") + "]   Fire [" +
-                bindingLabel(input, kFire, m_pad) + "]   Reload [" + bindingLabel(input, kReload, m_pad) + "]   Use [" +
-                bindingLabel(input, kUse, m_pad) + "]");
+            game.format(
+                "hud.controls", {{"move", move},
+                                 {"look", m_pad ? bindingLabel(input, kLookRight, true) : game.text("hud.mouse")},
+                                 {"fire", bindingLabel(input, kFire, m_pad)},
+                                 {"reload", bindingLabel(input, kReload, m_pad)},
+                                 {"use", bindingLabel(input, kUse, m_pad)}}));
         ui.set("demo_reload_label", bindingLabel(input, kReload, m_pad));
+        ui.set("demo_empty", game.format("hud.empty", {{"binding", bindingLabel(input, kReload, m_pad)}}));
         ui.set("demo_low_ammo", gun && gun->ammo == 0 && gun->reloadTicks == 0);
         // Checkpoint, and the level as a whole.
         const auto saveState = game.saves().checkpointState();
         ui.set(
-            "demo_checkpoint", saveState == SaveGames::CheckpointState::Saving ? "Checkpoint: saving"
+            "demo_checkpoint", saveState == SaveGames::CheckpointState::Saving ? game.text("hud.checkpoint_saving")
                                : saveState == SaveGames::CheckpointState::Saved
-                                   ? (m_reached.empty() ? "" : "Checkpoint reached")
-                               : saveState == SaveGames::CheckpointState::Failed ? "Checkpoint not saved"
-                                                                                 : "");
+                                   ? (m_reached.empty() ? std::string() : game.text("hud.checkpoint_reached"))
+                               : saveState == SaveGames::CheckpointState::Failed ? game.text("hud.checkpoint_failed")
+                                                                                 : std::string());
         ui.set("demo_enemies_left", m_rules->alive("enemies"));
         ui.set("demo_targets_left", m_rules->alive("targets"));
         ui.set("demo_kills", level ? level->kills : 0);
         ui.set("demo_time", level ? clock(level->ticks, m_tickRate) : std::string("0:00"));
         ui.set("demo_shots", gun ? gun->shots : 0);
         ui.set("demo_accuracy", gun ? percent(gun->hits, gun->shots) : std::string("-"));
+        ui.set("demo_time_text", game.format("results.time", {{"time", ui.get("demo_time")}}));
+        ui.set("demo_kills_text", game.format("results.kills", {{"kills", std::to_string(level ? level->kills : 0)}}));
+        ui.set(
+            "demo_shots_text",
+            game.format(
+                "results.shots", {{"shots", std::to_string(gun ? gun->shots : 0)},
+                                  {"accuracy", gun ? percent(gun->hits, gun->shots) : std::string("-")}}));
         // Where the crosshair points: what it's on, and the facing in whole degrees.
         const Entity aimed = m_rules->aimedAt(m_yaw, m_pitch);
         const auto* aimedName = game.world.get<Name>(aimed);
@@ -403,7 +441,10 @@ private:
         ui.set("demo_yaw", int(std::lround(glm::degrees(std::remainder(m_yaw, 2 * glm::pi<float>())))));
         ui.setClass(kHud, "crosshair", "on", aimed.valid());
         ui.setClass(kHud, "crosshair", "hit", m_hitFlash > 0);
-        ui.setClass(kHud, "damage", "hurt", m_hurtFlash > 0);
+        // Reduce flashes (Settings > Accessibility): a faint edge instead of a red screen.
+        const bool soft = game.preferences().reduceFlashes;
+        ui.setClass(kHud, "damage", "hurt", m_hurtFlash > 0 && !soft);
+        ui.setClass(kHud, "damage", "hurt_soft", m_hurtFlash > 0 && soft);
     }
 
     std::optional<DemoRules> m_rules;
@@ -414,6 +455,8 @@ private:
     PlayerCommand m_command;
     bool m_pad = false;   // the player used a gamepad last: prompts show its buttons
     float m_recoil = 0, m_hitFlash = 0, m_hurtFlash = 0;
+    float m_sceneFov = 0;
+    bool m_sprintToggled = false;   // the camera's own field of view, before the player's
     std::set<std::string> m_reached;
     bool m_finishing = false;
 };

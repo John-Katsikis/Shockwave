@@ -900,3 +900,61 @@ Full local suite: 105 of 105 pass on Linux, gpu included.
 - **Packaging on Windows**, like every package test (docs/Packaging.md).
 - **Navigation and physics findings** in Validate are only as good as the engine's own
   diagnostics; Reactor Run's levels have no navigation mesh to go stale.
+
+## S08: Settings and localization, part 1
+
+### What was built
+
+- **Player preferences** (`Engine/Preferences.h`, [Preferences](Preferences.md)): display,
+  audio, controls, accessibility, camera and language, described once in
+  `preferenceInfo()`. Layers: the engine's defaults, the project's
+  `Config/Preferences.swprefs`, the player's profile, then `--pref key=value`, each value
+  with the layer it came from. `player --preferences [--json]`, `--no-user-preferences`
+  and `--preferences-schema` ([PreferencesSchema](PreferencesSchema.md)). Apply and save
+  are separate, and an apply validates everything before it uses any of it.
+- **Display modes**: windowed, borderless and fullscreen at a chosen resolution
+  (`Window::setMode`, `Window::resolutions`). A change is kept within 15 seconds or put
+  back, and the attempt is written to `Display.pending` first, so a crash goes back too.
+- **Audio categories**: effects, music, UI and voice, each a volume on top of the master
+  ([Audio](Audio.md#volume-by-category)). `--audio-volume` is now the master volume
+  preference.
+- **Localization** (`Engine/Localization.h`, [Localization](Localization.md)):
+  `Content/Localization/<locale>.swstrings` catalogs, placeholders, the fallback from the
+  locale to its language, the project's `default_language`, the engine's own English, then
+  `[missing: key]`. Documents show `{{text.key}}`; game code calls `game.text()` and
+  `game.format()`. `player --check` reports broken catalogs, stray keys, mismatched
+  placeholders, documents' unknown keys, and untranslated keys as warnings.
+- **The Settings page** in the shell, from the menu and pause: tabs of `< value >` rows
+  built from the preference table, plus graphics quality, render scale, VSync and frame
+  cap; Apply, Defaults and Back; the keep-display countdown. The shell's own words are
+  `shell.*` keys, translatable like a game's. `AppShell::Setup::settings = false` turns
+  the page off.
+- **Interface size and high contrast** for every document: `ui_scale` scales `dp`, and
+  `high_contrast` sets `body.high_contrast` (the shell and Reactor Run style it).
+- **Reactor Run** uses look sensitivity, inverted look, field of view, camera shake,
+  reduce flashes and toggle instead of hold, and its HUD, results and down screens read
+  from `en.swstrings`, with a partial `fr.swstrings`.
+- `GameContext::preferences()`, `localization()`, `text()` and `format()`. Plugin ABI 22.
+- A fix in GameUI: `click` and `elementVisible` bring data bindings up to date first, so
+  an element a `data-for` just made can be found.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `player_preferences` | unit | the `.swprefs` format (header, quotes, unknown and duplicate keys, ranges, NaN, the line), every key's getter reads back through its setter; layers and origins; apply without save and save without apply, the profile holding only what differs from shipped; a display change kept, timed out, reverted, and undone on the next start after a crash; a broken profile ignored; catalogs, keys, placeholders, the whole fallback order, `format()` with braces and a missing value, and every finding `check()` makes |
+| `preferences_schema` | unit | `docs/PreferencesSchema.md` is what `--preferences-schema` writes |
+| `game_flow` | unit | the Settings page through its buttons: tabs, rows from the table, steps clamped at the ends of a range, field of view's 0-or-50..120, the frame cap's list, Back dropping the draft, Apply using and saving it, Defaults, the display countdown, keep, and the timeout; the shell's text in French with English for the rest |
+| `audio` | unit | each category's volume applies on its own, multiplies with the master, and an unknown category is refused |
+| `shipping_demo_flow` | integration | as in S07, then Reactor Run's Settings page through the real player: a volume, French and borderless applied and kept, the HUD in French in the next level; the saved profile has all three; `--preferences` shows the profile's language, `--pref` adds a session value, and a bad one fails; the same Settings flow from the package (so the catalogs are packaged) |
+
+Full local suite: 107 of 107 pass on Linux, gpu included.
+
+### Still unverified
+
+- **A real display.** Borderless and fullscreen are tested headless (the offscreen video
+  driver); nobody has switched modes on a monitor, and the resolution list there is
+  empty.
+- **Reading the page by hand**: long labels, a large interface size and non-Latin text are
+  part 2's layout tests.
+- **Subtitles**: the preferences exist, but no game has speech yet.

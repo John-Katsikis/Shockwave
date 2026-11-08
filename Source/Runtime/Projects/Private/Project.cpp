@@ -112,6 +112,14 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 if (count == 0 || (alone && count > 1))
                     return fail("app_shell takes off, all, or any of menu, level_select, pause, loading, error");
                 result.appShell = words;
+            } else if (key == "default_language") {
+                row >> result.defaultLanguage;
+                const std::string& l = result.defaultLanguage;
+                const bool ok = l.size() >= 2 && l.size() <= 35 && std::isalpha(static_cast<unsigned char>(l[0])) &&
+                                std::all_of(l.begin(), l.end(), [](char c) {
+                                    return std::isalnum(static_cast<unsigned char>(c)) || c == '-';
+                                });
+                if (!ok) return fail("default_language takes a locale like en, fr or pt-BR");
             } else if (key == "remember_destroyed") {
                 std::string value;
                 row >> value;
@@ -226,6 +234,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.assetLoading != "all") out << "asset_loading " << project.assetLoading << "\n";
     if (project.levelTravel != "staged") out << "level_travel " << project.levelTravel << "\n";
     if (project.appShell != "loading error") out << "app_shell " << project.appShell << "\n";
+    if (project.defaultLanguage != "en") out << "default_language " << project.defaultLanguage << "\n";
     if (project.saveSchema != 1) out << "save_schema " << project.saveSchema << "\n";
     if (!project.rememberDestroyed) out << "remember_destroyed false\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";

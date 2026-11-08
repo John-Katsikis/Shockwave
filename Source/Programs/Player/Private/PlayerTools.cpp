@@ -375,6 +375,10 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
     }
     checkPackageSettings(m_project, problems);
+    checkPreferences(m_project, problems);
+    settle(ProblemKind::Settings);
+    checkLocalization(m_project, problems);
+    settle(ProblemKind::Content);
     {
         // The release gates see the links the level check followed.
         std::map<std::string, shockwave::LevelSceneFacts> facts;

@@ -129,6 +129,17 @@ void Player::onStart() {
     if (!engine().graphics().configure(m_tool.graphicsDefaults, m_tool.graphicsFile, error) ||
         !engine().graphics().apply(graphics, error))
         throw std::runtime_error(error);
+    // The game's text (docs/Localization.md), before the preferences pick its language.
+    engine().localization().load(m_project.assetFolder / "Localization", m_project.defaultLanguage);
+    engine().localization().addBuiltin("en", shockwave::AppShell::builtinText());
+    for (const std::string& problem : engine().localization().problems())
+        SW_LOG(shockwave::LogEngine, Warning, "{}", problem);
+    // The player's preferences (docs/Preferences.md): the project's shipped ones, the
+    // profile's and --pref. Tools that don't play keep the engine's own.
+    if (m_tool.mode == Tool::Mode::Play &&
+        !engine().preferences().configure(
+            shockwave::projectPreferencesPath(m_project), m_tool.preferencesFile, m_tool.preferenceSets, error))
+        throw std::runtime_error(error);
     std::vector<std::string> warnings;
     shockwave::SceneFileHooks hooks;
     // Scenes without a Camera entity fall back to the view an older editor saved.
