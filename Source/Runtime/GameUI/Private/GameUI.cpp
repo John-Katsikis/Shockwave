@@ -20,9 +20,11 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -328,6 +330,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     std::vector<UIProblem> noProblems;
     glm::uvec2 size{1280, 720};
     float dpRatio = 1.0f;
+    float headlessRatio = 1.0f;   // setDensity: the dp ratio with no engine
     bool inputEnabled = false;
     bool pointerOverridden = false;
     std::optional<glm::vec2> pointer;
@@ -742,7 +745,10 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
     bool wantsKeyboard() const {
         if (!context) return false;
         Rml::Element* focus = const_cast<Rml::Context*>(context)->GetFocusElement();
-        return focus && focus != context->GetRootElement() && focus != focus->GetOwnerDocument();
+        // Focus left on a screen that has since been hidden (the loading screen's Cancel)
+        // isn't a menu that's open.
+        return focus && focus != context->GetRootElement() && focus != focus->GetOwnerDocument() &&
+               focus->IsVisible(true);
     }
 
     // ---- Menu navigation ----
@@ -1318,7 +1324,7 @@ struct GameUI::Impl final : ui::ContextOwner, Rml::RenderInterface, Rml::EventLi
 
     void resize() {
         glm::uvec2 want = size;
-        float ratio = 1.0f;
+        float ratio = engine ? 1.0f : headlessRatio;
         if (engine) {
             want = engine->renderer().uiOutputSize();
             const float scale = SDL_GetWindowDisplayScale(engine->window().handle());
@@ -1417,6 +1423,7 @@ GameUI::GameUI(Engine* engine, GameUIOptions options) : m(std::make_unique<Impl>
 }
 
 GameUI::~GameUI() {
+    if (m->engine) m->engine->input().lowerLayer(this);
     if (m->engine) {
         std::lock_guard lock(registryMutex());
         if (auto it = registry().find(m->engine); it != registry().end() && it->second == this) registry().erase(it);
@@ -1449,6 +1456,123 @@ void GameUI::setSize(glm::uvec2 size) {
 }
 
 glm::uvec2 GameUI::size() const { return m->size; }
+
+void GameUI::setDensity(float pixelsPerDp) {
+    if (m->engine || !(pixelsPerDp > 0.0f) || !std::isfinite(pixelsPerDp)) return;
+    m->headlessRatio = pixelsPerDp;
+    m->resize();
+}
+
+namespace {
+
+// The text directly inside an element, its runs joined.
+std::string ownText(Rml::Element* el) {
+    std::string text;
+    for (int i = 0; i < el->GetNumChildren(); ++i)
+        if (auto* run = rmlui_dynamic_cast<Rml::ElementText*>(el->GetChild(i))) text += run->GetText();
+    return text;
+}
+
+bool blank(const std::string& text) {
+    return std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
+}
+
+// How a layout problem names an element: #id, else tag.class, with its text.
+std::string describe(Rml::Element* el, const std::string& text) {
+    std::string name = el->GetId().empty() ? el->GetTagName() : "#" + el->GetId();
+    if (el->GetId().empty() && !el->GetClassNames().empty()) {
+        const std::string classes = el->GetClassNames();
+        name += "." + classes.substr(0, classes.find(' '));
+    }
+    if (text.empty()) return name;
+    std::string sample = text.size() > 40 ? text.substr(0, 37) + "..." : text;
+    return name + " \"" + sample + "\"";
+}
+
+using Overflow = Rml::Style::Overflow;
+bool scrollable(Overflow o) { return o == Overflow::Auto || o == Overflow::Scroll; }
+
+// Reports the innermost element at fault: text that runs past its box, a box that runs
+// out of the one it's in, text partly off the screen. Returns whether it reported anything
+// at or under el.
+bool findLayoutProblems(
+    Rml::Element* el, const std::string& file, glm::vec2 screen, bool inScroller, std::vector<UIProblem>& out) {
+    if (!el->IsVisible(true) || rmlui_dynamic_cast<Rml::ElementText*>(el)) return false;
+    const auto& style = el->GetComputedValues();
+    const bool scrolls = scrollable(style.overflow_y()) || scrollable(style.overflow_x());
+    bool below = false;
+    for (int i = 0; i < el->GetNumChildren(); ++i)
+        below |= findLayoutProblems(el->GetChild(i), file, screen, inScroller || scrolls, out);
+    if (below) return true;
+    const std::string text = ownText(el);
+    const bool hasText = !blank(text);
+    const float slack = 1.5f;
+    const std::string name = describe(el, hasText ? text : "");
+    const Rml::Vector2f at = el->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Vector2f size = el->GetBox().GetSize(Rml::BoxArea::Border);
+    // Its text's lines, against its content box: a word too long to break, a nowrap label.
+    if (hasText) {
+        const float right = el->GetAbsoluteOffset(Rml::BoxArea::Content).x + el->GetBox().GetSize().x;
+        float over = 0;
+        for (int i = 0; i < el->GetNumChildren(); ++i)
+            if (auto* run = rmlui_dynamic_cast<Rml::ElementText*>(el->GetChild(i)))
+                for (const auto& line : run->GetLines())
+                    over = std::max(
+                        over,
+                        run->GetAbsoluteOffset(Rml::BoxArea::Border).x + line.position.x + float(line.width) - right);
+        if (over > slack) {
+            out.push_back({file, name + std::format(" runs {:.0f} px past its box", over)});
+            return true;
+        }
+    }
+    // Its box, against the one it's laid out in (positioned boxes go where they're put).
+    using Rml::Style::Position;
+    Rml::Element* parent = el->GetParentNode();
+    if (parent && (style.position() == Position::Static || style.position() == Position::Relative) &&
+        !scrollable(parent->GetComputedValues().overflow_x())) {
+        const float left = parent->GetAbsoluteOffset(Rml::BoxArea::Padding).x;
+        const float right = left + parent->GetBox().GetSize(Rml::BoxArea::Padding).x;
+        const float over = std::max(at.x + size.x - right, left - at.x);
+        if (over > slack && size.x > 0) {
+            out.push_back({file, name + std::format(" runs {:.0f} px out of the box it's in", over)});
+            return true;
+        }
+    }
+    // On the screen, unless it's in a box that scrolls; the scrolling box itself must be.
+    if ((hasText && !inScroller) || scrolls) {
+        if (at.x < -slack || at.y < -slack || at.x + size.x > screen.x + slack || at.y + size.y > screen.y + slack) {
+            out.push_back(
+                {file, name + std::format(
+                                  " is partly off the screen ({:.0f}, {:.0f}, {:.0f} x {:.0f} on {:.0f} x {:.0f})",
+                                  at.x, at.y, size.x, size.y, screen.x, screen.y)});
+            return true;
+        }
+    }
+    return false;
+}
+
+}   // namespace
+
+std::vector<UIProblem> GameUI::layoutProblems() {
+    m->resize();
+    m->context->Update();
+    std::vector<UIProblem> out;
+    for (const auto& d : m->documents)
+        if (d.doc && d.shown && d.doc->IsVisible()) findLayoutProblems(d.doc, d.path, glm::vec2(m->size), false, out);
+    return out;
+}
+
+std::u32string GameUI::missingGlyphs(std::string_view utf8) {
+    std::u32string missing;
+    const std::string text(utf8);
+    for (Rml::StringIteratorU8 it(text); it; ++it) {
+        const char32_t c = char32_t(*it);
+        if (c <= 0x20 || c == 0x7f || c == 0xa0 || c == 0x200b || c == 0xfeff) continue;   // controls, spaces
+        if (missing.find(c) != std::u32string::npos || ui::hasGlyph(c)) continue;
+        missing += c;
+    }
+    return missing;
+}
 
 void GameUI::setLocalization(const Localization* localization) {
     m->localization = localization;
@@ -1497,6 +1621,13 @@ void GameUI::update(World& world, double frameDt) {
     m->feedInput();
     m->pollNavigation(frameDt);
     m->dispatch();
+    // A focused button means a menu is open (docs/Input.md): it has the input over gameplay.
+    if (m->engine) {
+        if (m->inputEnabled && m->wantsKeyboard())
+            m->engine->input().raiseLayer(this, InputLayer::Menu);
+        else
+            m->engine->input().lowerLayer(this);
+    }
     m->stats.documents = 0;
     m->stats.visible = 0;
     for (const auto& d : m->documents) {

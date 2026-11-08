@@ -89,6 +89,9 @@ public:
     void pause(bool paused);
     bool available() const;
     const std::string& error() const;
+    // No device open: tries the default output again (main thread). AudioWorld::update
+    // does it every 2 seconds, so sound comes back when a device appears.
+    bool reopen();
     // Offline mixer only (openDevice=false), for deterministic PCM tests/tools.
     void render(std::span<float> stereo);
 

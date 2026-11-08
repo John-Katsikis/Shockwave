@@ -66,7 +66,8 @@ struct FlowStep {
         Tap,
         Look,
         Wait,
-        WaitValue
+        WaitValue,
+        Unplug
     };
     Kind kind = Kind::Quit;
     std::string target;   // the level, element, phase, value name or slot
@@ -109,6 +110,8 @@ public:
         // Real input at the device boundary (Input::inject, injectMouseMotion).
         std::function<bool(const InputBinding& binding, float value)> inject;
         std::function<void(float x, float y)> look;
+        // {"unplug": "gamepad"}: the virtual gamepad goes, as pulling its cable would.
+        std::function<void()> unplug;
     };
     enum class State { Running, Passed, Failed };
 

@@ -7,6 +7,7 @@
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/Localization.h>
+#include <Input/Input.h>
 #include <Platform/Window.h>
 
 #include <algorithm>
@@ -108,7 +109,121 @@ std::string AppShell::settingsReason() const {
 void AppShell::openSettings() {
     if (m_preferences) m_draft = m_preferences->current();
     if (m_graphics) m_draftGraphics = m_graphics->requested();
+    m_draftBindings.clear();
+    if (m_input)
+        for (const auto& [action, bindings] : m_input->actions())
+            if (rebindable(action)) m_draftBindings[action] = bindings;
+    stopListening();
     m_tab = "display";
+}
+
+// ---- Controls: rebinding ------------------------------------------------------------------
+
+bool AppShell::rebindable(std::string_view action) {
+    return action.rfind("ui_", 0) != 0 && action != kPauseAction && !action.empty();
+}
+
+std::filesystem::path AppShell::controlsFile() const {
+    if (!m_setup.controlsFile.empty()) return m_setup.controlsFile;
+    if (m_preferences && !m_preferences->profileFile().empty())
+        return m_preferences->profileFile().parent_path() / "Controls.swinput";
+    return {};
+}
+
+void AppShell::stopListening() {
+    if (!m_listen) return;
+    m_listen.reset();
+    m_ui->setInputEnabled(m_engine != nullptr);
+}
+
+// Another action the same press would trigger: the game's (in the draft) or the menus'.
+std::string AppShell::conflictOf(const std::string& action, const InputBinding& binding) const {
+    for (const auto& [other, bindings] : m_draftBindings)
+        if (other != action && std::find(bindings.begin(), bindings.end(), binding) != bindings.end()) return other;
+    if (m_input)
+        for (const auto& [other, bindings] : m_input->actions())
+            if (!rebindable(other) && other.rfind("ui_", 0) != 0 &&
+                std::find(bindings.begin(), bindings.end(), binding) != bindings.end())
+                return other;
+    return {};
+}
+
+std::string AppShell::actionLabel(std::string_view action) const {
+    const std::string key = "action." + std::string(action);
+    if (m_text->has(key)) return tr(key);
+    std::string label(action);   // "move_forward" -> "Move forward"
+    std::replace(label.begin(), label.end(), '_', ' ');
+    if (!label.empty()) label[0] = char(std::toupper((unsigned char)label[0]));
+    return label;
+}
+
+void AppShell::listen(double frameDt) {
+    Input& input = *m_input;
+    Listen& l = *m_listen;
+    l.secondsLeft -= frameDt;
+    if (l.secondsLeft <= 0) {
+        stopListening();
+        m_message = tr("shell.listen_timed_out");
+        return;
+    }
+    // The press that asked to listen was this frame's UI update, after this: it's never
+    // taken for the binding.
+    const auto& pressed = input.lastPressed();
+    if (!pressed) return;
+    using S = InputBinding::Source;
+    const InputBinding escape{.source = S::Key, .code = uint16_t(Key::Escape)};
+    const InputBinding start{.source = S::GamepadButton, .code = uint16_t(GamepadButton::Start)};
+    if (*pressed == escape || *pressed == start) {   // these always cancel; they can't be bound
+        stopListening();
+        input.holdUntilReleased();
+        m_message.clear();
+        return;
+    }
+    const bool pad = bindingIsGamepad(*pressed);
+    const bool keyboard = pressed->source == S::Key || pressed->source == S::Mouse;
+    if ((l.gamepad && !pad) || (!l.gamepad && !keyboard)) return;   // the other device: keep listening
+    // The new one replaces the action's bindings on that device; others stay.
+    InputBinding binding = *pressed;
+    if (binding.source == S::GamepadAxis && binding.range == InputBinding::Range::Full)
+        binding.range = InputBinding::Range::Positive;
+    auto& list = m_draftBindings[l.action];
+    std::erase_if(list, [&](const InputBinding& b) {
+        return l.gamepad ? bindingIsGamepad(b) : (b.source == S::Key || b.source == S::Mouse);
+    });
+    list.push_back(binding);
+    const std::string action = l.action;
+    stopListening();
+    input.holdUntilReleased();   // the press doesn't also act on the page or the game
+    const std::string other = conflictOf(action, binding);
+    m_message = other.empty()
+                    ? std::string()
+                    : tr("shell.binding_conflict", {{"binding", bindingLabel(binding)}, {"other", actionLabel(other)}});
+}
+
+// ---- A controller unplugged ---------------------------------------------------------------
+
+void AppShell::watchControllers() {
+    Input& input = *m_input;
+    if (input.devicesVersion() == m_devicesVersion) return;
+    m_devicesVersion = input.devicesVersion();
+    int pads = 0;
+    for (const InputDevice& d : input.devices()) pads += d.kind == InputDevice::Kind::Gamepad;
+    const bool lost = pads < m_pads && input.lastUsedGamepad();
+    const bool back = pads > m_pads && m_padLost;
+    m_pads = pads;
+    if (lost && m_setup.pauseOnControllerLoss) {
+        // Mid-level, offline: pause, so nothing happens to a player who can't play. Online
+        // the screen still shows; the match goes on.
+        if (m_screen == ShellScreen::None) pause();
+        if (m_screen != ShellScreen::None) {
+            m_padLost = true;
+            m_message = tr("shell.controller_lost");
+            SW_LOG(LogGame, Info, "Shell: the controller in use was unplugged");
+        }
+    } else if (back) {
+        m_padLost = false;
+        m_message = tr("shell.controller_back");
+    }
 }
 
 std::vector<AppShell::SettingRow> AppShell::settingRows(std::string_view tab) const {
@@ -258,7 +373,8 @@ bool AppShell::settingsCommand(std::string_view command, std::string_view argume
     }
     const bool known = command == "settings_tab" || command == "pref_next" || command == "pref_prev" ||
                        command == "apply_settings" || command == "cancel_settings" || command == "reset_settings" ||
-                       command == "keep_display" || command == "revert_display";
+                       command == "keep_display" || command == "revert_display" || command == "bind_key" ||
+                       command == "bind_pad" || command == "cancel_listen" || command == "reset_bindings";
     if (!known) {
         handled = false;
         return false;
@@ -276,6 +392,29 @@ bool AppShell::settingsCommand(std::string_view command, std::string_view argume
         return done();
     }
     if (m_preferences->displayPending()) return refuse(why, tr("shell.keep_display_title"));
+    if (command == "cancel_listen") {
+        if (!m_listen) return refuse(why, "Nothing is waiting for a press");
+        stopListening();
+        return done();
+    }
+    if (m_listen) return refuse(why, tr("shell.listening_busy"));
+    if (command == "bind_key" || command == "bind_pad") {
+        if (!m_input || !m_draftBindings.count(std::string(argument)))
+            return refuse(why, "\"" + std::string(argument) + "\" isn't a control here");
+        m_listen = Listen{std::string(argument), command == "bind_pad"};
+        // The page waits for the press; its buttons don't take it.
+        m_ui->setInputEnabled(false);
+        return done();
+    }
+    if (command == "reset_bindings") {
+        if (!m_input) return refuse(why, "No controls here");
+        const auto project = m_input->projectActions();
+        for (auto& [action, bindings] : m_draftBindings) {
+            const auto it = project.find(action);
+            bindings = it == project.end() ? std::vector<InputBinding>{} : it->second;
+        }
+        return done();
+    }
     if (command == "settings_tab") {
         for (const char* tab : kTabs)
             if (argument == tab && (argument != "graphics" || m_graphics)) {
@@ -308,9 +447,33 @@ bool AppShell::settingsCommand(std::string_view command, std::string_view argume
         m_draft = m_preferences->current();
         return refuse(why, tr("shell.settings_failed", {{"why", error}}));
     }
+    // The player's bindings: the actions whose bindings differ from the project's.
+    InputBindings controls;
+    bool controlsChanged = false;
+    if (m_input) {
+        const auto project = m_input->projectActions();
+        controls.deadzone = m_input->currentBindings().deadzone;
+        for (const auto& [action, bindings] : m_draftBindings) {
+            const auto it = project.find(action);
+            if (it != project.end() && it->second == bindings) continue;
+            for (const InputBinding& b : bindings) controls.binds.emplace_back(action, b);
+        }
+        controlsChanged = !(m_input->playerBindings().binds == controls.binds);
+        if (controlsChanged) m_input->setPlayerBindings(controls);
+    }
     std::string saveError;
     m_preferences->save(m_draft, saveError);
     if (m_graphics && saveError.empty() && !m_graphics->file().empty()) m_graphics->save(m_draftGraphics, saveError);
+    if (controlsChanged && saveError.empty()) {
+        const std::filesystem::path file = controlsFile();
+        std::error_code ec;
+        if (file.empty())
+            saveError = "No profile to save controls in";
+        else if (controls.binds.empty())
+            std::filesystem::remove(file, ec);
+        else
+            saveInputBindings(file, controls, saveError);
+    }
     m_message = saveError.empty() ? tr("shell.settings_saved") : tr("shell.settings_not_saved", {{"why", saveError}});
     if (!saveError.empty()) SW_LOG(LogGame, Warning, "Settings: {}", m_message);
     publish();
@@ -339,7 +502,49 @@ void AppShell::publishSettings() {
                  {"can_change", row.canChange},
                  {"reason", row.reason}}));
     ui.setValue("settings_rows", std::move(rows));
-    const bool changed = reason.empty() && (!(m_draft == m_preferences->current()) ||
+    bool bindingsChanged = false;
+    UIValue bindings = UIValue::list();
+    if (reason.empty() && m_input) {
+        const auto& now = m_input->actions();
+        const InputDevice* pad = nullptr;
+        for (const InputDevice& d : m_input->devices())
+            if (d.kind == InputDevice::Kind::Gamepad) {
+                pad = &d;
+                break;
+            }
+        for (const auto& [action, list] : m_draftBindings) {
+            const auto it = now.find(action);
+            bindingsChanged |= it == now.end() || it->second != list;
+            std::string keyboard, gamepad, conflict;
+            for (const InputBinding& b : list) {
+                std::string& into = bindingIsGamepad(b) ? gamepad : keyboard;
+                if (b.source == InputBinding::Source::JoystickAxis ||
+                    b.source == InputBinding::Source::JoystickButton || b.source == InputBinding::Source::JoystickHat)
+                    continue;
+                into += (into.empty() ? "" : ", ") + bindingLabel(b, pad);
+                if (conflict.empty())
+                    if (const std::string other = conflictOf(action, b); !other.empty())
+                        conflict =
+                            tr("shell.binding_conflict",
+                               {{"binding", bindingLabel(b, pad)}, {"other", actionLabel(other)}});
+            }
+            bindings.push(UIValue::record(
+                {{"action", action},
+                 {"label", actionLabel(action)},
+                 {"keyboard", keyboard.empty() ? tr("shell.unbound") : keyboard},
+                 {"gamepad", gamepad.empty() ? tr("shell.unbound") : gamepad},
+                 {"conflict", conflict}}));
+        }
+    }
+    ui.setValue("settings_bindings", std::move(bindings));
+    ui.setValue("listening", m_listen.has_value());
+    ui.setValue(
+        "listening_text", std::string_view(
+                              m_listen ? tr(m_listen->gamepad ? "shell.listen_pad" : "shell.listen_key",
+                                            {{"action", actionLabel(m_listen->action)},
+                                             {"seconds", std::to_string(int(std::ceil(m_listen->secondsLeft)))}})
+                                       : std::string()));
+    const bool changed = reason.empty() && (!(m_draft == m_preferences->current()) || bindingsChanged ||
                                             (m_graphics && !(m_draftGraphics == m_graphics->requested())));
     ui.setValue("settings_changed", changed);
     const bool pending = reason.empty() && m_preferences->displayPending();

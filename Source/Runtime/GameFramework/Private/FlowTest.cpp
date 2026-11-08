@@ -231,6 +231,7 @@ const char* flowStepKindName(FlowStep::Kind kind) {
     case FlowStep::Kind::Tap: return "tap";
     case FlowStep::Kind::Look: return "look";
     case FlowStep::Kind::Wait: return "wait";
+    case FlowStep::Kind::Unplug: return "unplug";
     case FlowStep::Kind::WaitValue: return "wait_value";
     }
     return "quit";
@@ -310,7 +311,8 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                     {"tap", FlowStep::Kind::Tap},
                     {"look", FlowStep::Kind::Look},
                     {"wait", FlowStep::Kind::Wait},
-                    {"wait_value", FlowStep::Kind::WaitValue}};
+                    {"wait_value", FlowStep::Kind::WaitValue},
+                    {"unplug", FlowStep::Kind::Unplug}};
                 FlowStep step;
                 int found = 0;
                 for (const auto& [k, f] : s.fields) {
@@ -341,6 +343,12 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                             step.seconds = f.number;
                             step.target = number(f.number);
                             step.timeout = std::max(step.timeout, f.number + 10);
+                        } else if (step.kind == FlowStep::Kind::Unplug) {
+                            if (f.type != Json::Type::String || f.text != "gamepad") {
+                                error = where + "unplug is written {\"unplug\": \"gamepad\"}";
+                                return false;
+                            }
+                            step.target = f.text;
                         } else if (f.type != Json::Type::String || f.text.empty()) {
                             error = where + k + " needs a name in quotes";
                             return false;
@@ -654,6 +662,12 @@ bool FlowTest::run(const FlowStep& step, std::string& failure) {
         m_hooks.look(step.lookX / float(step.frames), step.lookY / float(step.frames));
         return --m_lookLeft <= 0;
     }
+    case FlowStep::Kind::Unplug:
+        if (!m_hooks.unplug)
+            failure = "this run can't unplug anything";
+        else
+            m_hooks.unplug();
+        return true;
     case FlowStep::Kind::Wait: return m_stepTime >= step.seconds;
     case FlowStep::Kind::WaitValue: return value(step.target) == step.equals;
     case FlowStep::Kind::Quit: return true;
@@ -715,7 +729,8 @@ FlowTest::State FlowTest::frame(double frameDt) {
         // after the frame, and screens show a frame after what opens them.
         if (step.kind == FlowStep::Kind::Travel || step.kind == FlowStep::Kind::Click ||
             step.kind == FlowStep::Kind::Press || step.kind == FlowStep::Kind::Load ||
-            step.kind == FlowStep::Kind::Hold || step.kind == FlowStep::Kind::Tap || step.kind == FlowStep::Kind::Look)
+            step.kind == FlowStep::Kind::Hold || step.kind == FlowStep::Kind::Tap ||
+            step.kind == FlowStep::Kind::Look || step.kind == FlowStep::Kind::Unplug)
             return m_state;
     }
     if (m_state == State::Running && m_step >= m_scenario.steps.size()) m_state = State::Passed;

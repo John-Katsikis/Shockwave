@@ -370,7 +370,22 @@ letters. HarfBuzz then shapes them correctly. The `lang` attribute (`lang="ar"`)
 it pick the script and direction.
 
 Text with no matching font isn't drawn. The editor's Console and `player --check` say so
-and name the missing font.
+and name the missing font. A character no loaded font has shows blank: `player --check`
+names those in the game's text catalogs ([Localization](Localization.md#checks)), and
+`ui.missingGlyphs(text)` finds them in any text.
+
+## Check that text fits
+
+`ui.layoutProblems()` lists what doesn't fit in the documents shown: text that runs past
+its box (a word too long to break), a box that runs out of the one it's in, and text
+partly off the screen. A box that scrolls (`overflow-y: auto`) may be taller inside, so
+what's in it is only checked across. Give a scrolling box a `scrollbarvertical` style
+with a width, or its bar takes the whole width and squeezes the content to nothing.
+
+Long translations are the usual cause, so try the longest language and the largest
+Interface size: the editor's **Window > Player Settings** previews both and has **Check
+layout** ([Preferences](Preferences.md#in-the-editor)). Tests and tools without a window
+pick the size with `ui.setSize()` and the pixels per `dp` with `ui.setDensity()`.
 
 ## Check documents for mistakes
 

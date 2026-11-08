@@ -5,10 +5,12 @@
 #include <Engine/Localization.h>
 #include <Engine/Preferences.h>
 #include <GameFramework/AppShell.h>
+#include <GameUI/GameUI.h>
 #include <Projects/Diagnostic.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <format>
 #include <fstream>
 #include <regex>
 #include <set>
@@ -127,6 +129,31 @@ void checkLocalization(const shockwave::Project& project, std::vector<std::strin
                 project.relative(folder) + " (it would show nothing)");
         }
     }
+    // Every character needs a font that draws it, or it shows blank: the engine's Noto Sans
+    // has Latin, Greek and Cyrillic, and a game adds its own to Content for the rest.
+    shockwave::GameUI ui(nullptr, {.dataModel = "check", .forEngine = false});
+    ui.setContentFolder(project.assetFolder);
+    for (const std::string& locale : text.locales()) {
+        text.setLocale(locale);
+        std::u32string all;
+        size_t keys = 0;
+        for (const auto& [key, value] : text.all()) {
+            const std::u32string missing = ui.missingGlyphs(value);
+            if (missing.empty()) continue;
+            ++keys;
+            for (const char32_t c : missing)
+                if (all.find(c) == std::u32string::npos) all += c;
+        }
+        if (keys == 0) continue;
+        std::string sample;
+        for (size_t i = 0; i < all.size() && i < 8; ++i)
+            sample += std::format("{}U+{:04X}", i ? " " : "", uint32_t(all[i]));
+        problems.push_back(std::format(
+            "{}/{}.swstrings: {} text{} {} characters no font draws ({}{}): add a font with them to Content",
+            project.relative(folder), locale, keys, keys == 1 ? " has" : "s have", all.size(), sample,
+            all.size() > 8 ? " ..." : ""));
+    }
+    text.setLocale("");
     if (problems.size() == before && fs::is_directory(folder, ec))
         std::printf(
             "ok %s (%zu language%s, %zu keys)\n", project.relative(folder).c_str(), text.locales().size(),

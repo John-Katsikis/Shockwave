@@ -32,10 +32,12 @@
 #include <Engine/World.h>
 #include <GameFramework/GameFlow.h>
 #include <GameUI/GameUI.h>
+#include <Input/InputBinding.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -105,6 +107,15 @@ public:
         // The screens' text ({{text.shell.*}}); null: the engine's, or the built-in English.
         const Localization* localization = nullptr;
         bool settings = true;   // false turns the Settings page off
+        // Whose input the shell reads, raises its layer on (InputLayer) and rebinds; null:
+        // the engine's. Tests give one.
+        Input* input = nullptr;
+        // Where the player's own bindings are saved (Controls.swinput); empty: beside the
+        // preferences' profile file, or nowhere without one.
+        std::filesystem::path controlsFile;
+        // When the gamepad in use is unplugged during a level: pause (offline) and say so,
+        // until it's back or the player carries on with another device.
+        bool pauseOnControllerLoss = true;
     };
 
     // engine: where to draw and read input; null in tests (documents still load and
@@ -133,7 +144,9 @@ public:
     //            settings, credits, back, quit
     //   settings (menu and pause): settings_tab <tab>, pref_next <key>, pref_prev <key>,
     //            apply_settings, cancel_settings, reset_settings, keep_display, revert_display
-    //            (keys as in preferenceInfo(), graphics ones as "graphics.<key>")
+    //            (keys as in preferenceInfo(), graphics ones as "graphics.<key>"),
+    //            bind_key <action>, bind_pad <action> (listen for the next press; Escape,
+    //            Start or 10 seconds cancel), cancel_listen, reset_bindings
     //   pause:   resume, restart_checkpoint, restart_level, settings, main_menu, quit
     //   loading: cancel_travel
     //   error:   retry, main_menu, dismiss (when the level still plays), quit
@@ -151,13 +164,21 @@ public:
     // can_restart_checkpoint, checkpoint_reason, checkpoint_state, can_level_select, levels, error_detail,
     // credits, message (the last refusal); the Settings page's can_settings, settings_reason,
     // settings_tab, settings_tabs [{id, label}], settings_rows [{key, label, value, tooltip,
-    // can_change, reason}], settings_changed, display_pending, display_countdown; and "text",
+    // can_change, reason}], settings_changed, display_pending, display_countdown,
+    // settings_bindings [{action, label, keyboard, gamepad, conflict}], listening,
+    // listening_text; and "text",
     // the screens' words (text.shell.new_game).
     // A setting's value on the page, as it shows: "On", "75%", "1920 x 1080".
     std::string settingValue(std::string_view key) const;
     // The Settings page's draft: what Apply would use.
     const PlayerPreferences& draftPreferences() const { return m_draft; }
     const GraphicsSettings& draftGraphics() const { return m_draftGraphics; }
+    // The draft's bindings for the actions the page lets players change.
+    const std::map<std::string, std::vector<InputBinding>>& draftBindings() const { return m_draftBindings; }
+    bool listening() const { return m_listen.has_value(); }
+    // The actions players may rebind: the game's, not the menus' (ui_*) nor pause, which
+    // stay as the game binds them so no binding can lock a player out.
+    static bool rebindable(std::string_view action);
     const UIValue& value(std::string_view name) const;
     GameUI& ui() { return *m_ui; }
     // The last ticket a shell command got (0: none yet).
@@ -206,6 +227,12 @@ private:
         bool canChange = true;
     };
     std::vector<SettingRow> settingRows(std::string_view tab) const;
+    void listen(double frameDt);   // the next press, for bind_key and bind_pad
+    void watchControllers();   // a gamepad unplugged mid-level
+    std::string conflictOf(const std::string& action, const InputBinding& binding) const;
+    std::string actionLabel(std::string_view action) const;   // the catalog's action.<id>, else from the id
+    void stopListening();
+    std::filesystem::path controlsFile() const;
 
     Engine* m_engine;
     LevelHost& m_levels;
@@ -225,6 +252,7 @@ private:
     std::string m_continueReason = "No saved game to continue yet";
     std::string m_checkpointReason = "No checkpoint reached yet";
     std::vector<std::string> m_problems;
+    Input* m_input = nullptr;
     Preferences* m_preferences = nullptr;
     Graphics* m_graphics = nullptr;
     const Localization* m_text = nullptr;
@@ -232,6 +260,16 @@ private:
     PlayerPreferences m_draft;
     GraphicsSettings m_draftGraphics;
     std::string m_tab = "display";
+    std::map<std::string, std::vector<InputBinding>> m_draftBindings;
+    struct Listen {
+        std::string action;
+        bool gamepad = false;
+        double secondsLeft = 10;
+    };
+    std::optional<Listen> m_listen;
+    uint32_t m_devicesVersion = 0;
+    int m_pads = 0;
+    bool m_padLost = false;   // the gamepad in use went: the message stays until it's back
     // Mouse capture while a screen shows, given back when it goes in the same level.
     bool m_mouseWasCaptured = false;
     uint64_t m_captureEpoch = 0;

@@ -74,6 +74,31 @@ crash or a forced restart the next start goes back too.
 Choices the platform can't do are left out: fullscreen, when the display lists no
 resolutions.
 
+### Controls
+
+The Controls tab also rebinds the game's actions, saved to `<config>/Controls.swinput`
+beside the preferences: see [Input](Input.md#the-players-own-bindings).
+
+## In the editor
+
+**Window > Player Settings** edits the project's shipped preferences,
+`Config/Preferences.swprefs`, grouped as on the Settings page, with Save and Revert. The
+file keeps only what differs from the engine's defaults; **Reset** on a row takes it out.
+Game code and documents in the editor, in Play too, read these shipped values, apart from
+the display and the volumes, which stay the editor's own.
+
+The same window previews, in the viewport, what a player can change that changes how
+documents look: **Interface size**, **Language** (each catalog in `Content/Localization`)
+and **High contrast**. Previews are the editor's only and are never saved; **Stop
+previewing** goes back to the shipped values. **Check layout** looks for text that runs
+past its box or off the screen in the documents shown ([Localization](Localization.md#checks)).
+The editor also reads the game's catalogs, so `{{text.*}}` shows the game's text, and
+reloads them when one is saved.
+
+```sh
+editor --project Games/ShippingDemo --player-settings --preview-language fr --preview-ui-scale 1.5
+```
+
 ## In game code
 
 ```cpp
@@ -111,6 +136,8 @@ hold on sprint. It has no speech, so no subtitles.
 ## Tests
 
 `player_preferences` (the format, layers, apply and save, the display keep-or-revert and
-after a crash), `game_flow` (the Settings page through its buttons) and
+after a crash), `game_flow` (the Settings page through its buttons, and its layout in
+long and Greek text from 720p to 4K), `editor_player_settings` (the editor's French
+preview at 1.5x, writing nothing into the project) and
 `shipping_demo_flow` (Reactor Run's Settings page through the real player, the saved
 profile, `--preferences` and `--pref`). See [ShippingVerification](ShippingVerification.md).

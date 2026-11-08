@@ -21,18 +21,28 @@ body {
     width: 100%;
     height: 100%;
     background-color: #0b0e12e0;
+    /* The panel in the middle, however tall its page is. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Long words (German compounds) break rather than run out of their box. */
+    word-break: break-word;
 }
+/* Never wider or taller than the screen: a long page scrolls inside it. */
 .panel {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 380dp;
-    margin-left: -190dp;
-    margin-top: -220dp;
+    width: 440dp;
+    max-width: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
     padding: 22dp 26dp;
     background-color: #1a1f27;
     border-top: 3dp #ff8c33;
 }
+/* The bar a long page scrolls with. */
+scrollbarvertical { width: 6dp; margin-left: 4dp; }
+scrollbarvertical slidertrack { background-color: #232932; }
+scrollbarvertical sliderbar { background-color: #4a5566; min-height: 24dp; }
 h1 { display: block; font-size: 22dp; font-weight: bold; color: #ff8c33; margin-bottom: 16dp; }
 h2 { display: block; font-size: 14dp; font-weight: bold; color: #aab3c0; margin: 4dp 0 10dp; }
 p { display: block; margin-bottom: 8dp; }
@@ -52,11 +62,14 @@ button:focus-visible { border-color: #ff8c33; }
 button.disabled { color: #7d8693; background-color: #232932; }
 .tabs button { display: inline-block; margin: 0 4dp 8dp 0; padding: 5dp 9dp; font-size: 14dp; }
 .tabs button.selected { color: #ff8c33; }
-.row { display: block; margin-bottom: 6dp; }
-.row .label { display: inline-block; width: 150dp; font-size: 15dp; }
-.row button { display: inline-block; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
-.row .value { display: inline-block; width: 110dp; text-align: center; font-size: 15dp; }
+/* A row: its label takes what the < value > or the bindings leave; a reason goes under it. */
+.row { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 6dp; }
+.row .label { flex: 1 1 0; min-width: 0; font-size: 15dp; margin-right: 6dp; }
+.row button { flex: 0 0 auto; margin: 0; padding: 3dp 9dp; font-size: 15dp; }
+.row .value { flex: 0 0 120dp; text-align: center; font-size: 15dp; }
+.row .reason { flex: 0 0 100%; }
 .actions button { display: inline-block; margin-right: 6dp; }
+.row button.bind { flex: 0 0 104dp; margin-right: 4dp; text-align: center; }
 body.high_contrast { background-color: #000000f4; }
 body.high_contrast .panel { background-color: #000000; border: 2dp #ffffff; }
 body.high_contrast button { background-color: #000000; border: 2dp #ffffff; }
@@ -91,6 +104,16 @@ const char* kSettings = R"(
       <button data-attr-id="'next-' + row.key" onclick="pref_next" data-class-disabled="!row.can_change">&gt;</button>
       <p class="reason" data-if="!row.can_change">{{row.reason}}</p>
     </div>
+    <div data-if="settings_tab == 'controls'">
+      <div class="row" data-for="bind : settings_bindings">
+        <span class="label">{{bind.label}}</span>
+        <button class="bind" data-attr-id="'bindkey-' + bind.action" onclick="bind_key">{{bind.keyboard}}</button>
+        <button class="bind" data-attr-id="'bindpad-' + bind.action" onclick="bind_pad">{{bind.gamepad}}</button>
+        <p class="reason" data-if="bind.conflict != ''">{{bind.conflict}}</p>
+      </div>
+      <button id="reset_bindings" onclick="reset_bindings" data-if="settings_bindings.size > 0">{{text.shell.reset_bindings}}</button>
+    </div>
+    <p class="message" data-if="listening">{{listening_text}}</p>
     <div class="actions">
       <button id="apply_settings" onclick="apply_settings" data-class-disabled="!settings_changed">{{text.shell.apply}}</button>
       <button id="reset_settings" onclick="reset_settings">{{text.shell.defaults}}</button>
@@ -162,6 +185,15 @@ std::vector<std::pair<std::string, std::string>> AppShell::builtinText() {
         {"shell.settings_unavailable", "Settings aren't available here"},
         {"shell.settings_saved", "Settings saved"},
         {"shell.one_language", "This game has one language"},
+        {"shell.reset_bindings", "Default controls"},
+        {"shell.unbound", "Not bound"},
+        {"shell.binding_conflict", "{binding} also does {other}"},
+        {"shell.listen_key", "Press a key or mouse button for {action} ({seconds}). Escape cancels."},
+        {"shell.listen_pad", "Press a gamepad button for {action} ({seconds}). Start cancels."},
+        {"shell.listen_timed_out", "Nothing was pressed: the control is as it was"},
+        {"shell.listening_busy", "Press the new control first, or cancel"},
+        {"shell.controller_lost", "Controller disconnected. Plug it back in, or carry on with the keyboard and mouse."},
+        {"shell.controller_back", "Controller connected"},
         {"shell.settings_not_saved", "Applied for now, but not saved: {why}"},
         {"shell.settings_failed", "Nothing changed: {why}"},
         {"shell.tab.display", "Display"},

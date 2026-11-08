@@ -140,6 +140,19 @@ void Player::onStart() {
         !engine().preferences().configure(
             shockwave::projectPreferencesPath(m_project), m_tool.preferencesFile, m_tool.preferenceSets, error))
         throw std::runtime_error(error);
+    // The player's own controls (the Settings page's Controls), beside their preferences.
+    if (m_tool.mode == Tool::Mode::Play && !m_tool.preferencesFile.empty()) {
+        const std::filesystem::path controls = m_tool.preferencesFile.parent_path() / "Controls.swinput";
+        std::error_code ec;
+        shockwave::InputBindings mine;
+        std::string why;
+        if (std::filesystem::exists(controls, ec)) {
+            if (shockwave::loadInputBindings(controls, mine, why))
+                engine().input().setPlayerBindings(mine);
+            else
+                SW_LOG(shockwave::LogEngine, Warning, "Ignoring the player's controls: {}", why);
+        }
+    }
     std::vector<std::string> warnings;
     shockwave::SceneFileHooks hooks;
     // Scenes without a Camera entity fall back to the view an older editor saved.

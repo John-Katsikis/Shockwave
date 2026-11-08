@@ -200,6 +200,17 @@ public:
     // window or editor viewport by itself; without one (tools, tests) it's 1280x720 until
     // set.
     void setSize(glm::uvec2 size);
+    // Without an engine (tests, tools): how many pixels a dp is, the display's scale times
+    // the Interface size. With an engine the window and the player's preferences say.
+    void setDensity(float pixelsPerDp);
+    // Text that doesn't fit, in the documents shown now: an element whose content runs
+    // past its box (cut off, or over its neighbours), or text partly off the screen.
+    // Elements inside a scrolling box are left out. The layout tests use it with long and
+    // non-Latin text at several sizes (docs/Localization.md#checks).
+    std::vector<UIProblem> layoutProblems();
+    // The characters of the UTF-8 text that no font the UI has loaded can draw (the
+    // engine's Noto Sans, the Content folder's fonts): they'd show as blanks.
+    std::u32string missingGlyphs(std::string_view utf8);
     glm::uvec2 size() const;
 
     // ---- Input ----

@@ -8,6 +8,8 @@
 #include <Audio/Audio.h>
 #include <Circuits/Circuit.h>
 #include <Engine/Levels.h>
+#include <Engine/Localization.h>
+#include <Engine/Preferences.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Prefab.h>
 #include <GameFramework/NetworkPump.h>
@@ -23,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <fstream>
 #include <sstream>
 
@@ -98,6 +101,17 @@ void Editor::onStart() {
     m_release.open = m_options.showRelease && m_hasProject;
     m_levels.open = m_options.showLevels && m_hasProject;
     m_showResidency = m_options.showResidency;
+    m_showPlayerSettings = m_options.showPlayerSettings;
+    if (m_options.previewLanguage || m_options.previewUiScale > 0) {
+        m_previewLanguage = m_options.previewLanguage;
+        m_previewUiScale = m_options.previewUiScale;
+        applyPlayerSettings();
+        const shockwave::Localization& text = engine().localization();
+        log(std::format(
+            "Previewing the game's UI in \"{}\" at {:.2f}x: hud.find_exit reads \"{}\"",
+            text.locale().empty() ? text.defaultLanguage() : text.locale(),
+            double(engine().preferences().current().uiScale), text.text("hud.find_exit")));
+    }
     if (m_hasProject && m_options.focusContent) {
         const std::filesystem::path folder = m_options.contentFolder;
         if (folder.is_absolute() ||
@@ -230,6 +244,7 @@ void Editor::onGui() {
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();
+    if (m_showPlayerSettings) drawPlayerSettingsWindow();
     if (m_showCircuits) drawCircuitsWindow();
     if (m_showNetwork) drawNetworkWindow();
     if (m_showMaterial) drawMaterialWindow();
@@ -313,6 +328,7 @@ void Editor::onFrame(double dt) {
     if (m_options.levelCycles > 0) runLevelCycles();
     if (m_options.levelAuthoring) runLevelAuthoring();
     if (session()) session()->frame(dt);
+    updatePlayerSettings(dt);
     updateGameUI(dt);
     updateNavigation(dt);
     updateEffects(dt);

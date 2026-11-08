@@ -2,6 +2,9 @@
 
 #include "FontEngineInterfaceHarfBuzz.h"
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 #include <Input/Input.h>
 
 #include <SDL3/SDL.h>
@@ -9,6 +12,7 @@
 #include <chrono>
 #include <cstdio>
 #include <deque>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -255,6 +259,23 @@ void loadDefaultFonts() {
 }
 
 const std::string& defaultFontsError() { return runtime().defaultFontsError; }
+
+bool hasGlyph(char32_t c) {
+    // Opened once per font file, apart from RmlUi's own faces, and kept for the process
+    // like RmlUi keeps its fonts.
+    static FT_Library library = nullptr;
+    static std::map<fs::path, FT_Face> faces;
+    if (!library && FT_Init_FreeType(&library) != 0) return true;   // can't tell: don't report it
+    for (const fs::path& path : runtime().loadedFonts) {
+        if (faces.count(path)) continue;
+        FT_Face face = nullptr;
+        if (FT_New_Face(library, path.string().c_str(), 0, &face) != 0) face = nullptr;
+        faces[path] = face;
+    }
+    for (const auto& [path, face] : faces)
+        if (face && FT_Get_Char_Index(face, FT_ULong(c)) != 0) return true;
+    return false;
+}
 
 void registerContext(Rml::Context* context, ContextOwner* owner) { runtime().contexts[context] = owner; }
 void unregisterContext(Rml::Context* context) { runtime().contexts.erase(context); }

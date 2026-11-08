@@ -165,17 +165,25 @@ struct AudioMixer::Impl {
             problem = SDL_GetError();
             return;
         }
+        open();
+    }
+    // The default output: SDL moves the stream to the new default when it changes (headphones
+    // unplugged, say). With none at all, reopen() tries again later.
+    bool open() {
         const SDL_AudioSpec spec{SDL_AUDIO_F32, 2, AudioClip::sampleRate};
         stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, callback, this);
         if (!stream) {
             problem = SDL_GetError();
-            return;
+            return false;
         }
         if (!SDL_ResumeAudioStreamDevice(stream)) {
             problem = SDL_GetError();
             SDL_DestroyAudioStream(stream);
             stream = nullptr;
+            return false;
         }
+        problem.clear();
+        return true;
     }
     ~Impl() {
         if (stream) SDL_DestroyAudioStream(stream);
@@ -451,6 +459,17 @@ const char* audioCategoryName(AudioCategory category) {
 void AudioMixer::pause(bool value) { m_impl->paused.store(value); }
 bool AudioMixer::available() const { return m_impl->offline || m_impl->stream; }
 const std::string& AudioMixer::error() const { return m_impl->problem; }
+bool AudioMixer::reopen() {
+    Impl& p = *m_impl;
+    if (p.offline || p.stream) return true;
+    if (!p.initialized && !(p.initialized = SDL_InitSubSystem(SDL_INIT_AUDIO))) {
+        p.problem = SDL_GetError();
+        return false;
+    }
+    if (!p.open()) return false;
+    SW_LOG(LogAudio, Info, "Audio output is back");
+    return true;
+}
 void AudioMixer::render(std::span<float> output) {
     if (!m_impl->offline || output.size() % 2)
         throw std::logic_error("render needs an offline mixer and interleaved stereo buffer");
@@ -482,6 +501,7 @@ struct AudioWorld::Impl {
     World& world;
     const Assets* assets;
     AudioMixer mixer;
+    double retryTimer = 0;   // update: seconds since the last try to open a device
     mutable std::mutex mutex;
     std::unordered_map<uint64_t, Source> sources;
     std::array<Emitter, kEmitters> emitters;
@@ -548,6 +568,15 @@ Entity AudioWorld::listener() const {
 }
 void AudioWorld::update(double dt) {
     auto& p = *m_impl;
+    // No output device (none plugged in, or it failed to open): try again every 2 seconds,
+    // so sound comes back when one appears without restarting the game.
+    if (!mixer().available()) {
+        p.retryTimer += dt;
+        if (p.retryTimer >= 2.0) {
+            p.retryTimer = 0;
+            mixer().reopen();
+        }
+    }
     std::lock_guard lock(p.mutex);
     const float blend = std::clamp(float(dt) * 8.0f, 0.0f, 1.0f);   // about 1/8 s to settle
     for (auto& [id, source] : p.sources) {

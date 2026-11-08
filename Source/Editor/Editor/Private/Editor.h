@@ -35,6 +35,7 @@
 #include <atomic>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -72,6 +73,10 @@ struct EditorOptions {
     bool showRelease = false;   // --release: open Project > Release readiness
     bool showLevels = false;   // --levels: open Project > Levels
     bool showResidency = false;   // --residency: open Window > Resource residency
+    bool showPlayerSettings = false;   // --player-settings: open Window > Player Settings
+    // --preview-language / --preview-ui-scale: Player Settings previews to start with.
+    std::optional<std::string> previewLanguage;
+    float previewUiScale = 0;
     bool focusContent = false;   // startup tab selection for CLI previews
     std::string theme;   // --theme: wins over the project's and the preferences' theme
     int selectOnStart = -1;   // entity to select at startup, in scene order (screenshots, tests)
@@ -352,6 +357,13 @@ private:
     std::shared_ptr<struct CircuitEditorState> m_circuitEditor;   // created when the window first opens
     // SaveGamesPanel.cpp: the project's save slots; save and load during Play.
     void drawSaveGamesWindow();
+    // The Player Settings window (PlayerSettingsPanel.cpp): the project's shipped
+    // preferences, and previews of interface size, language and contrast in the viewport.
+    void drawPlayerSettingsWindow();
+    void loadProjectText();   // the game's text catalogs, so documents show {{text.*}}
+    void loadShippedPreferences();
+    void applyPlayerSettings();   // the shipped values and any preview, to what runs
+    void updatePlayerSettings(double dt);   // reloads the catalogs when they change
     std::filesystem::path saveGamesFolder() const { return m_project.statePath() / "SaveGames"; }
 
     // PrefabEditor.cpp: prefabs and their copies (Engine/Prefab.h).
@@ -655,6 +667,19 @@ private:
     std::string m_saveSlotEdit = "slot1", m_saveTitleEdit, m_saveSelected;
     std::vector<shockwave::SaveInfo> m_saveList;
     double m_saveListAge = 1e9;   // seconds since the list was read; re-read every second
+
+    // Player Settings window
+    bool m_showPlayerSettings = false;
+    std::map<std::string, std::string> m_shippedPrefs;   // Config/Preferences.swprefs, as edited
+    std::map<std::string, std::string> m_shippedPrefsEdit;   // the text being typed, per key
+    std::string m_shippedPrefsError;   // the file doesn't read
+    bool m_shippedPrefsDirty = false;
+    // Previews, editor only and never saved: 0 / nullopt / -1 show the shipped value.
+    float m_previewUiScale = 0;
+    std::optional<std::string> m_previewLanguage;
+    int m_previewContrast = -1;
+    uint64_t m_textStamp = 0;   // the catalogs' sizes and times, to notice a change
+    double m_textAge = 0;
 
     std::vector<LogEntry> m_log;
     std::mutex m_pendingLogMutex;
