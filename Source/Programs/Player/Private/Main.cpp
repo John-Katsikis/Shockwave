@@ -101,6 +101,24 @@ int main(int argc, char** argv) {
                     throw player::UsageError("--app-shell: " + error);
                 continue;
             }
+            // Cooking (docs/Cooking.md).
+            if (arg == "--cook" || arg == "--release") {
+                if (arg == "--cook")
+                    tool.mode = Tool::Mode::Cook;
+                else
+                    tool.release = true;
+                continue;
+            }
+            if ((arg == "--target" || arg == "--cook-info" || arg == "--verify") && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (arg == "--target")
+                    tool.cookTarget = value;
+                else if (arg == "--cook-info")
+                    cookInfoFile = value;
+                else
+                    cookVerify = value;
+                continue;
+            }
             // Player preferences (docs/Preferences.md).
             if (arg == "--pref" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -455,16 +473,6 @@ int main(int argc, char** argv) {
                 tool.mode = Tool::Mode::Levels;
             } else if (arg == "--asset-dependencies") {
                 tool.mode = Tool::Mode::AssetDependencies;
-            } else if (arg == "--cook") {
-                tool.mode = Tool::Mode::Cook;
-            } else if (arg == "--release") {
-                tool.release = true;
-            } else if (arg == "--target" && i + 1 < argc) {
-                tool.cookTarget = argv[++i];
-            } else if (arg == "--cook-info" && i + 1 < argc) {
-                cookInfoFile = argv[++i];
-            } else if (arg == "--verify" && i + 1 < argc) {
-                cookVerify = argv[++i];
             } else if (arg == "--load-report" && i + 1 < argc) {
                 tool.loadReport = argv[++i];
             } else if (arg == "--no-asset-residency") {
