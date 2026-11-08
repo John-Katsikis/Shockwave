@@ -578,6 +578,28 @@ void testScenarios(const fs::path& content) {
     CHECK(refused(R"({"format": 1, "steps": [{"press": "jump"}]})", "press takes"));
     CHECK(refused(R"({"format": 1, "steps": [{"quit": true}]} x)", "after"));
     CHECK(refused(R"({"format": 1, "format": 1, "steps": []})", "twice"));
+    // S07: real input steps.
+    CHECK(parseFlowScenario(
+        R"({"format": 1, "steps": [
+            {"hold": "key W", "until": "game.zone", "equals": "range"},
+            {"hold": "pad_axis left_y +", "value": 0.5, "seconds": 1.5},
+            {"tap": "pad south"}, {"look": [120, -20], "frames": 4}, {"wait": 0.5},
+            {"wait_value": "flow.screen", "equals": "none"}]})",
+        scenario, error));
+    CHECK(scenario.steps.size() == 6 && scenario.steps[0].kind == FlowStep::Kind::Hold);
+    CHECK(scenario.steps[1].binding.source == InputBinding::Source::GamepadAxis && scenario.steps[1].value == 0.5f);
+    CHECK(scenario.steps[1].seconds == 1.5 && scenario.steps[1].timeout >= 11.5);
+    CHECK(scenario.steps[3].lookX == 120 && scenario.steps[3].lookY == -20 && scenario.steps[3].frames == 4);
+    CHECK(refused(R"({"format": 1, "steps": [{"hold": "key Nope", "seconds": 1}]})", "isn't a binding"));
+    CHECK(refused(R"({"format": 1, "steps": [{"hold": "key W"}]})", "either \"seconds\""));
+    CHECK(refused(
+        R"({"format": 1, "steps": [{"hold": "key W", "seconds": 1, "until": "game.a", "equals": "b"}]})", "either"));
+    CHECK(refused(R"({"format": 1, "steps": [{"hold": "key W", "until": "zone", "equals": "b"}]})", "until names"));
+    CHECK(refused(R"({"format": 1, "steps": [{"tap": "joy * axis 0 +"}]})", "not joysticks"));
+    CHECK(refused(R"({"format": 1, "steps": [{"look": [1]}]})", "look is written"));
+    CHECK(refused(R"({"format": 1, "steps": [{"wait": -1}]})", "wait is a number"));
+    CHECK(refused(R"({"format": 1, "steps": [{"wait_value": "game.a"}]})", "needs \"equals\""));
+    CHECK(refused(R"({"format": 1, "steps": [{"tap": "key E", "value": 1}]})", "tap has no \"value\""));
 
     // A run: through the menu to a, a refusal, then a failing assertion stops it.
     ShellRig rig(content);

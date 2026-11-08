@@ -1,0 +1,44 @@
+shockwave_prefab 1
+# Something to use with the use action. A copy says what it does (InteractionTarget's
+# prompt) and an objective of kind Use names it as its target.
+
+entity "Console"
+  Transform
+  InteractionTarget
+    kind Use
+    prompt "Use"
+    action demo_use
+    radius 3
+  Collider
+    shape Box
+    half_extents 0.45 0.6 0.35
+    offset 0 0.6 0
+end
+
+entity "Console body"
+  Transform
+    position 0 0.6 0
+    scale 0.9 1.2 0.7
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.25 0.28 1
+    roughness 0.6
+  Parent
+    entity "Console"
+end
+
+entity "Console screen"
+  Transform
+    position 0 1.05 0.36
+    scale 0.7 0.3 0.02
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.8 1 1
+    emissive 0.1 0.6 0.9 1
+    emissive_intensity 2
+    cast_shadows 0
+  Parent
+    entity "Console"
+end

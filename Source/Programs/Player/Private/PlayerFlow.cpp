@@ -3,6 +3,7 @@
 
 #include <GameFramework/SaveGame.h>
 #include <GameUI/UIWorld.h>
+#include <Input/Input.h>
 
 #include <cstdio>
 #include <fstream>
@@ -21,6 +22,14 @@ void Player::startShell() {
     setup.title = m_project.name;
     setup.screens = screens;
     setup.content = m_project.assetFolder;
+    // The Credits page: the project's Content/Shell/credits.txt, when it has one.
+    if (std::ifstream credits(m_project.assetFolder / "Shell" / "credits.txt", std::ios::binary); credits) {
+        std::ostringstream text;
+        text << credits.rdbuf();
+        setup.credits = text.str();
+        while (!setup.credits.empty() && (setup.credits.back() == '\n' || setup.credits.back() == '\r'))
+            setup.credits.pop_back();
+    }
     setup.quit = [this] { engine().quit(); };
     // S06: New game asks first when the campaign holds progress; Continue loads the newest
     // save this game and profile can load.
@@ -127,13 +136,18 @@ void Player::startFlowTest() {
         error = s->lastError();
         return ok && error.empty();
     };
+    // S07: real input, through the engine's Input as the devices would give it.
+    hooks.inject = [this](const shockwave::InputBinding& binding, float value) {
+        return engine().input().inject(binding, value);
+    };
+    hooks.look = [this](float x, float y) { engine().input().injectMouseMotion({x, y}); };
     m_flowTest = std::make_unique<shockwave::FlowTest>(std::move(scenario), std::move(hooks));
     SW_LOG(shockwave::LogGame, Info, "Flow test {}", m_project.relative(fs::absolute(m_tool.flowTest)));
 }
 
 void Player::driveFlowTest() {
     if (!m_flowTest) return;
-    if (m_flowTest->frame() == shockwave::FlowTest::State::Running) return;
+    if (m_flowTest->frame(m_frameDt) == shockwave::FlowTest::State::Running) return;
     endFlowTest();
     engine().quit();
 }

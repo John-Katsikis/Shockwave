@@ -56,7 +56,33 @@ Use `--app-shell all` when the project doesn't turn on the screens the scenario 
 | `{"assert_level": "a"}` | the level playing now is `a` |
 | `{"assert_value": "flow.screen", "equals": "pause"}` | a value of the shell's `flow` model, or of the level's `game` model (`game.score`), as text |
 | `{"save": "slot"}`, `{"load": "slot"}` | saves or loads a slot of the level playing, waiting for the file |
+| `{"hold": "key W", "until": "game.near", "equals": "Console"}` | holds a key, mouse button, gamepad button or stick until a value is that, then lets go |
+| `{"hold": "pad_axis left_y +", "value": 0.8, "seconds": 1.5}` | holds it, this far (0 to 1), for that many seconds of game time |
+| `{"tap": "key E"}` | presses it for one frame, then lets go |
+| `{"look": [120, -20], "frames": 4}` | moves the mouse that many pixels, spread over frames (default 1) |
+| `{"wait": 0.5}` | waits that many seconds of game time |
+| `{"wait_value": "game.objective", "equals": "done"}` | waits until a value is that |
 | `{"quit": true}` | ends the run, passed |
+
+### Real input
+
+`hold`, `tap` and `look` are real input. They go in at the device boundary
+(`Input::inject` and `Input::injectMouseMotion`), named the way
+[a bindings file](InputSchema.md) names them, so the game reads them through its
+bindings exactly as it reads the keyboard, the mouse or a pad. Rebinding an action
+changes what a scenario has to press, as it would for a player.
+
+- A `pad` or `pad_axis` binding plugs in a virtual gamepad on first use, reported as an
+  Xbox pad. Joysticks can't be simulated.
+- A hold always lets go when its step ends, passed, failed or timed out.
+- A held key carries across travel; the next level ignores it until it's released, as
+  it does for a real key (S05's hold-until-released).
+
+A scenario that plays a whole game this way is the proof the game can be finished. A
+test may still use `travel` to skip ahead, but nothing in a scenario can set a game's
+success flag: only playing does. `Games/ShippingDemo/Tests/flow` plays Reactor Run from
+the menu to the credits on a keyboard and mouse and on a gamepad, and saves, quits and
+continues across two runs.
 
 Any step can have `"timeout"`, in seconds. The default is 10. The scenario's own
 `timeout` (default 60) bounds the whole run.
@@ -67,8 +93,9 @@ code is an error, and the error names the step.
 
 Steps run in order:
 
-- A click, a press, a travel or a load lets one frame run before the next step, because
-  travel happens after the frame and screens show a frame after what opens them.
+- A click, a press, a travel, a load, a hold, a tap or a look lets one frame run before
+  the next step, because travel happens after the frame and screens show a frame after
+  what opens them.
 - An assertion doesn't wait.
 - The latest ticket is the last one a step, a click or the level itself started.
 

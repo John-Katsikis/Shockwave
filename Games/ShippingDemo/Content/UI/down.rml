@@ -1,0 +1,11 @@
+<rml><head><title>Down</title><link type="text/rcss" href="demo.rcss"/></head>
+<body class="screen" data-model="game">
+  <div class="dialog">
+    <h1>You went down</h1>
+    <p>Pick up where you left off, or start the level again.</p>
+    <button id="retry_checkpoint" onclick="retry_checkpoint" autofocus>Restart from checkpoint</button>
+    <p class="reason" data-if="!demo_can_retry_checkpoint">No checkpoint yet: this restarts the level. {{demo_retry_reason}}</p>
+    <button id="retry_level" onclick="retry_level">Restart level</button>
+    <button id="down_menu" onclick="down_menu">Main menu</button>
+  </div>
+</body></rml>

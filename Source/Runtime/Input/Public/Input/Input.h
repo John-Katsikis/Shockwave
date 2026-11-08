@@ -226,6 +226,20 @@ public:
     void setTextInput(bool enabled);
     bool textInput() const { return m_textInput; }
 
+    // ---- Synthetic input (flow tests and automated playtests, docs/FlowTest.md) ----
+    // Acts like the physical key, mouse button, gamepad button or stick in `binding` held
+    // at `value` (0 lets go): the action states read it through the bindings as they read
+    // the device, so a rebound action follows it. Gamepad bindings go to a virtual gamepad
+    // that appears on first use, like a pad being plugged in. Joystick bindings are
+    // ignored (false). Applied by the next update(), after that frame's device events, so
+    // a tap pressed between frames is still seen as pressed. Main thread.
+    bool inject(const InputBinding& binding, float value);
+    void injectMouseMotion(glm::vec2 delta);   // pixels, added to the next frame's mouseDelta
+    // Unplugs the virtual gamepad (its held buttons are let go), as pulling a cable would.
+    void removeVirtualGamepad();
+    bool hasVirtualGamepad() const;
+    static constexpr uint32_t kVirtualGamepadId = 0xFFFFFFF0u;
+
     // Called by the engine: beginFrame, then handleEvent for each event, then update.
     void beginFrame();
     void handleEvent(const SDL_Event& event);
@@ -239,6 +253,11 @@ private:
         std::vector<uint8_t> buttonFlags;   // Flags, set from events so short taps aren't missed
         std::vector<float> previousAxes, restAxes;
         std::vector<uint8_t> previousHats;
+        bool synthetic = false;   // the virtual gamepad: no SDL device behind it
+    };
+    struct Injection {
+        InputBinding binding;
+        float value = 0;
     };
     struct Feedback {
         enum class Kind : uint8_t { Rumble, TriggerRumble, Light } kind;
@@ -257,6 +276,8 @@ private:
     void applyFeedback();
     void notePressed(const InputBinding& binding);
     void checkBindingsFile(double frameDt);
+    void applyInjections();
+    int virtualGamepad(bool create);
 
     Window* m_window;
     std::array<uint8_t, 512> m_keys{};
@@ -282,6 +303,9 @@ private:
     std::optional<InputBinding> m_lastPressed;
     std::set<std::string, std::less<>> m_barred;   // holdUntilReleased: held, read as up
     std::set<std::string, std::less<>> m_freed;   // let go this frame: no Released either
+
+    std::vector<Injection> m_injections;
+    glm::vec2 m_injectedMotion{0.0f};
 
     std::mutex m_feedbackMutex;
     std::vector<Feedback> m_feedback;

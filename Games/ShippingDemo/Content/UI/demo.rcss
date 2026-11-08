@@ -1,0 +1,33 @@
+/* Reactor Run's look: the game's own RmlUi styles (the editor has its own theme). */
+body { font-family: "Noto Sans"; font-size: 16dp; color: #edf4f5; width: 100%; height: 100%; pointer-events: none; }
+.panel { background-color: #101a20e0; padding: 12dp 18dp; }
+.caption { font-size: 12dp; color: #b8cbd0; letter-spacing: 1dp; }
+.number { font-size: 34dp; font-weight: bold; }
+#objective { position: absolute; left: 24dp; top: 24dp; width: 420dp; border-left: 3dp #50d0ef; }
+#objective .text { font-size: 18dp; font-weight: bold; }
+#objective .progress { font-size: 14dp; color: #ffd36b; }
+#checkpoint { position: absolute; right: 24dp; top: 24dp; font-size: 14dp; color: #8ef0a8; }
+#crosshair { position: absolute; left: 50%; top: 50%; margin-left: -12dp; margin-top: -22dp; width: 24dp; text-align: center; font-size: 30dp; }
+#crosshair.on { color: #ff8a5b; }
+#crosshair.hit { color: #ffd36b; }
+#prompt { position: absolute; left: 0; top: 60%; width: 100%; text-align: center; }
+#prompt span { background-color: #101a20e8; padding: 8dp 16dp; font-size: 18dp; border-bottom: 2dp #50d0ef; }
+#vitals { position: absolute; left: 24dp; bottom: 48dp; border-top: 2dp #8ef0a8; }
+#ammo { position: absolute; right: 24dp; bottom: 48dp; text-align: right; border-top: 2dp #50d0ef; }
+.reload { color: #ffd36b; font-size: 13dp; }
+#controls { position: absolute; left: 0; bottom: 14dp; width: 100%; text-align: center; font-size: 12dp; color: #b8cbd0; }
+#damage { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#damage.hurt { background-color: #d8381830; }
+#badge { position: absolute; left: 24dp; top: 120dp; }
+#badge img { width: 40dp; height: 40dp; }
+#badge span { font-size: 12dp; color: #b8cbd0; margin-left: 8dp; }
+body.screen { background-color: #08121cd8; pointer-events: auto; }
+.dialog { position: absolute; left: 50%; top: 50%; margin-left: -220dp; margin-top: -200dp; width: 400dp; padding: 22dp; background-color: #14232b; border: 1dp #5c7984; }
+h1 { display: block; margin-bottom: 10dp; font-size: 26dp; color: #50d0ef; }
+.dialog p { display: block; margin: 10dp 0; line-height: 1.5; }
+.stats div { display: block; margin: 4dp 0; }
+.stats span { color: #ffd36b; }
+button { display: block; width: 356dp; margin: 8dp 0; padding: 10dp 12dp; background-color: #223b48; color: #edf4f5; border: 1dp #527482; font-size: 16dp; }
+button:hover, button:focus-visible { background-color: #365767; border-color: #50d0ef; }
+button:disabled { color: #6c858c; border-color: #2c414a; background-color: #182a33; }
+.reason { font-size: 13dp; color: #b8cbd0; }

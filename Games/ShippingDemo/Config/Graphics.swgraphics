@@ -1,0 +1,4 @@
+# Reactor Run's shared graphics defaults. Players' own choices are saved in their OS
+# preferences folder and override these.
+swgraphics 1
+render_scale 1

@@ -1,0 +1,62 @@
+# The ending: the reactor runs, and the credits.
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.3 0.45 0.6 1
+    ground_color 0.25 0.28 0.3 1
+    ambient_intensity 0.8
+    exposure 0
+    shadow_distance 50
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Sun"
+  Transform
+    rotation -50 -25 0
+  Light
+    type Directional
+    color 1 0.95 0.8 1
+    intensity 2.5
+end
+
+entity "Camera"
+  Transform
+    position 0 2 6
+    rotation -8 0 0
+  Camera
+    primary true
+end
+
+entity "Floor"
+  Transform
+    position 0 -0.2 0
+    scale 30 0.4 30
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.25 0.28 0.3 1
+    roughness 0.8
+end
+
+entity "Reactor core"
+  Transform
+    position 0 2 -6
+    scale 2 4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.3 1 0.6 1
+    roughness 0.8
+  Spin
+    speed 60
+end
+
+entity "Demo Credits"
+  UIDocument
+    document UI/credits.rml
+    focus_on_show 1
+    order 5
+end

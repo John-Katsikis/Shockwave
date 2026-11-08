@@ -1,0 +1,188 @@
+{
+  "format": 1,
+  "name": "the whole game on a gamepad: training, factory, credits and a new game",
+  "timeout": 300,
+  "steps": [
+    {
+      "assert_level": "menu"
+    },
+    {
+      "click": "new_game"
+    },
+    {
+      "wait_phase": "succeeded",
+      "timeout": 30
+    },
+    {
+      "assert_level": "training"
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "training.line"
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_objective_id",
+      "equals": "training.targets"
+    },
+    {
+      "hold": "pad_axis right_trigger +",
+      "until": "game.demo_targets_left",
+      "equals": "2"
+    },
+    {
+      "hold": "pad_axis right_x -",
+      "value": 0.4,
+      "until": "game.demo_aiming_at",
+      "equals": "Target left"
+    },
+    {
+      "hold": "pad_axis right_trigger +",
+      "until": "game.demo_targets_left",
+      "equals": "1"
+    },
+    {
+      "hold": "pad_axis right_x +",
+      "value": 0.4,
+      "until": "game.demo_aiming_at",
+      "equals": "Target right"
+    },
+    {
+      "hold": "pad_axis right_trigger +",
+      "until": "game.demo_targets_left",
+      "equals": "0"
+    },
+    {
+      "hold": "pad_axis right_x -",
+      "value": 0.4,
+      "until": "game.demo_yaw",
+      "equals": "0"
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_objective_id",
+      "equals": "training.gate"
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_near",
+      "equals": "Gate console"
+    },
+    {
+      "tap": "pad south"
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "done"
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_level",
+      "equals": "factory",
+      "timeout": 30
+    },
+    {
+      "wait_phase": "succeeded",
+      "timeout": 30
+    },
+    {
+      "assert_level": "factory"
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "factory.enemies"
+    },
+    {
+      "hold": "pad_axis right_trigger +",
+      "until": "game.demo_enemies_left",
+      "equals": "0",
+      "timeout": 40
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "factory.reactor"
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_near",
+      "equals": "Reactor console",
+      "timeout": 30
+    },
+    {
+      "wait_value": "game.demo_checkpoint",
+      "equals": "Checkpoint reached"
+    },
+    {
+      "tap": "pad south"
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "factory.hold"
+    },
+    {
+      "hold": "pad_axis right_trigger +",
+      "until": "game.demo_objective_id",
+      "equals": "done",
+      "timeout": 40
+    },
+    {
+      "hold": "pad_axis left_y +",
+      "until": "game.demo_near",
+      "equals": "Factory exit",
+      "timeout": 30
+    },
+    {
+      "tap": "pad south"
+    },
+    {
+      "wait_value": "game.demo_state",
+      "equals": "won"
+    },
+    {
+      "click": "results_continue",
+      "document": "Demo Results"
+    },
+    {
+      "wait_phase": "succeeded",
+      "timeout": 30
+    },
+    {
+      "assert_level": "ending"
+    },
+    {
+      "click": "credits_menu",
+      "document": "Demo Credits"
+    },
+    {
+      "wait_phase": "succeeded",
+      "timeout": 30
+    },
+    {
+      "assert_level": "menu"
+    },
+    {
+      "assert_value": "flow.screen",
+      "equals": "menu"
+    },
+    {
+      "click": "new_game"
+    },
+    {
+      "click": "confirm_new_game"
+    },
+    {
+      "wait_phase": "succeeded",
+      "timeout": 30
+    },
+    {
+      "assert_level": "training"
+    },
+    {
+      "wait_value": "game.demo_objective_id",
+      "equals": "training.line"
+    },
+    {
+      "quit": true
+    }
+  ]
+}

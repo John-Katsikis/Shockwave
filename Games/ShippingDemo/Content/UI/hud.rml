@@ -1,0 +1,11 @@
+<rml><head><title>Reactor Run HUD</title><link type="text/rcss" href="demo.rcss"/></head>
+<body data-model="game">
+  <div id="damage"></div>
+  <div id="objective" class="panel"><span class="caption">OBJECTIVE {{demo_objectives_done}} / {{demo_objectives_total}}</span><br/><span class="text">{{demo_objective}}</span> <span class="progress">{{demo_progress}}</span></div>
+  <div id="checkpoint">{{demo_checkpoint}}</div>
+  <div id="crosshair">+</div>
+  <div id="prompt" data-if="demo_has_prompt"><span>{{demo_prompt}}</span></div>
+  <div id="vitals" class="panel"><span class="caption">HEALTH</span><br/><span class="number">{{demo_health}}</span></div>
+  <div id="ammo" class="panel"><span class="caption">SIDEARM</span><br/><span class="number">{{demo_ammo}}</span> / {{demo_reserve}}<br/><span class="reload" data-if="demo_reloading">RELOADING</span><span class="reload" data-if="demo_low_ammo">EMPTY: [{{demo_reload_label}}] RELOAD</span></div>
+  <div id="controls">{{demo_controls}}</div>
+</body></rml>

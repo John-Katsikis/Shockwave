@@ -369,6 +369,7 @@ void Input::handleEvent(const SDL_Event& event) {
 }
 
 void Input::update(double frameDt) {
+    applyInjections();
     pollDevices();
     applyFeedback();
     checkBindingsFile(frameDt);
@@ -381,6 +382,103 @@ void Input::update(double frameDt) {
             m_barred.insert(action);
         else
             m_freed.insert(action);
+    }
+}
+
+// ---- Synthetic input ------------------------------------------------------------------------
+
+bool Input::inject(const InputBinding& binding, float value) {
+    using S = InputBinding::Source;
+    if (binding.source != S::Key && binding.source != S::Mouse && binding.source != S::GamepadButton &&
+        binding.source != S::GamepadAxis)
+        return false;
+    if (!std::isfinite(value)) value = 0.0f;
+    m_injections.push_back({binding, std::clamp(value, 0.0f, 1.0f)});
+    return true;
+}
+
+void Input::injectMouseMotion(glm::vec2 delta) {
+    if (std::isfinite(delta.x) && std::isfinite(delta.y)) m_injectedMotion += delta;
+}
+
+bool Input::hasVirtualGamepad() const {
+    for (const Handles& h : m_handles)
+        if (h.synthetic) return true;
+    return false;
+}
+
+void Input::removeVirtualGamepad() {
+    m_injections.erase(
+        std::remove_if(
+            m_injections.begin(), m_injections.end(),
+            [](const Injection& i) {
+                return i.binding.source == InputBinding::Source::GamepadButton ||
+                       i.binding.source == InputBinding::Source::GamepadAxis;
+            }),
+        m_injections.end());
+    closeDevice(kVirtualGamepadId);
+}
+
+int Input::virtualGamepad(bool create) {
+    if (const int i = deviceIndex(kVirtualGamepadId); i >= 0 || !create) return i;
+    InputDevice d;
+    d.id = kVirtualGamepadId;
+    d.kind = InputDevice::Kind::Gamepad;
+    d.name = "Virtual gamepad";
+    d.type = GamepadType::Xbox;
+    d.axes.assign(static_cast<size_t>(GamepadAxis::Count), 0.0f);
+    d.buttons.assign(static_cast<size_t>(GamepadButton::Count), 0);
+    int player = 0;
+    while (gamepad(player)) ++player;
+    d.player = player;
+    Handles h;
+    h.synthetic = true;
+    h.buttonFlags.assign(d.buttons.size(), 0);
+    h.previousAxes = d.axes;
+    h.restAxes = d.axes;
+    m_devices.push_back(std::move(d));
+    m_handles.push_back(std::move(h));
+    return static_cast<int>(m_devices.size()) - 1;
+}
+
+void Input::applyInjections() {
+    using S = InputBinding::Source;
+    m_mouseDelta += m_injectedMotion;
+    m_injectedMotion = glm::vec2(0.0f);
+    std::vector<Injection> queue;
+    queue.swap(m_injections);
+    for (const Injection& i : queue) {
+        const InputBinding& b = i.binding;
+        const bool down = i.value >= 0.5f;
+        auto press = [&](uint8_t& flags) {
+            if (down && !(flags & Down)) {
+                flags |= Down | Pressed;
+                notePressed(b);
+            } else if (!down && (flags & Down)) {
+                flags = static_cast<uint8_t>((flags & ~Down) | Released);
+            }
+        };
+        if (b.source == S::Key) {
+            if (b.code < m_keys.size()) press(m_keys[b.code]);
+        } else if (b.source == S::Mouse) {
+            if (b.code < m_mouse.size()) press(m_mouse[b.code]);
+        } else {
+            const int pad = virtualGamepad(true);
+            InputDevice& d = m_devices[static_cast<size_t>(pad)];
+            Handles& h = m_handles[static_cast<size_t>(pad)];
+            if (b.source == S::GamepadButton) {
+                if (b.code >= h.buttonFlags.size()) continue;
+                press(h.buttonFlags[b.code]);
+                d.buttons[b.code] = down ? 1 : 0;
+            } else if (b.code < d.axes.size()) {
+                // The value the binding would read back as `value`.
+                float raw = i.value;
+                if (b.range == InputBinding::Range::Negative) raw = -raw;
+                if (b.range == InputBinding::Range::Full) raw = i.value * 2.0f - 1.0f;
+                if (b.invert) raw = -raw;
+                d.axes[b.code] = std::clamp(raw, -1.0f, 1.0f);
+            }
+        }
     }
 }
 
@@ -498,6 +596,7 @@ void Input::pollDevices() {
     for (size_t i = 0; i < m_devices.size(); ++i) {
         InputDevice& d = m_devices[i];
         Handles& h = m_handles[i];
+        if (h.synthetic) continue;   // its axes are what inject() set
         if (h.pad) {
             for (int a = 0; a < static_cast<int>(GamepadAxis::Count); ++a) {
                 float v = axisValue(SDL_GetGamepadAxis(h.pad, static_cast<SDL_GamepadAxis>(a)));

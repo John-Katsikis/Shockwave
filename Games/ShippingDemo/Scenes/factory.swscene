@@ -1,0 +1,396 @@
+# The factory (S07): clear the first room, pass the checkpoint, restart the reactor and
+# hold its room while a guard attacks, then leave through the exit (results first).
+shockwave_scene 2
+editor_camera 0 10 14 0 -0.45
+
+entity "Environment"
+  Environment
+    sky_color 0.12 0.13 0.16 1
+    ground_color 0.16 0.14 0.12 1
+    ambient_intensity 0.8
+    exposure 0
+    shadow_distance 50
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Sun"
+  Transform
+    rotation -50 -25 0
+  Light
+    type Directional
+    color 1 0.82 0.6 1
+    intensity 2.5
+end
+
+entity "Floor"
+  Transform
+    position 0 -0.2 -26.0
+    scale 8.4 0.4 60
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.24 0.24 0.25 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "West wall"
+  Transform
+    position -4.2 2 -26.0
+    scale 0.4 4 60
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.32 0.3 0.28 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "East wall"
+  Transform
+    position 4.2 2 -26.0
+    scale 0.4 4 60
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.32 0.3 0.28 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Back wall"
+  Transform
+    position 0 2 4
+    scale 8.4 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.32 0.3 0.28 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "End wall"
+  Transform
+    position 0 2 -56
+    scale 8.4 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.32 0.3 0.28 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Alarm"
+  Transform
+    position 0 3 -34
+  AudioSource
+    clip Audio/factory-alarm.wav
+    volume 0.3
+    loop 1
+    spatial 0
+    play_on_start 1
+end
+
+entity "Start"
+  Transform
+  LevelSpawn
+    id start
+end
+
+entity "Middle"
+  Transform
+    position 0 0 -28
+  LevelSpawn
+    id middle
+  Checkpoint
+    id middle
+    spawn middle
+end
+
+entity "Player"
+  Prefab
+    path "Prefabs/Player.swprefab"
+  Transform
+end
+
+entity "Demo Camera"
+  Transform
+    position 0 1.55 0
+  Camera
+    primary true
+    fov 75
+end
+
+entity "Demo Gun"
+  Transform
+    position 0.24 -0.22 -0.5
+    scale 0.1 0.12 0.42
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.12 0.13 0.14 1
+    roughness 0.5
+    cast_shadows 0
+  Parent
+    entity "Demo Camera"
+end
+
+entity "Demo Gun sight"
+  Transform
+    position 0 0.6 -0.3
+    scale 0.3 0.25 0.12
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.8 1 1
+    emissive 0.1 0.5 0.8 1
+    cast_shadows 0
+  Parent
+    entity "Demo Gun"
+end
+
+entity "Demo Muzzle"
+  Transform
+    position 0 0 -0.6
+    scale 1.2 1.1 0.3
+  MeshRenderer
+    mesh sphere
+    texture white
+    tint 1 0.7 0.2 1
+    emissive 1 0.55 0.1 1
+    emissive_intensity 4
+    visible 0
+    cast_shadows 0
+  Parent
+    entity "Demo Gun"
+end
+
+entity "Crate 1"
+  Transform
+    position -3 0.5 -8
+  ModelRenderer
+    model Models/factory-crate.glb
+  Collider
+    shape Box
+end
+
+entity "Crate 2"
+  Transform
+    position 3.1 0.5 -11
+  ModelRenderer
+    model Models/factory-crate.glb
+  Collider
+    shape Box
+end
+
+entity "Crate 3"
+  Transform
+    position -3 0.5 -18
+  ModelRenderer
+    model Models/factory-crate.glb
+  Collider
+    shape Box
+end
+
+entity "Crate 4"
+  Transform
+    position 3 0.5 -40
+  ModelRenderer
+    model Models/factory-crate.glb
+  Collider
+    shape Box
+end
+
+entity "Crate 5"
+  Transform
+    position -3.1 0.5 -44
+  ModelRenderer
+    model Models/factory-crate.glb
+  Collider
+    shape Box
+end
+
+entity "Sentry 1"
+  Prefab
+    path "Prefabs/Enemy.swprefab"
+  Transform
+    position 0 0 -14
+    rotation 0 180 0
+  PersistentIdentity
+    id 5b0d3c1e-7a42-4f6e-9c1b-2e8d4a7f0201
+end
+
+entity "Sentry 2"
+  Prefab
+    path "Prefabs/Enemy.swprefab"
+  Transform
+    position 0 0 -20
+    rotation 0 180 0
+  PersistentIdentity
+    id 5b0d3c1e-7a42-4f6e-9c1b-2e8d4a7f0202
+end
+
+entity "Factory health"
+  Prefab
+    path "Prefabs/Health pickup.swprefab"
+  Transform
+    position 0 0 -23
+  PersistentIdentity
+    id 5b0d3c1e-7a42-4f6e-9c1b-2e8d4a7f0203
+end
+
+entity "Security door"
+  Transform
+    position 0 2 -25.5
+    scale 8 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.6 0.2 0.1 1
+    roughness 0.8
+  Collider
+    shape Box
+  DemoGate
+    objective factory.enemies
+end
+
+entity "Reactor console"
+  Prefab
+    path "Prefabs/Console.swprefab"
+  Transform
+    position 2.6 0 -34
+  InteractionTarget
+    kind Use
+    prompt "Restart the reactor"
+    action demo_use
+    radius 3
+end
+
+entity "Reactor room"
+  Transform
+    position 0 0.01 -34
+    scale 6 0.02 6
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.6 0.9 1
+    roughness 0.8
+end
+
+entity "Guard"
+  Prefab
+    path "Prefabs/Enemy.swprefab"
+  Transform
+    position 0 0 -50
+    rotation 0 180 0
+  Health
+    max 100
+    current 100
+    group guards
+  PersistentIdentity
+    id 5b0d3c1e-7a42-4f6e-9c1b-2e8d4a7f0204
+end
+
+entity "Factory exit"
+  Transform
+    position 0 0 -54
+  InteractionTarget
+    kind Exit
+    prompt "Leave the factory"
+    action demo_use
+    radius 2.5
+  LevelExit
+    destination ending
+end
+
+entity "Exit door"
+  Transform
+    position 0 1.6 -55.6
+    scale 2.4 3.2 0.3
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.3 1 0.5 1
+    roughness 0.8
+end
+
+entity "Objective: sentries"
+  ObjectiveProgress
+    id factory.enemies
+    kind Destroy
+    text "Take out the sentries"
+    order 1
+    group enemies
+end
+
+entity "Objective: reactor"
+  ObjectiveProgress
+    id factory.reactor
+    kind Use
+    text "Restart the reactor"
+    order 2
+    target "Reactor console"
+end
+
+entity "Objective: hold"
+  ObjectiveProgress
+    id factory.hold
+    kind Hold
+    text "Hold the reactor room"
+    order 3
+    target "Reactor room"
+    radius 4
+    seconds 8
+end
+
+entity "Objective: guard"
+  ObjectiveProgress
+    id factory.guards
+    kind Destroy
+    text "Take out the guard"
+    order 4
+    group guards
+end
+
+entity "Level"
+  CampaignProgress
+    complete_id factory
+    next ending
+    results 1
+end
+
+entity "Demo HUD"
+  UIDocument
+    document UI/hud.rml
+    preview "demo_health=100; demo_ammo=12; demo_magazine=12; demo_reserve=36; demo_objective=Reach the firing line; demo_progress=; demo_prompt=E  Open the gate; demo_has_prompt=true; demo_controls=Move W A S D; demo_checkpoint="
+end
+
+entity "Demo Badge"
+  UIDocument
+    document UI/badge-factory.rml
+end
+
+entity "Demo Results"
+  UIDocument
+    document UI/results.rml
+    visible 0
+    focus_on_show 1
+    order 10
+end
+
+entity "Demo Down"
+  UIDocument
+    document UI/down.rml
+    visible 0
+    focus_on_show 1
+    order 11
+end
