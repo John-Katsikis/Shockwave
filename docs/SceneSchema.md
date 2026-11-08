@@ -106,6 +106,7 @@ end
 | `occlusion` | 1 or 0 (true/false also accepted) | `0` |
 | `occlusion_radius` | number; range 0 to 10 | `0.5` |
 | `transmission` | number; range 0 to 1 | `0.1` |
+| `category` | one of: Effects, Music, UI, Voice (or its number, counting from 0) | `Effects` |
 
 #### AudioListener
 
