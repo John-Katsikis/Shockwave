@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 
 using namespace shockwave;
@@ -244,6 +245,74 @@ static void testHoldUntilReleased() {
     CHECK(input.isActionDown("fire") && input.wasActionPressed("fire"));
 }
 
+// S07: synthetic input at the device boundary (flow tests' hold, tap and look) reads
+// exactly like the device through the bindings, rebinding included.
+static void testInject() {
+    Input input;
+    input.bindAction("use", Key::E);
+    input.bindAction("fire", MouseButton::Left);
+    input.bindAction("walk", GamepadAxis::LeftY, InputBinding::Range::Positive);
+    input.bindAction("jump", GamepadButton::South);
+    InputBinding e, mouse, stick, south, joystick;
+    std::string error;
+    CHECK(parseBinding("key E", e, error) && parseBinding("mouse left", mouse, error));
+    CHECK(parseBinding("pad_axis left_y +", stick, error) && parseBinding("pad south", south, error));
+    CHECK(parseBinding("joy * axis 0 +", joystick, error));
+    CHECK(!input.inject(joystick, 1));   // joysticks aren't simulated
+    // A tap between frames: pressed in the next frame, released in the one after.
+    CHECK(input.inject(e, 1));
+    frame(input);
+    CHECK(input.wasActionPressed("use") && input.isActionDown("use"));
+    CHECK(input.lastPressed() && *input.lastPressed() == e);
+    input.inject(e, 0);
+    frame(input);
+    CHECK(input.wasActionReleased("use") && !input.isActionDown("use"));
+    frame(input);
+    CHECK(!input.wasActionReleased("use"));
+    // Held across frames.
+    input.inject(mouse, 1);
+    frame(input);
+    frame(input);
+    CHECK(input.isActionDown("fire") && !input.wasActionPressed("fire"));
+    input.inject(mouse, 0);
+    frame(input);
+    CHECK(!input.isActionDown("fire"));
+    // Motion lands in the next frame's delta only.
+    input.injectMouseMotion({12, -3});
+    frame(input);
+    CHECK(near(input.mouseDelta().x, 12) && near(input.mouseDelta().y, -3));
+    frame(input);
+    CHECK(input.mouseDelta() == glm::vec2(0));
+    // A gamepad binding plugs in a virtual pad; its stick reads through the dead zone.
+    CHECK(!input.hasVirtualGamepad());
+    input.inject(stick, 1);
+    input.inject(south, 1);
+    frame(input);
+    CHECK(input.hasVirtualGamepad() && input.gamepad(0) && input.gamepad(0)->name == "Virtual gamepad");
+    CHECK(near(input.actionValue("walk"), 1) && input.wasActionPressed("jump"));
+    input.inject(stick, 0.5f);
+    frame(input);
+    CHECK(input.actionValue("walk") > 0.3f && input.actionValue("walk") < 0.5f);
+    // Unplugged: everything it held lets go.
+    input.removeVirtualGamepad();
+    frame(input);
+    CHECK(!input.hasVirtualGamepad() && input.actionValue("walk") == 0 && !input.isActionDown("jump"));
+    // Rebinding: the same key now drives nothing; the new one does.
+    input.clearAction("use");
+    input.bindAction("use", Key::F);
+    input.inject(e, 1);
+    frame(input);
+    CHECK(!input.isActionDown("use"));
+    input.inject(e, 0);
+    InputBinding f{.source = InputBinding::Source::Key, .code = uint16_t(Key::F)};
+    input.inject(f, 1);
+    frame(input);
+    CHECK(input.isActionDown("use"));
+    input.inject(f, std::numeric_limits<float>::quiet_NaN());
+    frame(input);
+    CHECK(!input.isActionDown("use"));   // NaN reads as let go
+}
+
 int main() {
     if (!SDL_Init(SDL_INIT_EVENTS)) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -254,6 +323,7 @@ int main() {
     testVirtualGamepad();
     testVirtualJoystick();
     testHoldUntilReleased();
+    testInject();
     SDL_Quit();
     if (failures) {
         std::fprintf(stderr, "%d input check(s) failed\n", failures);

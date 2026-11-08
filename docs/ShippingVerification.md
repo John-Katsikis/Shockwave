@@ -17,7 +17,9 @@ section says:
 | S03 level lifetime | done | [below](#s03-level-lifetime) |
 | S04 assets and loading | done: dependencies, leases, budget, load report; loading on demand, deferred GPU frees | [part 1](#s04-asset-dependencies-and-residency-part-1), [part 2](#s04-loading-on-demand-part-2) |
 | S05 offline flow and travel | done: travel tickets, staged travel, spawns, exits, circuit nodes; the application shell's screens, `--flow-test` | [part 1](#s05-travel-tickets-part-1), [part 2](#s05-application-shell-and-flow-tests-part-2) |
-| S06-S15 | not started | none |
+| S06 campaign saves | done: save format 2, campaign travel, migration, durable writes, Continue; checkpoints, finishing a level, things that stay gone | [part 1](#s06-campaign-saves-part-1), [part 2](#s06-checkpoints-and-lasting-progress-part-2) |
+| S07 finishable reference game | part 1 done: Reactor Run, real-input flow steps, the whole game played by keyboard and mouse and by gamepad, save/quit/continue; part 2 (editor authoring, package, playtest) not started | [part 1](#s07-reactor-run-part-1) |
+| S08-S15 | not started | none |
 
 ## S00: release contract
 
@@ -787,3 +789,65 @@ Full local suite: 102 of 102 pass on Linux, gpu included.
 - **Quit during Saving** waits for the write (the `SaveGames` destructor drains it) with no
   timeout or on-screen "Saving..." yet.
 - **The editor's Save Games window** is unchanged.
+
+## S07: Reactor Run, part 1
+
+### What was built
+
+- **Games/ShippingDemo, "Reactor Run"** (module `shippingdemo`, in the default
+  `SHOCKWAVE_GAMES`): a menu, a training level, a factory level and an ending, joined by
+  `Config/Levels.swlevels`. The application shell is on (`app_shell all`) and levels
+  load and unload their own assets (`asset_loading levels`). See its
+  [README](../Games/ShippingDemo/README.md).
+- **Game-owned components**, all saved: `DemoPlayer`, `Health`, `Loadout`,
+  `ObjectiveProgress` (Reach, Destroy, Collect, Use, Hold), `InteractionTarget` (Use,
+  Pickup, Exit), `DemoEnemy`, `DemoGate` and `CampaignProgress`. `DemoRules::validate`
+  refuses bad content (unknown groups, items, objectives, duplicate ids, a Use objective
+  whose target isn't usable) with one line per problem, and the GameMode won't start
+  such a level ("gameplay content").
+- **Rules** in `DemoRules`, one fixed tick from a `PlayerCommand`, with a stated order: a
+  death wins over a victory on the same tick, one objective completes per tick, the Hold
+  timer counts ticks. Enemy sight and movement is a Schedule system across cores;
+  damage, pickups and objectives are applied on the main thread after physics.
+- **Input** is read per frame and latched per tick; prompts name the bound key or button
+  on the device used last (`bindingLabel`), so rebinding changes them.
+- **Two ways out.** Training leaves through a circuit (`Circuits/TrainingExit.swcircuit`:
+  a player-only sensor, `Campaign.Complete`, `Level.FinishLevel`); the factory leaves
+  through C++ (`InteractionTarget` Exit, the results screen, `finishLevel`).
+- **Checkpoints** are reached by walking to a `Checkpoint`; going down offers Restart
+  from checkpoint (the level when there's none), Restart level and Main menu.
+- **Assets**: two generated models, seven sounds and two badges, made by
+  `Tools/GenerateDemoAssets.py` (CC0, recorded in `Content/PROVENANCE.md`). Training and
+  the factory each have their own model, sound, UI image and scene dependency.
+- **Real input in flow tests**: `hold`, `tap`, `look`, `wait` and `wait_value` steps go
+  in through `Input::inject` and `Input::injectMouseMotion`, which act like the device
+  through the bindings; a `pad` binding plugs in a virtual gamepad
+  (`Input::removeVirtualGamepad` unplugs it). See [FlowTest.md](FlowTest.md#real-input).
+- **Credits**: the shell's Credits page reads `Content/Shell/credits.txt` when a project
+  has one.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `shipping_demo` | unit | On the real scenes with real Jolt: all four pass the content checks and five broken copies are refused by name; injected W walks forward through the bindings, a rebinding is followed (old key does nothing, new key walks), prompts read E, Left mouse, Right trigger and then F; a virtual pad's stick walks and unplugging it stops the player; two hits destroy a target, an empty magazine reloads itself after 72 ticks, an empty reserve dry-fires; pickups only when needed and gone after; the factory's sentries shoot back and fall, the door opens, the console only works in its turn, the exit stays shut; the 8 s hold takes 8 s at 30, 60 and 120 ticks a second; a death on the tick the last objective would complete wins; a completion is granted once. |
+| `shipping_demo_flow` | integration | `--check` passes; the whole game (menu, training, factory with checkpoint and results, credits, back to the menu and a confirmed New game) played with real keyboard and mouse input, then again on a virtual gamepad, each from a fresh profile; save and quit in the factory after the checkpoint, then in a second run Continue resumes there with the sentries still gone and finishes the game. |
+| `input` | unit | injected taps, holds, mouse motion, the virtual pad and its unplugging, rebinding and NaN all read as the device would |
+| `game_flow` | unit | the new steps parse, and nine malformed ones are refused with the reason |
+
+Full local suite: 104 of 104 pass on Linux, gpu included.
+
+### Still unverified
+
+- **Part 2 isn't built**: editor level authoring (create and duplicate a level, place
+  spawns, exits and checkpoints, pick destinations, objective ids, play from the
+  current level, failures by kind), `Config/Package.swpackage` and the packaged demo,
+  and the human playtest on hardware.
+- **`--check` doesn't run the game's own content checks**; they run when a level
+  starts.
+- **Drawn on a GPU.** The flow tests run with `--renderer null`; nobody has looked at the
+  levels, HUD and screens on a real display yet.
+- **Controller-only menus.** The gamepad run plays the levels on a pad but clicks the
+  shell's buttons; menu navigation on a pad alone is S08.
+- **The enemy AI** walks straight at what it sees; there's no navigation mesh, so a
+  sentry can be stuck behind a crate.

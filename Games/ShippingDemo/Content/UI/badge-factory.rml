@@ -1,0 +1,2 @@
+<rml><head><title>Factory badge</title><link type="text/rcss" href="demo.rcss"/></head>
+<body><div id="badge"><img src="factory-badge.png"/><span>FACTORY</span></div></body></rml>

@@ -1,0 +1,25 @@
+shockwave_input 1
+deadzone 0.15
+
+# Reactor Run's controls. Every action has a keyboard/mouse and a gamepad binding, and
+# the HUD's prompts name whatever is bound here, so rebinding changes them too.
+bind demo_forward key W
+bind demo_forward pad_axis left_y +
+bind demo_back key S
+bind demo_back pad_axis left_y -
+bind demo_left key A
+bind demo_left pad_axis left_x -
+bind demo_right key D
+bind demo_right pad_axis left_x +
+bind demo_look_left pad_axis right_x -
+bind demo_look_right pad_axis right_x +
+bind demo_look_up pad_axis right_y +
+bind demo_look_down pad_axis right_y -
+bind demo_fire mouse left
+bind demo_fire pad_axis right_trigger +
+bind demo_reload key R
+bind demo_reload pad west
+bind demo_use key E
+bind demo_use pad south
+bind demo_sprint key LeftShift
+bind demo_sprint pad left_stick

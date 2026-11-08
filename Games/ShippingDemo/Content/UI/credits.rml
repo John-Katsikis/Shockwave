@@ -1,0 +1,9 @@
+<rml><head><title>Credits</title><link type="text/rcss" href="demo.rcss"/></head>
+<body class="screen" data-model="game">
+  <div class="dialog">
+    <h1>The reactor is running</h1>
+    <p>You finished Reactor Run. Thanks for playing.</p>
+    <p class="reason">A Shockwave reference game. Every model, sound and image was generated for it and is dedicated to the public domain (CC0); see Content/PROVENANCE.md.</p>
+    <button id="credits_menu" onclick="credits_menu" autofocus>Back to the main menu</button>
+  </div>
+</body></rml>

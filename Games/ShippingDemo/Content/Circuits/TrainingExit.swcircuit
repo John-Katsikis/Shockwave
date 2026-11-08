@@ -1,0 +1,24 @@
+shockwave_circuit 1
+# Training's way out (S07), authored as a circuit rather than C++: the player walking
+# into this sensor (it only senses the player's collision layer) records the training as
+# complete, once per campaign, and finishes the level, which autosaves on the way to the
+# factory. Attach it to the sensor that carries the LevelExit.
+node enter Event.TriggerEnter
+node done Campaign.Complete
+  exec enter.then
+  in id = "training"
+node finish Level.FinishLevel
+  exec done.first
+  in level = "factory"
+  in spawn = "start"
+node again Level.FinishLevel
+  exec done.already
+  in level = "factory"
+  in spawn = "start"
+editor
+  enter -600 0
+  done -300 0
+  finish 0 -80
+  again 0 120
+  @note enter "The sensor only senses collision layer 1, the player's"
+end

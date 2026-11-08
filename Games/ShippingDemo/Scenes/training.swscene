@@ -1,0 +1,340 @@
+# Training (S07): walk to the firing line, shoot three targets, pick up ammo, open the
+# gate at the console and walk out. The exit is a circuit: Circuits/TrainingExit.swcircuit.
+shockwave_scene 2
+editor_camera 0 8 12 0 -0.4
+
+entity "Environment"
+  Environment
+    sky_color 0.22 0.3 0.38 1
+    ground_color 0.2 0.22 0.22 1
+    ambient_intensity 0.8
+    exposure 0
+    shadow_distance 50
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Sun"
+  Transform
+    rotation -50 -25 0
+  Light
+    type Directional
+    color 1 0.95 0.85 1
+    intensity 2.5
+end
+
+entity "Floor"
+  Transform
+    position 0 -0.2 -18.0
+    scale 8.4 0.4 44
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.32 0.36 0.38 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "West wall"
+  Transform
+    position -4.2 2 -18.0
+    scale 0.4 4 44
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.42 0.46 0.48 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "East wall"
+  Transform
+    position 4.2 2 -18.0
+    scale 0.4 4 44
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.42 0.46 0.48 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Back wall"
+  Transform
+    position 0 2 4
+    scale 8.4 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.42 0.46 0.48 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "End wall"
+  Transform
+    position 0 2 -40
+    scale 8.4 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.42 0.46 0.48 1
+    roughness 0.8
+  Collider
+    shape Box
+end
+
+entity "Chime"
+  Transform
+  AudioSource
+    clip Audio/training-chime.wav
+    volume 0.5
+    spatial 0
+    play_on_start 1
+end
+
+entity "Start"
+  Transform
+  LevelSpawn
+    id start
+end
+
+entity "Player"
+  Prefab
+    path "Prefabs/Player.swprefab"
+  Transform
+  Loadout
+    magazine 6
+    ammo 6
+    reserve 6
+    max_reserve 96
+    damage 34
+    interval 0.16
+    reload_seconds 1.2
+    range 60
+end
+
+entity "Demo Camera"
+  Transform
+    position 0 1.55 0
+  Camera
+    primary true
+    fov 75
+end
+
+entity "Demo Gun"
+  Transform
+    position 0.24 -0.22 -0.5
+    scale 0.1 0.12 0.42
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.12 0.13 0.14 1
+    roughness 0.5
+    cast_shadows 0
+  Parent
+    entity "Demo Camera"
+end
+
+entity "Demo Gun sight"
+  Transform
+    position 0 0.6 -0.3
+    scale 0.3 0.25 0.12
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.8 1 1
+    emissive 0.1 0.5 0.8 1
+    cast_shadows 0
+  Parent
+    entity "Demo Gun"
+end
+
+entity "Demo Muzzle"
+  Transform
+    position 0 0 -0.6
+    scale 1.2 1.1 0.3
+  MeshRenderer
+    mesh sphere
+    texture white
+    tint 1 0.7 0.2 1
+    emissive 1 0.55 0.1 1
+    emissive_intensity 4
+    visible 0
+    cast_shadows 0
+  Parent
+    entity "Demo Gun"
+end
+
+entity "Firing line"
+  Transform
+    position 0 0.01 -6
+    scale 8 0.02 0.3
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.95 0.7 0.1 1
+    roughness 0.8
+end
+
+entity "Target centre"
+  Prefab
+    path "Prefabs/Target.swprefab"
+  Transform
+    position 0 0 -16
+end
+
+entity "Target left"
+  Prefab
+    path "Prefabs/Target.swprefab"
+  Transform
+    position -1.6 0 -16
+end
+
+entity "Target right"
+  Prefab
+    path "Prefabs/Target.swprefab"
+  Transform
+    position 1.6 0 -16
+end
+
+entity "Training ammo"
+  Prefab
+    path "Prefabs/Ammo pickup.swprefab"
+  Transform
+    position 0 0 -10
+  PersistentIdentity
+    id 5b0d3c1e-7a42-4f6e-9c1b-2e8d4a7f0101
+end
+
+entity "Gate console"
+  Prefab
+    path "Prefabs/Console.swprefab"
+  Transform
+    position 2.6 0 -20
+  InteractionTarget
+    kind Use
+    prompt "Open the gate"
+    action demo_use
+    radius 3
+end
+
+entity "Training gate"
+  Transform
+    position 0 2 -24
+    scale 8 4 0.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.85 0.55 0.1 1
+    roughness 0.8
+  Collider
+    shape Box
+  DemoGate
+    objective training.gate
+end
+
+entity "Training exit"
+  Transform
+    position 0 1 -32
+  Collider
+    shape Box
+    half_extents 3.8 1 0.6
+  RigidBody
+    motion Static
+    sensor 1
+    collision_mask 2
+  LevelExit
+    destination factory
+    spawn start
+  Circuit
+    circuit "Circuits/TrainingExit.swcircuit"
+end
+
+entity "Exit light"
+  Transform
+    position 0 3.8 -32
+    scale 7.6 0.1 0.6
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.3 1 0.5 1
+    roughness 0.8
+end
+
+entity "Objective: firing line"
+  ObjectiveProgress
+    id training.line
+    kind Reach
+    text "Walk to the firing line"
+    order 1
+    target "Firing line"
+    radius 1.5
+end
+
+entity "Objective: targets"
+  ObjectiveProgress
+    id training.targets
+    kind Destroy
+    text "Shoot the three targets"
+    order 2
+    group targets
+end
+
+entity "Objective: ammo"
+  ObjectiveProgress
+    id training.ammo
+    kind Collect
+    text "Pick up the ammo"
+    order 3
+    group ammo
+end
+
+entity "Objective: gate"
+  ObjectiveProgress
+    id training.gate
+    kind Use
+    text "Open the gate at the console"
+    order 4
+    target "Gate console"
+end
+
+entity "Level"
+  CampaignProgress
+    complete_id training
+    next factory
+    spawn start
+    results 0
+end
+
+entity "Demo HUD"
+  UIDocument
+    document UI/hud.rml
+    preview "demo_health=100; demo_ammo=12; demo_magazine=12; demo_reserve=36; demo_objective=Reach the firing line; demo_progress=; demo_prompt=E  Open the gate; demo_has_prompt=true; demo_controls=Move W A S D; demo_checkpoint="
+end
+
+entity "Demo Badge"
+  UIDocument
+    document UI/badge-training.rml
+end
+
+entity "Demo Results"
+  UIDocument
+    document UI/results.rml
+    visible 0
+    focus_on_show 1
+    order 10
+end
+
+entity "Demo Down"
+  UIDocument
+    document UI/down.rml
+    visible 0
+    focus_on_show 1
+    order 11
+end

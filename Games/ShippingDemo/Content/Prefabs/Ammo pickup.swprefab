@@ -1,0 +1,30 @@
+shockwave_prefab 1
+# 24 rounds for the reserve, collected by walking over it (not when the reserve is full).
+# A copy in a scene gives itself a PersistentIdentity so it stays gone once taken.
+
+entity "Ammo pickup"
+  Transform
+  InteractionTarget
+    kind Pickup
+    prompt "Ammo"
+    radius 1.2
+    item ammo
+    amount 24
+    group ammo
+  Spin
+    speed 90
+end
+
+entity "Ammo box"
+  Transform
+    position 0 0.35 0
+    scale 0.5 0.3 0.34
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.95 0.72 0.15 1
+    emissive 0.4 0.28 0.02 1
+    roughness 0.5
+  Parent
+    entity "Ammo pickup"
+end

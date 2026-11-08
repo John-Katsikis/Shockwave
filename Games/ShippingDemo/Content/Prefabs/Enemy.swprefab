@@ -1,0 +1,81 @@
+shockwave_prefab 1
+# A factory sentry: walks straight at the player once it sees them and fires on a fixed
+# interval. Three hits. Health.group "enemies" is what the first room's objective counts;
+# a copy can change it (the reactor room's guard is "guards").
+
+entity "Enemy"
+  Transform
+  DemoEnemy
+    speed 2.2
+    sight 20
+    stop_distance 5
+    fire_interval 1.3
+    damage 7
+    eye_height 1.5
+  Health
+    max 100
+    current 100
+    group enemies
+  Collider
+    shape Box
+    half_extents 0.35 0.85 0.3
+    offset 0 0.85 0
+  RigidBody
+    motion Kinematic
+    gravity_factor 0
+    collision_layer 2
+end
+
+entity "Body"
+  Transform
+    position 0 0.95 0
+    scale 0.62 0.8 0.42
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.35 0.12 0.1 1
+    roughness 0.7
+  Parent
+    entity "Enemy"
+end
+
+entity "Head"
+  Transform
+    position 0 1.55 0
+    scale 0.4 0.36 0.38
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.14 0.15 0.16 1
+    roughness 0.7
+  Parent
+    entity "Enemy"
+end
+
+entity "Eye"
+  Transform
+    position 0 1.57 -0.2
+    scale 0.3 0.08 0.03
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 1 0.3 0.1 1
+    emissive 1 0.25 0.05 1
+    emissive_intensity 3
+    cast_shadows 0
+  Parent
+    entity "Enemy"
+end
+
+entity "Legs"
+  Transform
+    position 0 0.28 0
+    scale 0.5 0.56 0.3
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.17 0.18 0.19 1
+    roughness 0.8
+  Parent
+    entity "Enemy"
+end

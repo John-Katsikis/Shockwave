@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "name": "continue in the factory and finish (second run)",
+  "timeout": 180,
+  "steps": [
+    {"assert_level": "menu"},
+    {"wait_value": "flow.can_continue", "equals": "true"},
+    {"click": "continue"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "factory"},
+    {"wait_value": "game.demo_objective_id", "equals": "factory.reactor"},
+    {"assert_value": "game.demo_kills", "equals": "2"},
+    {"hold": "key W", "until": "game.demo_near", "equals": "Reactor console", "timeout": 30},
+    {"tap": "key E"},
+    {"wait_value": "game.demo_objective_id", "equals": "factory.hold"},
+    {"hold": "mouse left", "until": "game.demo_objective_id", "equals": "done", "timeout": 40},
+    {"hold": "key W", "until": "game.demo_near", "equals": "Factory exit", "timeout": 30},
+    {"tap": "key E"},
+    {"wait_value": "game.demo_state", "equals": "won"},
+    {"click": "results_continue", "document": "Demo Results"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "ending"},
+    {"click": "credits_menu", "document": "Demo Credits"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "menu"},
+    {"quit": true}
+  ]
+}

@@ -218,7 +218,7 @@ add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
 # Add your own game's folder here (a ;-separated list). The editor opens any project
 # whose module is built.
-set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample;${CMAKE_CURRENT_SOURCE_DIR}/Games/Arena"
+set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample;${CMAKE_CURRENT_SOURCE_DIR}/Games/Arena;${CMAKE_CURRENT_SOURCE_DIR}/Games/ShippingDemo"
     CACHE STRING "Game module folders to build (absolute paths, separated by semicolons)")
 # The project the player runs when it's given none.
 set(SHOCKWAVE_GAME_PROJECT "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample/Sample.swproject"

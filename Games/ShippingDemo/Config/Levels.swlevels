@@ -1,0 +1,25 @@
+# Reactor Run's levels (docs/Levels.md): the menu, two gameplay levels and the ending.
+shockwave_levels 1
+entry "menu"
+level "menu"
+  scene "Scenes/menu.swscene"
+  kind menu
+  next "training"
+end
+level "training"
+  scene "Scenes/training.swscene"
+  kind gameplay
+  default_spawn "start"
+  next "factory"
+end
+level "factory"
+  scene "Scenes/factory.swscene"
+  kind gameplay
+  default_spawn "start"
+  next "ending"
+end
+level "ending"
+  scene "Scenes/ending.swscene"
+  kind ending
+  next "menu"
+end

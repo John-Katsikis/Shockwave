@@ -1,0 +1,2 @@
+<rml><head><title>Training badge</title><link type="text/rcss" href="demo.rcss"/></head>
+<body><div id="badge"><img src="training-badge.png"/><span>TRAINING</span></div></body></rml>

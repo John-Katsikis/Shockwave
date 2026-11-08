@@ -227,6 +227,11 @@ const char* flowStepKindName(FlowStep::Kind kind) {
     case FlowStep::Kind::Save: return "save";
     case FlowStep::Kind::Load: return "load";
     case FlowStep::Kind::Quit: return "quit";
+    case FlowStep::Kind::Hold: return "hold";
+    case FlowStep::Kind::Tap: return "tap";
+    case FlowStep::Kind::Look: return "look";
+    case FlowStep::Kind::Wait: return "wait";
+    case FlowStep::Kind::WaitValue: return "wait_value";
     }
     return "quit";
 }
@@ -300,7 +305,12 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                     {"assert_value", FlowStep::Kind::AssertValue},
                     {"save", FlowStep::Kind::Save},
                     {"load", FlowStep::Kind::Load},
-                    {"quit", FlowStep::Kind::Quit}};
+                    {"quit", FlowStep::Kind::Quit},
+                    {"hold", FlowStep::Kind::Hold},
+                    {"tap", FlowStep::Kind::Tap},
+                    {"look", FlowStep::Kind::Look},
+                    {"wait", FlowStep::Kind::Wait},
+                    {"wait_value", FlowStep::Kind::WaitValue}};
                 FlowStep step;
                 int found = 0;
                 for (const auto& [k, f] : s.fields) {
@@ -313,6 +323,24 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                                 error = where + "quit is written {\"quit\": true}";
                                 return false;
                             }
+                        } else if (step.kind == FlowStep::Kind::Look) {
+                            if (f.type != Json::Type::Array || f.items.size() != 2 ||
+                                f.items[0].type != Json::Type::Number || f.items[1].type != Json::Type::Number ||
+                                std::abs(f.items[0].number) > 10000 || std::abs(f.items[1].number) > 10000) {
+                                error = where + "look is written {\"look\": [x, y]}, in pixels (at most 10000)";
+                                return false;
+                            }
+                            step.lookX = float(f.items[0].number);
+                            step.lookY = float(f.items[1].number);
+                            step.target = number(f.items[0].number) + " " + number(f.items[1].number);
+                        } else if (step.kind == FlowStep::Kind::Wait) {
+                            if (f.type != Json::Type::Number || !(f.number > 0) || f.number > kMaxFlowTimeout) {
+                                error = where + "wait is a number of seconds, more than 0";
+                                return false;
+                            }
+                            step.seconds = f.number;
+                            step.target = number(f.number);
+                            step.timeout = std::max(step.timeout, f.number + 10);
                         } else if (f.type != Json::Type::String || f.text.empty()) {
                             error = where + k + " needs a name in quotes";
                             return false;
@@ -324,9 +352,9 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                 if (found != 1) {
                     error =
                         where + (found ? "only one of travel, click, press, wait_phase, assert_level, assert_value, "
-                                         "save, load or quit"
+                                         "save, load, hold, tap, look, wait, wait_value or quit"
                                        : "it needs one of travel, click, press, wait_phase, assert_level, "
-                                         "assert_value, save, load or quit");
+                                         "assert_value, save, load, hold, tap, look, wait, wait_value or quit");
                     return false;
                 }
                 const char* kindName = flowStepKindName(step.kind);
@@ -354,13 +382,77 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                         }
                     } else if (k == "document" && step.kind == FlowStep::Kind::Click) {
                         ok = text(step.document);
-                    } else if (k == "equals" && step.kind == FlowStep::Kind::AssertValue) {
+                    } else if (
+                        k == "equals" &&
+                        (step.kind == FlowStep::Kind::AssertValue || step.kind == FlowStep::Kind::WaitValue ||
+                         step.kind == FlowStep::Kind::Hold)) {
                         ok = text(step.equals);
+                    } else if (k == "until" && step.kind == FlowStep::Kind::Hold) {
+                        ok = text(step.until);
+                    } else if (k == "value" && step.kind == FlowStep::Kind::Hold) {
+                        ok = f.type == Json::Type::Number && f.number > 0 && f.number <= 1;
+                        if (ok)
+                            step.value = float(f.number);
+                        else
+                            error = where + "value is how far it's held, more than 0 and at most 1";
+                    } else if (k == "seconds" && step.kind == FlowStep::Kind::Hold) {
+                        ok = f.type == Json::Type::Number && f.number > 0 && f.number <= kMaxFlowTimeout;
+                        if (ok)
+                            step.seconds = f.number;
+                        else
+                            error = where + "seconds is a number, more than 0";
+                    } else if (k == "frames" && step.kind == FlowStep::Kind::Look) {
+                        ok = f.type == Json::Type::Number && f.number >= 1 && f.number <= 10000 &&
+                             f.number == std::floor(f.number);
+                        if (ok)
+                            step.frames = int(f.number);
+                        else
+                            error = where + "frames is a whole number from 1";
                     } else {
                         error = where + kindName + " has no \"" + k + "\"";
                         ok = false;
                     }
                     if (!ok) return false;
+                }
+                auto has = [&](const char* name) {
+                    for (const auto& [k, f] : s.fields)
+                        if (k == name) return true;
+                    return false;
+                };
+                if (step.kind == FlowStep::Kind::Hold || step.kind == FlowStep::Kind::Tap) {
+                    std::string why;
+                    if (!parseBinding(step.target, step.binding, why)) {
+                        error = where + "\"" + step.target + "\" isn't a binding: " + why;
+                        return false;
+                    }
+                    using Source = InputBinding::Source;
+                    if (step.binding.source != Source::Key && step.binding.source != Source::Mouse &&
+                        step.binding.source != Source::GamepadButton && step.binding.source != Source::GamepadAxis) {
+                        error = where + "flow tests press keys, mouse buttons and gamepads, not joysticks";
+                        return false;
+                    }
+                }
+                if (step.kind == FlowStep::Kind::Hold) {
+                    const bool until = has("until");
+                    if (until == (step.seconds > 0) || until != has("equals")) {
+                        error = where + "hold needs either \"seconds\" or \"until\" with \"equals\"";
+                        return false;
+                    }
+                    if (until && step.until.rfind("flow.", 0) != 0 && step.until.rfind("game.", 0) != 0) {
+                        error = where + "until names flow.<value> or game.<value>";
+                        return false;
+                    }
+                    if (step.seconds > 0) step.timeout = std::max(step.timeout, step.seconds + 10);
+                }
+                if (step.kind == FlowStep::Kind::WaitValue) {
+                    if (step.target.rfind("flow.", 0) != 0 && step.target.rfind("game.", 0) != 0) {
+                        error = where + "wait_value names flow.<value> or game.<value>";
+                        return false;
+                    }
+                    if (!has("equals")) {
+                        error = where + "wait_value needs \"equals\"";
+                        return false;
+                    }
                 }
                 if (step.kind == FlowStep::Kind::Press && step.target != kPauseAction) {
                     error = where + "press takes \"pause\" (the only action flow tests press yet)";
@@ -433,6 +525,8 @@ void FlowTest::finishStep(bool ok, std::string message) {
              ok,           std::chrono::duration<double, std::milli>(Clock::now() - m_stepStarted).count(),
              m_stepFrames, message};
     m_records.push_back(std::move(r));
+    release();   // a hold that timed out lets go too
+    m_lookLeft = 0;
     m_stepBegun = false;
     if (!ok) {
         m_state = State::Failed;
@@ -534,13 +628,48 @@ bool FlowTest::run(const FlowStep& step, std::string& failure) {
         }
         return true;
     }
+    case FlowStep::Kind::Hold:
+    case FlowStep::Kind::Tap: {
+        if (!m_hooks.inject) {
+            failure = "this run can't press anything";
+            return true;
+        }
+        if (!m_holding) {
+            m_hooks.inject(step.binding, step.kind == FlowStep::Kind::Hold ? step.value : 1.0f);
+            m_holding = true;
+            return false;   // held from the next update on
+        }
+        bool done = step.kind == FlowStep::Kind::Tap;
+        if (step.kind == FlowStep::Kind::Hold)
+            done = step.seconds > 0 ? m_stepTime >= step.seconds : value(step.until) == step.equals;
+        if (done) release();
+        return done;
+    }
+    case FlowStep::Kind::Look: {
+        if (!m_hooks.look) {
+            failure = "this run can't move the mouse";
+            return true;
+        }
+        if (m_lookLeft == 0 && m_stepFrames == 0) m_lookLeft = step.frames;
+        m_hooks.look(step.lookX / float(step.frames), step.lookY / float(step.frames));
+        return --m_lookLeft <= 0;
+    }
+    case FlowStep::Kind::Wait: return m_stepTime >= step.seconds;
+    case FlowStep::Kind::WaitValue: return value(step.target) == step.equals;
     case FlowStep::Kind::Quit: return true;
     }
     return true;
 }
 
-FlowTest::State FlowTest::frame() {
+void FlowTest::release() {
+    if (!m_holding) return;
+    m_holding = false;
+    if (m_step < m_scenario.steps.size() && m_hooks.inject) m_hooks.inject(m_scenario.steps[m_step].binding, 0.0f);
+}
+
+FlowTest::State FlowTest::frame(double frameDt) {
     if (m_state != State::Running) return m_state;
+    m_frameDt = std::isfinite(frameDt) && frameDt > 0 ? frameDt : 0;
     if (!m_hooks.flow) {
         m_state = State::Failed;
         m_message = "nothing to test: no game flow";
@@ -563,6 +692,9 @@ FlowTest::State FlowTest::frame() {
             m_stepBegun = true;
             m_stepStarted = Clock::now();
             m_stepFrames = 0;
+            m_stepTime = 0;
+        } else {
+            m_stepTime += m_frameDt;   // this step waited through a frame
         }
         std::string failure;
         const bool done = run(step, failure);
@@ -582,7 +714,8 @@ FlowTest::State FlowTest::frame() {
         // A step that changed something lets a frame run before the next: travel happens
         // after the frame, and screens show a frame after what opens them.
         if (step.kind == FlowStep::Kind::Travel || step.kind == FlowStep::Kind::Click ||
-            step.kind == FlowStep::Kind::Press || step.kind == FlowStep::Kind::Load)
+            step.kind == FlowStep::Kind::Press || step.kind == FlowStep::Kind::Load ||
+            step.kind == FlowStep::Kind::Hold || step.kind == FlowStep::Kind::Tap || step.kind == FlowStep::Kind::Look)
             return m_state;
     }
     if (m_state == State::Running && m_step >= m_scenario.steps.size()) m_state = State::Passed;

@@ -1,0 +1,29 @@
+shockwave_prefab 1
+# Reactor Run's player: a character with health and a sidearm. The camera rig is in each
+# level's scene ("Demo Camera"); the GameMode puts it at this body's eye every frame.
+
+entity "Player"
+  Transform
+  DemoPlayer
+    speed 4.5
+    sprint 1.6
+    sensitivity 0.12
+    stick_speed 150
+    eye_height 1.55
+  CharacterController
+    radius 0.35
+    half_height 0.5
+    collision_layer 1
+  Health
+    max 100
+    current 100
+  Loadout
+    magazine 12
+    ammo 12
+    reserve 36
+    max_reserve 96
+    damage 34
+    interval 0.16
+    reload_seconds 1.2
+    range 60
+end

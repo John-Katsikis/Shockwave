@@ -1,0 +1,68 @@
+# The main menu's backdrop: the application shell's menu shows over it.
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.1 0.14 0.2 1
+    ground_color 0.12 0.13 0.14 1
+    ambient_intensity 0.8
+    exposure 0
+    shadow_distance 50
+  PhysicsSettings
+    gravity 0 -9.81 0
+    collision_steps 1
+end
+
+entity "Sun"
+  Transform
+    rotation -50 -25 0
+  Light
+    type Directional
+    color 1 0.8 0.6 1
+    intensity 2.5
+end
+
+entity "Camera"
+  Transform
+    position 0 2 6
+    rotation -8 0 0
+  Camera
+    primary true
+end
+
+entity "Floor"
+  Transform
+    position 0 -0.2 0
+    scale 30 0.4 30
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.22 0.24 1
+    roughness 0.8
+end
+
+entity "Reactor core"
+  Transform
+    position 0 2 -6
+    scale 2 4 2
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.6 0.9 1
+    roughness 0.8
+  Spin
+    speed 20
+end
+
+entity "Core ring"
+  Transform
+    position 0 1 -6
+    scale 3.4 0.3 3.4
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.95 0.62 0.1 1
+    roughness 0.8
+  Spin
+    speed -35
+end

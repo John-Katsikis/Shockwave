@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "name": "save and quit in the factory (first run)",
+  "timeout": 120,
+  "steps": [
+    {"assert_level": "menu"},
+    {"click": "new_game"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"travel": "factory"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "factory"},
+    {"wait_value": "game.demo_objective_id", "equals": "factory.enemies"},
+    {"hold": "mouse left", "until": "game.demo_enemies_left", "equals": "0", "timeout": 40},
+    {"wait_value": "game.demo_objective_id", "equals": "factory.reactor"},
+    {"hold": "key W", "until": "game.demo_checkpoint", "equals": "Checkpoint reached", "timeout": 30},
+    {"press": "pause"},
+    {"assert_value": "flow.screen", "equals": "pause"},
+    {"click": "main_menu"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "menu"},
+    {"wait_value": "flow.can_continue", "equals": "true"},
+    {"quit": true}
+  ]
+}

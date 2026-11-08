@@ -1,0 +1,37 @@
+shockwave_prefab 1
+# A training target: two hits from the sidearm. Health.group "targets" is what the
+# training's Destroy objective counts.
+
+entity "Target"
+  Transform
+  Health
+    max 60
+    current 60
+    group targets
+  Collider
+    shape Box
+    half_extents 0.4 0.4 0.08
+    offset 0 1.55 0
+end
+
+entity "Plate"
+  Transform
+    position 0 1.55 0
+  ModelRenderer
+    model Models/training-target.glb
+  Parent
+    entity "Target"
+end
+
+entity "Stand"
+  Transform
+    position 0 0.6 0
+    scale 0.08 1.2 0.08
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.3 0.32 0.33 1
+    roughness 0.8
+  Parent
+    entity "Target"
+end

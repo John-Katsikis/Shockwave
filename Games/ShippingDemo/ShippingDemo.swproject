@@ -1,0 +1,14 @@
+# Reactor Run: the shipping plan's finishable reference game (S07, README.md).
+shockwave_project 1
+name "Reactor Run"
+game_module "shippingdemo"
+startup_scene "Scenes/menu.swscene"
+assets "Content"
+levels "Config/Levels.swlevels"
+app_shell all
+asset_loading levels
+remember_destroyed true
+save_schema 1
+tick_rate 60
+window_size 1280 720
+vsync true

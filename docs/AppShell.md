@@ -103,7 +103,7 @@ files, so the error screen still shows when the project's files are what's broke
 | `flow` value | What it is |
 | --- | --- |
 | `screen`, `page` | the screen showing (`none`, `menu`, `pause`, `loading`, `error`) and the menu's page (`main`, `levels`, `settings`, `credits`, `confirm`) |
-| `title`, `level`, `credits` | the project's name, the level playing, the credits text |
+| `title`, `level`, `credits` | the project's name, the level playing, the credits text (the project's `Content/Shell/credits.txt` when it has one, else "Made with Shockwave") |
 | `destination`, `phase`, `progress`, `percent`, `progress_width`, `has_progress`, `can_cancel` | the travel under way: where to, its phase, 0..1, 0..100, `"45%"` for a bar's width |
 | `error_code`, `error_message`, `error_level`, `can_dismiss` | the failure: its stable code (`LoadFailed`, ...), why, which level |
 | `checkpoint_state` | the last checkpoint's save: `saving`, `saved`, `failed`, or empty |

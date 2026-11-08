@@ -1,0 +1,41 @@
+shockwave_prefab 1
+# 40 health, collected by walking over it while hurt.
+
+entity "Health pickup"
+  Transform
+  InteractionTarget
+    kind Pickup
+    prompt "Health"
+    radius 1.2
+    item health
+    amount 40
+    group health
+  Spin
+    speed 90
+end
+
+entity "Cross upright"
+  Transform
+    position 0 0.45 0
+    scale 0.14 0.44 0.14
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.9 0.45 1
+    emissive 0.05 0.5 0.15 1
+  Parent
+    entity "Health pickup"
+end
+
+entity "Cross bar"
+  Transform
+    position 0 0.45 0
+    scale 0.44 0.14 0.14
+  MeshRenderer
+    mesh cube
+    texture white
+    tint 0.2 0.9 0.45 1
+    emissive 0.05 0.5 0.15 1
+  Parent
+    entity "Health pickup"
+end

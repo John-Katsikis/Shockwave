@@ -1,0 +1,1 @@
+Reactor Run, a Shockwave reference game. Design, code and every sound, model and image: generated for this repository and dedicated to the public domain (CC0). Thanks for playing.
