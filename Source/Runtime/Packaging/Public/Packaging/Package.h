@@ -39,6 +39,9 @@ struct PackageSettings {
     std::string version = "1.0.0";
     std::filesystem::path output;   // the folder packages go in; empty means <project>/Saved/Packages
     std::vector<std::string> exclude;   // extra file patterns to leave out ("*.blend", "Content/Raw")
+    // Content files game code loads by name, which no level refers to ("Content/fx/*.efkefc"):
+    // the cook keeps them, so a release has them (docs/Cooking.md).
+    std::vector<std::string> include;
     bool build = true;   // build the player and game module first, so the package is never stale
     bool archive = true;   // also make a .tar.gz of the folder, ready to upload or send
     bool strip = true;   // drop symbol tables from the program and libraries (much smaller)
@@ -64,12 +67,19 @@ bool savePackageSettings(const Project& project, const PackageSettings& settings
 // Content). Empty when it's fine. `player --check` reports these too.
 std::vector<std::string> validatePackageSettings(const Project& project, const PackageSettings& settings);
 
+// Whether a package leaves out this project-relative path ("Content/Raw/a.png"): Saved,
+// Source, hidden files and the settings' exclude patterns, for the file or any folder above it.
+bool packageExcludes(const PackageSettings& settings, std::string_view relativePath);
+
 // The platform packages are made for: the one the engine was built for, "linux-x86_64".
 const char* packagePlatform();
 // How this engine was built: CMake's configuration ("Release", "Debug", ...; empty when
 // none was chosen) and the engine's version.
 const char* engineBuildConfig();
 const char* engineVersion();
+// Whether this engine was built with optimisation: Release, RelWithDebInfo or MinSizeRel.
+// Debug, or no configuration at all, runs many times slower.
+bool engineBuildOptimised();
 // The package's folder name: "<executable>-<version>-<platform>".
 std::string packageFolderName(const Project& project, const PackageSettings& settings);
 

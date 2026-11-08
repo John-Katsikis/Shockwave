@@ -1019,3 +1019,44 @@ W after the first travel; a focus only counts while its element is visible.
   Run's HUD has only been checked in the editor with Check layout.
 - **The editor window by hand**: its preview is tested from the command line; editing
   the shipped values through the window hasn't been driven by a test.
+
+## S09: Cooking and release checks, part 1
+
+### What was built
+
+- **The cook manifest** ([Cooking](Cooking.md)): `player --cook` writes
+  `Saved/Cook/<target>/Cook.swcook`, plain sorted text listing every level with its
+  closure hash, every asset each level reaches (kind, size, hash, closure, which levels),
+  the roots no level names (catalogs, fonts, settings, the shell's screens, the project)
+  and the engine's licenses. A content ID hashes the content; a build ID adds the engine,
+  its configuration, the target and the plugin ABI. No times, no absolute paths.
+- **Files code loads by name**: `include "<pattern>"` in `Config/Package.swpackage` makes
+  matching files roots. Reactor Run includes `Content/Audio/*.wav`, which its code plays.
+- **`player --cook-info <manifest>`** prints a manifest, `--json` writes it as JSON, and
+  `--verify <folder>` checks every file against it. A manifest whose IDs don't match its
+  records is refused as edited or damaged.
+- **Release policy** (`--cook --release`, `--check --release`): an optimised engine build,
+  no scene or graph errors (an unknown asset name is one), nothing a level needs excluded,
+  no `.blend` sources, no absolute developer paths in shipped text, no test Steam AppID,
+  every license present, and a target this engine is built for. A failed cook keeps the
+  last good manifest.
+- **Release builds by default**: CMake configures Release when no build type is given,
+  the README says so, and the packager warns about any unoptimised engine, not only
+  Debug. An unoptimised build is the likely reason a packaged game ran at seconds per
+  frame.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `cook_reproducibility` | integration | two cooks of a copy of Reactor Run, and one of a copy in a folder with spaces and non-ASCII letters started from another working directory, are the same bytes; nothing names where it was made; `--verify` passes; `--json` has the entry level and 4 levels |
+| `cook_dependencies` | integration | a change to the stylesheet three levels share changes exactly those three levels and the content ID; a file edited after the cook and an edited manifest are caught; a missing texture fails the cook and keeps the manifest; an excluded document a level needs fails; without the include pattern the code-played sounds are gone; an absolute path fails only in release; `--check --release` passes; another target is refused |
+
+### Still unverified
+
+- **Packages from the cook**: `--package` still copies the project's files; shipping only
+  the cooked closure is part 2.
+- **Other targets**: an engine cooks only for the platform it was built for; Windows and
+  macOS cooks need those builds.
+- **Files code builds names for**: a name put together at run time is only found if an
+  `include` pattern covers it; nothing checks that every such name is covered.

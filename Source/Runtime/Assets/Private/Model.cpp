@@ -30,6 +30,13 @@ std::string extension(const fs::path& p) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;
 }
+// Assimp's paths are UTF-8 on every platform; a narrow fs::path is the ANSI code page on
+// Windows, which mangles a folder named with non-ASCII letters.
+fs::path fromUtf8(const char* p) { return fs::path(std::u8string(reinterpret_cast<const char8_t*>(p))); }
+std::string toUtf8(const fs::path& p) {
+    const std::u8string s = p.u8string();
+    return std::string(s.begin(), s.end());
+}
 void dependency(std::vector<fs::path>& list, const fs::path& path) {
     const auto p = fs::absolute(path).lexically_normal();
     if (std::find(list.begin(), list.end(), p) == list.end()) list.push_back(p);
@@ -40,7 +47,7 @@ public:
     bool Exists(const char* p) const override { return m_io.Exists(p); }
     char getOsSeparator() const override { return m_io.getOsSeparator(); }
     Assimp::IOStream* Open(const char* p, const char* mode = "rb") override {
-        dependency(m_dependencies, fs::path(p));
+        dependency(m_dependencies, fromUtf8(p));
         return m_io.Open(p, mode);
     }
     void Close(Assimp::IOStream* stream) override { m_io.Close(stream); }
@@ -478,10 +485,9 @@ bool loadModel(
         Assimp::Importer importer;
         importer.SetIOHandler(new TrackingIO(model.dependencies));   // importer takes ownership
         const aiScene* scene = importer.ReadFile(
-            importedPath.string(), aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
-                                       aiProcess_GenSmoothNormals | aiProcess_ImproveCacheLocality |
-                                       aiProcess_SortByPType | aiProcess_ValidateDataStructure | aiProcess_FlipUVs |
-                                       aiProcess_LimitBoneWeights);
+            toUtf8(importedPath), aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_GenSmoothNormals |
+                                      aiProcess_ImproveCacheLocality | aiProcess_SortByPType |
+                                      aiProcess_ValidateDataStructure | aiProcess_FlipUVs | aiProcess_LimitBoneWeights);
         if (!scene || !scene->mRootNode || !scene->HasMeshes())
             return fail(
                 std::string(importer.GetErrorString()) +
@@ -517,9 +523,10 @@ bool loadModel(
             } else {
                 std::string portable = key;
                 std::replace(portable.begin(), portable.end(), '\\', '/');
-                const fs::path file = (importedPath.parent_path() / fs::path(portable)).lexically_normal();
+                const fs::path file = (importedPath.parent_path() / fromUtf8(portable.c_str())).lexically_normal();
                 dependency(model.dependencies, file);
-                tex.source = file.generic_string();
+                const std::u8string generic = file.generic_u8string();
+                tex.source.assign(generic.begin(), generic.end());
                 if (!loadImage(file, tex.image, reason))
                     throw std::runtime_error("texture " + file.string() + ": " + reason);
             }

@@ -3,3 +3,5 @@ name "Reactor Run"
 executable "ReactorRun"
 version "1.0.0"
 exclude "*.blend" "Docs" "Tests"
+# Sounds game code plays by name (DemoGame.cpp): no level refers to them.
+include "Content/Audio/*.wav"

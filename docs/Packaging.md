@@ -30,8 +30,12 @@ run /path/to/Games/Sample/Saved/Packages/ShockwaveSample-1.0.0-linux-x86_64/Shoc
 
 It exits with 1 when something stops it, and the lines starting with `error:` say why.
 
-Package from a Release build. A Debug build works but runs slowly, and packaging warns
-about it. To make a Release build:
+Package from a Release build. A Debug build, or one configured without any
+`CMAKE_BUILD_TYPE` (CMake then doesn't optimise at all), works but runs many times
+slower: a game that should run at 60 fps can take seconds a frame. Packaging warns about
+both, and `player --check --release` and `player --cook --release` refuse them
+([Cooking](Cooking.md)). Configuring without a build type now picks Release. To make a
+Release build:
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -86,6 +90,7 @@ exclude "*.blend" "Content/Raw"
 | `version` | `1.0.0` | Goes into the folder name and the README. |
 | `output` | `Saved/Packages` | Where packages go: relative to the project, or a full path. |
 | `exclude` | nothing | File patterns to leave out. Repeat the key or list several. |
+| `include` | nothing | Content files game code loads by name, which no level names, like `"Content/Audio/*.wav"`: the [cook](Cooking.md#files-no-level-names) keeps them. |
 | `build` | `true` | Build the player and your game code first, so the package is never out of date. |
 | `archive` | `true` | Also make a `.tar.gz` of the folder. |
 | `strip` | `true` | Leave out symbol tables players don't need. Packages get about half as big. |

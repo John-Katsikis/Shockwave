@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
         bool releaseInfo = false;   // --release-info
+        std::filesystem::path cookInfoFile, cookVerify;   // --cook-info file [--verify folder]
         player::UserPathsCommand userPathsCommand;   // --user-dir, --profile, --user-paths, --import-legacy-saves
         std::filesystem::path releaseSchema;   // --release-schema
         std::filesystem::path levelSchema;   // --level-schema
@@ -98,6 +99,24 @@ int main(int argc, char** argv) {
                 std::string error;
                 if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
                     throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            // Cooking (docs/Cooking.md).
+            if (arg == "--cook" || arg == "--release") {
+                if (arg == "--cook")
+                    tool.mode = Tool::Mode::Cook;
+                else
+                    tool.release = true;
+                continue;
+            }
+            if ((arg == "--target" || arg == "--cook-info" || arg == "--verify") && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (arg == "--target")
+                    tool.cookTarget = value;
+                else if (arg == "--cook-info")
+                    cookInfoFile = value;
+                else
+                    cookVerify = value;
                 continue;
             }
             // Player preferences (docs/Preferences.md).
@@ -641,6 +660,12 @@ int main(int argc, char** argv) {
                     "player --release-info [--json file] the release contract and each release gate: passed,\n"
                     "                                    failed or unverified (docs/Release.md)\n"
                     "player --release-schema file.md     write the release contract reference (- for stdout)\n"
+                    "player --cook [--release] [--target t] [--json report] [--output file]\n"
+                    "                                    work out everything a release needs, from every level,\n"
+                    "                                    and write Saved/Cook/<target>/Cook.swcook (docs/Cooking.md)\n"
+                    "player --cook-info file [--verify folder] [--json out]\n"
+                    "                                    a cook manifest; --verify checks the files against it\n"
+                    "player --check --release            the checks, then the release policy (docs/Cooking.md)\n"
                     "player --levels [--json file]       the level catalog and the links between levels\n"
                     "                                    (docs/Levels.md); exit 1 on a broken link\n"
                     "player --level id                   play from this catalog level instead of the startup scene\n"
@@ -727,7 +752,8 @@ int main(int argc, char** argv) {
                 "--bake-lighting",
                 "--levels",
                 "--release-info",
-                "--asset-dependencies"};
+                "--asset-dependencies",
+                "--cook"};
             mode(tool.mode != Tool::Mode::Play, toolNames[int(tool.mode)]);
             mode(package.requested, "--package");
             mode(!tool.screenshot.empty(), "--screenshot");
@@ -742,6 +768,7 @@ int main(int argc, char** argv) {
             mode(networkInfo, "--network-info");
             mode(!networkSchema.empty(), "--network-schema");
             mode(releaseInfo, "--release-info");
+            mode(!cookInfoFile.empty(), "--cook-info");
             mode(userPathsCommand.info, "--user-paths");
             mode(!userPathsCommand.importLegacy.empty(), "--import-legacy-saves");
             mode(!releaseSchema.empty(), "--release-schema");
@@ -759,12 +786,30 @@ int main(int argc, char** argv) {
             mode(tool.online == Tool::Online::JoinDirect, "--join-steam");
             // Only the network and online modes are strict: older tools keep combining as before.
             static const std::vector<std::string> strict = {
-                "--package",        "--network-info",      "--network-schema",      "--steam-status",
-                "--net-test",       "--net-dump",          "--net-encode",          "--net-preview",
-                "--host",           "--join-lobby",        "--join-steam",          "--run-circuit",
-                "--circuit --dump", "--network-manifest",  "--assign-network-keys", "--release-info",
-                "--release-schema", "--user-paths",        "--import-legacy-saves", "--levels",
-                "--level-schema",   "--asset-dependencies"};
+                "--package",
+                "--network-info",
+                "--network-schema",
+                "--steam-status",
+                "--net-test",
+                "--net-dump",
+                "--net-encode",
+                "--net-preview",
+                "--host",
+                "--join-lobby",
+                "--join-steam",
+                "--run-circuit",
+                "--circuit --dump",
+                "--network-manifest",
+                "--assign-network-keys",
+                "--release-info",
+                "--release-schema",
+                "--user-paths",
+                "--import-legacy-saves",
+                "--levels",
+                "--level-schema",
+                "--asset-dependencies",
+                "--cook",
+                "--cook-info"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -795,7 +840,8 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
             if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
                 lightingImport.empty() && saveMigrateFile.empty() && tool.mode != Tool::Mode::NetworkManifest &&
-                tool.mode != Tool::Mode::AssignNetworkKeys && tool.mode != Tool::Mode::LightingAssignIds)
+                tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::AssignNetworkKeys &&
+                tool.mode != Tool::Mode::LightingAssignIds)
                 throw player::UsageError("--output goes with --package, --net-encode, --network-manifest, "
                                          "--assign-network-keys, --lighting-assign-ids, --lighting-export, "
                                          "--lighting-import or --save-migrate");
@@ -823,6 +869,13 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--profile: " + why);
             package.output = tool.output = output;
         }
+        if (tool.release && tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::Check)
+            throw player::UsageError("--release goes with --cook or --check");
+        if (!tool.cookTarget.empty() && tool.mode != Tool::Mode::Cook)
+            throw player::UsageError("--target goes with --cook");
+        if (!cookVerify.empty() && cookInfoFile.empty()) throw player::UsageError("--verify goes with --cook-info");
+        if (!cookInfoFile.empty())
+            return player::cookInfo(cookInfoFile, cookVerify, tool.benchmarkJson);   // no project
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
         if (!effectInfo.empty()) return player::effectInfo(effectInfo, tool.benchmarkJson);   // no project
