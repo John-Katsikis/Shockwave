@@ -176,6 +176,9 @@ void LevelsPanel::validate(const shockwave::Project& project, const Hooks& hooks
                 facts.loadError = "it doesn't exist";
             else if (hooks.sceneFacts)
                 facts = hooks.sceneFacts(project.root / level.scene);
+            if (facts.loaded && hooks.sceneProblems)
+                for (shockwave::Diagnostic& d : hooks.sceneProblems(project.root / level.scene))
+                    m_diagnostics.push_back(std::move(d));
             it = byScene.emplace(level.scene, std::move(facts)).first;
         }
         m_facts[level.id] = it->second;
@@ -201,6 +204,73 @@ void LevelsPanel::rename(const std::string& from, const std::string& to) {
         if (level.next == from) level.next = to;
     }
     if (m_edit.entry == from) m_edit.entry = to;
+}
+
+// ---- New and duplicated levels --------------------------------------------------------
+
+namespace {
+// A scene file not taken yet: <folder>/<id>.swscene, then <id>-2.swscene, ...
+fs::path freshSceneFile(const fs::path& folder, const std::string& id) {
+    std::error_code ec;
+    fs::path file = folder / (id + ".swscene");
+    for (int n = 2; fs::exists(file, ec); ++n) file = folder / (id + "-" + std::to_string(n) + ".swscene");
+    return file;
+}
+}   // namespace
+
+void LevelsPanel::newLevel(const shockwave::Project& project, const Hooks& hooks) {
+    const std::string id = freshId(m_edit, "level");
+    const fs::path file = freshSceneFile(project.sceneFolder, id);
+    std::string error;
+    if (!hooks.newScene || !hooks.newScene(file, error)) {
+        m_message = "Couldn't write " + project.relative(file) + (error.empty() ? "" : ": " + error);
+        m_messageError = true;
+        return;
+    }
+    change();
+    LevelEntry level;
+    level.id = id;
+    level.scene = project.relative(file);
+    level.kind = LevelKind::Gameplay;
+    m_edit.levels.push_back(level);
+    m_selected = int(m_edit.levels.size()) - 1;
+    m_renameText.clear();
+    m_scenes = projectScenes(project);
+    m_message = "Wrote " + level.scene + "; Save adds level \"" + id + "\" to the catalog";
+    m_messageError = false;
+}
+
+bool LevelsPanel::selectLevel(const std::string& id) {
+    for (int i = 0; i < int(m_edit.levels.size()); ++i)
+        if (m_edit.levels[i].id == id) {
+            m_selected = i;
+            m_renameText.clear();
+            return true;
+        }
+    return false;
+}
+
+void LevelsPanel::duplicateLevel(const shockwave::Project& project) {
+    const LevelEntry source = m_edit.levels[m_selected];
+    const std::string id = freshId(m_edit, source.id);
+    const fs::path from = project.root / source.scene;
+    const fs::path file = freshSceneFile(from.parent_path(), id);
+    std::error_code ec;
+    if (!fs::copy_file(from, file, ec)) {
+        m_message = "Couldn't copy " + source.scene + ": " + (ec ? ec.message() : std::string("it doesn't exist"));
+        m_messageError = true;
+        return;
+    }
+    change();
+    LevelEntry level = source;   // same kind, spawn, next and preloads
+    level.id = id;
+    level.scene = project.relative(file);
+    m_edit.levels.insert(m_edit.levels.begin() + m_selected + 1, level);
+    ++m_selected;
+    m_renameText.clear();
+    m_scenes = projectScenes(project);
+    m_message = "Copied " + source.scene + " to " + level.scene + "; link an exit or a next level to it, then Save";
+    m_messageError = false;
 }
 
 // ---- Window -------------------------------------------------------------------------
@@ -247,6 +317,9 @@ void LevelsPanel::draw(shockwave::Project& project, bool playing, const Hooks& h
     // ---- Toolbar ----
     const bool changed = !(m_edit == m_saved);
     ImGui::BeginDisabled(playing);
+    if (gui::button("New level")) newLevel(project, hooks);
+    ImGui::SetItemTooltip("Write a new scene with a sky, a camera and ground, and add it as a gameplay level");
+    ImGui::SameLine();
     if (gui::button("Add level")) {
         change();
         LevelEntry level;
@@ -286,7 +359,16 @@ void LevelsPanel::draw(shockwave::Project& project, bool playing, const Hooks& h
     ImGui::EndDisabled();   // playing
     ImGui::SameLine();
     if (gui::button("Validate")) validate(project, hooks);
-    ImGui::SetItemTooltip("Load every level's scene and follow the exits between them (the same as player --check)");
+    ImGui::SetItemTooltip(
+        "Load every level's scene, follow the exits between them and run the scene checks (as player --check does)");
+    ImGui::SameLine();
+    {
+        const LevelEntry* entry = m_edit.find(m_edit.entry);
+        ImGui::BeginDisabled(playing || !entry || !hooks.playScene);
+        if (gui::button("Play from entry") && entry) hooks.playScene(project.root / entry->scene);
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Open the entry level's scene and Play it: the game from its start");
+    }
     if (playing) ImGui::TextDisabled("Stop Play to change the catalog.");
 
     // ---- Levels ----
@@ -339,22 +421,62 @@ void LevelsPanel::draw(shockwave::Project& project, bool playing, const Hooks& h
         drawLevel(project, playing, hooks);
     }
 
-    // ---- Findings ----
-    if (m_validated) {
-        ImGui::SeparatorText("Validate");
-        size_t errors = 0;
-        for (const auto& d : m_diagnostics) errors += d.error();
-        if (m_diagnostics.empty())
-            ImGui::TextColored(
-                gui::semanticColor(gui::currentTheme().accent), "Every level loads and every link resolves.");
-        else
-            ImGui::Text(
-                "%zu error%s, %zu warning%s", errors, errors == 1 ? "" : "s", m_diagnostics.size() - errors,
-                m_diagnostics.size() - errors == 1 ? "" : "s");
-        for (const auto& d : m_diagnostics)
-            ImGui::TextColored(d.error() ? errorColor : warningColor, "%s", d.text().c_str());
-    }
+    drawFindings(project, hooks);
     ImGui::End();
+}
+
+// What the last Validate found, under the kind of fix each needs, so "the level won't
+// run" is never the whole story. Double-click a finding to open its file's scene.
+void LevelsPanel::drawFindings(const shockwave::Project& project, const Hooks& hooks) {
+    if (!m_validated) return;
+    const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
+    const ImVec4 warningColor = gui::semanticColor(gui::currentTheme().warning);
+    ImGui::SeparatorText("Validate");
+    size_t errors = 0;
+    int counts[shockwave::kProblemKinds] = {};
+    for (const auto& d : m_diagnostics) {
+        errors += d.error();
+        ++counts[int(shockwave::problemKindOf(d))];
+    }
+    if (m_diagnostics.empty()) {
+        ImGui::TextColored(
+            gui::semanticColor(gui::currentTheme().accent),
+            "Every level loads, every link resolves and every check passes.");
+        return;
+    }
+    ImGui::Text(
+        "%zu error%s, %zu warning%s", errors, errors == 1 ? "" : "s", m_diagnostics.size() - errors,
+        m_diagnostics.size() - errors == 1 ? "" : "s");
+    // One filter button per kind that has findings.
+    if (ImGui::RadioButton("All", m_kindFilter < 0)) m_kindFilter = -1;
+    for (int kind = 0; kind < shockwave::kProblemKinds; ++kind) {
+        if (counts[kind] == 0) continue;
+        ImGui::SameLine();
+        const std::string label = std::string(shockwave::problemKindName(shockwave::ProblemKind(kind))) + " (" +
+                                  std::to_string(counts[kind]) + ")";
+        if (ImGui::RadioButton(label.c_str(), m_kindFilter == kind)) m_kindFilter = kind;
+    }
+    if (m_kindFilter >= 0 && counts[m_kindFilter] == 0) m_kindFilter = -1;
+    for (int kind = 0; kind < shockwave::kProblemKinds; ++kind) {
+        if (counts[kind] == 0 || (m_kindFilter >= 0 && m_kindFilter != kind)) continue;
+        ImGui::TextDisabled("%s", shockwave::problemKindTitle(shockwave::ProblemKind(kind)));
+        ImGui::Indent();
+        for (size_t i = 0; i < m_diagnostics.size(); ++i) {
+            const auto& d = m_diagnostics[i];
+            if (int(shockwave::problemKindOf(d)) != kind) continue;
+            ImGui::PushID(int(i));
+            ImGui::PushStyleColor(ImGuiCol_Text, d.error() ? errorColor : warningColor);
+            ImGui::Selectable(d.text().c_str());
+            ImGui::PopStyleColor();
+            if (!d.code.empty()) ImGui::SetItemTooltip("%s", d.code.c_str());
+            const fs::path file = project.root / d.file;
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && hooks.openScene &&
+                file.extension() == ".swscene")
+                hooks.openScene(file);
+            ImGui::PopID();
+        }
+        ImGui::Unindent();
+    }
 }
 
 void LevelsPanel::drawLevel(const shockwave::Project& project, bool playing, const Hooks& hooks) {
@@ -485,6 +607,9 @@ void LevelsPanel::drawLevel(const shockwave::Project& project, bool playing, con
     ImGui::BeginDisabled(playing);
     if (gui::button("Play level") && hooks.playScene) hooks.playScene(scene);
     ImGui::SetItemTooltip("Open the level's scene and Play it");
+    ImGui::SameLine();
+    if (gui::button("Duplicate level")) duplicateLevel(project);
+    ImGui::SetItemTooltip("Copy the level's scene to a new file and add it as a new level beside this one");
     ImGui::SameLine();
     ImGui::BeginDisabled(m_edit.levels.size() <= 1);
     if (gui::button("Remove level")) {

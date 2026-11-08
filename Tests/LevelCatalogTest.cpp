@@ -459,8 +459,36 @@ void testSchema() {
 
 }   // namespace
 
+// What kind of fix each finding needs (docs/Levels.md#checks), from its code alone.
+void testProblemKinds() {
+    auto kind = [](const char* code) {
+        Diagnostic d;
+        d.code = code;
+        return problemKindOf(d);
+    };
+    CHECK(kind("LevelExitDestination") == ProblemKind::Content);
+    CHECK(kind("SceneReference") == ProblemKind::Content);
+    CHECK(kind("") == ProblemKind::Content);
+    CHECK(kind("CircuitMissing") == ProblemKind::Circuit);
+    CHECK(kind("CircuitError") == ProblemKind::Circuit);
+    CHECK(kind("NavigationOutOfDate") == ProblemKind::Navigation);
+    CHECK(kind("PhysicsSetup") == ProblemKind::Physics);
+    CHECK(kind("GameContent") == ProblemKind::Gameplay);
+    CHECK(kind("GameStartFailed") == ProblemKind::Gameplay);
+    CHECK(kind("ReleaseMissingKey") == ProblemKind::Settings);
+    CHECK(kind("PackageOutput") == ProblemKind::Settings);
+    std::set<std::string> names, titles;
+    for (int k = 0; k < kProblemKinds; ++k) {
+        names.insert(problemKindName(ProblemKind(k)));
+        titles.insert(problemKindTitle(ProblemKind(k)));
+    }
+    CHECK(names.size() == size_t(kProblemKinds) && titles.size() == size_t(kProblemKinds));
+    CHECK(std::string(problemKindName(ProblemKind::Gameplay)) == "gameplay");
+}
+
 int main() {
     testParse();
+    testProblemKinds();
     testMistakes();
     testLinks();
     testProject();

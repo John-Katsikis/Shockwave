@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace shockwave {
 
@@ -34,6 +35,15 @@ public:
         (void)save;
         (void)error;
         return true;
+    }
+    // What's wrong with a scene's game content, for player --check and the editor's level
+    // Validate (docs/Levels.md#checks): one line per problem, without the file name, like
+    // "objective \"core\" needs a target". The scene is loaded but not playing; touch
+    // nothing. They're reported as gameplay problems, apart from missing files, circuits
+    // and navigation. The default finds nothing.
+    virtual std::vector<std::string> checkScene(const World& scene) const {
+        (void)scene;
+        return {};
     }
     // Subsystems that live as long as the instance.
     SubsystemCollection& subsystems() { return m_subsystems; }

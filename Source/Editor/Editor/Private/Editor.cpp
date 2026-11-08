@@ -238,36 +238,7 @@ void Editor::onGui() {
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
     m_release.draw(m_project, playing());
-    if (m_levels.open) {
-        LevelsPanel::Hooks hooks;
-        hooks.openScene = [this](const std::filesystem::path& path) {
-            requestAction(PendingAction::OpenScene, path.string());
-        };
-        hooks.playScene = [this](const std::filesystem::path& path) {
-            // Unsaved changes ask first, and Play waits for the person to press it.
-            if (m_dirty) {
-                requestAction(PendingAction::OpenScene, path.string());
-                return;
-            }
-            if (openScene(path)) play();
-        };
-        hooks.sceneFacts = [this](const std::filesystem::path& path) {
-            shockwave::World world;
-            std::string err;
-            shockwave::SceneFileHooks fileHooks;
-            fileHooks.readHeader = [](const std::string&, std::istream&) {};
-            shockwave::LevelSceneFacts facts;
-            if (!shockwave::loadScene(world, engine().assets(), path.string(), err, fileHooks))
-                facts.loadError = err;
-            else
-                facts = shockwave::levelSceneFacts(world);
-            return facts;
-        };
-        hooks.saveProject = [](shockwave::Project& project, std::string& err) {
-            return shockwave::saveProject(project, err);
-        };
-        m_levels.draw(m_project, playing(), hooks);
-    }
+    if (m_levels.open) m_levels.draw(m_project, playing(), levelsHooks());
     if (m_showControls) drawControlsWindow();
     if (m_showAbout) drawAboutWindow();
     if (m_showGraphicsGuide) drawGraphicsGuide(m_showGraphicsGuide);
@@ -289,6 +260,47 @@ void Editor::onPump(double rawFrameDt) {
     updateOnlineMatch();
 }
 
+LevelsPanel::Hooks Editor::levelsHooks() {
+    LevelsPanel::Hooks hooks;
+    hooks.openScene = [this](const std::filesystem::path& path) {
+        requestAction(PendingAction::OpenScene, path.string());
+    };
+    hooks.playScene = [this](const std::filesystem::path& path) {
+        // Unsaved changes ask first, and Play waits for the person to press it.
+        if (m_dirty) {
+            requestAction(PendingAction::OpenScene, path.string());
+            return;
+        }
+        if (openScene(path)) play();
+    };
+    hooks.sceneFacts = [this](const std::filesystem::path& path) {
+        shockwave::World world;
+        std::string err;
+        shockwave::SceneFileHooks fileHooks;
+        fileHooks.readHeader = [](const std::string&, std::istream&) {};
+        shockwave::LevelSceneFacts facts;
+        if (!shockwave::loadScene(world, engine().assets(), path.string(), err, fileHooks))
+            facts.loadError = err;
+        else
+            facts = shockwave::levelSceneFacts(world);
+        return facts;
+    };
+    hooks.sceneProblems = [this](const std::filesystem::path& path) { return levelSceneProblems(path); };
+    hooks.newScene = [this](const std::filesystem::path& path, std::string& err) {
+        shockwave::World world;
+        makeScene(SceneTemplate::Basic, world, engine().assets());
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        const bool ok = shockwave::saveScene(world, engine().assets(), path.string(), err);
+        if (ok) scanScenes();
+        return ok;
+    };
+    hooks.saveProject = [](shockwave::Project& project, std::string& err) {
+        return shockwave::saveProject(project, err);
+    };
+    return hooks;
+}
+
 // Play mode runs the project's gameplay and physics at the fixed tick rate, like the player.
 void Editor::onUpdate(double dt) {
     if (playState() != PlayState::Playing) return;
@@ -299,6 +311,7 @@ void Editor::onFrame(double dt) {
     m_frameDt = dt;
     pollGameCode();   // between frames, before anything looks at the world
     if (m_options.levelCycles > 0) runLevelCycles();
+    if (m_options.levelAuthoring) runLevelAuthoring();
     if (session()) session()->frame(dt);
     updateGameUI(dt);
     updateNavigation(dt);

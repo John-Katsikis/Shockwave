@@ -80,6 +80,11 @@ struct EditorOptions {
     // Stop, N times, then check the authored scene, undo, selection and camera are as they
     // were; exit 1 if not.
     int levelCycles = 0;
+    // --level-authoring (tests, docs/Levels.md#authoring-in-the-editor): with the Levels
+    // window's own actions, add a new level, place a spawn, exit and checkpoint in it, save,
+    // duplicate the entry's next level, then Validate and print the findings by kind; exit 1
+    // on any error.
+    bool levelAuthoring = false;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
 };
 
@@ -268,6 +273,18 @@ private:
     void renderNavigation(shockwave::Renderer& renderer);
     void reportNavigationProblems();   // when Play starts
     void drawNavigationCreateItems();
+    // Level spawn, exit and checkpoint, for the Create menu (EditorScenes.cpp).
+    void drawLevelCreateItems(shockwave::Entity parent);
+    shockwave::Entity createLevelSpawn(shockwave::Entity parent);
+    shockwave::Entity createLevelExit(shockwave::Entity parent);
+    shockwave::Entity createCheckpoint(shockwave::Entity parent);
+    shockwave::Entity placeLevelEntity(const std::string& name, shockwave::Entity parent);
+    void runLevelAuthoring();   // --level-authoring
+    LevelsPanel::Hooks levelsHooks();
+    // The catalog's level ids, read again when the file changes (for exit destinations).
+    const std::vector<std::string>& catalogLevelIds();
+    // A level scene's own problems for the Levels window's Validate (EditorScenes.cpp).
+    std::vector<shockwave::Diagnostic> levelSceneProblems(const std::filesystem::path& scene);
     void drawNavigationNotes(const shockwave::ComponentInfo& info, shockwave::Entity e);
     void drawNavigationStats();
     // EffectsPanel.cpp: particle effects live in the viewport, Inspector notes, stats.
@@ -488,6 +505,9 @@ private:
     // Play: the project's gameplay and physics on the live world; Stop restores the
     // authored scene. Recreated per project.
     std::unique_ptr<shockwave::GameInstance> m_gameInstance;   // for the editor's whole run
+    std::vector<std::string> m_catalogIds;   // catalogLevelIds()
+    std::filesystem::file_time_type m_catalogTime{};
+    double m_catalogChecked = -1.0;
     // Game UI: previewed in the viewport while editing, live during Play. Before the
     // session, whose UIWorld uses it.
     std::unique_ptr<shockwave::GameUI> m_gameUI;

@@ -37,6 +37,12 @@ namespace player {
 
 int Player::check(const std::vector<std::string>& importProblems) {
     std::vector<std::string> problems = importProblems;
+    // What kind of fix each problem needs (docs/Levels.md#checks), in step with `problems`:
+    // settle(kind) gives that kind to every problem found since the last settle.
+    using shockwave::ProblemKind;
+    std::vector<ProblemKind> kinds;
+    auto settle = [&](ProblemKind kind) { kinds.resize(problems.size(), kind); };
+    settle(ProblemKind::Content);
     // The project's renderer must be one the player can load.
     const auto renderers = shockwave::Renderer::availableBackends();
     if (std::find(renderers.begin(), renderers.end(), m_project.renderer) == renderers.end()) {
@@ -46,6 +52,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
             m_project.relative(m_project.file) + ": renderer \"" + m_project.renderer + "\" isn't available (" + have +
             ")");
     }
+    settle(ProblemKind::Settings);
     std::vector<fs::path> scenes = m_tool.scenes;
     // Save games named on the command line are checked further down, after the scenes.
     std::vector<fs::path> saves;
@@ -97,7 +104,9 @@ int Player::check(const std::vector<std::string>& importProblems) {
         }
         std::sort(saves.begin(), saves.end());
     }
+    settle(ProblemKind::Content);
     checkNetworkProject(problems);   // before the scenes, whose network objects need its registry
+    settle(ProblemKind::Settings);
     for (const fs::path& scene : scenes) {
         const std::string shown = m_project.relative(scene);
         const size_t before = problems.size();
@@ -212,8 +221,17 @@ int Player::check(const std::vector<std::string>& importProblems) {
         });
         checkLighting(world, shown, problems);
         checkAnimators(world, scene.string(), problems);
+        settle(ProblemKind::Content);
         checkCircuits(world, scene.string(), problems, usedCircuits);
+        settle(ProblemKind::Circuit);
         checkNetworkScene(world, shown, problems);
+        settle(ProblemKind::Settings);
+
+        // The game's own rules for its content (GameInstance::checkScene): objectives
+        // without targets, items that don't exist, a level without its player.
+        const auto gameProblems = m_instance->checkScene(world);
+        for (const std::string& problem : gameProblems) report(scene.string() + ": " + problem);
+        settle(ProblemKind::Gameplay);
 
         // Navigation: a saved mesh that no longer matches the scene gets baked again on
         // every Play, which is slow and easy to miss.
@@ -227,6 +245,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 ": out of date, so Play bakes the navigation mesh again; run player --bake-navmesh or Bake in the "
                 "editor");
         if (!navError.empty()) report(navError);
+        settle(ProblemKind::Navigation);
 
         // Start the game on it, as Play does, to catch physics and navigation setup problems.
         try {
@@ -236,17 +255,22 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 const shockwave::Name* name = world.get<shockwave::Name>(diagnostic.entity);
                 report(scene.string() + ": entity '" + (name ? name->value : "?") + "': " + diagnostic.message);
             }
+            settle(ProblemKind::Physics);
             for (const auto& diagnostic : session.navigation()->diagnostics())
                 report(
                     scene.string() + ": " +
                     (diagnostic.entity.valid() ? "entity '" + entityName(diagnostic.entity) + "': " : "") +
                     diagnostic.message);
+            settle(ProblemKind::Navigation);
             session.stop();
         } catch (const std::exception& e) {
-            report(scene.string() + ": gameplay failed to start: " + e.what());
+            // The game refusing content its check already listed says nothing new.
+            if (gameProblems.empty()) report(scene.string() + ": gameplay failed to start: " + e.what());
         }
+        settle(ProblemKind::Gameplay);
         if (problems.size() == before) std::printf("ok %s (%zu entities)\n", shown.c_str(), world.entityCount());
     }
+    settle(ProblemKind::Content);   // a scene that didn't load
     std::map<std::string, shockwave::LevelSceneFacts> levelFacts;
     if (checkLevels) {
         for (const auto& [file, levels] : levelsByScene)
@@ -256,9 +280,10 @@ int Player::check(const std::vector<std::string>& importProblems) {
     {
         const size_t before = problems.size();
         for (const shockwave::Diagnostic& diagnostic : levelDiagnostics) {
-            if (diagnostic.error())
+            if (diagnostic.error()) {
                 problems.push_back(diagnostic.text());
-            else
+                settle(shockwave::problemKindOf(diagnostic));
+            } else
                 std::printf("warning %s\n", diagnostic.text().c_str());
         }
         if (checkLevels && problems.size() == before)
@@ -267,7 +292,9 @@ int Player::check(const std::vector<std::string>& importProblems) {
                 catalog.levels.size() == 1 ? "" : "s");
     }
     checkPrefabs(usedPrefabs, problems);
+    settle(ProblemKind::Content);
     checkAllCircuits(usedCircuits, problems, catalogRead ? &catalog : nullptr, checkLevels ? &levelFacts : nullptr);
+    settle(ProblemKind::Circuit);
     // What everything checked reaches, file by file (docs/AssetResidency.md): references
     // that don't resolve, wrong case, paths leaving the project, cycles.
     if (!onlySaves) checkAssetGraph(scenes, problems);
@@ -322,6 +349,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     if (m_tool.scenes.empty()) checkUnusedEffects(checkedEffects, problems);
     if (m_tool.scenes.empty()) checkMaterialFiles();
     if (m_tool.scenes.empty()) checkPostProcessFiles(checkedProfiles, problems);
+    settle(ProblemKind::Content);
     // Input bindings: optional, but a broken file means broken controls.
     const fs::path inputFile = shockwave::inputBindingsPath(m_project.root);
     if (fs::exists(inputFile)) {
@@ -354,7 +382,18 @@ int Player::check(const std::vector<std::string>& importProblems) {
             for (const shockwave::LevelEntry* level : levels) facts[level->id] = sceneFacts[file];
         checkRelease(m_project, problems, checkLevels ? &facts : nullptr);
     }
-    for (const std::string& problem : problems) std::printf("%s\n", problem.c_str());
+    settle(ProblemKind::Settings);   // input bindings, packaging, release
+    // Grouped by the kind of fix they need, each group under its heading, in the order
+    // they were found within it.
+    for (int kind = 0; kind < shockwave::kProblemKinds; ++kind) {
+        const size_t count = size_t(std::count(kinds.begin(), kinds.end(), ProblemKind(kind)));
+        if (count == 0) continue;
+        std::printf(
+            "%s (%zu, %s):\n", shockwave::problemKindTitle(ProblemKind(kind)), count,
+            shockwave::problemKindName(ProblemKind(kind)));
+        for (size_t i = 0; i < problems.size(); ++i)
+            if (kinds[i] == ProblemKind(kind)) std::printf("%s\n", problems[i].c_str());
+    }
     std::printf(
         "%zu problem%s in %zu scene%s\n", problems.size(), problems.size() == 1 ? "" : "s", scenes.size(),
         scenes.size() == 1 ? "" : "s");

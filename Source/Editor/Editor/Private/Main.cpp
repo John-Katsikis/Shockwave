@@ -35,6 +35,7 @@
 //   --play                 press Play once the scene is open (tests)
 //   --select N             select the Nth entity of the scene (screenshots)
 //   --circuit path         open a .swcircuit (inside Content) in the Circuits window
+//   --level-authoring      add, furnish, duplicate and validate levels, print the findings (tests)
 //   --frames N             quit after N frames (smoke tests)
 int main(int argc, char** argv) {
     try {
@@ -108,13 +109,15 @@ int main(int argc, char** argv) {
                 options.playOnStart = true;
             else if (arg == "--level-cycles")
                 options.levelCycles = integer(value(), "--level-cycles", 1);
+            else if (arg == "--level-authoring")
+                options.levelAuthoring = true;
             else if (arg == "--circuit")
                 options.circuitOnStart = value();
             else if (arg == "--help") {
                 std::puts("editor [project folder | project.swproject | scene.swscene | prefab.swprefab]\n"
                           "       [--project path] [--assets folder] [--content-folder path] [--preferences]\n"
                           "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
-                          "       [--play] [--select N] [--circuit path] [--level-cycles N]\n"
+                          "       [--play] [--select N] [--circuit path] [--level-cycles N] [--level-authoring]\n"
                           "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting] [--release]\n"
                           "       [--levels] [--residency] [--frames N]");
                 return 0;

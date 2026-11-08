@@ -77,6 +77,7 @@ void Editor::drawCreateMenuItems(Entity parent) {
     ImGui::SeparatorText("UI");
     if (ImGui::MenuItem("UI document")) createUIDocument(newUIDocumentPath());
     ImGui::SetItemTooltip("A HUD or menu from an .rml file in Content/UI; writes a starter one");
+    drawLevelCreateItems(parent);
     drawNavigationCreateItems();
     drawAudioCreateItems(parent);
     ImGui::SeparatorText("Effects");

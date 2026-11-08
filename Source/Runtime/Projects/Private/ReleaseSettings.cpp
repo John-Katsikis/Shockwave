@@ -337,6 +337,41 @@ const char* diagnosticSeverityName(DiagnosticSeverity severity) {
     return severity == DiagnosticSeverity::Error ? "error" : "warning";
 }
 
+const char* problemKindName(ProblemKind kind) {
+    switch (kind) {
+    case ProblemKind::Content: return "content";
+    case ProblemKind::Navigation: return "navigation";
+    case ProblemKind::Circuit: return "circuit";
+    case ProblemKind::Physics: return "physics";
+    case ProblemKind::Gameplay: return "gameplay";
+    case ProblemKind::Settings: return "settings";
+    }
+    return "content";
+}
+
+const char* problemKindTitle(ProblemKind kind) {
+    switch (kind) {
+    case ProblemKind::Content: return "Missing or broken content";
+    case ProblemKind::Navigation: return "Navigation";
+    case ProblemKind::Circuit: return "Circuit errors";
+    case ProblemKind::Physics: return "Physics setup";
+    case ProblemKind::Gameplay: return "Gameplay code and rules";
+    case ProblemKind::Settings: return "Project settings";
+    }
+    return "Missing or broken content";
+}
+
+ProblemKind problemKindOf(const Diagnostic& diagnostic) {
+    const std::string_view code = diagnostic.code;
+    auto starts = [&](std::string_view prefix) { return code.substr(0, prefix.size()) == prefix; };
+    if (starts("Circuit")) return ProblemKind::Circuit;
+    if (starts("Navigation")) return ProblemKind::Navigation;
+    if (starts("Physics")) return ProblemKind::Physics;
+    if (starts("Game")) return ProblemKind::Gameplay;
+    if (starts("Release") || starts("Package") || starts("Network") || starts("Input")) return ProblemKind::Settings;
+    return ProblemKind::Content;
+}
+
 bool hasErrors(std::span<const Diagnostic> diagnostics) {
     return std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic& d) { return d.error(); });
 }
@@ -850,15 +885,13 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
         else
             gate(
                 "level_catalog", GateStatus::Passed, "S02",
-                std::to_string(inputs.levelCount) + (inputs.levelCount == 1 ? " level" : " levels") +
-                    " from entry " + inputs.levelEntry +
-                    "; every scene loads and every exit and spawn resolves");
+                std::to_string(inputs.levelCount) + (inputs.levelCount == 1 ? " level" : " levels") + " from entry " +
+                    inputs.levelEntry + "; every scene loads and every exit and spawn resolves");
     };
     // In batch order, with the catalog (S02) and the acceptance scenario (S05) in their places.
     for (const PendingGate& pending : kPendingGates) {
         const std::string_view id = pending.id;
-        if (id == "level_travel")
-            levelCatalogGate();
+        if (id == "level_travel") levelCatalogGate();
         if (pending.online && !online)
             gate(pending.id, GateStatus::NotApplicable, pending.batch, "offline only");
         else

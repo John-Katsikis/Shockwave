@@ -28,6 +28,18 @@ struct Diagnostic {
 const char* diagnosticSeverityName(DiagnosticSeverity severity);   // "error", "warning"
 bool hasErrors(std::span<const Diagnostic> diagnostics);
 
+// What kind of fix a finding needs (S07), so tools never hide a failure behind "the level
+// won't run": missing or broken content (files, scenes, prefabs, links between levels),
+// navigation, a circuit, physics setup, the game's own code and rules, or project
+// settings (input, packaging, release, network).
+enum class ProblemKind { Content, Navigation, Circuit, Physics, Gameplay, Settings };
+inline constexpr int kProblemKinds = 6;
+const char* problemKindName(ProblemKind kind);   // "content", "navigation", ...
+const char* problemKindTitle(ProblemKind kind);   // "Missing or broken content", ...
+// A diagnostic's kind, from its code: Circuit..., Navigation..., Physics..., Game...,
+// Release/Package/Network/Input... are their own kinds; everything else is content.
+ProblemKind problemKindOf(const Diagnostic& diagnostic);
+
 // A JSON string literal, quotes included, with control characters escaped.
 std::string diagnosticJsonString(std::string_view text);
 // One diagnostic as a JSON object: {"code": ..., "severity": ..., "file": ..., "line": ...,
