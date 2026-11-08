@@ -26,6 +26,7 @@
 #include <SteamServices/SteamServices.h>
 #include <Navigation/Navigation.h>
 #include <Platform/UserPaths.h>
+#include <Packaging/Cook.h>
 #include <Projects/LevelCatalog.h>
 #include <Projects/Project.h>
 #include <Projects/ReleaseSettings.h>
@@ -63,8 +64,12 @@ struct Tool {
         BakeLighting,
         Levels,   // --levels: the level catalog and every level's links (docs/Levels.md)
         ReleaseInfo,   // --release-info, which loads every level to follow its links
-        AssetDependencies   // --asset-dependencies [--level id] [--json out] (docs/AssetResidency.md)
+        AssetDependencies,   // --asset-dependencies [--level id] [--json out] (docs/AssetResidency.md)
+        Cook   // --cook [--target t] [--release] [--json report] [--output file] (docs/Cooking.md)
     } mode = Mode::Play;
+    // Cooking (PlayerCook.cpp): --target, and --release for --cook and --check.
+    std::string cookTarget;
+    bool release = false;
     std::vector<fs::path> scenes;   // --check, --bake-navmesh: empty means every scene in the project
     fs::path schemaOut;   // --schema, --node-schema: "-" is standard output
     std::string circuitMessage;
@@ -219,6 +224,8 @@ int releaseInfo(
     const shockwave::Project& project, const fs::path& json,
     const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
 int releaseSchema(const fs::path& file);
+// --cook-info file [--verify folder] [--json out]: a cook manifest, and its files checked.
+int cookInfo(const fs::path& file, const fs::path& verifyRoot, const fs::path& json);
 int levelSchema(const fs::path& file);
 // --preferences: every player preference, its value and the layer it came from
 // (PlayerPreferences.cpp, docs/Preferences.md); with --json, as JSON.
@@ -346,6 +353,12 @@ private:
     shockwave::AssetResidency::Lease sceneAssets(const std::string& owner, const fs::path& file);
     void writeLoadReport();   // --load-report
     int releaseInfoTool();   // --release-info [--json]
+    // Cooking (PlayerCook.cpp, docs/Cooking.md).
+    bool cookManifest(
+        bool release, shockwave::CookManifest& manifest, std::vector<std::string>& errors,
+        std::vector<std::string>& warnings);
+    int cook();   // --cook
+    void checkCookRelease(std::vector<std::string>& problems);   // --check --release
     // Loads each level's scene once, in an isolated world, and reads what it says.
     std::map<std::string, shockwave::LevelSceneFacts> levelFacts(const shockwave::LevelCatalog& catalog);
 

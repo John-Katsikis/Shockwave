@@ -76,7 +76,8 @@ bool loadPackageSettings(const Project& project, PackageSettings& settings, std:
         std::string key;
         if (!(row >> key) || key[0] == '#') continue;
         // exclude may repeat; every other key appears once.
-        if (key != "exclude" && !seen.insert(key).second) return fail("duplicate key '" + key + "'");
+        if (key != "exclude" && key != "include" && !seen.insert(key).second)
+            return fail("duplicate key '" + key + "'");
         if (key == "shockwave_package") {
             int version = 0;
             if (!(row >> version) || version != 1) return fail("unsupported package settings version");
@@ -95,12 +96,12 @@ bool loadPackageSettings(const Project& project, PackageSettings& settings, std:
                 result.version = value;
             else
                 result.output = value;
-        } else if (key == "exclude") {
+        } else if (key == "exclude" || key == "include") {
             row >> std::ws;
             while (row.peek() != EOF && row.peek() != '#') {
                 std::string pattern;
-                if (!(row >> std::quoted(pattern)) || pattern.empty()) return fail("exclude takes file patterns");
-                result.exclude.push_back(pattern);
+                if (!(row >> std::quoted(pattern)) || pattern.empty()) return fail(key + " takes file patterns");
+                (key == "exclude" ? result.exclude : result.include).push_back(pattern);
                 row >> std::ws;
             }
         } else if (key == "build" || key == "archive" || key == "strip" || key == "cpp_runtime") {
@@ -135,6 +136,11 @@ bool savePackageSettings(const Project& project, const PackageSettings& settings
     if (!settings.exclude.empty()) {
         out << "exclude";
         for (const std::string& pattern : settings.exclude) out << " " << std::quoted(pattern);
+        out << "\n";
+    }
+    if (!settings.include.empty()) {
+        out << "include";
+        for (const std::string& pattern : settings.include) out << " " << std::quoted(pattern);
         out << "\n";
     }
     out << "build " << (settings.build ? "true" : "false") << "\n"
@@ -209,6 +215,11 @@ const char* packagePlatform() {
 
 const char* engineBuildConfig() { return SHOCKWAVE_BUILD_CONFIG; }
 const char* engineVersion() { return SHOCKWAVE_VERSION; }
+
+bool engineBuildOptimised() {
+    const std::string config = SHOCKWAVE_BUILD_CONFIG;
+    return config == "Release" || config == "RelWithDebInfo" || config == "MinSizeRel";
+}
 
 std::string packageFolderName(const Project& project, const PackageSettings& settings) {
     return settings.executableName(project) + "-" + settings.version + "-" + packagePlatform();

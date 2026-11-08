@@ -84,6 +84,38 @@ bool globMatch(std::string_view pattern, std::string_view text) {
     return p == pattern.size();
 }
 
+// One file or folder of the project, as the copy walks it.
+bool excludedEntry(const PackageSettings& settings, const std::string& rel, const std::string& name) {
+    // steam_appid.txt makes Steam treat the folder as a development launch, and packet
+    // captures hold players' traffic: neither ships, even when the project has them.
+    static const char* always[] = {".*",    "Saved",           "Source",
+                                   "Tools", "CMakeLists.txt",  "Config/Package.swpackage",
+                                   "*.tmp", "steam_appid.txt", "*.swnetcap"};
+    auto matches = [&](const std::string& pattern) {
+        return pattern.find('/') != std::string::npos ? globMatch(pattern, rel) : globMatch(pattern, name);
+    };
+    for (const char* pattern : always)
+        if (matches(pattern)) return true;
+    for (const std::string& pattern : settings.exclude)
+        if (matches(pattern)) return true;
+    return false;
+}
+
+}   // namespace
+
+bool packageExcludes(const PackageSettings& settings, std::string_view relativePath) {
+    // As the copy walks: a folder left out leaves out everything in it.
+    const std::string path(relativePath);
+    for (size_t end = path.find('/');; end = path.find('/', end + 1)) {
+        const std::string rel = path.substr(0, end);
+        const size_t slash = rel.rfind('/');
+        if (excludedEntry(settings, rel, slash == std::string::npos ? rel : rel.substr(slash + 1))) return true;
+        if (end == std::string::npos) return false;
+    }
+}
+
+namespace {
+
 class Packager {
 public:
     Packager(const Project& project, const PackageSettings& settings, const PackageOptions& options)
@@ -137,10 +169,16 @@ private:
         if (const auto problems = validatePackageSettings(m_project, m_settings); !problems.empty())
             fail(problems.front());
         checkSteam();
-        if (std::string(SHOCKWAVE_BUILD_CONFIG) == "Debug")
+        // Debug, or no configuration chosen at all (CMake then builds without optimisation):
+        // either runs many times slower than players should ever see.
+        if (!engineBuildOptimised())
             log(LogLevel::Warning,
-                "This engine is a Debug build, so the packaged game will run slowly. Package from a Release build "
-                "(cmake -B build -DCMAKE_BUILD_TYPE=Release)");
+                std::string("This engine is ") +
+                    (std::string(SHOCKWAVE_BUILD_CONFIG).empty()
+                         ? "built without a configuration, so without optimisation"
+                         : std::string("a ") + SHOCKWAVE_BUILD_CONFIG + " build") +
+                    ": the packaged game will run many times slower than it should. Package from a Release build "
+                    "(cmake -B build -DCMAKE_BUILD_TYPE=Release), or use --release, which refuses this");
 
         const fs::path output = m_settings.outputFolder(m_project);
         const std::string folderName = packageFolderName(m_project, m_settings);
@@ -433,19 +471,7 @@ private:
 #endif
 
     bool excluded(const std::string& rel, const std::string& name) const {
-        // steam_appid.txt makes Steam treat the folder as a development launch, and packet
-        // captures hold players' traffic: neither ships, even when the project has them.
-        static const char* always[] = {".*",    "Saved",           "Source",
-                                       "Tools", "CMakeLists.txt",  "Config/Package.swpackage",
-                                       "*.tmp", "steam_appid.txt", "*.swnetcap"};
-        auto matches = [&](const std::string& pattern) {
-            return pattern.find('/') != std::string::npos ? globMatch(pattern, rel) : globMatch(pattern, name);
-        };
-        for (const char* pattern : always)
-            if (matches(pattern)) return true;
-        for (const std::string& pattern : m_settings.exclude)
-            if (matches(pattern)) return true;
-        return false;
+        return excludedEntry(m_settings, rel, name);
     }
 
     // The project folder minus what only its developers need: Source/, Saved/, tools,

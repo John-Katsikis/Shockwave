@@ -54,12 +54,17 @@ Vulkan SDK from https://vulkan.lunarg.com (it includes MoltenVK). Homebrew works
 
 ### 2. Build
 
-From the repository folder, configure a debug build and then compile it:
+From the repository folder, configure a Release build and then compile it:
 
 ```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
+
+Release is what games should be played, measured and packaged with; it's also what you
+get when you leave the configuration out. Working on the engine itself, a debug build
+(`-DCMAKE_BUILD_TYPE=Debug`, in a folder of its own such as `build-debug`) is easier to
+step through, but runs many times slower.
 
 The programs end up in `build/bin`.
 

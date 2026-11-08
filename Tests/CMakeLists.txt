@@ -125,6 +125,21 @@ add_test(NAME preferences_schema COMMAND ${CMAKE_COMMAND}
     -DSCHEMA=${CMAKE_SOURCE_DIR}/docs/PreferencesSchema.md
     -P ${CMAKE_CURRENT_SOURCE_DIR}/PreferencesSchemaCheck.cmake)
 set_tests_properties(preferences_schema PROPERTIES TIMEOUT 60 LABELS unit)
+# Cooking (S09, docs/Cooking.md): two cooks, and one from another folder with spaces and
+# non-ASCII letters, write the same manifest; a shared dependency's change, missing,
+# excluded and code-loaded files, damage after the cook, an edited manifest, an absolute
+# path and the wrong target (Tests/CookCheck.cmake).
+if(TARGET game_shippingdemo)
+foreach(part reproducibility dependencies)
+    add_test(NAME cook_${part} COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/Cook-${part}
+        -DPART=${part}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/CookCheck.cmake)
+    set_tests_properties(cook_${part} PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 240 LABELS integration)
+endforeach()
+endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)
 add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}

@@ -101,6 +101,7 @@ void Player::onStart() {
                      : m_tool.mode == Tool::Mode::Levels            ? levels()
                      : m_tool.mode == Tool::Mode::ReleaseInfo       ? releaseInfoTool()
                      : m_tool.mode == Tool::Mode::AssetDependencies ? assetDependencies()
+                     : m_tool.mode == Tool::Mode::Cook              ? cook()
                                                                     : schema();
         engine().quit();
         return;

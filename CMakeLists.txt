@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
 project(Shockwave VERSION 0.1.0 LANGUAGES C CXX)
+# No configuration means no optimisation at all: games then run many times slower, and a
+# package made from such a build ships that. Release unless one is asked for.
+get_property(shockwave_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT shockwave_multi_config AND NOT CMAKE_BUILD_TYPE)
+    message(STATUS "No CMAKE_BUILD_TYPE given: building Release (-DCMAKE_BUILD_TYPE=Debug for a debug build)")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Debug, Release, RelWithDebInfo or MinSizeRel" FORCE)
+endif()
 include(CTest)
 
 # Authoring templates ship beside the tools, so creating projects does not depend on cwd.

@@ -378,6 +378,7 @@ int Player::check(const std::vector<std::string>& importProblems) {
     checkPreferences(m_project, problems);
     settle(ProblemKind::Settings);
     checkLocalization(m_project, problems);
+    if (m_tool.release) checkCookRelease(problems);   // --check --release (docs/Cooking.md)
     settle(ProblemKind::Content);
     {
         // The release gates see the links the level check followed.
