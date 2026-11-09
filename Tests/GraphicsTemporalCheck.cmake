@@ -15,7 +15,7 @@ function(render scene name)
         --scene "${FIXTURE}/Scenes/${scene}.swscene" --fixed-step ${ARGN} --screenshot "${TEMP}/${name}.png"
         RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "${scene} (${ARGN}) didn't render: ${out}\n${err}")
+        message(FATAL_ERROR "[exit ${result}] ${scene} (${ARGN}) didn't render: ${out}\n${err}")
     endif()
 endfunction()
 # mean_rgb of a region of a screenshot, as a list.
@@ -109,7 +109,7 @@ function(report name)
         --scene "${FIXTURE}/Scenes/motion.swscene" --size 320x180 ${ARGN} --graphics-report --json "${TEMP}/${name}.json"
         RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "--graphics-report (${ARGN}) failed: ${out}\n${err}")
+        message(FATAL_ERROR "[exit ${result}] --graphics-report (${ARGN}) failed: ${out}\n${err}")
     endif()
 endfunction()
 report(taa-report --anti-aliasing taa)
