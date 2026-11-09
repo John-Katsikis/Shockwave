@@ -27,6 +27,7 @@
 
 #include <Projects/Diagnostic.h>
 #include <Projects/LevelCatalog.h>
+#include <Projects/Performance.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -59,14 +60,31 @@ struct ReleaseSettings {
     uint32_t loadingBudgetMib = 512;
     double transitionTimeoutSeconds = 30;
     std::string acceptanceScenario;   // project-relative .json flow-test scenario
+    // Performance budgets (contract version 2, S10, docs/Performance.md): frame-time
+    // percentiles and the worst frame of play, and how long one level change may take. All
+    // 0 means a version 1 contract that doesn't state them yet: it still reads, and the
+    // performance gate says what's missing. They're set together or not at all.
+    double frameP95Ms = 0;
+    double frameP99Ms = 0;
+    double maxHitchMs = 0;
+    double levelLoadSeconds = 0;
 
     bool hasMode(ReleaseMode mode) const;
+    bool hasPerformanceBudgets() const {
+        return frameP95Ms > 0 || frameP99Ms > 0 || maxHitchMs > 0 || levelLoadSeconds > 0;
+    }
+    // The frame budget: 1000 / target_fps ms (16.667 at 60, 8.333 at 120).
+    double frameBudgetMs() const { return targetFps > 0 ? 1000.0 / targetFps : 0; }
+    // Fills the budgets from target_fps: p95 at the frame budget, p99 at 1.25x, the worst
+    // frame at 3x, a level change in 10 s (or the transition timeout, if shorter). For the
+    // editor's "Add budgets" button: a starting point someone then chooses to keep.
+    void suggestPerformanceBudgets();
     bool operator==(const ReleaseSettings&) const = default;
 };
 
 // ---- The descriptor table ----------------------------------------------------------------
 
-enum class ReleaseFieldKind { Id, Version, Platforms, Modes, Integer, Seconds, Choice, Path };
+enum class ReleaseFieldKind { Id, Version, Platforms, Modes, Integer, Seconds, Milliseconds, Choice, Path };
 
 struct ReleaseField {
     const char* key;
@@ -76,10 +94,11 @@ struct ReleaseField {
         std::vector<ReleaseMode> ReleaseSettings::*, uint32_t ReleaseSettings::*, double ReleaseSettings::*,
         ReleaseGraphicsTier ReleaseSettings::*>
         member;
-    double min = 0, max = 0;   // Integer and Seconds
+    double min = 0, max = 0;   // Integer, Seconds and Milliseconds
     std::span<const char* const> choices;   // Platforms, Modes and Choice: names, in enum order
     const char* label;   // for people: the editor's row
     const char* meaning;   // one line for the editor's tooltip and the schema
+    int since = 1;   // the contract version that added it; required from then on
 };
 
 // Every key, in file order.
@@ -92,6 +111,7 @@ const char* releaseGraphicsTierName(ReleaseGraphicsTier tier);
 
 // A field's values as file text, one entry per line it takes (platform and mode may take
 // several, or none when empty): {"\"com.example.mygame\""}, {"linux-x86_64", "windows-x86_64"}.
+// A version 2 budget left at 0 has none.
 std::vector<std::string> releaseFieldText(const ReleaseSettings& settings, const ReleaseField& field);
 
 // ---- Files ------------------------------------------------------------------------------
@@ -154,6 +174,14 @@ struct ReleaseInputs {
     bool acceptanceScenarioExists = false;
     // The build this engine is ("Release", "Debug", ... from CMake), for the build gate.
     std::string buildConfig;
+    // Performance records (S10, Projects/Performance.h): checked means the project's
+    // Release/Performance folder was read. currentBuildId is the game's cook build_id now,
+    // "" unknown; a record from another build is stale.
+    bool performanceChecked = false;
+    std::vector<PerformanceRecord> performanceRecords;
+    std::vector<std::string> performanceFiles;
+    std::vector<Diagnostic> performanceProblems;
+    std::string currentBuildId;
     // Where the installed game writes (S01, docs/UserPaths.md): the per-user root its
     // application ID resolves to on this machine, or why it doesn't. Unchecked leaves the
     // user_paths gate unverified.

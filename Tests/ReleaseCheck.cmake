@@ -78,10 +78,13 @@ string(JSON firstStatus GET "${json}" gates 0 status)
 string(JSON failed GET "${json}" summary failed)
 string(JSON unverified GET "${json}" summary unverified)
 if(NOT id STREQUAL "com.shockwave.arena" OR NOT platforms EQUAL 2 OR NOT first STREQUAL "release_contract" OR
-   NOT firstStatus STREQUAL "passed" OR NOT failed EQUAL 1 OR unverified LESS 9 OR gates LESS 14)
+   NOT firstStatus STREQUAL "passed" OR NOT failed EQUAL 2 OR unverified LESS 8 OR gates LESS 14)
     message(FATAL_ERROR "--release-info --json is missing fields:\n${json}")
 endif()
-# The one failure: Arena has no level catalog (S02, docs/Levels.md). With one listing its
+# A version 1 contract states no performance budgets (S10, docs/Performance.md), so that
+# gate fails, saying what to add.
+run(0 "gate performance failed \\(S10\\): the contract states no performance budgets" --release-info)
+# The other failure: Arena has no level catalog (S02, docs/Levels.md). With one listing its
 # arena, the gate follows the scene and passes; a broken link fails it.
 run(0 "gate level_catalog failed \\(S02\\): no level catalog" --release-info)
 file(APPEND "${project}" "levels \"Config/Levels.swlevels\"\n")

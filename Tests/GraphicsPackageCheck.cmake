@@ -14,7 +14,7 @@ function(run what)
     execute_process(COMMAND ${ARGN} RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err
         WORKING_DIRECTORY "${TEMP}")
     if(NOT result EQUAL 0)
-        message(FATAL_ERROR "${what} failed (${result}):\n${out}\n${err}")
+        message(FATAL_ERROR "[exit ${result}] ${what} failed (${result}):\n${out}\n${err}")
     endif()
     set(out "${out}" PARENT_SCOPE)
 endfunction()

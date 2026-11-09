@@ -58,6 +58,12 @@ struct FrameSample {
     float gpuMs = 0;   // the GPU's time for the frame, 0 if unknown
     float frameMs = 0;   // start of one frame to the start of the next
     float presentMs = 0;   // between two presents reaching the screen, 0 if unknown
+    // Where the CPU time went (S10, docs/Performance.md): the fixed simulation ticks, the
+    // game's own frame (input, pump, onFrame) and gathering plus submitting the draws. 0 if
+    // not measured. They are parts of cpuMs, not extra time.
+    float simulationMs = 0;
+    float gameMs = 0;
+    float submitMs = 0;
 };
 
 struct FrameSummary {
@@ -67,7 +73,20 @@ struct FrameSummary {
     double maxMs = 0;   // the worst frame
     double jitterMs = 0;   // standard deviation of frame time
     double cpuMs = 0, gpuMs = 0, presentMs = 0;   // averages
+    double simulationMs = 0, gameMs = 0, submitMs = 0;   // averages of the CPU parts
+    // Frame-time percentiles (nearest rank): half the frames took at most p50Ms, 95% at
+    // most p95Ms. Release budgets are written in these (docs/Performance.md), since an
+    // average hides the slow frames players feel.
+    double p50Ms = 0, p95Ms = 0, p99Ms = 0;
+    // The same over the intervals between frames reaching the screen, when every frame had
+    // one (presentFrames == frames); otherwise 0 and the frame intervals stand in.
+    size_t presentFrames = 0;
+    double presentP95Ms = 0, presentP99Ms = 0;
 };
+
+// The nearest-rank percentile of some times: the smallest t with at least `percent` of
+// them <= t. 0 for none. percent is clamped to 0..100.
+double framePercentile(std::vector<double> times, double percent);
 
 class FrameStats {
 public:
@@ -77,6 +96,8 @@ public:
     size_t size() const { return m_count; }
     // Oldest first.
     std::vector<FrameSample> samples() const;
+    // The newest frame; a zero sample when there are none.
+    FrameSample latest() const;
     FrameSummary summary() const;
 
 private:

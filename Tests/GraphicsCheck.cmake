@@ -3,7 +3,7 @@ file(WRITE "${TEMP}/good.swgraphics" "swgraphics 1\nrender_scale 0.5\nshadow_qua
 execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/good.swgraphics" --check
     RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT result EQUAL 0)
-    message(FATAL_ERROR "Valid graphics failed --check: ${out}\n${err}")
+    message(FATAL_ERROR "[exit ${result}] Valid graphics failed --check: ${out}\n${err}")
 endif()
 execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/good.swgraphics" --render-scale 0.75 --fps 120 --graphics-info
     RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
@@ -45,7 +45,7 @@ endif()
 execute_process(COMMAND "${PLAYER}" --project "${PROJECT}" --graphics "${TEMP}/good.swgraphics" --anti-aliasing fxaa
     --graphics-info --json "${TEMP}/info.json" RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT result EQUAL 0)
-    message(FATAL_ERROR "--graphics-info --json failed: ${out}\n${err}")
+    message(FATAL_ERROR "[exit ${result}] --graphics-info --json failed: ${out}\n${err}")
 endif()
 file(READ "${TEMP}/info.json" info)
 string(JSON aa GET "${info}" settings anti_aliasing)

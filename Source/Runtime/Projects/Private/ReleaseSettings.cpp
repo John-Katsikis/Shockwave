@@ -70,6 +70,43 @@ const ReleaseField kFields[] = {
      {},
      "Target frame rate",
      "Frames per second the release promises on its minimum hardware; the frame budget is 1000/target_fps ms"},
+    {"frame_p95_ms",
+     ReleaseFieldKind::Milliseconds,
+     &R::frameP95Ms,
+     1,
+     1000,
+     {},
+     "Frame time, 95th percentile",
+     "Most milliseconds 95% of the frames of play may take on the minimum hardware; at most frame_p99_ms",
+     2},
+    {"frame_p99_ms",
+     ReleaseFieldKind::Milliseconds,
+     &R::frameP99Ms,
+     1,
+     1000,
+     {},
+     "Frame time, 99th percentile",
+     "Most milliseconds 99% of the frames of play may take; at most max_hitch_ms",
+     2},
+    {"max_hitch_ms",
+     ReleaseFieldKind::Milliseconds,
+     &R::maxHitchMs,
+     1,
+     5000,
+     {},
+     "Worst frame",
+     "Most milliseconds any one frame of play may take (loading screens excluded, measured apart)",
+     2},
+    {"level_load_seconds",
+     ReleaseFieldKind::Seconds,
+     &R::levelLoadSeconds,
+     0.1,
+     600,
+     {},
+     "Level change time",
+     "Most seconds one level change may take on the minimum hardware, cold or warm; at most "
+     "transition_timeout_seconds",
+     2},
     {"simulation_hz",
      ReleaseFieldKind::Integer,
      &R::simulationHz,
@@ -299,6 +336,17 @@ bool setFieldText(ReleaseSettings& settings, const ReleaseField& field, std::str
         settings.*std::get<uint32_t R::*>(field.member) = static_cast<uint32_t>(value);
         return true;
     }
+    case ReleaseFieldKind::Milliseconds: {
+        double value = 0;
+        const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (ec != std::errc{} || end != text.data() + text.size() || !std::isfinite(value) || value < field.min ||
+            value > field.max)
+            return why = key + " must be a number of milliseconds from " + formatNumber(field.min) + " to " +
+                         formatNumber(field.max),
+                   false;
+        settings.*std::get<double R::*>(field.member) = value;
+        return true;
+    }
     case ReleaseFieldKind::Seconds: {
         double value = 0;
         const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -413,6 +461,15 @@ bool ReleaseSettings::hasMode(ReleaseMode mode) const {
     return std::find(modes.begin(), modes.end(), mode) != modes.end();
 }
 
+void ReleaseSettings::suggestPerformanceBudgets() {
+    const double frame = frameBudgetMs() > 0 ? frameBudgetMs() : 1000.0 / 60;
+    auto tidy = [](double ms) { return std::round(ms * 1000) / 1000; };   // 16.667, not 16.666666666666668
+    frameP95Ms = tidy(frame);
+    frameP99Ms = tidy(frame * 1.25);
+    maxHitchMs = tidy(frame * 3);
+    levelLoadSeconds = std::min(10.0, transitionTimeoutSeconds);
+}
+
 std::span<const ReleaseField> releaseFields() { return kFields; }
 
 const ReleaseField* findReleaseField(std::string_view key) {
@@ -440,7 +497,12 @@ std::vector<std::string> releaseFieldText(const ReleaseSettings& settings, const
     case ReleaseFieldKind::Choice:
         return {releaseGraphicsTierName(settings.*std::get<ReleaseGraphicsTier R::*>(field.member))};
     case ReleaseFieldKind::Integer: return {std::to_string(settings.*std::get<uint32_t R::*>(field.member))};
-    case ReleaseFieldKind::Seconds: return {formatNumber(settings.*std::get<double R::*>(field.member))};
+    case ReleaseFieldKind::Seconds:
+    case ReleaseFieldKind::Milliseconds: {
+        const double value = settings.*std::get<double R::*>(field.member);
+        if (field.since > 1 && value == 0) return {};   // a version 1 contract doesn't state it
+        return {formatNumber(value)};
+    }
     }
     return {};
 }
@@ -464,6 +526,7 @@ bool parseRelease(std::string_view text, std::string_view shown, ReleaseFile& ou
     std::string line;
     int lineNumber = 0;
     bool header = false;
+    int fileVersion = 1;
     auto fail = [&](const char* code, const std::string& object, const std::string& message) {
         error = {code, DiagnosticSeverity::Error, std::string(shown), lineNumber, object, message};
         return false;
@@ -492,15 +555,20 @@ bool parseRelease(std::string_view text, std::string_view shown, ReleaseFile& ou
             std::string version, extra;
             if (key != "shockwave_release" || !(row >> version) || (row >> extra))
                 return fail("ReleaseHeader", "", "expected shockwave_release 1 as the first line");
-            if (version != "1")
+            if (version != "1" && version != "2")
                 return fail(
                     "ReleaseUnsupportedVersion", "",
-                    "unsupported release contract version " + version + " (this build reads 1)");
+                    "unsupported release contract version " + version + " (this build reads 1 and 2)");
+            fileVersion = version == "2" ? 2 : 1;
             header = true;
             continue;
         }
         const ReleaseField* field = findReleaseField(key);
         if (!field) return fail("ReleaseUnknownKey", key, "unknown key " + key);
+        if (field->since > fileVersion)
+            return fail(
+                "ReleaseUnknownKey", key,
+                key + " needs shockwave_release " + std::to_string(field->since) + " as the first line");
         const size_t index = size_t(field - kFields);
         if (result.lines[index] != 0 && !listField(*field))
             return fail(
@@ -521,11 +589,12 @@ bool parseRelease(std::string_view text, std::string_view shown, ReleaseFile& ou
     }
     if (!header) return fail("ReleaseHeader", "", "expected shockwave_release 1 as the first line");
     for (size_t i = 0; i < kFieldCount; ++i)
-        if (result.lines[i] == 0) {
+        if (result.lines[i] == 0 && kFields[i].since <= fileVersion) {
             lineNumber = 0;
             return fail(
                 "ReleaseMissingKey", kFields[i].key,
-                std::string("missing ") + kFields[i].key + ": every key of a release contract is required");
+                std::string("missing ") + kFields[i].key + ": every key of a version " + std::to_string(fileVersion) +
+                    " release contract is required");
         }
     out = std::move(result);
     return true;
@@ -547,8 +616,11 @@ bool readRelease(const std::filesystem::path& file, std::string_view shown, Rele
 }
 
 std::string releaseText(const ReleaseSettings& settings) {
+    // Version 2 once the performance budgets are stated; until then the file stays version 1,
+    // so an older contract round-trips unchanged.
     std::string out = "# What this project promises to ship (docs/Release.md). Edited in Project > Release readiness.\n"
-                      "shockwave_release 1\n";
+                      "shockwave_release " +
+                      std::string(settings.hasPerformanceBudgets() ? "2" : "1") + "\n";
     for (const ReleaseField& field : kFields)
         for (const std::string& value : releaseFieldText(settings, field))
             out += std::string(field.key) + " " + value + "\n";
@@ -660,6 +732,13 @@ void validateRelease(
     // Each field on its own, for settings that didn't come from the parser (the editor).
     for (const ReleaseField& field : kFields) {
         const std::vector<std::string> values = releaseFieldText(s, field);
+        if (values.empty() && field.since > 1) {
+            if (s.hasPerformanceBudgets())
+                error(
+                    "ReleaseMissingKey", field.key,
+                    std::string("missing ") + field.key + ": the performance budgets are set together");
+            continue;
+        }
         if (values.empty()) {
             error("ReleaseMissingKey", field.key, std::string("needs at least one ") + field.key);
             continue;
@@ -693,6 +772,21 @@ void validateRelease(
             "ReleaseLoadingBudget", "loading_budget_mib",
             "loading_budget_mib " + std::to_string(s.loadingBudgetMib) + " is more than cpu_budget_mib " +
                 std::to_string(s.cpuBudgetMib) + ": loading has to fit in the game's memory");
+    if (s.frameP95Ms > 0 && s.frameP99Ms > 0 && s.frameP95Ms > s.frameP99Ms)
+        error(
+            "ReleaseFrameBudget", "frame_p95_ms",
+            "frame_p95_ms " + formatNumber(s.frameP95Ms) + " is more than frame_p99_ms " + formatNumber(s.frameP99Ms) +
+                ": 95% of frames can't take longer than 99% of them");
+    if (s.frameP99Ms > 0 && s.maxHitchMs > 0 && s.frameP99Ms > s.maxHitchMs)
+        error(
+            "ReleaseFrameBudget", "frame_p99_ms",
+            "frame_p99_ms " + formatNumber(s.frameP99Ms) + " is more than max_hitch_ms " + formatNumber(s.maxHitchMs) +
+                ", the worst any frame may take");
+    if (s.levelLoadSeconds > 0 && s.levelLoadSeconds > s.transitionTimeoutSeconds)
+        error(
+            "ReleaseLoadBudget", "level_load_seconds",
+            "level_load_seconds " + formatNumber(s.levelLoadSeconds) + " is more than transition_timeout_seconds " +
+                formatNumber(s.transitionTimeoutSeconds) + ", after which a level change fails");
     if (s.sharedBudgetMib > 0 && uint64_t(s.cpuBudgetMib) + s.gpuBudgetMib > s.sharedBudgetMib)
         error(
             "ReleaseMemoryBudget", "shared_budget_mib",
@@ -787,7 +881,10 @@ constexpr PendingGate kPendingGates[] = {
     {"saves", "S06", "versioned saves that continue across levels and survive interrupted writes", false},
     {"player_settings", "S08", "display, input, audio, accessibility and language settings that persist", false},
     {"cooked_package", "S09", "a release package cooked from every level's dependencies, run read-only", false},
-    {"performance", "S10", "frame-time, memory and loading measurements on named release hardware", false},
+    {"performance", "S10",
+     "a performance record from named, real hardware on an optimised build that meets every frame, memory and "
+     "loading budget (player --perf-run --perf-record, docs/Performance.md)",
+     false},
     {"online_lifecycle", "S11", "a full online match lifecycle with map rotation, on the real service", true},
     {"crash_recovery", "S12", "local crash reports, symbols and a safe restart that keeps player data", false},
 };
@@ -894,7 +991,16 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
         if (id == "level_travel") levelCatalogGate();
         if (pending.online && !online)
             gate(pending.id, GateStatus::NotApplicable, pending.batch, "offline only");
-        else
+        else if (id == "performance" && inputs.performanceChecked) {
+            const PerformanceGate perf =
+                performanceGate(s, inputs.performanceRecords, inputs.performanceFiles, inputs.currentBuildId);
+            gate(
+                pending.id,
+                perf.verdict == PerformanceVerdict::Passed   ? GateStatus::Passed
+                : perf.verdict == PerformanceVerdict::Failed ? GateStatus::Failed
+                                                             : GateStatus::Unverified,
+                pending.batch, perf.reason);
+        } else
             gate(
                 pending.id, GateStatus::Unverified, pending.batch,
                 std::string("no evidence yet: needs ") + pending.needs);
@@ -929,6 +1035,7 @@ ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs)
             withScenario.acceptanceScenarioExists =
                 std::filesystem::is_regular_file(project.root / file.settings.acceptanceScenario, ec);
             validateRelease(file.settings, &withScenario, report.file, &file, report.diagnostics);
+            for (const Diagnostic& problem : inputs.performanceProblems) report.diagnostics.push_back(problem);
             releaseGates(report, withScenario);
             return report;
         }
@@ -990,6 +1097,8 @@ std::string releaseReportJson(const ReleaseReport& report, std::string_view proj
                 out += "]";
             } else if (quotedField(field)) {
                 out += diagnosticJsonString(report.settings.*std::get<std::string R::*>(field.member));
+            } else if (values.empty()) {
+                out += "null";   // a version 2 budget a version 1 contract doesn't state
             } else if (field.kind == ReleaseFieldKind::Choice) {
                 out += diagnosticJsonString(values.front());
             } else {
@@ -1028,8 +1137,9 @@ std::string releaseSchema() {
         "<!-- Generated by `player --release-schema docs/ReleaseSchema.md`; don't edit by hand. -->\n\n"
         "`Config/Release.swrelease` says what a project promises to ship. See docs/Release.md for how it's used.\n"
         "A project without it is a development project, and release qualification says so.\n\n"
-        "The first line is `shockwave_release 1`. Then one key and value per line; `#` starts a comment.\n"
-        "`platform` and `mode` repeat, once per value. Every key is required.\n\n"
+        "The first line is `shockwave_release 2` (or 1: a contract from before the performance budgets).\n"
+        "Then one key and value per line; `#` starts a comment. `platform` and `mode` repeat, once per value.\n"
+        "Every key of the file's version is required; keys marked (version 2) need `shockwave_release 2`.\n\n"
         "| Key | Values | Meaning |\n| --- | --- | --- |\n";
     for (const ReleaseField& field : kFields) {
         std::string values;
@@ -1050,12 +1160,18 @@ std::string releaseSchema() {
         case ReleaseFieldKind::Seconds:
             values = "seconds, " + formatNumber(field.min) + " to " + formatNumber(field.max);
             break;
+        case ReleaseFieldKind::Milliseconds:
+            values = "milliseconds, " + formatNumber(field.min) + " to " + formatNumber(field.max);
+            break;
         }
+        if (field.since > 1) values += " (version " + std::to_string(field.since) + ")";
         out += std::string("| `") + field.key + "` | " + values + " | " + field.meaning + " |\n";
     }
     out += "\n## Rules between keys\n\n"
            "- Without `mode online`, `max_players` is 1. With it, `max_players` is even, from 2 to 64.\n"
            "- `loading_budget_mib` is at most `cpu_budget_mib`.\n"
+           "- `frame_p95_ms` <= `frame_p99_ms` <= `max_hitch_ms`, and `level_load_seconds` <= "
+           "`transition_timeout_seconds`.\n"
            "- When `shared_budget_mib` isn't 0, `cpu_budget_mib` and `gpu_budget_mib` together fit in it.\n"
            "- `simulation_hz` equals the project's `tick_rate`.\n"
            "- `release_version` equals the package version in `Config/Package.swpackage` (1.0.0 without one).\n"
@@ -1085,7 +1201,7 @@ std::string releaseSchema() {
            "## Diagnostic codes\n\n"
            "Codes are stable; tools can match them. Messages may change.\n\n"
            "| Code | Severity | Meaning |\n| --- | --- | --- |\n"
-           "| `ReleaseHeader` | error | the first line isn't `shockwave_release 1` |\n"
+           "| `ReleaseHeader` | error | the first line isn't `shockwave_release 1` or `2` |\n"
            "| `ReleaseUnsupportedVersion` | error | a contract version this build can't read |\n"
            "| `ReleaseUnreadable` | error | the file can't be opened or read |\n"
            "| `ReleaseUnknownKey` | error | a key this version doesn't have |\n"
@@ -1095,6 +1211,9 @@ std::string releaseSchema() {
            "| `ReleasePlayerCount` | error | `max_players` doesn't fit the modes |\n"
            "| `ReleaseLoadingBudget` | error | `loading_budget_mib` is more than `cpu_budget_mib` |\n"
            "| `ReleaseMemoryBudget` | error | CPU and GPU budgets don't fit in `shared_budget_mib` |\n"
+           "| `ReleaseFrameBudget` | error | the frame budgets are out of order (p95 over p99, or p99 over the worst "
+           "frame) |\n"
+           "| `ReleaseLoadBudget` | error | `level_load_seconds` is more than `transition_timeout_seconds` |\n"
            "| `ReleaseTickRate` | error | `simulation_hz` isn't the project's `tick_rate` |\n"
            "| `ReleaseVersionMismatch` | error | `release_version` isn't the package version |\n"
            "| `ReleaseNetworkMissing` | error | `mode online` without multiplayer settings turning it on |\n"
@@ -1103,7 +1222,8 @@ std::string releaseSchema() {
            "| `ReleaseNetworkPlayers` | error | `max_players` isn't the network settings' `max_players` |\n"
            "| `ReleaseGraphicsBudget` | error | `gpu_budget_mib` is under `graphics_memory_budget_mb` |\n"
            "| `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |\n"
-           "| `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |\n";
+           "| `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |\n"
+           "| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |\n";
     return out;
 }
 

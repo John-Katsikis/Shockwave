@@ -1097,3 +1097,64 @@ W after the first travel; a focus only counts while its element is visible.
   problems are listed in the window's output with their files.
 - **Startup work in a release**: the cook proves what ships. S10 still has to show that
   a release never imports, compresses or bakes anything on players' machines.
+
+## S10: Measured performance, part 1
+
+### What was built
+
+- **Budgets in the contract** ([Performance](Performance.md#budgets)): version 2 adds
+  `frame_p95_ms`, `frame_p99_ms`, `max_hitch_ms` and `level_load_seconds`, required
+  together and kept in order. A version 1 contract still reads and round-trips unchanged;
+  only its performance gate fails. The editor's **Add performance budgets** fills them in
+  from `target_fps`.
+- **Percentiles and the CPU split**: every frame sample records:
+  - the fixed simulation ticks;
+  - the game's own frame;
+  - gathering plus submitting.
+
+  `summarizeFrames` adds p50, p95 and p99, and present percentiles when every frame had
+  one. `--benchmark` and **Window > Stats** show them. The benchmark's warm-up second is
+  reported on its own instead of being cleared away, with peak process and GPU memory.
+- **`player --perf-run`** ([Performance](Performance.md#a-measured-run)): a flow-test
+  scenario in real time, with a shown window and the project's pacing.
+  - Each frame is filed under loading, warm-up (the first second after each arrival) or
+    play, for the whole run and per level. Nothing is deleted.
+  - Each level change gets its time and peak memory.
+  - `--laps N` repeats the scenario and reports memory growth from the first lap to the
+    last.
+  - `--cold-cache` empties the pipeline cache first.
+  - The report says which budgets the run meets.
+- **Machine information** (Platform/SystemInfo.h): OS and version, CPU model, threads and
+  RAM on Linux, Windows and macOS, and ARM boards' model names (Jetson). Process memory
+  comes from /proc, the working set or Mach task info.
+- **Performance records** (Projects/Performance.h): `--perf-record "<machine>"` writes
+  `Release/Performance/<machine>.swperf`. It's strict text, with the machine, GPU kind and
+  driver, unified memory, build type and cook build ID, settings, cache, play, warm-up, each
+  level and load, memory peaks and growth.
+- **The performance gate**: passes on a record that meets everything; see
+  [the rules](Performance.md#the-performance-gate). It fails on a usable record that misses
+  a budget, with every miss listed. It stays unverified when no record counts. Software and
+  null renderers, debug builds and stale builds never count.
+- **Reactor Run's tour** (`Tests/perf/tour.json`): menu, training, factory and back, for
+  laps.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `performance` | unit | nearest-rank percentiles; a hitch shows in the worst frame, not p95; the contract's version 1 and 2 budgets, ranges, order and the null JSON; records round-trip, refuse unknown, repeated, bad and missing keys, and name files safely; every gate rule; the simulation clock at 30, 60, 144 and 1000 fps for 30, 60 and 120 Hz ticks, and no burst of catch-up ticks after a 5 s load |
+| `performance_cli` | integration | two laps of Reactor Run's tour, with loading (6 changes), warm-up, play and each level apart, in text and JSON; the record written; the gate unverified without records and with the null-renderer record; passed for the same run as real hardware reports it; failed when p95 is over budget; a damaged record is a warning; flags that don't go together are refused |
+| `release`, `release_cli` | unit, integration | version 3 is refused; a version 1 contract fails the performance gate and names the keys |
+
+### Still unverified
+
+- **Any real performance claim**: no record from release hardware exists yet. CI's
+  software GPU proves the accounting only.
+- **Part 2**:
+  - native-resolution presets;
+  - the release tier file;
+  - pipeline warm-up during loading, and counting pipelines built in play (`pipelines_in_play`
+    stays -1, unknown);
+  - effect-off memory checks;
+  - fallback-tier pictures.
+- **Orin**: not run. The record has the fields, and the docs say how to measure there.

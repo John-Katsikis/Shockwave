@@ -5,8 +5,9 @@
 `Config/Release.swrelease` says what a project promises to ship. See docs/Release.md for how it's used.
 A project without it is a development project, and release qualification says so.
 
-The first line is `shockwave_release 1`. Then one key and value per line; `#` starts a comment.
-`platform` and `mode` repeat, once per value. Every key is required.
+The first line is `shockwave_release 2` (or 1: a contract from before the performance budgets).
+Then one key and value per line; `#` starts a comment. `platform` and `mode` repeat, once per value.
+Every key of the file's version is required; keys marked (version 2) need `shockwave_release 2`.
 
 | Key | Values | Meaning |
 | --- | --- | --- |
@@ -16,6 +17,10 @@ The first line is `shockwave_release 1`. Then one key and value per line; `#` st
 | `mode` | `offline`, `online` (one per line) | offline (single player) or online (multiplayer); one line each, at least one |
 | `max_players` | whole number, 1 to 64 | Players in one game: 1 for an offline-only game, an even 2 (1v1) to 64 (32v32) with online; equals the network settings' max_players |
 | `target_fps` | whole number, 30 to 360 | Frames per second the release promises on its minimum hardware; the frame budget is 1000/target_fps ms |
+| `frame_p95_ms` | milliseconds, 1 to 1000 (version 2) | Most milliseconds 95% of the frames of play may take on the minimum hardware; at most frame_p99_ms |
+| `frame_p99_ms` | milliseconds, 1 to 1000 (version 2) | Most milliseconds 99% of the frames of play may take; at most max_hitch_ms |
+| `max_hitch_ms` | milliseconds, 1 to 5000 (version 2) | Most milliseconds any one frame of play may take (loading screens excluded, measured apart) |
+| `level_load_seconds` | seconds, 0.10000000000000001 to 600 (version 2) | Most seconds one level change may take on the minimum hardware, cold or warm; at most transition_timeout_seconds |
 | `simulation_hz` | whole number, 1 to 1000 | Fixed simulation ticks per second; equals the project's tick_rate |
 | `graphics_tier` | `low`, `medium`, `high`, `ultra` | The graphics preset the minimum hardware is qualified at: low, medium, high or ultra |
 | `cpu_budget_mib` | whole number, 64 to 1048576 | Most system memory the game may use, in MiB |
@@ -29,6 +34,7 @@ The first line is `shockwave_release 1`. Then one key and value per line; `#` st
 
 - Without `mode online`, `max_players` is 1. With it, `max_players` is even, from 2 to 64.
 - `loading_budget_mib` is at most `cpu_budget_mib`.
+- `frame_p95_ms` <= `frame_p99_ms` <= `max_hitch_ms`, and `level_load_seconds` <= `transition_timeout_seconds`.
 - When `shared_budget_mib` isn't 0, `cpu_budget_mib` and `gpu_budget_mib` together fit in it.
 - `simulation_hz` equals the project's `tick_rate`.
 - `release_version` equals the package version in `Config/Package.swpackage` (1.0.0 without one).
@@ -54,7 +60,7 @@ ticked by hand. A release is qualified only when every gate that applies has pas
 | `saves` | S06 | evidence of versioned saves that continue across levels and survive interrupted writes |
 | `player_settings` | S08 | evidence of display, input, audio, accessibility and language settings that persist |
 | `cooked_package` | S09 | evidence of a release package cooked from every level's dependencies, run read-only |
-| `performance` | S10 | evidence of frame-time, memory and loading measurements on named release hardware |
+| `performance` | S10 | evidence of a performance record from named, real hardware on an optimised build that meets every frame, memory and loading budget (player --perf-run --perf-record, docs/Performance.md) |
 | `online_lifecycle` | S11 | evidence of a full online match lifecycle with map rotation, on the real service (online only) |
 | `crash_recovery` | S12 | evidence of local crash reports, symbols and a safe restart that keeps player data |
 | `platform:<name>` | S13 | a clean-machine install, play-through and update on that platform |
@@ -67,7 +73,7 @@ Codes are stable; tools can match them. Messages may change.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
-| `ReleaseHeader` | error | the first line isn't `shockwave_release 1` |
+| `ReleaseHeader` | error | the first line isn't `shockwave_release 1` or `2` |
 | `ReleaseUnsupportedVersion` | error | a contract version this build can't read |
 | `ReleaseUnreadable` | error | the file can't be opened or read |
 | `ReleaseUnknownKey` | error | a key this version doesn't have |
@@ -77,6 +83,8 @@ Codes are stable; tools can match them. Messages may change.
 | `ReleasePlayerCount` | error | `max_players` doesn't fit the modes |
 | `ReleaseLoadingBudget` | error | `loading_budget_mib` is more than `cpu_budget_mib` |
 | `ReleaseMemoryBudget` | error | CPU and GPU budgets don't fit in `shared_budget_mib` |
+| `ReleaseFrameBudget` | error | the frame budgets are out of order (p95 over p99, or p99 over the worst frame) |
+| `ReleaseLoadBudget` | error | `level_load_seconds` is more than `transition_timeout_seconds` |
 | `ReleaseTickRate` | error | `simulation_hz` isn't the project's `tick_rate` |
 | `ReleaseVersionMismatch` | error | `release_version` isn't the package version |
 | `ReleaseNetworkMissing` | error | `mode online` without multiplayer settings turning it on |
@@ -86,3 +94,4 @@ Codes are stable; tools can match them. Messages may change.
 | `ReleaseGraphicsBudget` | error | `gpu_budget_mib` is under `graphics_memory_budget_mb` |
 | `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |
 | `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |
+| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |

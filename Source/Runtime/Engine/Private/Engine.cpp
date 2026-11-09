@@ -379,15 +379,19 @@ void Engine::run(Application& app) {
             app.onPump(rawFrameTime);
         }
 
+        const Uint64 ticksStart = SDL_GetPerformanceCounter();
         for (int tick = 0; tick < m_simulationStep.ticks; ++tick) {
             SW_PROFILE_SCOPE("Fixed tick");
             app.onUpdate(dt);
         }
+        const Uint64 ticksEnd = SDL_GetPerformanceCounter();
         m_interpolationAlpha = m_clock.alpha(dt);
         {
             SW_PROFILE_SCOPE("Application frame");
             app.onFrame(frameTime);
         }
+        const Uint64 gameEnd = SDL_GetPerformanceCounter();
+        Uint64 submitTicks = 0;
 
         if (m_renderer->beginFrame()) {
             if (m_config.gui) {
@@ -398,6 +402,7 @@ void Engine::run(Application& app) {
                 app.onGui();
                 ImGui::Render();
             }
+            const Uint64 submitStart = SDL_GetPerformanceCounter();
             {
                 SW_PROFILE_SCOPE("Gather draws");
                 app.onRender(*m_renderer, m_interpolationAlpha);
@@ -406,6 +411,7 @@ void Engine::run(Application& app) {
                 SW_PROFILE_SCOPE("Record and submit");
                 m_renderer->endFrame();
             }
+            submitTicks = SDL_GetPerformanceCounter() - submitStart;
             m_graphics.afterFrame();   // the memory budget, when there is one
             if (m_config.gui) {
                 SW_PROFILE_SCOPE("Detached GUI windows");
@@ -416,9 +422,17 @@ void Engine::run(Application& app) {
         }
 
         const Uint64 frameEnd = SDL_GetPerformanceCounter();
-        m_frameStats.add(
-            {static_cast<float>(static_cast<double>(frameEnd - frameStart) * 1000.0 / freq), m_renderer->gpuFrameMs(),
-             static_cast<float>(rawFrameTime * 1000.0), presentMs});
+        auto ms = [freq](Uint64 ticks) { return static_cast<float>(static_cast<double>(ticks) * 1000.0 / freq); };
+        FrameSample sample;
+        sample.cpuMs = ms(frameEnd - frameStart);
+        sample.gpuMs = m_renderer->gpuFrameMs();
+        sample.frameMs = static_cast<float>(rawFrameTime * 1000.0);
+        sample.presentMs = presentMs;
+        sample.simulationMs = ms(ticksEnd - ticksStart);
+        // Input and the pump before the ticks, and the game's frame after them.
+        sample.gameMs = ms((ticksStart - frameStart) + (gameEnd - ticksEnd));
+        sample.submitMs = ms(submitTicks);
+        m_frameStats.add(sample);
 
         fpsTimer += rawFrameTime;
         ++fpsFrames;

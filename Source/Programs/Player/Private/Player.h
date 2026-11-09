@@ -149,6 +149,14 @@ struct Tool {
     // --flow-test scenario.json [--json report]: run the scenario through the shell and the
     // levels, write the report, exit 1 at the first failed step (docs/FlowTest.md).
     fs::path flowTest;
+    // --perf-run scenario.json [--laps N] [--perf-record "machine"] [--cold-cache] [--json
+    // report]: the scenario in real time, measured; play and loading apart (S10,
+    // PlayerPerformance.cpp, docs/Performance.md). Sets flowTest too.
+    bool perfRun = false;
+    uint32_t perfLaps = 1;
+    std::string perfRecord;   // the machine's name; writes Release/Performance/<name>.swperf
+    fs::path perfRecordFolder;   // --output with --perf-record; empty: the project's Release/Performance
+    bool coldCache = false;   // --cold-cache: the pipeline cache was emptied before the run
 };
 
 // Bad command-line arguments: the player exits with code 2 (1 is a failure at run time).
@@ -225,6 +233,9 @@ int releaseInfo(
     const shockwave::Project& project, const fs::path& json,
     const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
 int releaseSchema(const fs::path& file);
+// The game's build now, as a cook names it (16 hex digits): a package's Cook.swcook, or the
+// project's latest cook for this platform. "" without one. Performance records name it.
+std::string currentBuildId(const shockwave::Project& project);
 // --cook-info file [--verify folder] [--json out]: a cook manifest, and its files checked.
 int cookInfo(const fs::path& file, const fs::path& verifyRoot, const fs::path& json);
 int levelSchema(const fs::path& file);
@@ -309,8 +320,9 @@ bool relaunchThroughSteam(const shockwave::Project& project);
 
 class Player final : public shockwave::Application {
 public:
-    Player(shockwave::Project project, Tool tool, const shockwave::GameModule& module)
-        : m_project(std::move(project)), m_tool(std::move(tool)), m_module(module) {}
+    // Both in PlayerPerformance.cpp, where PerfState is complete.
+    Player(shockwave::Project project, Tool tool, const shockwave::GameModule& module);
+    ~Player() override;
     int exitCode() const { return m_exitCode; }
 
     void onStart() override;
@@ -461,6 +473,14 @@ private:
     void startFlowTest();
     void driveFlowTest();
     void endFlowTest();
+    // --perf-run (PlayerPerformance.cpp): each frame files the last frame's sample under
+    // loading, warm-up or a level's play; at the end prints the report and writes the
+    // JSON and the record.
+    void startPerformance(size_t lapSteps);
+    void samplePerformance();
+    void endPerformance(bool passed);
+    struct PerfState;
+    std::unique_ptr<PerfState> m_perf;
     shockwave::PlaySession* session() const { return m_levels ? m_levels->session() : nullptr; }
     shockwave::net::IOnlineServices* startSteam(std::string& error);
     shockwave::net::IOnlineServices* services() const {
@@ -481,6 +501,8 @@ private:
     int m_saveFrames = 0;   // frames played, for --save
     int m_reportFrames = 0;   // frames played, for --graphics-report
     bool m_benchmarkMeasuring = false;
+    shockwave::FrameSummary m_benchmarkWarmup;   // the warm-up second, reported apart
+    uint64_t m_benchmarkFrames = 0, m_benchmarkCpuPeak = 0, m_benchmarkGpuPeak = 0;
     double m_uiUpdateMs = 0, m_uiLayoutMs = 0;   // game UI CPU time summed over the measured frames
     size_t m_uiFrames = 0;
     double m_effectsUpdateMs = 0, m_effectsBuildMs = 0;   // particle effects, the same way

@@ -95,10 +95,13 @@ average:      ...
 1% low:       ...
 0.1% low:     ...
 worst frame:  ...
+percentiles:  p50 ..., p95 ..., p99 ... (frame starts)
 jitter:       ...
-cpu:          ...
+cpu:          ... (simulation ..., game ..., submission ...)
 gpu time:     ...
 draws:        ... submitted, ... outside the view (culled)
+warm-up:      ... frames, p95 ..., worst ... (the first second, apart)
+memory:       peak ... MiB process, ... MiB GPU; warm cache
   pass scene                    ...
   pass tonemap                  ...
 ```
@@ -108,11 +111,19 @@ draws:        ... submitted, ... outside the view (culled)
 | `1% low` | The average frame rate of the slowest 1% of frames |
 | `0.1% low` | The same for the slowest 0.1% |
 | `jitter` | The standard deviation of frame time: how much frame times vary |
+| `percentiles` | Half, 95% and 99% of frames took at most this long; release budgets are written in these ([Performance.md](Performance.md)) |
+| `cpu` | The main thread's work, split into the fixed simulation ticks, the game's own frame and gathering plus submitting the draws |
+| `warm-up` | The second before measuring starts, reported apart rather than thrown away |
+| `memory` | The most memory the process and the GPU held while measuring; `--cold-cache` empties the pipeline cache first |
 | `draws` | Meshes drawn last frame, and how many of them were outside the camera's view and skipped |
 
 The JSON has the same fields: `average_fps`, `low_1_percent_fps`,
-`low_0_1_percent_fps`, `worst_ms`, `jitter_ms`, `cpu_ms`, `gpu_ms`, `draws`, `culled_draws`,
-`passes`, and more.
+`low_0_1_percent_fps`, `worst_ms`, `p50_ms`, `p95_ms`, `p99_ms`, `simulation_ms`, `game_ms`,
+`submit_ms`, `warmup`, `cpu_peak_mib`, `gpu_peak_mib`, `cache`, `jitter_ms`, `cpu_ms`,
+`gpu_ms`, `draws`, `culled_draws`, `passes`, and more.
+
+To measure a whole game, with level changes and memory over repeated laps, use
+`player --perf-run` ([Performance.md](Performance.md)).
 
 ## Profile with Tracy
 

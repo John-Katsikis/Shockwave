@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "name": "performance tour: menu, training, factory, menu",
+  "timeout": 120,
+  "steps": [
+    {"assert_level": "menu"},
+    {"wait": 2},
+    {"travel": "training"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"wait": 4},
+    {"travel": "factory"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"wait": 4},
+    {"travel": "menu"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"quit": true}
+  ]
+}

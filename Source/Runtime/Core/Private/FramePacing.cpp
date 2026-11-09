@@ -79,7 +79,20 @@ std::vector<FrameSample> FrameStats::samples() const {
     return out;
 }
 
+FrameSample FrameStats::latest() const {
+    return m_count ? m_ring[(m_next + m_ring.size() - 1) % m_ring.size()] : FrameSample{};
+}
+
 FrameSummary FrameStats::summary() const { return summarizeFrames(samples()); }
+
+double framePercentile(std::vector<double> times, double percent) {
+    if (times.empty()) return 0;
+    percent = std::clamp(percent, 0.0, 100.0);
+    std::sort(times.begin(), times.end());
+    const double n = static_cast<double>(times.size());
+    const size_t rank = static_cast<size_t>(std::ceil(percent / 100.0 * n - 1e-9));
+    return times[std::clamp<size_t>(rank, 1, times.size()) - 1];
+}
 
 FrameSummary summarizeFrames(const std::vector<FrameSample>& samples) {
     FrameSummary s;
@@ -87,19 +100,34 @@ FrameSummary summarizeFrames(const std::vector<FrameSample>& samples) {
     if (samples.empty()) return s;
     std::vector<double> times;
     times.reserve(samples.size());
-    double total = 0, cpu = 0, gpu = 0, present = 0;
+    std::vector<double> presents;
+    double total = 0, cpu = 0, gpu = 0, present = 0, simulation = 0, game = 0, submit = 0;
     size_t gpuCount = 0, presentCount = 0;
     for (const FrameSample& f : samples) {
         times.push_back(f.frameMs);
         total += f.frameMs;
         cpu += f.cpuMs;
+        simulation += f.simulationMs;
+        game += f.gameMs;
+        submit += f.submitMs;
         if (f.gpuMs > 0) gpu += f.gpuMs, ++gpuCount;
-        if (f.presentMs > 0) present += f.presentMs, ++presentCount;
+        if (f.presentMs > 0) present += f.presentMs, ++presentCount, presents.push_back(f.presentMs);
     }
     const double n = static_cast<double>(samples.size());
     s.averageMs = total / n;
     s.averageFps = s.averageMs > 0 ? 1000.0 / s.averageMs : 0;
     s.cpuMs = cpu / n;
+    s.simulationMs = simulation / n;
+    s.gameMs = game / n;
+    s.submitMs = submit / n;
+    s.p50Ms = framePercentile(times, 50);
+    s.p95Ms = framePercentile(times, 95);
+    s.p99Ms = framePercentile(times, 99);
+    s.presentFrames = presentCount;
+    if (presentCount == samples.size()) {
+        s.presentP95Ms = framePercentile(presents, 95);
+        s.presentP99Ms = framePercentile(presents, 99);
+    }
     s.gpuMs = gpuCount ? gpu / static_cast<double>(gpuCount) : 0;
     s.presentMs = presentCount ? present / static_cast<double>(presentCount) : 0;
     double variance = 0;
