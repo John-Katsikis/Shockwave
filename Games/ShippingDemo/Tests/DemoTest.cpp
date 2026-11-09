@@ -6,6 +6,7 @@
 //   - shooting, damage, reload, dry fire, pickups (only when needed, gone after);
 //   - objectives in order, a gate opening, the Hold timer counting fixed ticks the same
 //     at 30, 60 and 120 ticks a second;
+//   - a level entered again counts what an earlier visit destroyed for good;
 //   - a death on the tick the last objective would complete wins (no victory), and a
 //     campaign completion is only ever granted once.
 // The whole game, menus and travel included, is the flow tests' (Tests/flow/*.json).
@@ -32,6 +33,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
+#include <set>
 #include <string>
 
 using namespace shockwave;
@@ -347,6 +349,53 @@ void objectivesInOrder() {
     CHECK(rig.rules->progress()->state == CampaignProgress::Playing);
 }
 
+// Entered again after its sentries and guards were destroyed (remember_destroyed): they
+// stay gone, and the objectives that counted them start as done instead of refusing a
+// level whose groups are empty (found by a perf run's second lap, 2026-11-09).
+void enteredAgain() {
+    Remembered gone;
+    std::set<std::string> ids;
+    {
+        Rig rig("factory.swscene");
+        for (const char* group : {"enemies", "guards"})
+            rig.world.each<Health>([&](Entity, Health& h) {
+                if (h.group == group) h.current = 0;
+            });
+        const TickEvents e = rig.tick();
+        CHECK(rig.rules->alive("enemies") == 0 && rig.rules->alive("guards") == 0);
+        CHECK(!e.killed.empty());
+        for (const auto& [id, group] : e.killed) {
+            ++gone.destroyed[group];
+            ids.insert(id);
+        }
+        CHECK(gone.destroyed["enemies"] == 2);
+        CHECK(gone.destroyed["guards"] > 0);
+    }
+    // What LevelHost does on the way back in: the remembered ones are left out.
+    World world;
+    CHECK(load("factory.swscene", world));
+    std::vector<Entity> doomed;
+    world.each<const PersistentIdentity>([&](Entity e, const PersistentIdentity& p) {
+        if (ids.count(p.id)) doomed.push_back(e);
+    });
+    for (Entity e : doomed)
+        if (world.alive(e)) destroyWithChildren(world, e);
+    CHECK(mentions(DemoRules::validate(world), "counts group \"enemies\", which nothing in the level has"));
+    CHECK(DemoRules::validate(world, gone).empty());
+    Rig rig;
+    rig.world = std::move(world);
+    rig.physics = std::make_unique<PhysicsWorld>(rig.world, rig.jobs);
+    rig.physics->synchronize();
+    rig.rules = std::make_unique<DemoRules>(rig.world, rig.physics.get(), rig.rate);
+    rig.rules->scan(gone);
+    auto& sentries = *rig.world.get<ObjectiveProgress>(named(rig.world, "Objective: sentries"));
+    CHECK(sentries.total == 2);
+    const TickEvents first = rig.tick();
+    CHECK(sentries.complete && sentries.count == 2);
+    CHECK(first.completed.size() == 1 && first.completed[0] == "factory.enemies");
+    CHECK(rig.world.get<DemoGate>(named(rig.world, "Security door"))->open);
+}
+
 // The Hold objective counts fixed ticks: 8 seconds is 8 seconds at any tick rate.
 void holdTimer() {
     for (const float rate : {30.0f, 60.0f, 120.0f}) {
@@ -429,6 +478,7 @@ int main(int argc, char** argv) {
         combat();
         pickupsWhenNeeded();
         objectivesInOrder();
+        enteredAgain();
         holdTimer();
         deathBeatsVictory();
         rewardsOnce();

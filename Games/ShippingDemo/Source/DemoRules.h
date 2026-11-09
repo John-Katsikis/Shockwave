@@ -23,6 +23,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -51,7 +52,17 @@ struct TickEvents {
     std::vector<std::string> pickups;   // items collected
     std::vector<std::string> completed;   // objective ids completed
     std::vector<std::string> opened;   // gates opened (their objective ids)
+    // Authored things (with a PersistentIdentity) gone this tick, as {id, group}: they stay
+    // gone when the level is entered again, so the game remembers what they counted for.
+    std::vector<std::pair<std::string, std::string>> killed, collected;
     bool won = false, down = false;
+};
+
+// What an earlier visit took out of a level for good (project key remember_destroyed):
+// per group, how many Health things were destroyed and how many pickups were taken. Destroy
+// and Collect objectives count them as done, so a level entered again still adds up.
+struct Remembered {
+    std::map<std::string, int> destroyed, collected;
 };
 
 class DemoRules {
@@ -60,12 +71,13 @@ public:
 
     // What's wrong with a level's content, one line each; empty when it can play. A
     // level with no DemoPlayer and no CampaignProgress (the menu, the ending) is fine.
-    static std::vector<std::string> validate(const shockwave::World& world);
+    static std::vector<std::string> validate(const shockwave::World& world, const Remembered& remembered = {});
     static bool isGameplayLevel(const shockwave::World& world);
 
     // Finds the player and the level, counts what Destroy and Collect objectives start
-    // with, and applies gates. After beginPlay and after a save is loaded.
-    void scan();
+    // with (what's here plus what an earlier visit remembered), and applies gates. After
+    // beginPlay and after a save is loaded.
+    void scan(const Remembered& remembered = {});
     TickEvents tick(const PlayerCommand& command);
 
     // The "Demo enemies" system: works out each enemy's move and whether it fires this
