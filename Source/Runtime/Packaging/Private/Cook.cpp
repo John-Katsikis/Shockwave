@@ -286,7 +286,7 @@ std::vector<std::string> verifyCookedFiles(const CookManifest& manifest, const f
     for (const CookAsset& a : manifest.assets) {
         if (a.kind == "builtin") continue;   // made in code: no file
         std::string bytes;
-        const fs::path file = root / fs::path(a.id);
+        const fs::path file = root / fs::path(std::u8string(a.id.begin(), a.id.end()));   // UTF-8 everywhere
         std::error_code ec;
         if (!fs::is_regular_file(file, ec) || !readFile(file, bytes)) {
             problems.push_back(a.id + ": missing");
@@ -298,6 +298,36 @@ std::vector<std::string> verifyCookedFiles(const CookManifest& manifest, const f
                 hex64(fnv(bytes)) + "; the manifest has " + std::to_string(a.bytes) + ", " + hex64(a.hash) + ")");
     }
     return problems;
+}
+
+CookReport cookReport(const fs::path& projectRoot, std::string_view target, bool verify) {
+    CookReport report;
+    report.file = cookManifestPath(projectRoot, target);
+    std::error_code ec;
+    if (!fs::is_regular_file(report.file, ec)) return report;
+    if (!loadCookManifest(report.file, report.manifest, report.error)) return report;
+    report.cooked = true;
+    const CookManifest& m = report.manifest;
+    for (const CookLevel& level : m.levels) {
+        CookReport::Level row{level.id, level.scene};
+        for (const CookAsset& a : m.assets) {
+            if (std::find(a.levels.begin(), a.levels.end(), level.id) == a.levels.end()) continue;
+            ++row.assets;
+            row.bytes += a.bytes;
+            if (a.levels.size() > 1) ++row.shared;
+        }
+        report.levels.push_back(std::move(row));
+    }
+    for (const CookAsset& a : m.assets) {
+        if (a.kind == "builtin") continue;
+        ++report.files;
+        report.bytes += a.bytes;
+    }
+    if (verify) {
+        report.verified = true;
+        report.changed = verifyCookedFiles(m, projectRoot);
+    }
+    return report;
 }
 
 std::vector<std::string> cookTargets() { return {packagePlatform()}; }

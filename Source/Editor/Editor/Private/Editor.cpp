@@ -327,6 +327,7 @@ void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_options.levelCycles > 0) runLevelCycles();
     if (m_options.levelAuthoring) runLevelAuthoring();
+    if (m_options.packageRelease) runPackageRelease();
     if (session()) session()->frame(dt);
     updatePlayerSettings(dt);
     updateGameUI(dt);
@@ -375,6 +376,34 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
 
 bool Editor::lookingThroughSceneCamera() const {
     return m_viewThroughCamera && shockwave::primaryCamera(m_world).valid();
+}
+
+// --package-release: the window's own Release package, start to finish.
+void Editor::runPackageRelease() {
+    if (!m_hasProject) {
+        std::fprintf(stderr, "package window: no project\n");
+        m_exitCode = 1;
+        m_options.packageRelease = false;
+        engine().quit();
+        return;
+    }
+    if (!m_packageReleaseStarted) {
+        m_packageReleaseStarted = true;
+        m_package.startRelease(m_project);
+        return;
+    }
+    const std::optional<shockwave::PackageResult> result = m_package.result();
+    if (!result) return;
+    m_options.packageRelease = false;
+    if (result->ok)
+        std::printf(
+            "package window: release ok, %zu files from the cook, %zu left out, %.1f MB, %s\n", result->cookedAssets,
+            result->leftOut, double(result->bytes) / (1024.0 * 1024.0), result->folder.string().c_str());
+    else
+        std::printf("package window: failed: %s\n", result->error.c_str());
+    std::fflush(stdout);
+    m_exitCode = result->ok ? 0 : 1;
+    engine().quit();
 }
 
 }   // namespace editor

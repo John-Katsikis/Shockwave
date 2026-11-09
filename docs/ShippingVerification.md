@@ -1060,3 +1060,40 @@ W after the first travel; a focus only counts while its element is visible.
   macOS cooks need those builds.
 - **Files code builds names for**: a name put together at run time is only found if an
   `include` pattern covers it; nothing checks that every such name is covered.
+
+## S09: Release packages and the editor, part 2
+
+### What was built
+
+- **`player --package --release`** ([Cooking](Cooking.md#release-packages)): runs a release
+  cook after the checks, ships only what the cook lists plus `Game/Cook.swcook`, and checks
+  every file in `Game/` against the cook before the package replaces the last one.
+  The marker records `release true` and the cook's content and build IDs. It refuses an
+  unoptimised engine and `--dev-package`.
+- **The editor's Package window** ([Cooking](Cooking.md#in-the-editor)): a Release checkbox
+  (never saved), the target, and the project's cook. The cook section shows whether it's a
+  release cook, its files, size and IDs, a table of each level's files, shared files and
+  size, and **Verify files**. The result says how many files came from the cook and how
+  many were left out. `editor --package-release` drives it in tests.
+- **The shell's credits** (`Content/Shell/credits.txt`) are a cook root. The first release
+  package left them out, so the Credits page would have shown "Made with Shockwave".
+- **A packaged game missing its module** tells players to install it again instead of
+  telling them to build it with CMake.
+- **`cookReport()`** (Packaging/Cook.h): what the window shows, testable without it.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `package_release` | integration | a clean copy in a folder with spaces and non-ASCII letters, packaged from another folder, ships only the cook's files (no Docs, Tools, Source, Tests, notes or settings it never reads); the marker's build ID is the cook's; the packaged player's `--verify` passes; moved and read-only, it plays the full run, then save, quit and resume, from another working folder; a missing module says to install again; a missing library is named; an absolute path and a missing texture each fail the release and keep the last good package with nothing half-made; `--release --dev-package` is refused |
+| `package` | unit | a cancelled package stops and keeps the last one; an engine folder with no player says so; the cook report counts levels, shared files and bytes, verifies on request and refuses a damaged manifest |
+| `editor_package_release` | gpu | the window's Release package is made from the cook |
+
+### Still unverified
+
+- **Windows and macOS release packages**: packaging needs the modular build off Windows,
+  and macOS packages haven't been tried by hand.
+- **Clicking a missing asset** in the window doesn't open its authoring reference yet;
+  problems are listed in the window's output with their files.
+- **Startup work in a release**: the cook proves what ships. S10 still has to show that
+  a release never imports, compresses or bakes anything on players' machines.

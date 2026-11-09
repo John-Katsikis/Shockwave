@@ -3,6 +3,7 @@
 #include "ChildProcess.h"
 
 #include <Core/Plugin.h>
+#include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 
 #include <algorithm>
@@ -56,6 +57,8 @@ struct Layout {
     }
 };
 const Layout kLayout;
+// A release package's cook, in Game/: what it ships and the IDs to check it by.
+constexpr const char* kCookFile = "Cook.swcook";
 
 // Libraries every Linux system has, so a package may need them without shipping them.
 bool systemLibrary(const std::string& name) {
@@ -169,6 +172,14 @@ private:
         if (const auto problems = validatePackageSettings(m_project, m_settings); !problems.empty())
             fail(problems.front());
         checkSteam();
+        m_result.release = m_options.release;
+        if (m_options.release && !engineBuildOptimised())
+            fail(
+                std::string("A release package needs an optimised engine, and this one is ") +
+                (std::string(SHOCKWAVE_BUILD_CONFIG).empty() ? "built without a configuration"
+                                                             : std::string("a ") + SHOCKWAVE_BUILD_CONFIG + " build") +
+                ". Build Release (cmake -B build -DCMAKE_BUILD_TYPE=Release) and package from that");
+        if (m_options.release && m_options.steam.development) fail("A release package can't be a development package");
         // Debug, or no configuration chosen at all (CMake then builds without optimisation):
         // either runs many times slower than players should ever see.
         if (!engineBuildOptimised())
@@ -196,6 +207,7 @@ private:
             "Packaging " + m_settings.displayName(m_project) + " " + m_settings.version + " for " + packagePlatform());
         build();
         check();
+        if (m_options.release) cook();
         compressTextures();
         copy();
         verify();
@@ -268,6 +280,22 @@ private:
         if (code != 0) fail("The project has problems (listed above); fix them, then package again");
         checkCancel();
         progress(PackageStep::Check, 1.0f);
+    }
+
+    // A release: what the game needs, worked out from every level and the release policy
+    // checked (player --cook --release, docs/Cooking.md). Only those files ship.
+    void cook() {
+        log(LogLevel::Info, "Cooking for release");
+        std::vector<std::string> lines;
+        const int code = packaging::runCommand(
+            headless() + shellQuote(m_player) + " --cook --release " + shellQuote(m_project.file),
+            [&](std::string_view line) { lines.emplace_back(line); });
+        for (const std::string& line : lines) log(code == 0 ? LogLevel::Info : LogLevel::Error, line);
+        if (code != 0) fail("The release cook failed (listed above); fix it, then package again");
+        m_result.cook = cookManifestPath(m_project.root, packagePlatform());
+        std::string error;
+        if (!loadCookManifest(m_result.cook, m_cook, error)) fail("Can't read the cook: " + error);
+        checkCancel();
     }
 
     // Every texture compressed into the project's cache now (docs/Optimisation.md), so the
@@ -489,11 +517,27 @@ private:
                 continue;
             }
             if (it->is_regular_file(ec)) {
+                if (m_options.release && !m_cook.asset(relText)) {
+                    ++m_result.leftOut;   // nothing the game needs
+                    continue;
+                }
                 add(items, it->path(), to / rel);
                 ++content;
             }
         }
         if (ec) fail("Can't read the project folder " + m_project.root.string() + ": " + ec.message());
+        if (m_options.release) {
+            for (const CookAsset& asset : m_cook.assets) {
+                if (asset.kind == "builtin") continue;
+                ++m_result.cookedAssets;
+                if (!fs::is_regular_file(
+                        m_project.root / fs::path(std::u8string(asset.id.begin(), asset.id.end())), ec))
+                    fail(asset.id + " is in the cook but not in the project; cook again");
+            }
+            add(items, m_result.cook, to / kCookFile);
+            log(LogLevel::Info, "From the cook: " + std::to_string(m_result.cookedAssets) + " files the game needs; " +
+                                    std::to_string(m_result.leftOut) + " other project files left out");
+        }
         content += gatherTextureCache(items, to);
         log(LogLevel::Info, "Game files: " + std::to_string(content));
     }
@@ -578,6 +622,11 @@ private:
              << "engine " << quoted(SHOCKWAVE_VERSION) << "\n"
              << "build_type " << quoted(SHOCKWAVE_BUILD_CONFIG) << "\n"
              << "created " << quoted((std::ostringstream() << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ")).str()) << "\n";
+        // A release names its cook, so the folder and its archive say which content they hold.
+        if (m_options.release)
+            text << "release true\n"
+                 << "content_id " << hex64(m_cook.contentId) << "\n"
+                 << "build_id " << hex64(m_cook.buildId) << "\n";
         if (!m_result.minimumGlibc.empty()) text << "minimum_glibc " << quoted(m_result.minimumGlibc) << "\n";
         if (!m_result.minimumCppRuntime.empty())
             text << "minimum_cpp_runtime " << quoted("GLIBCXX_" + m_result.minimumCppRuntime) << "\n";
@@ -719,6 +768,7 @@ private:
                     ", which never goes to players");
         }
         if (m_steamEngine) log(LogLevel::Info, std::string("Steam runtime: ") + steamRuntimeLibrary());
+        if (m_options.release) verifyCook();
         progress(PackageStep::Verify, 0.3f);
 
         // What the oldest system it runs on needs, now that it's known.
@@ -754,6 +804,24 @@ private:
         }
         checkCancel();
         progress(PackageStep::Verify, 1.0f);
+    }
+
+    // A release ships what its cook lists, byte for byte, and nothing else from the project
+    // (besides the cook itself and the compressed textures made from those files).
+    void verifyCook() {
+        const fs::path game = m_staging / kLayout.game;
+        const std::vector<std::string> problems = verifyCookedFiles(m_cook, game);
+        for (const std::string& problem : problems) log(LogLevel::Error, problem);
+        if (!problems.empty()) fail("The package doesn't match its cook (listed above)");
+        std::error_code ec;
+        for (const auto& entry : fs::recursive_directory_iterator(game, ec)) {
+            if (!entry.is_regular_file(ec)) continue;
+            const std::u8string rel = entry.path().lexically_relative(game).generic_u8string();
+            const std::string id(rel.begin(), rel.end());
+            if (id == kCookFile || id.rfind("Saved/Cache/Textures/", 0) == 0 || m_cook.asset(id)) continue;
+            fail("The package would ship " + id + ", which isn't in its cook");
+        }
+        log(LogLevel::Info, "ok every game file matches the cook (content " + hex64(m_cook.contentId) + ")");
     }
 
     void replace(const fs::path& path, std::string& text, const std::string& from, const std::string& to) {
@@ -817,6 +885,7 @@ private:
     std::string m_executable, m_launcherText, m_readmeText;
     std::vector<std::pair<fs::path, std::string>> m_extraFiles;   // written with the copy
     bool m_steamEngine = false;   // the engine was built with Steamworks
+    CookManifest m_cook;   // a release package's cook
 };
 
 }   // namespace

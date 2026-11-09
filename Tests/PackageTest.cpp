@@ -1,8 +1,12 @@
 // Package settings (Config/Package.swpackage): defaults, round trip, errors, validation.
-// The whole packaging run is checked through the real CLI in PackageCheck.cmake.
+// A cancelled package and one with no engine to ship; the cook report the editor shows.
+// The whole packaging run is checked through the real CLI in PackageCheck.cmake and
+// PackageReleaseCheck.cmake.
+#include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Projects/Project.h>
 
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -95,6 +99,73 @@ int main() {
 
     // Not a packaged game: nothing marks this test's folder as one.
     check(!packagedProject(), "a normal build has no packaged project");
+
+    // Cancelled (from the editor's Cancel): it stops, and the last package stays as it was.
+    {
+        PackageSettings settings;
+        settings.output = root / "Saved" / "Out";
+        settings.build = false;
+        const fs::path previous = settings.output / packageFolderName(project, settings);
+        write(previous / "Binaries" / "shockwave-package.txt", "shockwave_package_info 1\n");
+        write(previous / "Game" / "kept.txt", "the last good package\n");
+        std::atomic<bool> cancel{true};
+        PackageOptions options;
+        options.engineFolder = root / "Engine";
+        options.buildFolder = fs::path();
+        options.cancel = &cancel;
+        const PackageResult result = packageProject(project, settings, options);
+        if (!contains(result.error, "cancelled")) std::fprintf(stderr, "  got: %s\n", result.error.c_str());
+        check(!result.ok && contains(result.error, "cancelled"), "a cancelled package says so");
+        check(fs::exists(previous / "Game" / "kept.txt"), "a cancelled package keeps the last one");
+        check(!fs::exists(previous.string() + ".partial"), "a cancelled package leaves nothing half made");
+
+        // No engine build to ship: it says where it looked, and what to do.
+        fs::create_directories(root / "Engine");
+        PackageOptions none;
+        none.engineFolder = root / "Engine";
+        none.buildFolder = fs::path();
+        const PackageResult missing = packageProject(project, settings, none);
+        check(
+            !missing.ok && contains(missing.error, "There's no player at") && contains(missing.error, "Build it first"),
+            "no engine build: the package says so");
+        check(fs::exists(previous / "Game" / "kept.txt"), "a failed package keeps the last one");
+    }
+
+    // The cook report (the editor's Package window): nothing cooked, then two levels.
+    {
+        CookReport report = cookReport(root, packagePlatform(), true);
+        check(!report.cooked && report.error.empty(), "no cook yet is not an error");
+        write(root / "Content" / "a.png", "aaaa");
+        write(root / "Content" / "b.png", "bb");
+        CookManifest m;
+        m.application = "My Game!";
+        m.target = packagePlatform();
+        m.entryLevel = "one";
+        m.levels = {{"one", "Scenes/one.swscene", 1}, {"two", "Scenes/two.swscene", 2}};
+        m.assets = {
+            {"Content/a.png", "texture", 4, 0, 0, {"one", "two"}},
+            {"Content/b.png", "texture", 2, 0, 0, {"two"}},
+            {"builtin:cube", "builtin", 0, 0, 0, {"one"}}};
+        m.computeIds();
+        check(saveCookManifest(cookManifestPath(root, packagePlatform()), m, error), "a cook saves");
+        report = cookReport(root, packagePlatform(), false);
+        check(
+            report.cooked && report.levels.size() == 2 && report.files == 2 && report.bytes == 6,
+            "the report counts the cook's files and bytes");
+        check(
+            report.levels[0].assets == 2 && report.levels[0].shared == 1 && report.levels[0].bytes == 4,
+            "level one: a.png (shared) and the built-in cube");
+        check(
+            report.levels[1].assets == 2 && report.levels[1].shared == 1 && report.levels[1].bytes == 6,
+            "level two: a.png (shared) and b.png");
+        check(!report.verified, "verify only when asked");
+        // Hashes of 0 never match real bytes: verify lists both files as changed.
+        report = cookReport(root, packagePlatform(), true);
+        check(report.verified && report.changed.size() == 2, "verify names files changed since the cook");
+        write(cookManifestPath(root, packagePlatform()), "swcook 1\nnot a manifest\n");
+        report = cookReport(root, packagePlatform(), false);
+        check(!report.cooked && !report.error.empty(), "a damaged cook is reported, not trusted");
+    }
 
     fs::remove_all(root);
     if (failures == 0) std::puts("package tests passed");

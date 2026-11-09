@@ -3,6 +3,7 @@
 // Build > Package game: edits Config/Package.swpackage and makes a game folder for
 // players in the background, with the same packageProject() as `player --package`.
 
+#include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Projects/Project.h>
 
@@ -24,6 +25,10 @@ public:
     // Draws the window while it's open. Main thread, once a frame.
     void draw(const shockwave::Project& project);
     bool running() const { return m_running; }
+    // --package-release (tests): opens the window, ticks Release and presses Package.
+    void startRelease(const shockwave::Project& project);
+    // The last package's result, once one has finished.
+    std::optional<shockwave::PackageResult> result();
 
 private:
     struct Line {
@@ -36,6 +41,10 @@ private:
     bool save(const shockwave::Project& project);
     void start(const shockwave::Project& project);
     void drawSettings(const shockwave::Project& project);
+    // The project's cook (docs/Cooking.md): reread when its manifest changes; verify checks
+    // the project's files against it, which reads every one.
+    void refreshCook(const shockwave::Project& project, bool verify);
+    void drawCook(const shockwave::Project& project);
     void drawProgress();
     void drawResult();
     void drawLog();
@@ -44,6 +53,12 @@ private:
     std::filesystem::path m_project;   // the project the settings belong to
     shockwave::PackageSettings m_edit, m_saved;
     bool m_development = false;   // this run only, never saved: a test build with Steam AppID 480
+    // This run only, never saved: a release ships only what the cook lists (--package --release).
+    bool m_release = false;
+    shockwave::CookReport m_cook;
+    std::filesystem::path m_cookProject;
+    std::filesystem::file_time_type m_cookTime{};
+    double m_nextCookCheck = 0.0;
     std::string m_excludeText, m_outputText;
     std::string m_settingsError;
     std::filesystem::file_time_type m_settingsTime{};
@@ -63,6 +78,7 @@ private:
     shockwave::Project m_jobProject;
     shockwave::PackageSettings m_jobSettings;
     shockwave::PackageSteam m_jobSteam;
+    bool m_jobRelease = false;
 };
 
 }   // namespace editor

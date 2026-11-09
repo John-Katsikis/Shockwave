@@ -554,7 +554,7 @@ int main(int argc, char** argv) {
                 if (!shockwave::validSaveSlot(tool.save))
                     throw std::runtime_error("--save takes a slot name: letters, digits, spaces, - and _");
             } else if (arg == "--help") {
-                std::puts("player --package [--output folder] [--no-build] [--no-archive] [--dev-package]\n"
+                std::puts("player --package [--release] [--output folder] [--no-build] [--no-archive] [--dev-package]\n"
                           "                                    make a game folder for players (docs/Packaging.md)");
                 std::puts(
                     "player [project.swproject] [--project path] [--scene file.swscene] [--frames N]\n"
@@ -869,8 +869,12 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--profile: " + why);
             package.output = tool.output = output;
         }
-        if (tool.release && tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::Check)
-            throw player::UsageError("--release goes with --cook or --check");
+        if (tool.release && tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::Check && !package.requested)
+            throw player::UsageError("--release goes with --cook, --check or --package");
+        if (tool.release && package.development)
+            throw player::UsageError(
+                "--release and --dev-package don't go together: a release never ships as a test build");
+        package.release = tool.release && package.requested;
         if (!tool.cookTarget.empty() && tool.mode != Tool::Mode::Cook)
             throw player::UsageError("--target goes with --cook");
         if (!cookVerify.empty() && cookInfoFile.empty()) throw player::UsageError("--verify goes with --cook-info");
@@ -1097,7 +1101,9 @@ int main(int argc, char** argv) {
         if (!gameModule)
             throw std::runtime_error(
                 "the project's game module \"" + project.gameModule + "\" couldn't load: " + error +
-                ". Build it with: cmake --build build --target game_" + project.gameModule);
+                (!player::packagedProjectFile().empty()
+                     ? std::string(". The game's files are incomplete: install it again")   // players can't build
+                     : ". Build it with: cmake --build build --target game_" + project.gameModule));
         if (gameModule->id() != project.gameModule)
             throw std::runtime_error(
                 "the game module is \"" + std::string(gameModule->id()) + "\" but the project wants \"" +

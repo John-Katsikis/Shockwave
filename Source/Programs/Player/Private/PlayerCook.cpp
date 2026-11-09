@@ -183,6 +183,8 @@ bool Player::cookManifest(
             root(id, "font");
         else if (name.rfind("Shell/", 0) == 0 && ext == ".rml")
             root(id, "the shell's own screen");
+        else if (name == "Shell/credits.txt")
+            root(id, "the shell's credits");
         else
             for (const std::string& pattern : settings.include)
                 if (includeMatch(pattern, id) || includeMatch(pattern, name)) {
