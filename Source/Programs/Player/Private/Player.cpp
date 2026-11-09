@@ -2,6 +2,8 @@
 // and take the screenshot asked for.
 #include "Player.h"
 
+#include <Platform/SystemInfo.h>
+
 #include <Animation/AnimationWorld.h>
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
@@ -306,11 +308,18 @@ void Player::benchmark(double dt) {
     constexpr double kWarmUp = 1.0;   // shader caches, first uploads, clocks ramping up
     m_benchmarkTime += dt;
     if (!m_benchmarkMeasuring && m_benchmarkTime >= kWarmUp) {
+        // The warm-up is reported on its own, not thrown away (docs/Performance.md).
+        m_benchmarkWarmup = engine().frameStats().summary();
         engine().frameStats().clear();
         m_benchmarkMeasuring = true;
         m_benchmarkTime = 0;
     }
     if (m_benchmarkMeasuring) {
+        if (++m_benchmarkFrames % 10 == 0) {
+            const shockwave::ProcessMemory memory = shockwave::processMemory();
+            m_benchmarkCpuPeak = std::max({m_benchmarkCpuPeak, memory.residentBytes, memory.peakResidentBytes});
+            m_benchmarkGpuPeak = std::max(m_benchmarkGpuPeak, engine().renderer().memoryReport().gpuBytes());
+        }
         const shockwave::UIStats ui = m_ui->stats();   // the previous frame's
         m_uiUpdateMs += ui.updateMs;
         m_uiLayoutMs += ui.layoutMs;
@@ -345,15 +354,23 @@ void Player::reportBenchmark() {
         "1%% low:       %.1f fps\n"
         "0.1%% low:     %.1f fps\n"
         "worst frame:  %.3f ms\n"
+        "percentiles:  p50 %.3f ms, p95 %.3f ms, p99 %.3f ms%s\n"
         "jitter:       %.3f ms\n"
-        "cpu:          %.3f ms\n"
+        "cpu:          %.3f ms (simulation %.3f, game %.3f, submission %.3f)\n"
         "gpu time:     %.3f ms\n"
-        "draws:        %u submitted, %u outside the view (culled)\n",
+        "draws:        %u submitted, %u outside the view (culled)\n"
+        "warm-up:      %zu frames, p95 %.3f ms, worst %.3f ms (the first second, apart)\n"
+        "memory:       peak %llu MiB process, %llu MiB GPU; %s cache\n",
         m_project.relative(m_project.startupScene).c_str(), s.frames, m_tool.benchmarkSeconds, renderer.gpuName(),
         renderer.presentModeName(), renderer.presentTiming(),
         engine().frameLimit() > 0 ? (std::to_string(static_cast<int>(engine().frameLimit())) + " fps").c_str() : "none",
-        engine().lowLatency() ? "on" : "off", s.averageFps, s.averageMs, s.low1Fps, s.low01Fps, s.maxMs, s.jitterMs,
-        s.cpuMs, s.gpuMs, renderer.drawCount(), renderer.culledDraws());
+        engine().lowLatency() ? "on" : "off", s.averageFps, s.averageMs, s.low1Fps, s.low01Fps, s.maxMs, s.p50Ms,
+        s.p95Ms, s.p99Ms,
+        s.presentFrames == s.frames && s.frames ? " (frame starts; presents agree)" : " (frame starts)", s.jitterMs,
+        s.cpuMs, s.simulationMs, s.gameMs, s.submitMs, s.gpuMs, renderer.drawCount(), renderer.culledDraws(),
+        m_benchmarkWarmup.frames, m_benchmarkWarmup.p95Ms, m_benchmarkWarmup.maxMs,
+        static_cast<unsigned long long>(m_benchmarkCpuPeak >> 20),
+        static_cast<unsigned long long>(m_benchmarkGpuPeak >> 20), m_tool.coldCache ? "cold" : "warm");
     for (const auto& pass : renderer.passTimings())
         std::printf("  pass %-24s %.3f ms\n", pass.name.c_str(), static_cast<double>(pass.gpuMs));
     const double frames = static_cast<double>(std::max<size_t>(m_uiFrames, 1));
@@ -407,6 +424,17 @@ void Player::reportBenchmark() {
          << "  \"low_1_percent_fps\": " << s.low1Fps << ",\n"
          << "  \"low_0_1_percent_fps\": " << s.low01Fps << ",\n"
          << "  \"worst_ms\": " << s.maxMs << ",\n"
+         << "  \"p50_ms\": " << s.p50Ms << ",\n"
+         << "  \"p95_ms\": " << s.p95Ms << ",\n"
+         << "  \"p99_ms\": " << s.p99Ms << ",\n"
+         << "  \"simulation_ms\": " << s.simulationMs << ",\n"
+         << "  \"game_ms\": " << s.gameMs << ",\n"
+         << "  \"submit_ms\": " << s.submitMs << ",\n"
+         << "  \"warmup\": {\"frames\": " << m_benchmarkWarmup.frames << ", \"p95_ms\": " << m_benchmarkWarmup.p95Ms
+         << ", \"worst_ms\": " << m_benchmarkWarmup.maxMs << "},\n"
+         << "  \"cpu_peak_mib\": " << (m_benchmarkCpuPeak >> 20) << ",\n"
+         << "  \"gpu_peak_mib\": " << (m_benchmarkGpuPeak >> 20) << ",\n"
+         << "  \"cache\": \"" << (m_tool.coldCache ? "cold" : "warm") << "\",\n"
          << "  \"jitter_ms\": " << s.jitterMs << ",\n"
          << "  \"cpu_ms\": " << s.cpuMs << ",\n"
          << "  \"gpu_ms\": " << s.gpuMs << ",\n"

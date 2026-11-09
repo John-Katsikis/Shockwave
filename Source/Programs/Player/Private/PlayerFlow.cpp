@@ -99,6 +99,25 @@ void Player::startFlowTest() {
     if (!shockwave::parseFlowScenario(text.str(), scenario, error))
         throw UsageError("--flow-test " + m_tool.flowTest.string() + ": " + error);
     if (scenario.name.empty()) scenario.name = m_tool.flowTest.stem().string();
+    size_t lapSteps = scenario.steps.size();
+    if (m_tool.perfRun && m_tool.perfLaps > 1) {
+        // Laps: the scenario's steps again and again, its final quit only at the end. The
+        // scenario has to come back to where it started (docs/Performance.md).
+        std::vector<shockwave::FlowStep> lap = scenario.steps;
+        const bool quits = !lap.empty() && lap.back().kind == shockwave::FlowStep::Kind::Quit;
+        if (quits) lap.pop_back();
+        lapSteps = lap.size();
+        scenario.steps.clear();
+        for (uint32_t i = 0; i < m_tool.perfLaps; ++i)
+            scenario.steps.insert(scenario.steps.end(), lap.begin(), lap.end());
+        if (quits) scenario.steps.push_back(shockwave::FlowStep{.kind = shockwave::FlowStep::Kind::Quit});
+        if (scenario.steps.size() > shockwave::kMaxFlowSteps)
+            throw UsageError(
+                "--laps " + std::to_string(m_tool.perfLaps) + " makes " + std::to_string(scenario.steps.size()) +
+                " steps, more than a scenario may have (" + std::to_string(shockwave::kMaxFlowSteps) + ")");
+        scenario.timeout = std::min(scenario.timeout * m_tool.perfLaps, shockwave::kMaxFlowTimeout);
+    }
+    if (m_tool.perfRun) startPerformance(lapSteps);
     shockwave::FlowTest::Hooks hooks;
     hooks.flow = m_levels.get();
     hooks.shell = m_shell.get();
@@ -148,6 +167,7 @@ void Player::startFlowTest() {
 
 void Player::driveFlowTest() {
     if (!m_flowTest) return;
+    if (m_perf) samplePerformance();
     if (m_flowTest->frame(m_frameDt) == shockwave::FlowTest::State::Running) return;
     endFlowTest();
     engine().quit();
@@ -159,7 +179,10 @@ void Player::endFlowTest() {
     std::string message = m_flowTest->message();
     if (m_flowTest->state() == shockwave::FlowTest::State::Running) message = "the player stopped before it finished";
     const std::string report = m_flowTest->reportJson();
-    if (!m_tool.benchmarkJson.empty()) {
+    if (m_perf) {
+        // The perf run's own report goes to --json instead; the flow's failure still fails it.
+        endPerformance(passed);
+    } else if (!m_tool.benchmarkJson.empty()) {
         if (m_tool.benchmarkJson == "-") {
             std::fputs(report.c_str(), stdout);
         } else {

@@ -5,6 +5,7 @@
 #include <Engine/GraphicsSettings.h>
 #include <GameFramework/SaveGame.h>
 #include <Multiplayer/NetworkSettings.h>
+#include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Platform/UserPaths.h>
 #include <UI/Gui.h>
@@ -84,6 +85,18 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     // the Levels panel's Validate does (the gate says so meanwhile).
     shockwave::levelReleaseInputs(project, inputs);
     userPathsInputs(project, shockwave::projectApplicationId(project), inputs);
+    // Performance records (S10): Release/Performance, judged against the latest cook.
+    shockwave::PerformanceRecords records = shockwave::readPerformanceRecords(project);
+    inputs.performanceChecked = true;
+    inputs.performanceRecords = std::move(records.records);
+    inputs.performanceFiles = std::move(records.files);
+    inputs.performanceProblems = std::move(records.problems);
+    if (const std::vector<std::string> targets = shockwave::cookTargets(); !targets.empty()) {
+        shockwave::CookManifest cook;
+        const fs::path manifest = shockwave::cookManifestPath(project.root, targets.front());
+        if (fs::is_regular_file(manifest, ec) && shockwave::loadCookManifest(manifest, cook, error))
+            inputs.currentBuildId = shockwave::hex64(cook.buildId);
+    }
     return inputs;
 }
 
@@ -174,6 +187,7 @@ void ReleaseWindow::create(const shockwave::Project& project) {
     s.simulationHz = uint32_t(std::clamp(std::lround(project.tickRate), 1L, 1000L));
     s.gpuBudgetMib = std::max<uint32_t>(s.gpuBudgetMib, m_inputs.graphicsMemoryBudgetMb);
     s.acceptanceScenario = "Tests/complete_game.json";
+    s.suggestPerformanceBudgets();   // from target_fps; people change them before Save
     m_edit = s;
     m_present = true;
 }
@@ -248,7 +262,20 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
 
 void ReleaseWindow::drawFields() {
     if (!gui::beginPropertyGrid("release")) return;
+    bool budgetsOffered = false;
     for (const ReleaseField& field : shockwave::releaseFields()) {
+        // A version 1 contract has no performance budgets: one button adds all four,
+        // worked out from the target frame rate, for people to change before saving.
+        if (field.since > 1 && !m_edit.hasPerformanceBudgets()) {
+            if (budgetsOffered) continue;
+            budgetsOffered = true;
+            gui::propertyLabel("Performance budgets");
+            if (gui::button("Add performance budgets")) m_edit.suggestPerformanceBudgets();
+            ImGui::SetItemTooltip(
+                "Frame-time p95 and p99, the worst frame and the level change time, from the target frame rate. "
+                "Saving makes the contract version 2 (docs/Performance.md)");
+            continue;
+        }
         gui::propertyLabel(field.label);
         ImGui::PushID(field.key);
         switch (field.kind) {
@@ -306,6 +333,10 @@ void ReleaseWindow::drawFields() {
         case ReleaseFieldKind::Seconds:
             ImGui::InputDouble(
                 "##v", &(m_edit.*std::get<double ReleaseSettings::*>(field.member)), 1.0, 10.0, "%.1f s");
+            break;
+        case ReleaseFieldKind::Milliseconds:
+            ImGui::InputDouble(
+                "##v", &(m_edit.*std::get<double ReleaseSettings::*>(field.member)), 0.5, 5.0, "%.2f ms");
             break;
         }
         ImGui::SetItemTooltip("%s (%s)", field.meaning, field.key);

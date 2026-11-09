@@ -4,6 +4,7 @@
 
 #include <Engine/GraphicsSettings.h>
 #include <Multiplayer/NetworkSettings.h>
+#include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Projects/Project.h>
 #include <Projects/ReleaseSettings.h>
@@ -15,8 +16,23 @@ namespace player {
 
 namespace net = shockwave::net;
 
-shockwave::ReleaseInputs releaseInputs(
-    const shockwave::Project& project, const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
+std::string currentBuildId(const shockwave::Project& project) {
+    // A package carries its cook beside the game; a project has its latest cook in Saved/.
+    std::error_code ec;
+    fs::path manifest = project.root / "Cook.swcook";
+    if (!fs::is_regular_file(manifest, ec)) {
+        const std::vector<std::string> targets = shockwave::cookTargets();
+        if (targets.empty()) return {};
+        manifest = shockwave::cookManifestPath(project.root, targets.front());
+    }
+    shockwave::CookManifest cook;
+    std::string error;
+    if (!fs::is_regular_file(manifest, ec) || !shockwave::loadCookManifest(manifest, cook, error)) return {};
+    return shockwave::hex64(cook.buildId);
+}
+
+shockwave::ReleaseInputs
+releaseInputs(const shockwave::Project& project, const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
     shockwave::ReleaseInputs inputs;
     inputs.projectTickRate = project.tickRate;
     inputs.buildConfig = shockwave::engineBuildConfig();
@@ -48,6 +64,14 @@ shockwave::ReleaseInputs releaseInputs(
     if (shockwave::projectGraphicsSettings(project, graphics, error))
         inputs.graphicsMemoryBudgetMb = graphics.memoryBudgetMb;
     shockwave::levelReleaseInputs(project, inputs, levelFacts);
+
+    // Performance records (S10): Release/Performance/*.swperf, judged against this build.
+    shockwave::PerformanceRecords records = shockwave::readPerformanceRecords(project);
+    inputs.performanceChecked = true;
+    inputs.performanceRecords = std::move(records.records);
+    inputs.performanceFiles = std::move(records.files);
+    inputs.performanceProblems = std::move(records.problems);
+    inputs.currentBuildId = currentBuildId(project);
 
     // Where this game writes once installed (S01): the installed layout for its application
     // ID on this machine, kept out of the game's own folder (the project, from source).

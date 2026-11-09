@@ -54,6 +54,25 @@ shockwave_warnings(release_test)
 add_test(NAME release COMMAND release_test)
 set_tests_properties(release PROPERTIES TIMEOUT 60 LABELS unit)
 
+# Performance budgets, records and the gate (S10, docs/Performance.md): percentiles,
+# contract version 2, .swperf records and which of them count.
+add_executable(performance_test PerformanceTest.cpp)
+target_link_libraries(performance_test PRIVATE Shockwave::Projects Shockwave::Engine)
+shockwave_warnings(performance_test)
+add_test(NAME performance COMMAND performance_test)
+set_tests_properties(performance PROPERTIES TIMEOUT 60 LABELS unit)
+# player --perf-run on Reactor Run (two laps of the tour, null renderer) and the gate
+# reading its records (Tests/PerformanceCheck.cmake). It proves the accounting, never the
+# speed: CI machines aren't release hardware.
+if(TARGET game_shippingdemo)
+    add_test(NAME performance_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/Performance
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceCheck.cmake)
+    set_tests_properties(performance_cli PROPERTIES TIMEOUT 300 LABELS integration)
+endif()
+
 # Per-user folders (S01, docs/UserPaths.md): where installed games write.
 add_executable(user_paths_test UserPathsTest.cpp)
 target_link_libraries(user_paths_test PRIVATE Shockwave::Platform)

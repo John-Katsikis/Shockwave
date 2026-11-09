@@ -21,7 +21,7 @@ contract yet.
 ## The file
 
 ```text
-shockwave_release 1
+shockwave_release 2
 application_id "com.studio.mygame"
 release_version "1.0.0"
 platform linux-x86_64
@@ -38,9 +38,16 @@ shared_budget_mib 0
 loading_budget_mib 512
 transition_timeout_seconds 30
 acceptance_scenario "Tests/complete_game.json"
+frame_p95_ms 16.667
+frame_p99_ms 20.833
+max_hitch_ms 50
+level_load_seconds 10
 ```
 
-Every key is required, so a release never inherits a default nobody chose. `platform` and
+Every key is required, so a release never inherits a default nobody chose. The last four
+are the performance budgets, which arrived with version 2 (S10,
+[Performance.md](Performance.md)). A version 1 contract, without them, still reads: only its
+performance gate fails, saying which keys to add. `platform` and
 `mode` repeat, once per value. The parser rejects all of these, giving the file and line:
 
 - unknown keys;
@@ -99,10 +106,13 @@ measured:
 - where the installed game writes (S01, [UserPaths.md](UserPaths.md));
 - the level catalog and the links between its scenes (S02, [Levels.md](Levels.md)).
   `--release-info` loads every level's scene to measure it.
+- performance (S10, [Performance.md](Performance.md)): the records in
+  `Release/Performance`, from `player --perf-run --perf-record`, against the budgets. Only a
+  record from real hardware, on an optimised build of the current cook, counts.
 
 The gates for later batches stay `unverified` until their evidence exists. That covers
-level travel, saves, settings, cooking, performance, online
-lifecycle, crash recovery and each platform. So for now no project qualifies, and the
+level travel, saves, settings, cooking, online lifecycle, crash recovery and each
+platform. So for now no project qualifies, and the
 report says exactly why.
 
 Exit codes follow the plan's convention:
@@ -120,8 +130,9 @@ stable `code` (listed in ReleaseSchema.md), a `severity`, a `file`, a `line`, an
 **Project > Release readiness** edits the contract and shows every gate, worked out the
 same way as `--release-info`. A project without a contract gets a **Create release
 contract** button, which fills one in from the project's own settings: its package version,
-this platform, its network player count and its tick rate. Nothing is written until you
-press **Save**. Save is disabled while the contract has errors, and during Play.
+this platform, its network player count and its tick rate, with performance budgets
+worked out from the target frame rate. A version 1 contract gets an **Add performance
+budgets** button instead of those rows. Nothing is written until you press **Save**. Save is disabled while the contract has errors, and during Play.
 
 The window follows the file: when a tool or another editor changes it, and nothing is being
 edited, it shows the new one.

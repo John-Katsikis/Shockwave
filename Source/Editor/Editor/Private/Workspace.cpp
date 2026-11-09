@@ -499,11 +499,24 @@ void Editor::drawStatsWindow() {
         ImGui::Text("%.0f / %.0f fps", pacing.low1Fps, pacing.low01Fps);
         gui::propertyLabel("Worst frame");
         ImGui::Text("%.2f ms (jitter %.2f ms)", pacing.maxMs, pacing.jitterMs);
+        // What release budgets are written in (docs/Performance.md).
+        gui::propertyLabel("p50 / p95 / p99");
+        ImGui::Text("%.2f / %.2f / %.2f ms", pacing.p50Ms, pacing.p95Ms, pacing.p99Ms);
+        ImGui::SetItemTooltip(
+            "Half, 95%% and 99%% of the last %zu frames took at most this long. A release contract's "
+            "frame_p95_ms and frame_p99_ms are budgets for these, measured with player --perf-run.",
+            pacing.frames);
         gui::propertyLabel("CPU / GPU");
         if (pacing.gpuMs > 0)
             ImGui::Text("%.2f / %.2f ms", pacing.cpuMs, pacing.gpuMs);
         else
             ImGui::Text("%.2f ms / no GPU timers", pacing.cpuMs);
+        gui::propertyLabel("CPU parts");
+        ImGui::Text(
+            "simulation %.2f, game %.2f, submission %.2f ms", pacing.simulationMs, pacing.gameMs, pacing.submitMs);
+        ImGui::SetItemTooltip(
+            "Where the CPU time went: the fixed simulation ticks, the game's own frame (input, onFrame, the "
+            "editor's panels), and gathering and submitting the draws. The rest is waiting.");
         gui::propertyLabel("Presentation");
         ImGui::TextUnformatted(renderer.presentModeName());
         ImGui::SetItemTooltip("Timing: %s", renderer.presentTiming());

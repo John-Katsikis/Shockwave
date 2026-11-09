@@ -141,7 +141,30 @@ int main(int argc, char** argv) {
                 continue;
             }
             if (arg == "--flow-test" && i + 1 < argc) {
+                if (tool.perfRun) throw player::UsageError("--perf-run plays its own scenario: drop --flow-test");
                 tool.flowTest = argv[++i];
+                continue;
+            }
+            // Performance runs (S10, docs/Performance.md).
+            if ((arg == "--perf-run" || arg == "--laps" || arg == "--perf-record") && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (arg == "--perf-run") {
+                    if (!tool.flowTest.empty() && !tool.perfRun)
+                        throw player::UsageError("--perf-run plays its own scenario: drop --flow-test");
+                    tool.perfRun = true;
+                    tool.flowTest = value;
+                } else if (arg == "--laps") {
+                    tool.perfLaps = static_cast<uint32_t>(wholeNumber(value, 100, "--laps"));
+                    if (tool.perfLaps == 0) throw player::UsageError("--laps takes a whole number from 1 to 100");
+                } else {
+                    if (value.empty()) throw player::UsageError("--perf-record takes the machine's name");
+                    tool.perfRecord = value;
+                }
+                continue;
+            }
+            if (arg == "--cold-cache") {
+                tool.coldCache = true;
+                clearPipelineCache = true;
                 continue;
             }
             if ((arg == "--save-info" || arg == "--save-migrate") && i + 1 < argc) {
@@ -678,6 +701,12 @@ int main(int argc, char** argv) {
                     "                                    play through the scenario's clicks, travel and checks in a\n"
                     "                                    hidden window; exit 1 at the first failed step\n"
                     "                                    (docs/FlowTest.md)\n"
+                    "player --perf-run scenario.json [--laps N] [--cold-cache] [--json report]\n"
+                    "       [--perf-record \"machine\" [--output folder]]\n"
+                    "                                    play the scenario in real time and measure it: frame\n"
+                    "                                    percentiles per level, loading apart, memory over laps;\n"
+                    "                                    --perf-record keeps it in Release/Performance as evidence\n"
+                    "                                    for the performance gate (docs/Performance.md)\n"
                     "player --network-info [--json file] the project's multiplayer settings, digests and\n"
                     "                                    problems; opens no socket (docs/Networking.md)\n"
                     "player --network-schema file.md     write the multiplayer reference (- for stdout)\n"
@@ -759,6 +788,7 @@ int main(int argc, char** argv) {
             mode(!tool.screenshot.empty(), "--screenshot");
             mode(tool.captureReflections, "--capture-reflections");
             mode(tool.benchmarkSeconds > 0, "--benchmark");
+            mode(tool.perfRun, "--perf-run");
             mode(tool.graphicsReportFrame > 0, "--graphics-report");
             mode(tool.optimise, "--optimise");
             mode(!tool.save.empty(), "--save");
@@ -809,7 +839,8 @@ int main(int argc, char** argv) {
                 "--level-schema",
                 "--asset-dependencies",
                 "--cook",
-                "--cook-info"};
+                "--cook-info",
+                "--perf-run"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -838,6 +869,14 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--quality goes with --bake-lighting");
             if (tool.assetLoading == "levels" && !tool.assetResidency)
                 throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
+            if ((tool.perfLaps != 1 || !tool.perfRecord.empty()) && !tool.perfRun)
+                throw player::UsageError("--laps and --perf-record go with --perf-run");
+            if (tool.coldCache && !tool.perfRun && tool.benchmarkSeconds <= 0)
+                throw player::UsageError("--cold-cache goes with --perf-run or --benchmark");
+            if (tool.perfRun && !tool.perfRecord.empty() && !output.empty()) {
+                tool.perfRecordFolder = output;   // where the record goes instead of Release/Performance
+                output.clear();
+            }
             if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
                 lightingImport.empty() && saveMigrateFile.empty() && tool.mode != Tool::Mode::NetworkManifest &&
                 tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::AssignNetworkKeys &&
@@ -1163,12 +1202,14 @@ int main(int argc, char** argv) {
             config.window.hidden = true;
             if (vsyncOverride < 0) config.window.vsync = false;
         }
-        if (!tool.flowTest.empty()) {
+        if (!tool.flowTest.empty() && !tool.perfRun) {
             // Hidden and reproducible; the scenario's timeouts end it.
             config.window.hidden = true;
             config.window.vsync = false;
             config.simulationTime = shockwave::SimulationTime::Fixed;
         }
+        // --perf-run measures what a player gets: a shown window in real time, with the
+        // project's vsync and frame limit unless --vsync or --fps says otherwise.
         if (tool.mode != Tool::Mode::Play || tool.optimise) {
             config.window.hidden = true;
             config.window.vsync = false;

@@ -179,10 +179,10 @@ void testSyntax() {
     CHECK(parseCode(replaced(kGood, "shockwave_release 1", "shockwave_release 1 extra")) == "ReleaseHeader");
     // A newer format fails clearly, naming the version it found.
     Diagnostic error;
-    CHECK(!parses(replaced(kGood, "shockwave_release 1", "shockwave_release 2"), &error));
+    CHECK(!parses(replaced(kGood, "shockwave_release 1", "shockwave_release 3"), &error));
     CHECK(
         error.code == "ReleaseUnsupportedVersion" && error.line == 1 &&
-        error.message.find("version 2") != std::string::npos);
+        error.message.find("version 3") != std::string::npos);
     CHECK(parseCode(replaced(kGood, "target_fps 60", "target_fps 60\nframe_rate 60")) == "ReleaseUnknownKey");
     // A repeated key, with both lines named.
     CHECK(!parses(replaced(kGood, "target_fps 60", "target_fps 60\ntarget_fps 90"), &error));
