@@ -2,6 +2,7 @@
 #include "DemoRules.h"
 
 #include <Engine/Hierarchy.h>
+#include <Engine/Levels.h>
 #include <Engine/PhysicsComponents.h>
 #include <Physics/Physics.h>
 
@@ -51,7 +52,7 @@ bool DemoRules::isGameplayLevel(const World& world) {
     return any;
 }
 
-std::vector<std::string> DemoRules::validate(const World& cworld) {
+std::vector<std::string> DemoRules::validate(const World& cworld, const Remembered& remembered) {
     World& world = const_cast<World&>(cworld);
     std::vector<std::string> problems;
     if (!isGameplayLevel(world)) return problems;
@@ -124,7 +125,9 @@ std::vector<std::string> DemoRules::validate(const World& cworld) {
         if (o.kind == ObjectiveKind::Destroy || o.kind == ObjectiveKind::Collect) {
             const auto& counted = o.kind == ObjectiveKind::Destroy ? groups : pickupGroups;
             const auto it = counted.find(o.group);
-            const int have = it == counted.end() ? 0 : it->second;
+            const auto& gone = o.kind == ObjectiveKind::Destroy ? remembered.destroyed : remembered.collected;
+            const auto was = gone.find(o.group);
+            const int have = (it == counted.end() ? 0 : it->second) + (was == gone.end() ? 0 : was->second);
             if (o.group.empty())
                 problems.push_back(what + " needs the group it counts");
             else if (have == 0 && !o.complete)
@@ -152,16 +155,22 @@ std::vector<std::string> DemoRules::validate(const World& cworld) {
     return problems;
 }
 
-void DemoRules::scan() {
+void DemoRules::scan(const Remembered& remembered) {
     m_player = m_level = kNullEntity;
     m_world.each<DemoPlayer>([&](Entity e, DemoPlayer&) { m_player = e; });
     m_world.each<CampaignProgress>([&](Entity e, CampaignProgress&) { m_level = e; });
     // What Destroy and Collect objectives start from: everything of their group that's
-    // here the first time the level is seen. A save keeps the total.
+    // here as the level starts, plus what an earlier visit took out for good (counted as
+    // done). A save keeps the total.
+    auto count = [](const std::map<std::string, int>& in, const std::string& group) {
+        const auto it = in.find(group);
+        return it == in.end() ? 0 : it->second;
+    };
     m_world.each<ObjectiveProgress>([&](Entity, ObjectiveProgress& o) {
         if (o.complete || o.total > 0) return;
-        if (o.kind == ObjectiveKind::Destroy) o.total = alive(o.group);
+        if (o.kind == ObjectiveKind::Destroy) o.total = alive(o.group) + count(remembered.destroyed, o.group);
         if (o.kind == ObjectiveKind::Collect) {
+            o.total = count(remembered.collected, o.group);
             m_world.each<const InteractionTarget>([&](Entity, const InteractionTarget& t) {
                 if (t.kind == InteractionKind::Pickup && t.group == o.group && !t.used) ++o.total;
             });
@@ -415,12 +424,21 @@ void DemoRules::pickups(TickEvents& events) {
     });
 }
 
-void DemoRules::deaths(TickEvents&) {
+void DemoRules::deaths(TickEvents& events) {
     m_world.each<const Health>([&](Entity e, const Health& h) {
         if (h.current <= 0 && e != m_player) m_dead.push_back(e);
     });
-    for (const Entity e : m_dead)
-        if (m_world.alive(e)) destroyWithChildren(m_world, e);
+    for (const Entity e : m_dead) {
+        if (!m_world.alive(e)) continue;
+        if (const auto* id = m_world.get<PersistentIdentity>(e); id && !id->id.empty()) {
+            if (const auto* h = m_world.get<Health>(e); h && !h->group.empty())
+                events.killed.push_back({id->id, h->group});
+            else if (const auto* t = m_world.get<InteractionTarget>(e);
+                     t && t->kind == InteractionKind::Pickup && !t->group.empty())
+                events.collected.push_back({id->id, t->group});
+        }
+        destroyWithChildren(m_world, e);
+    }
     m_dead.clear();
 }
 

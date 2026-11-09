@@ -82,6 +82,10 @@ The level content is all components, so it's edited in the Inspector:
   - `Collect`: pickups of `group` are collected.
   - `Use`: the console `target` is used.
   - `Hold`: stay within `radius` of `target` for `seconds`.
+
+  Destroyed things and taken pickups stay gone when a level is entered again. `Destroy`
+  and `Collect` count them as already done: the game keeps each one's group in the
+  campaign (`demo.killed.<id>`, `demo.collected.<id>`).
 - **`InteractionTarget`**: `Use` (a console), `Pickup` (`item` is `ammo` or `health`,
   with an `amount`), or `Exit` (leaves once every objective is done).
 - **`DemoGate`** opens when its `objective` completes.

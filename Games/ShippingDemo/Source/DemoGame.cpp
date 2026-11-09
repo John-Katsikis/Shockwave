@@ -84,6 +84,21 @@ void useCurrentPose(World& world, Entity entity) {
     if (auto* previous = world.get<PreviousTransform>(entity)) previous->value = *world.get<Transform>(entity);
 }
 
+// Campaign keys: which group each authored thing taken out for good counted for, so a
+// later visit's objectives still add up once LevelHost has left it out (Remembered).
+constexpr const char* kKilledKey = "demo.killed.";
+constexpr const char* kCollectedKey = "demo.collected.";
+
+Remembered remembered(GameContext& game) {
+    Remembered out;
+    const CampaignState& campaign = game.campaign();
+    for (const std::string& id : campaign.destroyed(game.flow().level())) {
+        if (const std::string group = campaign.get(kKilledKey + id); !group.empty()) ++out.destroyed[group];
+        if (const std::string group = campaign.get(kCollectedKey + id); !group.empty()) ++out.collected[group];
+    }
+    return out;
+}
+
 std::string percent(int part, int whole) { return whole > 0 ? std::to_string(part * 100 / whole) + "%" : "-"; }
 
 std::string clock(int ticks, float rate) {
@@ -110,7 +125,8 @@ public:
     }
 
     void beginPlay(GameContext& game) override {
-        if (const auto problems = DemoRules::validate(game.world); !problems.empty()) {
+        const Remembered gone = remembered(game);
+        if (const auto problems = DemoRules::validate(game.world, gone); !problems.empty()) {
             std::string message = "Reactor Run: this level's content can't play (gameplay content):";
             for (const std::string& p : problems) message += "\n  - " + p;
             throw std::runtime_error(message);
@@ -129,7 +145,7 @@ public:
             return;
         }
         m_rules.emplace(game.world, &game.physics(), m_tickRate);
-        m_rules->scan();
+        m_rules->scan(gone);
         // Arrive where the level was entered: the spawn's place and facing.
         if (game.startReason == StartReason::Fresh && game.arrival.found) {
             auto& at = *game.world.get<Transform>(m_rules->player());
@@ -153,7 +169,7 @@ public:
         if (!m_rules) return;
         // The world and its physics were replaced: find everything again, take the saved aim.
         m_rules.emplace(game.world, &game.physics(), m_tickRate);
-        m_rules->scan();
+        m_rules->scan(remembered(game));
         m_camera = game.find("Demo Camera").entity();
         m_sceneFov = 0;
         m_gun = game.find("Demo Gun").entity();
@@ -219,6 +235,8 @@ public:
         m_command.yaw = m_yaw;
         m_command.pitch = m_pitch;
         const TickEvents events = m_rules->tick(m_command);
+        for (const auto& [id, group] : events.killed) game.campaign().set(kKilledKey + id, group);
+        for (const auto& [id, group] : events.collected) game.campaign().set(kCollectedKey + id, group);
         m_command.reload = m_command.use = false;
         AudioWorld& audio = game.audio();
         if (events.shots) {
