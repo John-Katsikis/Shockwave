@@ -61,6 +61,7 @@ ticked by hand. A release is qualified only when every gate that applies has pas
 | `player_settings` | S08 | evidence of display, input, audio, accessibility and language settings that persist |
 | `cooked_package` | S09 | evidence of a release package cooked from every level's dependencies, run read-only |
 | `performance` | S10 | evidence of a performance record from named, real hardware on an optimised build that meets every frame, memory and loading budget (player --perf-run --perf-record, docs/Performance.md) |
+| `release_tier` | S10 | `Config/ReleaseTier.swtier` names the fallback preset and the effects the art direction needs, and the presets and project defaults provide them (docs/ReleaseTier.md) |
 | `online_lifecycle` | S11 | evidence of a full online match lifecycle with map rotation, on the real service (online only) |
 | `crash_recovery` | S12 | evidence of local crash reports, symbols and a safe restart that keeps player data |
 | `platform:<name>` | S13 | a clean-machine install, play-through and update on that platform |
@@ -95,3 +96,8 @@ Codes are stable; tools can match them. Messages may change.
 | `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |
 | `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |
 | `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |
+| `ReleaseTierUnreadable` | error | `Config/ReleaseTier.swtier` can't be opened |
+| `ReleaseTierSyntax` | error | the tier file has an unknown word, setting or value, or a line is incomplete |
+| `ReleaseTierFallbackTooLow` | error | the fallback preset draws a mandatory effect below its minimum |
+| `ReleaseTierDefaultTooLow` | error | the project's default settings draw a mandatory effect below its minimum |
+| `ReleaseTierNoDefaults` | error | the project's graphics settings don't read, so the tier can't be checked |

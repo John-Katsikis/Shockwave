@@ -108,6 +108,10 @@ struct Player::PerfState {
     uint64_t frame = 0;
     std::string timing;   // "present" while every frame had a present interval, else "frame"
     bool presentTimed = true;
+    // Pipelines (S10): the renderer's count at the last sample, and how many were made
+    // off the loading screen (in warm-up or play frames).
+    uint64_t pipelinesSeen = 0;
+    int64_t pipelinesInPlay = 0;
 };
 
 Player::Player(shockwave::Project project, Tool tool, const shockwave::GameModule& module)
@@ -119,6 +123,7 @@ void Player::startPerformance(size_t lapSteps) {
     m_perf->lapSteps = std::max<size_t>(lapSteps, 1);
     m_perf->phaseStart = engine().frameStartSeconds();
     m_perf->epoch = m_levels ? m_levels->epoch() : 0;
+    m_perf->pipelinesSeen = engine().renderer().pipelinesCreated();
     // A fresh window on the frames: the run starts with this level's warm-up.
     engine().frameStats().clear();
     SW_LOG(
@@ -179,6 +184,13 @@ void Player::samplePerformance() {
             break;
         }
         }
+    }
+
+    // Pipelines made since the last sample belong to the frame that just ran: off the
+    // loading screen, each one was a stall the player could feel.
+    if (const uint64_t made = engine().renderer().pipelinesCreated(); made != p.pipelinesSeen) {
+        if (p.phase != PerfState::Phase::Loading) p.pipelinesInPlay += int64_t(made - p.pipelinesSeen);
+        p.pipelinesSeen = made;
     }
 
     // What this frame is, for the next sample.
@@ -252,7 +264,8 @@ void Player::endPerformance(bool passed) {
     r.gpuPeakMib = mib(p.gpuPeakBytes);
     if (p.lapEndBytes.size() >= 2)
         r.memoryGrowthMib = int64_t(p.lapEndBytes.back() >> 20) - int64_t(p.lapEndBytes.front() >> 20);
-    r.pipelinesInPlay = -1;   // S10 part 2 counts them
+    // The null renderer has no pipelines: unknown, not zero.
+    r.pipelinesInPlay = p.pipelinesSeen ? p.pipelinesInPlay : -1;
     for (const std::string& id : p.levelOrder) r.levels.push_back({id, framesOf(p.levels[id])});
     r.loads = p.loads;
     const shockwave::PerformanceFrames loadingFrames = framesOf(p.loading);
@@ -294,6 +307,12 @@ void Player::endPerformance(bool passed) {
     if (r.laps > 1)
         std::printf(", %+lld MiB from the first lap's end to the last", static_cast<long long>(r.memoryGrowthMib));
     std::printf("\n");
+    if (r.pipelinesInPlay >= 0)
+        std::printf(
+            "pipelines: %lld built during play, %llu by warm-up while loading (%s)\n",
+            static_cast<long long>(r.pipelinesInPlay),
+            static_cast<unsigned long long>(engine().renderer().warmedPipelines()),
+            engine().renderer().pipelineWarmup() ? "on" : "off");
 
     // Against the contract, when there is one: what the performance gate would say of it.
     const shockwave::ReleaseReport release = shockwave::releaseReport(m_project, releaseInputs(m_project));

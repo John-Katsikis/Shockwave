@@ -109,6 +109,8 @@ measured:
 - performance (S10, [Performance.md](Performance.md)): the records in
   `Release/Performance`, from `player --perf-run --perf-record`, against the budgets. Only a
   record from real hardware, on an optimised build of the current cook, counts.
+- release_tier (S10, [ReleaseTier.md](ReleaseTier.md)): `Config/ReleaseTier.swtier` names a
+  fallback preset and the mandatory effects, and the presets and project defaults provide them.
 
 The gates for later batches stay `unverified` until their evidence exists. That covers
 level travel, saves, settings, cooking, online lifecycle, crash recovery and each

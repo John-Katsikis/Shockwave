@@ -164,7 +164,7 @@ they're the evidence for the release.
 - memory within `cpu_budget_mib` and `gpu_budget_mib`, and within `shared_budget_mib`
   together when memory is shared;
 - memory growth over the laps within the allowance;
-- no pipelines built during play. Part 2 of S10 counts them; until then this is unknown,
+- no pipelines built during play (warm-up and play frames; the loading screen may build them). A record from before the count existed, or from the null renderer, says unknown,
   which doesn't fail.
 
 | Gate | When |

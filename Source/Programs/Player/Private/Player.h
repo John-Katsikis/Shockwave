@@ -232,6 +232,8 @@ shockwave::ReleaseInputs releaseInputs(
 int releaseInfo(
     const shockwave::Project& project, const fs::path& json,
     const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts = nullptr);
+// --release-tier [--json]: the graphics release tier (docs/ReleaseTier.md); 1 when it has errors.
+int releaseTierInfo(const shockwave::Project& project, const fs::path& json);
 int releaseSchema(const fs::path& file);
 // The game's build now, as a cook names it (16 hex digits): a package's Cook.swcook, or the
 // project's latest cook for this platform. "" without one. Performance records name it.
@@ -500,6 +502,10 @@ private:
     double m_benchmarkTime = 0;
     int m_saveFrames = 0;   // frames played, for --save
     int m_reportFrames = 0;   // frames played, for --graphics-report
+    // Pipelines the renderer had made before the first frame drew (S10): any made after
+    // were built while drawing. -1 until that frame.
+    int64_t m_pipelinesBeforeFrames = -1;
+    uint64_t m_warmedBeforeFrames = 0;
     bool m_benchmarkMeasuring = false;
     shockwave::FrameSummary m_benchmarkWarmup;   // the warm-up second, reported apart
     uint64_t m_benchmarkFrames = 0, m_benchmarkCpuPeak = 0, m_benchmarkGpuPeak = 0;

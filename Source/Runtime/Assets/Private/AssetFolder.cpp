@@ -20,6 +20,16 @@ namespace shockwave {
 
 namespace fs = std::filesystem;
 namespace {
+// Pipeline warm-up (S10): a glass or skin material that has just loaded has its pipelines
+// built now, on the loading screen, not at its first draw. Materials imported with a model
+// are always standard, so only authored ones can need it.
+void warmPipelinesFor(Renderer& renderer, const DrawMaterial& material) {
+    if (!material.shading) return;
+    PipelineNeeds needs;
+    needs.transmission = material.shading->family == ShadingFamily::Transmission;
+    needs.skin = material.shading->family == ShadingFamily::Skin;
+    if (needs.transmission || needs.skin) renderer.warmPipelines(needs);
+}
 AssetFolder::Dependency stamp(const fs::path& path) {
     AssetFolder::Dependency d;
     d.path = path;
@@ -371,6 +381,7 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
                 used.insert({tf, key});
             }
             buildDrawMaterial(*next, textures, samplers);
+            warmPipelinesFor(*m_renderer, next->draw);
         } else if (r.problem == MaterialProblem::File && previous && !previous->fallback) {
             // Mid-save, say: the last good version stays until the file parses again.
             if (!f.materialParseFailed) f.error = error;

@@ -364,8 +364,8 @@ void testGates() {
     // What later batches measure stays unverified, so nothing qualifies yet.
     for (const char* id :
          {"user_paths", "level_catalog", "level_travel", "acceptance_scenario", "saves", "player_settings",
-          "cooked_package", "performance", "online_lifecycle", "crash_recovery", "platform:linux-x86_64",
-          "platform:windows-x86_64"}) {
+          "cooked_package", "performance", "release_tier", "online_lifecycle", "crash_recovery",
+          "platform:linux-x86_64", "platform:windows-x86_64"}) {
         const ReleaseGate* gate = findGate(report, id);
         CHECK(gate && gate->status == GateStatus::Unverified && !gate->reason.empty() && !gate->batch.empty());
     }

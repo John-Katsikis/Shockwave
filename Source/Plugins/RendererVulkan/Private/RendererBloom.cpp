@@ -92,6 +92,7 @@ void VulkanRenderer::Impl::createBloomPipeline() {
     const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &bloomPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
+    vk::notePipelineCreated();
 }
 
 void VulkanRenderer::Impl::destroyBloomPipeline() {

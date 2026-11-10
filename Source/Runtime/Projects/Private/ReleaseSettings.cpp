@@ -1004,6 +1004,29 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
             gate(
                 pending.id, GateStatus::Unverified, pending.batch,
                 std::string("no evidence yet: needs ") + pending.needs);
+        if (id == "performance") {
+            // The graphics release tier is S10's other half: what the release draws with.
+            if (!inputs.tierChecked)
+                gate(
+                    "release_tier", GateStatus::Unverified, "S10",
+                    "not checked here: player --check --release reads " + inputs.tierFile);
+            else if (!inputs.tierPresent)
+                gate(
+                    "release_tier", GateStatus::Unverified, "S10",
+                    "no " + inputs.tierFile +
+                        ": the release hasn't said which effects it ships or which preset is its "
+                        "fallback (docs/ReleaseTier.md)");
+            else if (hasErrors(inputs.tierProblems))
+                gate("release_tier", GateStatus::Failed, "S10", inputs.tierProblems.front().text());
+            else if (inputs.tierFallback >= 0 && int(s.graphicsTier) < inputs.tierFallback)
+                gate(
+                    "release_tier", GateStatus::Failed, "S10",
+                    std::string("the contract qualifies the minimum hardware at graphics_tier ") +
+                        releaseGraphicsTierName(s.graphicsTier) + ", below the fallback tier in " + inputs.tierFile +
+                        ": the game doesn't support that preset");
+            else
+                gate("release_tier", GateStatus::Passed, "S10", inputs.tierSummary);
+        }
         if (id == "level_travel")
             gate(
                 "acceptance_scenario", GateStatus::Unverified, "S05",
@@ -1036,6 +1059,7 @@ ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs)
                 std::filesystem::is_regular_file(project.root / file.settings.acceptanceScenario, ec);
             validateRelease(file.settings, &withScenario, report.file, &file, report.diagnostics);
             for (const Diagnostic& problem : inputs.performanceProblems) report.diagnostics.push_back(problem);
+            for (const Diagnostic& problem : inputs.tierProblems) report.diagnostics.push_back(problem);
             releaseGates(report, withScenario);
             return report;
         }
@@ -1193,6 +1217,9 @@ std::string releaseSchema() {
         if (id == "level_travel") out += "| `level_catalog` | S02 | the level catalog checks out |\n";
         out += std::string("| `") + pending.id + "` | " + pending.batch + " | evidence of " + pending.needs +
                (pending.online ? " (online only)" : "") + " |\n";
+        if (id == "performance")
+            out += "| `release_tier` | S10 | `Config/ReleaseTier.swtier` names the fallback preset and the effects the "
+                   "art direction needs, and the presets and project defaults provide them (docs/ReleaseTier.md) |\n";
         if (id == "level_travel")
             out += "| `acceptance_scenario` | S05 | the acceptance scenario plays the game from start to finish |\n";
     }
@@ -1223,7 +1250,15 @@ std::string releaseSchema() {
            "| `ReleaseGraphicsBudget` | error | `gpu_budget_mib` is under `graphics_memory_budget_mb` |\n"
            "| `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |\n"
            "| `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |\n"
-           "| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |\n";
+           "| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |\n"
+           "| `ReleaseTierUnreadable` | error | `Config/ReleaseTier.swtier` can't be opened |\n"
+           "| `ReleaseTierSyntax` | error | the tier file has an unknown word, setting or value, or a line is "
+           "incomplete |\n"
+           "| `ReleaseTierFallbackTooLow` | error | the fallback preset draws a mandatory effect below its minimum |\n"
+           "| `ReleaseTierDefaultTooLow` | error | the project's default settings draw a mandatory effect below its "
+           "minimum |\n"
+           "| `ReleaseTierNoDefaults` | error | the project's graphics settings don't read, so the tier can't be "
+           "checked |\n";
     return out;
 }
 

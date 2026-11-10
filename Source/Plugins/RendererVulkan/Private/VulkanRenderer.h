@@ -97,6 +97,8 @@ public:
     PostProcessStats postProcessStats() const override;
     void setShadingSettings(const ShadingSettings& settings) override;
     ShadingStats shadingStats() const override;
+    uint32_t warmPipelines(const PipelineNeeds& needs) override;
+    uint64_t pipelinesCreated() const override;
     void setDrawSettings(const DrawSettings& settings) override;
     DrawStats drawStats() const override;
     uint32_t unkeyedDraws() const override;

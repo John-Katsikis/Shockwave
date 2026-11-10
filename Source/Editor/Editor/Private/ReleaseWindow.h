@@ -4,6 +4,7 @@
 // (docs/Release.md), and shows every release gate as `player --release-info` works it out.
 // Same descriptor table, rules and gates as the command line; nothing is ticked by hand.
 
+#include <Engine/ReleaseTier.h>
 #include <Projects/Project.h>
 #include <Projects/ReleaseSettings.h>
 
@@ -26,6 +27,9 @@ private:
     void drawFields();
     void drawGates(const shockwave::ReleaseReport& report);
     void drawPlayerData(const shockwave::Project& project, const std::string& applicationId);
+    // S10: the graphics release tier and the performance records the gates above judge.
+    void drawTier(const shockwave::Project& project, bool playing);
+    void drawPerformance();
 
     std::filesystem::path m_project;   // the project the contract belongs to
     bool m_present = false, m_savedPresent = false;
@@ -35,6 +39,8 @@ private:
     std::filesystem::file_time_type m_fileTime{};
     double m_nextWatch = 0.0;
     shockwave::ReleaseInputs m_inputs;   // the project's other settings, re-read with the file
+    shockwave::ReleaseTierReport m_tier;   // Config/ReleaseTier.swtier, re-read with the inputs
+    std::string m_tierError;   // creating it failed
     std::string m_importResult;   // what the last Import development saves did
     bool m_importFailed = false;
 };

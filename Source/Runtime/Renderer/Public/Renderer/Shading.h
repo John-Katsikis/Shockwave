@@ -38,6 +38,13 @@ struct ShadingSettings {
     HairQuality hair = HairQuality::High;
     bool operator==(const ShadingSettings&) const = default;
 };
+// The pipelines content needs that aren't built when the renderer starts (S10): glass and
+// skin each have a few, built the first time one is drawn unless they're warmed up while
+// loading (Renderer::warmPipelines).
+struct PipelineNeeds {
+    bool transmission = false;
+    bool skin = false;
+};
 uint32_t skinBlurTaps(SkinQuality quality);   // per direction: 0, 7, 13
 
 // What a material's family adds to DrawMaterial (MaterialShading lives with the material

@@ -182,6 +182,15 @@ struct ReleaseInputs {
     std::vector<std::string> performanceFiles;
     std::vector<Diagnostic> performanceProblems;
     std::string currentBuildId;
+    // The graphics release tier (S10, Engine/ReleaseTier.h, docs/ReleaseTier.md). Checked:
+    // Config/ReleaseTier.swtier was looked for and, when present, read and compared with the
+    // presets and the project's default settings (releaseTierInputs fills these).
+    bool tierChecked = false;
+    bool tierPresent = false;
+    std::string tierFile = "Config/ReleaseTier.swtier";
+    std::string tierSummary;   // "fallback low; 2 mandatory, ..."
+    int tierFallback = -1;   // the fallback preset, 0 low .. 3 ultra; -1 unknown
+    std::vector<Diagnostic> tierProblems;
     // Where the installed game writes (S01, docs/UserPaths.md): the per-user root its
     // application ID resolves to on this machine, or why it doesn't. Unchecked leaves the
     // user_paths gate unverified.

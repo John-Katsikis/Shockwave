@@ -4,6 +4,7 @@
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Engine/Engine.h>
+#include <Engine/ReleaseTier.h>
 #include <Engine/SceneFile.h>
 #include <Engine/Systems.h>
 #include <GameFramework/GameModule.h>
@@ -49,13 +50,15 @@ int main(int argc, char** argv) {
         std::filesystem::path preferencesSchema;   // --preferences-schema
         bool audioVolumeSet = false;
         bool noPipelineCache = false, clearPipelineCache = false;
-        std::string graphicsPresetArg;   // --graphics-preset low|medium|high|ultra
+        bool noPipelineWarmup = false;   // --no-pipeline-warmup
+        std::string graphicsPresetArg;   // --graphics-preset low|medium|high|ultra|fallback
         float renderScaleOverride = -1;
         std::vector<std::pair<std::string, std::string>> graphicsSets;   // --graphics-set key=value, --anti-aliasing
         bool listGpus = false;   // --gpus
         bool networkInfo = false;   // --network-info
         std::filesystem::path networkSchema;   // --network-schema
         bool releaseInfo = false;   // --release-info
+        bool releaseTier = false;   // --release-tier
         std::filesystem::path cookInfoFile, cookVerify;   // --cook-info file [--verify folder]
         player::UserPathsCommand userPathsCommand;   // --user-dir, --profile, --user-paths, --import-legacy-saves
         std::filesystem::path releaseSchema;   // --release-schema
@@ -99,6 +102,15 @@ int main(int argc, char** argv) {
                 std::string error;
                 if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
                     throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            // The graphics release tier (docs/ReleaseTier.md).
+            if (arg == "--no-pipeline-warmup") {
+                noPipelineWarmup = true;
+                continue;
+            }
+            if (arg == "--release-tier") {
+                releaseTier = true;
                 continue;
             }
             // Cooking (docs/Cooking.md).
@@ -589,7 +601,7 @@ int main(int argc, char** argv) {
                     "[--print-frame]\n"
                     "       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]\n"
                     "       [--graphics-info [--json file]] [--graphics-schema file|-]\n"
-                    "       [--graphics-preset low|medium|high|ultra] [--graphics-set key=value]...\n"
+                    "       [--graphics-preset low|medium|high|ultra|fallback] [--graphics-set key=value]...\n"
                     "       [--anti-aliasing none|fxaa|taa]\n"
                     "                                    any setting in docs/GraphicsSchema.md, for this run\n"
                     "       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]\n"
@@ -683,6 +695,8 @@ int main(int argc, char** argv) {
                     "player --release-info [--json file] the release contract and each release gate: passed,\n"
                     "                                    failed or unverified (docs/Release.md)\n"
                     "player --release-schema file.md     write the release contract reference (- for stdout)\n"
+                    "player --release-tier [--json file] the graphics release tier: the fallback preset and what\n"
+                    "                                    each effect is at every preset (docs/ReleaseTier.md)\n"
                     "player --cook [--release] [--target t] [--json report] [--output file]\n"
                     "                                    work out everything a release needs, from every level,\n"
                     "                                    and write Saved/Cook/<target>/Cook.swcook (docs/Cooking.md)\n"
@@ -798,6 +812,7 @@ int main(int argc, char** argv) {
             mode(networkInfo, "--network-info");
             mode(!networkSchema.empty(), "--network-schema");
             mode(releaseInfo, "--release-info");
+            mode(releaseTier, "--release-tier");
             mode(!cookInfoFile.empty(), "--cook-info");
             mode(userPathsCommand.info, "--user-paths");
             mode(!userPathsCommand.importLegacy.empty(), "--import-legacy-saves");
@@ -840,6 +855,7 @@ int main(int argc, char** argv) {
                 "--asset-dependencies",
                 "--cook",
                 "--cook-info",
+                "--release-tier",
                 "--perf-run"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
@@ -1020,6 +1036,7 @@ int main(int argc, char** argv) {
         if (!tool.level.empty()) player::applyStartLevel(project, tool.level);
         if (!shockwave::projectGraphicsSettings(project, tool.graphicsDefaults, error)) throw std::runtime_error(error);
         tool.graphics = tool.graphicsDefaults;
+        if (releaseTier) return player::releaseTierInfo(project, tool.benchmarkJson);
         {
             // Where this run writes. A run that writes (play, save) needs it; tools that
             // only read carry on without, and report it.
@@ -1067,7 +1084,16 @@ int main(int argc, char** argv) {
                     tool.graphics = shockwave::graphicsPreset(preset, tool.graphics);
                     found = true;
                 }
-            if (!found) throw std::runtime_error("--graphics-preset takes low, medium, high or ultra");
+            if (graphicsPresetArg == "fallback") {
+                // The lowest tier the game supports (Config/ReleaseTier.swtier).
+                const shockwave::ReleaseTierReport tier = shockwave::releaseTierReport(project);
+                if (!tier.readable)
+                    throw std::runtime_error(
+                        "--graphics-preset fallback needs a " + tier.file + " that reads (docs/ReleaseTier.md)");
+                tool.graphics = shockwave::fallbackTierSettings(tier.tier, tool.graphics);
+                found = true;
+            }
+            if (!found) throw std::runtime_error("--graphics-preset takes low, medium, high, ultra or fallback");
         }
         if (fpsOverride >= 0) tool.graphics.frameLimit = fpsOverride;
         if (vsyncOverride >= 0) tool.graphics.vsync = vsyncOverride == 1;
@@ -1219,6 +1245,7 @@ int main(int argc, char** argv) {
                           : tool.mode != Tool::Mode::Play || tool.optimise ? std::string("null")
                                                                            : project.renderer;
         config.pipelineCache = !noPipelineCache;
+        config.pipelineWarmup = project.pipelineWarmup && !noPipelineWarmup;
         if (tool.userPaths) {
             config.pipelineCacheFolder = (tool.userPaths->cache() / "pipeline-cache").string() + "/";
             config.guiSettingsFile = (tool.userPaths->config() / "imgui.ini").string();

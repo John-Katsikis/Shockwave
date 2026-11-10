@@ -3,6 +3,7 @@
 #include "Player.h"
 
 #include <Engine/GraphicsSettings.h>
+#include <Engine/ReleaseTier.h>
 #include <Multiplayer/NetworkSettings.h>
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
@@ -72,6 +73,8 @@ releaseInputs(const shockwave::Project& project, const std::map<std::string, sho
     inputs.performanceFiles = std::move(records.files);
     inputs.performanceProblems = std::move(records.problems);
     inputs.currentBuildId = currentBuildId(project);
+    // The graphics release tier (S10): Config/ReleaseTier.swtier against the presets.
+    shockwave::releaseTierInputs(project, inputs);
 
     // Where this game writes once installed (S01): the installed layout for its application
     // ID on this machine, kept out of the game's own folder (the project, from source).
@@ -116,6 +119,22 @@ int releaseInfo(
     return shockwave::hasErrors(report.diagnostics) ? 1 : 0;
 }
 
+int releaseTierInfo(const shockwave::Project& project, const fs::path& json) {
+    const shockwave::ReleaseTierReport report = shockwave::releaseTierReport(project);
+    if (json.empty()) {
+        std::fputs(shockwave::releaseTierReportText(report).c_str(), stdout);
+    } else {
+        std::ofstream out(json, std::ios::binary);
+        out << shockwave::releaseTierReportJson(report);
+        out.close();
+        if (!out) {
+            std::fprintf(stderr, "Player: can't write %s\n", json.string().c_str());
+            return 1;
+        }
+    }
+    return shockwave::hasErrors(report.diagnostics) ? 1 : 0;
+}
+
 int releaseSchema(const fs::path& file) {
     const std::string schema = shockwave::releaseSchema();
     if (file == "-") {
@@ -136,7 +155,14 @@ void checkRelease(
     const shockwave::Project& project, std::vector<std::string>& problems,
     const std::map<std::string, shockwave::LevelSceneFacts>* levelFacts) {
     const shockwave::ReleaseReport report = shockwave::releaseReport(project, releaseInputs(project, levelFacts));
-    if (!report.present) return;   // a development project
+    if (!report.present) {
+        // A development project: no contract, but a tier it wrote down must still hold.
+        const shockwave::ReleaseTierReport tier = shockwave::releaseTierReport(project);
+        for (const shockwave::Diagnostic& diagnostic : tier.diagnostics)
+            if (diagnostic.error()) problems.push_back(diagnostic.text());
+        if (tier.present && !shockwave::hasErrors(tier.diagnostics)) std::printf("ok %s\n", tier.file.c_str());
+        return;
+    }
     const size_t before = problems.size();
     for (const shockwave::Diagnostic& diagnostic : report.diagnostics) {
         if (diagnostic.error())

@@ -282,6 +282,10 @@ void Player::onFrame(double dt) {
     if (!m_tool.screenshot.empty()) takeScreenshot();
     if (m_tool.benchmarkSeconds > 0) benchmark(dt);
     if (!m_tool.save.empty() && ++m_saveFrames == m_tool.saveFrame) saveAndQuit();
+    if (m_pipelinesBeforeFrames < 0) {
+        m_pipelinesBeforeFrames = int64_t(engine().renderer().pipelinesCreated());
+        m_warmedBeforeFrames = engine().renderer().warmedPipelines();
+    }
     if (m_tool.graphicsReportFrame > 0 && ++m_reportFrames == m_tool.graphicsReportFrame) {
         graphicsReport();
         engine().quit();

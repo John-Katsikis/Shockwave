@@ -71,6 +71,13 @@ and ammo only when your reserve isn't full.
 | `Tools/GenerateDemoAssets.py` | Makes every model, sound and image (CC0) |
 | `Docs/Playtest.md` | The playtest script for a person |
 
+## Graphics tier
+
+`Config/ReleaseTier.swtier` says what the release draws with: the fallback is the `low`
+preset, and the sun's shadows are mandatory (they're how the rooms read as lit spaces).
+`player --project Games/ShippingDemo --release-tier` shows it against every preset, and
+`--graphics-preset fallback` draws with it. See [the release tier](../../docs/ReleaseTier.md).
+
 ## Making levels with it
 
 The level content is all components, so it's edited in the Inspector:

@@ -71,6 +71,7 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
                                    : !m_config.pipelineCacheFolder.empty()
                                        ? m_config.pipelineCacheFolder
                                        : pipelineCacheFolder(m_config.window.title)});
+    m_renderer->setPipelineWarmup(m_config.pipelineWarmup);
     if (m_config.gui && !(m_renderer->backendFlags() & kRendererDrawsGui))
         throw std::runtime_error("the " + m_config.renderer + " renderer can't draw the editor's interface");
     m_input = std::make_unique<Input>(m_window.get());

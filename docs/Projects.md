@@ -101,6 +101,7 @@ shadow_quality high  # optional: off, low, medium, high or ultra
 texture_compression high  # optional: high, small or off (docs/Optimisation.md)
 asset_loading all  # optional: all, or levels to load each level's assets when it needs them
 level_travel staged  # optional: staged, or instant to change levels within one frame
+pipeline_warmup true  # optional: false builds glass and skin pipelines at their first draw
 app_shell loading error  # optional: the application's screens: off, all, or a list
 save_schema 1            # optional: the game's save data version; raise it when saves change meaning
 remember_destroyed true  # optional: destroyed PersistentIdentity entities stay gone on return
@@ -132,6 +133,7 @@ renderer "vulkan"    # optional: the renderer plugin the player starts with
 | `save_schema` | no | `1` | The version of what the game keeps in saves. Raise it when that changes meaning: older saves are then stepped up by the game's `GameInstance::migrateSave`, and saves from a newer schema are refused. See [Save games](SaveGames.md#compatibility). |
 | `remember_destroyed` | no | `true` | Authored entities with a `PersistentIdentity` that were destroyed stay destroyed when their level is entered again, until Restart level or a New game. `false` brings every level back as authored. See [Save games](SaveGames.md#things-that-stay-gone). |
 | `level_travel` | no | `staged` | `staged` changes level over two frames: the next level is prepared, a frame renders (a loading screen can show, the travel can still be cancelled), then the current level ends and the next starts. `instant` does it all in one frame. See [Level lifetime](LevelLifetime.md). |
+| `pipeline_warmup` | no | `true` | Glass and skin pipelines are built when their materials load, on the loading screen. `false` builds them the first time one is drawn, as before S10; `player --no-pipeline-warmup` does the same for a run. See [Release tier](ReleaseTier.md#pipeline-warm-up). |
 | `asset_loading` | no | `all` | `all` imports every asset when the player starts. `levels` imports each level's assets when it needs them and unloads them when no level holds them. See [Asset residency](AssetResidency.md). |
 | `mesh_lods` | no | `4` | Simpler levels of detail per model mesh, `0` to `7`. |
 | `lod_error_pixels` | no | `1` | How far, in pixels, a level of detail may stray on screen, `0` to `100`. |

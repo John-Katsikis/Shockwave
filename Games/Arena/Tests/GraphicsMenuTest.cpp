@@ -41,7 +41,11 @@ int main(int argc, char** argv) {
         check(menu.visible(), "graphics panel open");
         check(controls.focused("Arena Menu") == "preset-low", "opening focuses first preset");
         check(controls.navigate(UINav::Confirm), "keyboard confirms focused preset");
-        check(controls.text("Arena Menu", "graphics-scale") == "Render scale: 67%", "navigation edits draft");
+        // Low keeps native resolution (S10) and saves its time elsewhere.
+        check(
+            controls.text("Arena Menu", "graphics-scale") == "Render scale: 100%" &&
+                controls.text("Arena Menu", "graphics-shadows") == "Shadows: low",
+            "navigation edits draft");
         check(controls.click("Arena Menu", "preset-low"), "choose low");
         check(graphics.current() == initial, "draft doesn't change runtime");
         check(controls.navigate(UINav::Back), "back navigation cancels graphics");
@@ -50,10 +54,10 @@ int main(int argc, char** argv) {
         controls.click("Arena Menu", "preset-low");
         controls.click("Arena Menu", "graphics-apply");
         check(
-            graphics.current().renderScale == 0.67f && graphics.current().shadows == ShadowQuality::Low,
+            graphics.current().renderScale == 1 && graphics.current().shadows == ShadowQuality::Low,
             "apply invokes shared API");
         controls.click("Arena Menu", "graphics-defaults");
-        check(graphics.current().renderScale == 0.67f, "defaults only change draft");
+        check(graphics.current().shadows == ShadowQuality::Low, "defaults only change draft");
         std::string error;
         check(graphics.configure(initial, temp / "Graphics.swgraphics", error), "configure saving");
         controls.click("Arena Menu", "graphics-apply");

@@ -14,6 +14,12 @@ VkShaderModule loadShaderModule(VkDevice device, const std::string& path);
 void setPipelineCache(VkPipelineCache cache);
 VkPipelineCache pipelineCache();
 
+// How many pipelines have been created since the process started (S10): createGraphicsPipeline
+// counts itself; code that calls vkCreate*Pipelines directly calls notePipelineCreated.
+// A pipeline built while playing is a stall, so tools watch this number.
+uint64_t pipelinesCreated();
+void notePipelineCreated();
+
 struct GraphicsPipelineDesc {
     bool alphaBlend = false;   // standard "over" blending; never writes depth
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;

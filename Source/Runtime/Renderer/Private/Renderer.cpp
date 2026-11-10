@@ -135,6 +135,10 @@ struct Renderer::State {
     PostProcessSettings postProcessSettings;
     DrawSettings drawSettings;
     ShadingSettings shadingSettings;
+    bool pipelineWarmup = true;
+    PipelineNeeds warmNeeds;   // what content has asked for so far
+    bool warmPending = false;   // something new was asked for since the last frame began
+    uint64_t warmedPipelines = 0;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
     float renderScale = 1.0f;
     uint32_t viewportWidth = 0, viewportHeight = 0;
@@ -389,6 +393,7 @@ struct Renderer::State {
         backend->setParticleSettings(particleSettings);
         backend->setPostProcessSettings(postProcessSettings);
         backend->setShadingSettings(shadingSettings);
+        if (pipelineWarmup) warmedPipelines += backend->warmPipelines(warmNeeds);
         backend->setDrawSettings(drawSettings);
         backend->setPostProcess(postProcess);
         backend->setReflectionProbes(reflectionProbes);
@@ -1010,7 +1015,22 @@ PostProcessStats Renderer::postProcessStats() const { return m->backend->postPro
 void Renderer::setShadingSettings(const ShadingSettings& settings) {
     m->shadingSettings = settings;
     m->backend->setShadingSettings(settings);
+    // An effect turned on after its content loaded: warm it here, in the menu, not at the
+    // next frame that draws it.
+    if (m->pipelineWarmup) m->warmedPipelines += m->backend->warmPipelines(m->warmNeeds);
 }
+void Renderer::setPipelineWarmup(bool enabled) { m->pipelineWarmup = enabled; }
+bool Renderer::pipelineWarmup() const { return m->pipelineWarmup; }
+void Renderer::warmPipelines(const PipelineNeeds& needs) {
+    // Built at the start of the next frame, not here: the player's settings have reached
+    // the backend by then, so an effect that's off gets no pipelines. While a level loads
+    // that frame is the loading screen's.
+    if ((needs.transmission && !m->warmNeeds.transmission) || (needs.skin && !m->warmNeeds.skin)) m->warmPending = true;
+    m->warmNeeds.transmission |= needs.transmission;
+    m->warmNeeds.skin |= needs.skin;
+}
+uint64_t Renderer::pipelinesCreated() const { return m->backend->pipelinesCreated(); }
+uint64_t Renderer::warmedPipelines() const { return m->warmedPipelines; }
 ShadingSettings Renderer::shadingSettings() const { return m->shadingSettings; }
 ShadingStats Renderer::shadingStats() const { return m->backend->shadingStats(); }
 void Renderer::setDrawSettings(const DrawSettings& settings) {
@@ -1039,6 +1059,10 @@ const char* Renderer::presentModeName() const { return m->backend->presentModeNa
 
 bool Renderer::beginFrame() {
     m->pumpResidency();
+    if (m->warmPending) {
+        m->warmPending = false;
+        if (m->pipelineWarmup) m->warmedPipelines += m->backend->warmPipelines(m->warmNeeds);
+    }
     return m->backend->beginFrame();
 }
 void Renderer::endFrame() { m->backend->endFrame(); }
