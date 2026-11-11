@@ -179,6 +179,11 @@ int main(int argc, char** argv) {
                 clearPipelineCache = true;
                 continue;
             }
+            // Kept out of the else-if chain below: MSVC refuses chains this long (C1061).
+            if (arg == "--rotations" && i + 1 < argc) {
+                netTest.rotations = uint32_t(wholeNumber(argv[++i], 100, "--rotations"));
+                continue;
+            }
             if ((arg == "--save-info" || arg == "--save-migrate") && i + 1 < argc) {
                 (arg == "--save-info" ? saveInfoFile : saveMigrateFile) = argv[++i];
                 continue;
@@ -580,8 +585,6 @@ int main(int argc, char** argv) {
                 tool.mode = Tool::Mode::AssignNetworkKeys;
             } else if (arg == "--clients" && i + 1 < argc) {
                 netTest.clients = uint32_t(wholeNumber(argv[++i], 63, "--clients"));
-            } else if (arg == "--rotations" && i + 1 < argc) {
-                netTest.rotations = uint32_t(wholeNumber(argv[++i], 100, "--rotations"));
             } else if (arg == "--saves") {
                 tool.listSaves = true;
             } else if (arg == "--load" && i + 1 < argc) {
