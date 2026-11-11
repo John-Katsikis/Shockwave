@@ -191,6 +191,17 @@ void VulkanRenderer::setPostProcessSettings(const PostProcessSettings& settings)
 PostProcessStats VulkanRenderer::postProcessStats() const { return m_impl->lastPostProcessStats; }
 void VulkanRenderer::setShadingSettings(const ShadingSettings& settings) { m_impl->setShadingSettings(settings); }
 ShadingStats VulkanRenderer::shadingStats() const { return m_impl->lastShadingStats; }
+uint32_t VulkanRenderer::warmPipelines(const PipelineNeeds& needs) {
+    // The same builders the first draw would run, and only for effects that are on: an
+    // effect that's off never gets its pipelines.
+    const uint64_t before = vk::pipelinesCreated();
+    if (needs.transmission && m_impl->shadingTransmission.load(std::memory_order_relaxed) != TransmissionQuality::Off)
+        m_impl->ensureTransmissionPipelines();
+    if (needs.skin && m_impl->shadingSkin.load(std::memory_order_relaxed) != SkinQuality::Off)
+        m_impl->ensureSkinPipelines();
+    return uint32_t(vk::pipelinesCreated() - before);
+}
+uint64_t VulkanRenderer::pipelinesCreated() const { return vk::pipelinesCreated(); }
 void VulkanRenderer::setDrawSettings(const DrawSettings& settings) { m_impl->drawSettings = settings; }
 DrawStats VulkanRenderer::drawStats() const { return m_impl->lastDrawStats; }
 uint32_t VulkanRenderer::culledDraws() const { return m_impl->lastCulledDraws; }

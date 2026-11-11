@@ -478,7 +478,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
     base.antiAliasing = AntiAliasing::Fxaa;
     switch (preset) {
     case GraphicsPreset::Low:
-        base.renderScale = 0.67f;
+        base.renderScale = 1;
         base.shadows = ShadowQuality::Low;
         base.lodErrorPixels = 2;
         base.bloomQuality = BloomQuality::Low;
@@ -497,7 +497,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.hairQuality = HairQuality::Low;
         break;
     case GraphicsPreset::Medium:
-        base.renderScale = 0.85f;
+        base.renderScale = 1;
         base.shadows = ShadowQuality::Medium;
         base.lodErrorPixels = 1.5f;
         base.bloomQuality = BloomQuality::Medium;

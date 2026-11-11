@@ -197,6 +197,15 @@ void Player::graphicsReport() {
     }
     std::printf("  %-20s %9.2f MiB\n", "total", mib(memory.gpuBytes()));
     std::printf("  %-20s %9.2f MiB\n", "pipeline cache", mib(memory.pipelineCacheBytes));
+    const uint64_t pipelines = renderer.pipelinesCreated();
+    // Since the first frame, less what warm-up built as frames began: what a draw had to wait for.
+    const uint64_t whileDrawing = m_pipelinesBeforeFrames < 0 ? 0
+                                                              : pipelines - uint64_t(m_pipelinesBeforeFrames) -
+                                                                    (renderer.warmedPipelines() - m_warmedBeforeFrames);
+    std::printf(
+        "\npipelines: %llu built, %llu of them by warm-up while loading (%s), %llu while drawing\n",
+        static_cast<unsigned long long>(pipelines), static_cast<unsigned long long>(renderer.warmedPipelines()),
+        renderer.pipelineWarmup() ? "on" : "off", static_cast<unsigned long long>(whileDrawing));
     if (memory.deviceBudget)
         std::printf(
             "  %-20s %9.2f of %.2f MiB (the driver's count, device-local heaps)\n", "device usage",
@@ -246,6 +255,9 @@ void Player::graphicsReport() {
          << ",\n  \"particles\": " << particlesJson(renderer.particleSettings(), renderer.particleStats())
          << ",\n  \"postprocess\": " << postProcessJson(renderer.postProcessSettings(), renderer.postProcessStats())
          << ",\n  \"shading\": " << shadingJson(renderer.shadingSettings(), renderer.shadingStats())
+         << ",\n  \"pipelines\": {\"created\": " << pipelines << ", \"warmed\": " << renderer.warmedPipelines()
+         << ", \"warmup\": " << (renderer.pipelineWarmup() ? "true" : "false")
+         << ", \"while_drawing\": " << whileDrawing << "}"
          << ",\n  \"drawing\": " << drawingJson(renderer.drawSettings(), renderer.drawStats())
          << ",\n  \"memory_budget\": {\"budget_mb\": " << graphics.current().memoryBudgetMb
          << ", \"budgeted_bytes\": " << shockwave::budgetedMemoryBytes(memory)

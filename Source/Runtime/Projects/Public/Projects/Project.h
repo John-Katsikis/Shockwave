@@ -38,6 +38,9 @@ struct Project {
     // and the travel can be cancelled before the current level ends. "instant": all in one
     // frame, as before S05 (level_travel, docs/LevelLifetime.md).
     std::string levelTravel = "staged";
+    // Pipeline warm-up (S10, docs/ReleaseTier.md): glass and skin pipelines are built when
+    // their materials load. false builds them at first draw, as before S10.
+    bool pipelineWarmup = true;
     // The application's own screens (app_shell, docs/AppShell.md): "off", "all", or which
     // of menu, level_select, pause, loading and error are on. Loading and error by default.
     std::string appShell = "loading error";

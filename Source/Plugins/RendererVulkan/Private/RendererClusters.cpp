@@ -42,6 +42,7 @@ void VulkanRenderer::Impl::createClusterPipeline() {
     const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &clusterPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
+    vk::notePipelineCreated();
 }
 
 void VulkanRenderer::Impl::destroyClusters() {

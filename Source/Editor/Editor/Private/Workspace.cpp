@@ -5,6 +5,7 @@
 #include "GraphicsGuide.h"
 
 #include <Physics/Physics.h>
+#include <Projects/ReleaseSettings.h>
 #include <UI/Gui.h>
 
 #include <imgui_internal.h>
@@ -506,6 +507,42 @@ void Editor::drawStatsWindow() {
             "Half, 95%% and 99%% of the last %zu frames took at most this long. A release contract's "
             "frame_p95_ms and frame_p99_ms are budgets for these, measured with player --perf-run.",
             pacing.frames);
+        // Against the release contract's budgets, when the project has them (re-read now and then).
+        static double nextBudgetRead = 0;
+        static double budgetP95 = 0, budgetP99 = 0;
+        if (const double now = ImGui::GetTime(); now >= nextBudgetRead) {
+            nextBudgetRead = now + 2.0;
+            budgetP95 = budgetP99 = 0;
+            shockwave::ReleaseFile contract;
+            shockwave::Diagnostic problem;
+            std::error_code ec;
+            const auto file = shockwave::releasePath(m_project);
+            if (m_hasProject && std::filesystem::exists(file, ec) &&
+                shockwave::readRelease(file, "Config/Release.swrelease", contract, problem)) {
+                budgetP95 = contract.settings.frameP95Ms;
+                budgetP99 = contract.settings.frameP99Ms;
+            }
+        }
+        if (budgetP95 > 0 || budgetP99 > 0) {
+            const bool over =
+                (budgetP95 > 0 && pacing.p95Ms > budgetP95) || (budgetP99 > 0 && pacing.p99Ms > budgetP99);
+            gui::propertyLabel("Budget p95 / p99");
+            ImGui::TextColored(
+                gui::semanticColor(over ? gui::currentTheme().warning : gui::currentTheme().accent),
+                "%.2f / %.2f ms (%s)", budgetP95, budgetP99, over ? "over" : "within");
+            ImGui::SetItemTooltip(
+                "The release contract's frame_p95_ms and frame_p99_ms. The editor draws more than the game "
+                "does, so this is a hint: the gate reads player --perf-run records from real hardware.");
+        }
+        gui::propertyLabel("Pipelines");
+        ImGui::Text(
+            "%llu built, %llu by warm-up", static_cast<unsigned long long>(renderer.pipelinesCreated()),
+            static_cast<unsigned long long>(renderer.warmedPipelines()));
+        ImGui::SetItemTooltip(
+            "Every pipeline the renderer has compiled since it started. Warm-up (%s) builds glass and skin "
+            "pipelines when their materials load; a number that rises during play is a stall "
+            "(docs/ReleaseTier.md).",
+            renderer.pipelineWarmup() ? "on" : "off: pipeline_warmup false");
         gui::propertyLabel("CPU / GPU");
         if (pacing.gpuMs > 0)
             ImGui::Text("%.2f / %.2f ms", pacing.cpuMs, pacing.gpuMs);

@@ -103,6 +103,8 @@ struct EngineConfig {
     // Keep compiled pipelines on disk between runs, so later starts compile less
     // (Engine::pipelineCacheFolder; docs/Drawing.md). Off compiles everything every start.
     bool pipelineCache = true;
+    // Pipeline warm-up while loading (S10, Renderer::setPipelineWarmup).
+    bool pipelineWarmup = true;
     // Where it's kept; empty uses Engine::pipelineCacheFolder(window title). The player
     // passes its per-user cache folder (docs/UserPaths.md).
     std::string pipelineCacheFolder;

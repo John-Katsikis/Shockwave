@@ -89,6 +89,7 @@ void VulkanRenderer::Impl::createAmbientOcclusionPipeline() {
     const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &aoPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
+    vk::notePipelineCreated();
 
     // The prepass: mesh.vert with the scene's culling and alpha test, into depth and normals.
     vk::GraphicsPipelineDesc desc;

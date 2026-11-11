@@ -249,6 +249,17 @@ public:
     void setShadingSettings(const ShadingSettings& settings);
     ShadingSettings shadingSettings() const;
     ShadingStats shadingStats() const;   // the last frame's
+    // Pipeline warm-up (S10, docs/ReleaseTier.md): asset loading calls warmPipelines with
+    // what a material needs, so its pipelines are built on the loading screen and not at
+    // its first draw. Off (project key pipeline_warmup false, player --no-pipeline-warmup)
+    // makes it do nothing: pipelines are then built at first use, as before S10.
+    // pipelinesCreated counts every pipeline made since the renderer started;
+    // warmedPipelines those made by warm-up. Main thread.
+    void setPipelineWarmup(bool enabled);
+    bool pipelineWarmup() const;
+    void warmPipelines(const PipelineNeeds& needs);   // built as the next frame begins
+    uint64_t pipelinesCreated() const;
+    uint64_t warmedPipelines() const;
     // Instancing and occlusion culling (G12, Renderer/Culling.h).
     void setDrawSettings(const DrawSettings& settings);
     DrawSettings drawSettings() const;

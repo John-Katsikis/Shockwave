@@ -164,6 +164,11 @@ public:
     // A07-A09: a backend without a family draws its stand-in (standard, simplified glass).
     virtual void setShadingSettings(const ShadingSettings&) {}
     virtual ShadingStats shadingStats() const { return {}; }
+    // Pipeline warm-up (S10): build now what `needs` would otherwise build at its first
+    // draw; returns how many pipelines that made. pipelinesCreated counts every pipeline
+    // this backend has made since it started. Main thread, outside a frame.
+    virtual uint32_t warmPipelines(const PipelineNeeds&) { return 0; }
+    virtual uint64_t pipelinesCreated() const { return 0; }
     virtual void setDrawSettings(const DrawSettings&) {}
     virtual DrawStats drawStats() const { return {}; }
     // Of drawCount, how many came without a RenderInstanceKey (so have no history).

@@ -3,6 +3,7 @@
 
 #include <Core/Log.h>
 #include <Engine/GraphicsSettings.h>
+#include <Engine/ReleaseTier.h>
 #include <GameFramework/SaveGame.h>
 #include <Multiplayer/NetworkSettings.h>
 #include <Packaging/Cook.h>
@@ -15,6 +16,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <fstream>
 #include <cmath>
 
 namespace editor {
@@ -91,6 +93,7 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     inputs.performanceRecords = std::move(records.records);
     inputs.performanceFiles = std::move(records.files);
     inputs.performanceProblems = std::move(records.problems);
+    shockwave::releaseTierInputs(project, inputs);
     if (const std::vector<std::string> targets = shockwave::cookTargets(); !targets.empty()) {
         shockwave::CookManifest cook;
         const fs::path manifest = shockwave::cookManifestPath(project.root, targets.front());
@@ -126,6 +129,7 @@ void ReleaseWindow::load(const shockwave::Project& project) {
     m_loadError.clear();
     m_saveError.clear();
     m_inputs = releaseInputs(project);
+    m_tier = shockwave::releaseTierReport(project);
     const fs::path path = shockwave::releasePath(project);
     std::error_code ec;
     m_present = m_savedPresent = fs::exists(path, ec);
@@ -157,6 +161,7 @@ void ReleaseWindow::watchFile(const shockwave::Project& project) {
     const bool editing = m_present != m_savedPresent || !(m_edit == m_saved);
     if (time != m_fileTime && !editing) load(project);
     m_inputs = releaseInputs(project);
+    m_tier = shockwave::releaseTierReport(project);
 }
 
 bool ReleaseWindow::save(const shockwave::Project& project) {
@@ -256,6 +261,8 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
     }
     if (!m_present) shockwave::releaseGates(report, m_inputs);
     drawGates(report);
+    drawTier(project, playing);
+    drawPerformance();
     drawPlayerData(project, m_present ? m_edit.applicationId : shockwave::fallbackApplicationId(project));
     ImGui::End();
 }
@@ -372,6 +379,122 @@ void ReleaseWindow::drawGates(const shockwave::ReleaseReport& report) {
         ImGui::TextUnformatted(gate.batch.c_str());
         ImGui::TableNextColumn();
         ImGui::TextWrapped("%s", gate.reason.c_str());
+    }
+    ImGui::EndTable();
+}
+
+// The graphics release tier (S10, docs/ReleaseTier.md): the fallback preset and the effects
+// the art direction needs, as `player --release-tier` shows them. The file is small and
+// has reasons in it, so it's edited as text; this creates it and shows what it says.
+void ReleaseWindow::drawTier(const shockwave::Project& project, bool playing) {
+    ImGui::SeparatorText("Graphics tier");
+    const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
+    ImGui::TextDisabled("%s (player --release-tier)", m_tier.file.c_str());
+    if (!m_tier.present) {
+        ImGui::TextWrapped("No graphics tier yet: the release hasn't said which preset is the lowest it supports, "
+                           "or which effects its look depends on.");
+        ImGui::BeginDisabled(playing);
+        if (gui::button("Create graphics tier")) {
+            shockwave::ReleaseTier tier;
+            tier.fallback = shockwave::GraphicsPreset::Low;
+            const fs::path path = shockwave::releaseTierPath(project);
+            std::error_code ec;
+            fs::create_directories(path.parent_path(), ec);
+            std::ofstream out(path, std::ios::binary);
+            out << shockwave::releaseTierText(tier)
+                << "# mandatory <setting> <lowest value> \"<why the game needs it>\"\n# optional <setting>\n";
+            out.close();
+            m_tierError = out ? std::string() : "can't write " + m_tier.file;
+            m_tier = shockwave::releaseTierReport(project);
+            m_inputs = releaseInputs(project);
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Writes a tier whose fallback is the low preset; add mandatory effects in the file");
+        if (!m_tierError.empty()) ImGui::TextColored(errorColor, "%s", m_tierError.c_str());
+        return;
+    }
+    for (const shockwave::Diagnostic& d : m_tier.diagnostics) ImGui::TextColored(errorColor, "%s", d.text().c_str());
+    if (!m_tier.readable) return;
+    ImGui::Text("Fallback: %s", shockwave::graphicsPresetName(m_tier.tier.fallback));
+    ImGui::SetItemTooltip("The lowest preset the game supports; player --graphics-preset fallback draws with it");
+    const shockwave::GraphicsSettings fallback = shockwave::fallbackTierSettings(m_tier.tier, m_tier.defaults);
+    const ImGuiTableFlags flags =
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit;
+    bool any = false;
+    for (const shockwave::TierEffect& effect : m_tier.tier.effects)
+        any = any || effect.use == shockwave::TierUse::Mandatory;
+    if (!any) {
+        ImGui::TextDisabled("Every effect is optional: players may turn any of them down.");
+        return;
+    }
+    if (!ImGui::BeginTable("tier", 4, flags)) return;
+    ImGui::TableSetupColumn("Mandatory effect");
+    ImGui::TableSetupColumn("At least");
+    ImGui::TableSetupColumn("Fallback draws");
+    ImGui::TableSetupColumn("Why", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableHeadersRow();
+    for (const shockwave::TierEffect& effect : m_tier.tier.effects) {
+        if (effect.use != shockwave::TierUse::Mandatory) continue;
+        const shockwave::GraphicsSettingInfo* info = shockwave::findGraphicsSetting(effect.key);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(info ? info->label : effect.key.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(effect.minimum.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(info ? info->get(fallback).c_str() : "?");
+        ImGui::TableNextColumn();
+        ImGui::TextWrapped("%s", effect.reason.c_str());
+    }
+    ImGui::EndTable();
+}
+
+// Performance records (S10, docs/Performance.md): each machine's run and whether it meets
+// the contract, so the performance gate's verdict above can be traced to its numbers.
+void ReleaseWindow::drawPerformance() {
+    ImGui::SeparatorText("Performance records");
+    ImGui::TextDisabled("Release/Performance (player --perf-run <scenario> --perf-record \"<machine>\")");
+    if (m_inputs.performanceRecords.empty()) {
+        ImGui::TextWrapped("No records yet. A performance claim needs one from real, named hardware.");
+        return;
+    }
+    const ImGuiTableFlags flags =
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("records", 5, flags)) return;
+    ImGui::TableSetupColumn("Machine");
+    ImGui::TableSetupColumn("Drawn");
+    ImGui::TableSetupColumn("p50 / p95 / p99 ms");
+    ImGui::TableSetupColumn("Pipelines in play");
+    ImGui::TableSetupColumn("Against the contract", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableHeadersRow();
+    for (const shockwave::PerformanceRecord& r : m_inputs.performanceRecords) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(r.machine.c_str());
+        ImGui::SetItemTooltip(
+            "%s\n%s (%s)\n%s build, recorded %s", r.cpu.c_str(), r.gpu.c_str(), r.gpuKind.c_str(),
+            r.buildConfig.c_str(), r.recorded.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%ux%u, %s", r.width, r.height, r.tier.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f / %.2f / %.2f", r.play.p50Ms, r.play.p95Ms, r.play.p99Ms);
+        ImGui::TableNextColumn();
+        if (r.pipelinesInPlay < 0)
+            ImGui::TextDisabled("unknown");
+        else
+            ImGui::Text("%lld", static_cast<long long>(r.pipelinesInPlay));
+        ImGui::SetItemTooltip("Pipelines built off the loading screen: each one is a stall. Warm-up keeps this at 0.");
+        ImGui::TableNextColumn();
+        if (!m_present) {
+            ImGui::TextDisabled("no contract to judge it by");
+        } else {
+            const std::vector<std::string> problems =
+                shockwave::performanceProblems(m_edit, r, m_inputs.currentBuildId);
+            if (problems.empty())
+                ImGui::TextColored(gateColor(GateStatus::Passed), "meets every budget");
+            else
+                ImGui::TextWrapped("%s%s", problems.front().c_str(), problems.size() > 1 ? " (and more)" : "");
+        }
     }
     ImGui::EndTable();
 }

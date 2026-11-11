@@ -62,6 +62,7 @@ VkPipeline computePipeline(VkDevice device, VkPipelineLayout layout, const std::
     const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &pipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
+    vk::notePipelineCreated();
     return pipeline;
 }
 

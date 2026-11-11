@@ -54,6 +54,14 @@ shockwave_warnings(release_test)
 add_test(NAME release COMMAND release_test)
 set_tests_properties(release PROPERTIES TIMEOUT 60 LABELS unit)
 
+# The graphics release tier (S10, docs/ReleaseTier.md): the .swtier format, its checks
+# against the presets, the release gate, and every preset drawing at native resolution.
+add_executable(release_tier_test ReleaseTierTest.cpp)
+target_link_libraries(release_tier_test PRIVATE Shockwave::Projects Shockwave::Engine)
+shockwave_warnings(release_tier_test)
+add_test(NAME release_tier COMMAND release_tier_test)
+set_tests_properties(release_tier PROPERTIES TIMEOUT 60 LABELS unit)
+
 # Performance budgets, records and the gate (S10, docs/Performance.md): percentiles,
 # contract version 2, .swperf records and which of them count.
 add_executable(performance_test PerformanceTest.cpp)
@@ -61,6 +69,16 @@ target_link_libraries(performance_test PRIVATE Shockwave::Projects Shockwave::En
 shockwave_warnings(performance_test)
 add_test(NAME performance COMMAND performance_test)
 set_tests_properties(performance PROPERTIES TIMEOUT 60 LABELS unit)
+# The graphics release tier from the command line (S10 part 2, Tests/ReleaseTierCheck.cmake):
+# --release-tier, --check --release and --graphics-preset fallback on a copy of Reactor Run.
+if(TARGET game_shippingdemo)
+    add_test(NAME release_tier_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/ReleaseTier
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/ReleaseTierCheck.cmake)
+    set_tests_properties(release_tier_cli PROPERTIES TIMEOUT 300 LABELS integration)
+endif()
 # player --perf-run on Reactor Run (two laps of the tour, null renderer) and the gate
 # reading its records (Tests/PerformanceCheck.cmake). It proves the accounting, never the
 # speed: CI machines aren't release hardware.
@@ -206,6 +224,16 @@ set_tests_properties(asset_streaming PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=of
 add_test(NAME asset_streaming_vulkan COMMAND asset_streaming_test vulkan)
 set_tests_properties(asset_streaming_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 120 LABELS gpu)
+
+# Off really means off (S10): each optional effect turned on and off again mid-run gives back
+# its pass and its GPU memory.
+add_executable(effects_off_test EffectsOffTest.cpp)
+target_link_libraries(effects_off_test PRIVATE Shockwave::Engine)
+shockwave_warnings(effects_off_test)
+shockwave_link_plugins(effects_off_test)
+add_test(NAME effects_off_vulkan COMMAND effects_off_test vulkan)
+set_tests_properties(effects_off_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 180 LABELS gpu)
 
 # Circuits (visual scripting): format, compiler checks and circuits running without a window.
 add_executable(circuit_test CircuitTest.cpp)
@@ -479,6 +507,18 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     set_tests_properties(graphics_fixtures_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 900 LABELS gpu)
+    # Pipeline warm-up and the fallback tier's pictures (S10 part 2).
+    set(release_tier_demo "")
+    if(TARGET game_shippingdemo)
+        set(release_tier_demo -DDEMO=${CMAKE_SOURCE_DIR}/Games/ShippingDemo)
+    endif()
+    add_test(NAME graphics_release_tier_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsReleaseTier ${release_tier_demo}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsReleaseTierCheck.cmake)
+    set_tests_properties(graphics_release_tier_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
     # Motion vectors and TAA (G09, G10) on the fixtures: the debug views' values, TAA against
     # a supersampled image, determinism, and nothing temporal when it's off.
     add_test(NAME graphics_temporal_render COMMAND ${CMAKE_COMMAND}

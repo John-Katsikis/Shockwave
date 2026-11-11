@@ -96,6 +96,7 @@ void VulkanRenderer::Impl::createTemporalPipelines() {
     const VkResult result = vkCreateComputePipelines(device, vk::pipelineCache(), 1, &info, nullptr, &taaPipeline);
     vkDestroyShaderModule(device, module, nullptr);
     vk::check(result, "vkCreateComputePipelines");
+    vk::notePipelineCreated();
 
     // Blended draws' coverage into the reactive mask: over the scene's depth, both faces.
     vk::GraphicsPipelineDesc desc;

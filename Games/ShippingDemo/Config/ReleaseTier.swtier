@@ -1,0 +1,9 @@
+swtier 1
+# Reactor Run's graphics release tier (docs/ReleaseTier.md): what the release draws with.
+# Checked by `player --check --release`; shown by `player --release-tier`.
+
+# The lowest preset the game supports. Minimum-tier pictures are taken with it.
+fallback low
+
+# The sun is the only light: without its shadows the rooms read as flat boxes.
+mandatory shadow_quality low "the sun's shadows are how the rooms read as lit spaces"

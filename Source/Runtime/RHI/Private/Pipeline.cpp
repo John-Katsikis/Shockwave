@@ -1,5 +1,7 @@
 #include <RHI/Pipeline.h>
 
+#include <atomic>
+
 #include <fstream>
 #include <vector>
 
@@ -11,6 +13,12 @@ VkPipelineCache g_pipelineCache = VK_NULL_HANDLE;
 
 void setPipelineCache(VkPipelineCache cache) { g_pipelineCache = cache; }
 VkPipelineCache pipelineCache() { return g_pipelineCache; }
+
+namespace {
+std::atomic<uint64_t> g_pipelinesCreated{0};
+}
+uint64_t pipelinesCreated() { return g_pipelinesCreated.load(std::memory_order_relaxed); }
+void notePipelineCreated() { g_pipelinesCreated.fetch_add(1, std::memory_order_relaxed); }
 
 VkShaderModule loadShaderModule(VkDevice device, const std::string& path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
@@ -154,6 +162,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& d
     if (frag) vkDestroyShaderModule(device, frag, nullptr);
     vkDestroyShaderModule(device, vert, nullptr);
     check(result, "vkCreateGraphicsPipelines");
+    notePipelineCreated();
     return pipeline;
 }
 
