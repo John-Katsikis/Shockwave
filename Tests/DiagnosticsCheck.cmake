@@ -75,7 +75,8 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     has(json "\"mode\": \"symbolize\"")
     has(json "\"function\": \"shockwaveTestCrashHere")
 endif()
-run(1 "isn't a Shockwave crash report" --symbolize "${TEMP}/symbolized.json")
+file(WRITE "${TEMP}/not-a-report.txt" "hello\n")
+run(1 "isn't a Shockwave crash report" --symbolize "${TEMP}/not-a-report.txt")
 run(1 "couldn't open" --symbolize "${TEMP}/missing.crash.txt")
 
 # ---- abort() and a trap ---------------------------------------------------------------------
