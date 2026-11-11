@@ -195,7 +195,7 @@ static void testHostFindJoin() {
     CHECK(info && lobbyValue(info.value(), "sw_players") == "2");
     CHECK(info && lobbyValue(info.value(), "sw_host") == std::to_string(kHostId));
     CHECK(info && lobbyValue(info.value(), "sw_session").size() == 32);
-    CHECK(info && lobbyValue(info.value(), "sw_protocol") == "1");
+    CHECK(info && lobbyValue(info.value(), "sw_protocol") == "2");
 
     // The Network window's peer table, both ways.
     sim.step(130);   // the host pings each client once a second
