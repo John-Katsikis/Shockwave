@@ -127,7 +127,8 @@ and an unknown one `UnknownTicket`. A cancel never touches another ticket.
 | `UnknownLevel` | not in the level catalog (refused before a ticket) |
 | `UnknownSpawn` | the destination has no LevelSpawn with that id (fails before the current level ends) |
 | `InvalidRequest` | no level named, `resetCampaign` outside `NewGame`, a disabled or used exit, no menu level |
-| `AuthorityRequired` | during network play: map travel is the host's, and comes with S11 |
+| `AuthorityRequired` | during network play, asked on a client: only the host changes maps |
+| `RotationAborted` | online: the map change was called off (players weren't ready, or the host couldn't load it) |
 | `LoadFailed`, `BudgetExceeded` | the scene or its closure didn't load or fit (before the boundary: the level plays on) |
 | `StartFailed` | the new level didn't start: nothing plays |
 | `Cancelled`, `RedirectCycle` | cancelled or stopped; levels kept redirecting |
@@ -173,8 +174,12 @@ literal spawn isn't in that level (`UnknownSpawn`).
   Play stops.
 - **Hot reload waits.** The editor doesn't reload game code while a request is waiting
   or prepared at the boundary.
-- **Online levels don't change.** During network play a request is refused as
-  `AuthorityRequired` instead of silently disconnecting the peers. Map rotation is S11.
+- **Online, only the host changes maps.** During network play a client's request is
+  refused as `AuthorityRequired`. The host's request becomes a map rotation (reason
+  `OnlineMap`, docs/Networking.md "Map rotation"): every player loads the level, the
+  prepared level waits at the boundary until the session commits, and then each side's
+  old session ends and the next one starts in the same lobby. `game.flow().rotateMap()`
+  goes to the next level of the network settings' `map_rotation`.
 
 ## Session policies
 

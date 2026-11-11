@@ -185,6 +185,7 @@ struct RotationPlayer {
     PeerId peer;
     bool ready = false;
     ReasonCode rejected = ReasonCode::Normal;   // MapReject's reason, or Normal
+    bool left = false;   // after the commit: it closed this session to join the next
 };
 
 struct MapRotation {
@@ -477,6 +478,11 @@ public:
     // Host: calls it off (MapAbort to everyone announced).
     void abortRotation(ReasonCode reason, uint8_t returnTo = MapAbort::kStay);
     const MapRotation& rotation() const;
+    // Committed, and safe to end this session: a client at once; the host once every
+    // player it committed to has left for the next map (so the commit reached them), or
+    // kHandoverSeconds after the commit.
+    bool rotationHandedOver() const;
+    static constexpr double kHandoverSeconds = 3;
     // The map epoch this session plays (NetworkStart::mapEpoch).
     uint32_t mapEpoch() const { return m_start.mapEpoch; }
     // Committed: how to start the next session (role, address and lobby as now; the next

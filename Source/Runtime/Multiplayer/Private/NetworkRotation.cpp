@@ -62,6 +62,11 @@ void NetworkWorld::Impl::finishRotation(RotationPhase phase, NetworkEventKind ki
 
 void NetworkWorld::Impl::rotationPlayerLeft(uint16_t slot) {
     ++rosterRevision;
+    if (rotation.phase == RotationPhase::Committed) {   // on its way to the next map
+        for (RotationPlayer& p : rotation.players)
+            if (p.slot == slot) p.left = true;
+        return;
+    }
     if (rotation.phase != RotationPhase::Preparing) return;
     auto& players = rotation.players;
     players.erase(
@@ -98,6 +103,7 @@ void NetworkWorld::Impl::commitRotation() {
     for (const RotationPlayer& player : rotation.players)
         if (Peer* p = peerForSlot(player.slot); p && player.ready) send(p->connection, commit);
     ++stats.rotationsCommitted;
+    committedAt = now;
     SW_LOG(
         LogNetwork, Info, "Map rotation to \"{}\" committed: {} players follow", rotation.level,
         rotation.players.size());
@@ -314,6 +320,16 @@ void NetworkWorld::abortRotation(ReasonCode reason, uint8_t returnTo) {
 }
 
 const MapRotation& NetworkWorld::rotation() const { return m_impl->rotation; }
+
+bool NetworkWorld::rotationHandedOver() const {
+    const Impl& impl = *m_impl;
+    if (impl.rotation.phase != RotationPhase::Committed) return false;
+    if (!impl.host() || !m_transport) return true;
+    if (impl.now >= impl.committedAt + kHandoverSeconds) return true;
+    return std::all_of(impl.rotation.players.begin(), impl.rotation.players.end(), [&](const RotationPlayer& p) {
+        return !p.ready || p.left;
+    });
+}
 
 NetworkStart NetworkWorld::nextStart() const {
     const Impl& impl = *m_impl;

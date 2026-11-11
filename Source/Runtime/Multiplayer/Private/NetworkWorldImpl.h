@@ -160,6 +160,7 @@ struct NetworkWorld::Impl final : TransportSink {
     std::vector<std::pair<PeerId, uint16_t>> reservations;   // host: not yet reclaimed
     double rejoinUntil = -1, retryAt = -1;   // client: the rejoin window and the next attempt
     bool handedOver = false;   // client: the host ended this session for the next map
+    double committedAt = -1;   // host: when the commit went out
     // Host: what a message from p means for the rotation; false when it isn't one.
     bool hostRotationMessage(Peer& p, const DecodedMessage& decoded);
     bool clientRotationMessage(const DecodedMessage& decoded);

@@ -32,6 +32,9 @@ A project without this file plays offline only. The first line is `shockwave_net
 | `max_receive_messages_per_pump` | 16..1024 | 256 | Messages an endpoint reads per frame, all peers together |
 | `manifest` | quoted path inside the project, ending .swnetmanifest | "Config/NetworkManifest.swnetmanifest" | The network manifest (.swnetmanifest), relative to the project folder |
 | `match_scene` | quoted path inside the project, ending .swscene, or "" | "" | The manifest scene Host plays (.swscene, relative to the project folder); empty: the manifest's first |
+| `map_rotation` | quoted level catalog IDs separated by spaces, or "" | "" | Level catalog IDs the host plays in turn, separated by spaces; empty: no rotation |
+| `rotation_ready_seconds` | 5..300 seconds | 30 | How long players have to load the next map before the host goes on |
+| `rotation_drop_unready` | 0, 1 | 1 | At the deadline: 1 goes on without players who aren't ready, 0 calls the map change off |
 
 Rules between keys, checked by `player --check`:
 
@@ -219,4 +222,4 @@ What the host tells clients happened, host to client in GameEvent messages. IDs 
 
 ## Schema digest
 
-With this registry: `e1e725039eaf3bcdb408cc503a22a9532371a1f89d452b548dcc30b68deb966c`.
+With this registry: `cc716dee85c0cef123cd6695dcbcf22cd8bb0cda38d9e0c179b255223c944742`.

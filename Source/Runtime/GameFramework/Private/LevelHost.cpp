@@ -458,12 +458,14 @@ bool LevelHost::holdForRotation() {
     const net::RotationPhase phase = network && network->state() != net::NetworkState::Failed
                                          ? network->rotation().phase
                                          : net::RotationPhase::Aborted;
-    if (phase == net::RotationPhase::Committed) return false;
+    // Committed: the host waits for its players to leave for the next map, so the commit
+    // reached them before this session (and its connections) ends.
+    if (phase == net::RotationPhase::Committed) return !network->rotationHandedOver();
     if (phase == net::RotationPhase::Preparing) {
         if (!m_rotationReadySent) {   // prepared: say so (the host may commit at once)
             m_rotationReadySent = true;
             network->rotationReady();
-            if (network->rotation().phase == net::RotationPhase::Committed) return false;
+            if (network->rotation().phase == net::RotationPhase::Committed) return !network->rotationHandedOver();
         }
         return true;
     }

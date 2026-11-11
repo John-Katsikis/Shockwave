@@ -1158,3 +1158,62 @@ W after the first travel; a focus only counts while its element is visible.
   - effect-off memory checks;
   - fallback-tier pictures.
 - **Orin**: not run. The record has the fields, and the docs say how to measure there.
+
+## S11: Map rotation, part 1
+
+Multiplayer matches change maps by **controlled session restart with lobby continuity**
+(plan section 19.1). See [Networking: Map rotation](Networking.md#map-rotation).
+
+### What was built
+
+- **Wire protocol 2**: `MapPrepare`, `MapReady`, `MapReject`, `MapCommit` and `MapAbort`,
+  and reason `MapRotation`. A level is named by its catalog ID, checked for safe characters,
+  never by a path. A v1 peer is refused as `ProtocolMismatch`; lobbies advertise
+  `sw_protocol 2`. `docs/NetworkProtocol.md` is regenerated.
+- **NetworkWorld**: `prepareRotation`, `rotationReady`, `rejectRotation`, `abortRotation`,
+  `rotation()`, `rotationHandedOver()` and `nextStart()`. The host commits when everyone is
+  ready, drops (or, by setting, calls it off for) whoever isn't at the deadline, refuses
+  joins while the map changes, and holds the ready players' slots in the next session. A
+  client stamps its rejoin `Hello` with the announced nonce and retries while the host
+  starts; a `Challenge` with another nonce is refused. The old session ends with
+  `Goodbye(MapRotation)`, which is not a failure and doesn't leave the lobby.
+- **LevelHost**: the host's request during network play becomes a rotation (reason
+  `OnlineMap`); a client follows each announcement with its own travel; both hold the
+  prepared level at the boundary until the commit (the host until its players have left
+  for the next map), then start the next level with the next session. A client's own
+  request is `AuthorityRequired`; a called-off change ends as `RotationAborted`.
+  `game.flow().rotateMap()` goes to the next level of `map_rotation`.
+- **OnlineMatch**: a `Rotating` state; the host closes the lobby to joins during the change
+  and then advertises the new map (`sw_scene`) and opens it again. A join plays the map the
+  lobby is on.
+- **Settings and checks**: `map_rotation`, `rotation_ready_seconds`,
+  `rotation_drop_unready` in `Network.swnetwork` (schema regenerated). `--check` reports
+  rotation levels missing from the catalog or not playing a manifest scene.
+- **Editor**: the Network window shows the map epoch, the rotation phase and who's ready.
+- **Command line**: `player --net-test --scenario map_rotation [--rotations N]`.
+
+### Evidence
+
+- `player --net-test --scenario map_rotation`, seed 1, 3 clients, 3 rotations: ok on clean
+  (longest 583 ms), cafe (967 ms), poor (1567 ms) and hostile (4733 ms); every slot
+  reclaimed.
+- Hostile, 11 clients, 10 rotations, seed 5: ok, 110 slots reclaimed, longest 5633 ms.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `network_map_rotation` | unit | a player never ready is dropped with `MapNotLoaded` and the rest go on in their slots; with `rotation_drop_unready 0` the change is called off and a later one works; a client that can't load the map is dropped with its reason; joins under way, during preparation and after the commit are refused with `MapRotation`; a newcomer on the next map doesn't take a held slot; host loss before the commit ends the match, after it the client times out; a next session with another nonce is refused; a raw peer's repeated ready and stale reject are ignored and an answer to an unannounced map is refused; real Play sessions through LevelHost: a client can't change maps, the host's request takes everyone to the next level in the same slots; the `map_rotation` scenario on every fault preset |
+| `network_wire` | unit | golden bytes of the five messages; level IDs with paths, dots first or spaces are refused; version 2 headers |
+
+### Still unverified
+
+- **Part 2**: 2, 12, 32 and 64 player runs with CPU, bandwidth and memory figures; queue and
+  update-rate degradation; kick, ready and team-balance controls; the 12-second outage and
+  re-authentication failure cases.
+- **Real-service gates**: two accounts on two machines over Steam (host, invite, play,
+  rotate, leave, rejoin); not run here, as there is no Steam in CI.
+- **The editor's own Play** doesn't rotate maps: it plays the open scene without the level
+  catalog. The player does.
+- **A client's duplicate `MapPrepare` or `MapCommit`** is handled in code (ignored and
+  counted) but not driven by a test: a raw host is needed for that.

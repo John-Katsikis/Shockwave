@@ -2,7 +2,7 @@
 
 Generated from `Source/Runtime/Network/Public/Network/Messages.h`; don't edit it by hand. Regenerate it with `build/bin/network_wire_test --write-reference docs/NetworkProtocol.md`.
 
-Protocol version 1. Every integer is little endian, every float is IEEE 754 single precision written as its bits, and every length counts bytes. A `string(N)` or `bytes(N)` is a u16 byte count followed by that many bytes. Offsets are from the start of the payload, and stop once a field has a variable length. No message may have bytes after its last field.
+Protocol version 2. Every integer is little endian, every float is IEEE 754 single precision written as its bits, and every length counts bytes. A `string(N)` or `bytes(N)` is a u16 byte count followed by that many bytes. Offsets are from the start of the payload, and stop once a field has a variable length. No message may have bytes after its last field.
 
 Reliable messages are at most 16384 bytes and unreliable ones 1152, header included. Each kind's delivery and direction are fixed: a message that arrives another way is rejected. An unknown version or kind closes the connection with ProtocolMismatch; any other bad message with MalformedPacket.
 
@@ -11,8 +11,8 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
 | 0 | `magic` | 4 bytes | ASCII `SWMP` |
-| 4 | `version` | u16 | 1 |
-| 6 | `kind` | u8 | 1..23, below |
+| 4 | `version` | u16 | 2 |
+| 6 | `kind` | u8 | 1..28, below |
 | 7 | `flags` | u8 | 0 |
 | 8 | `session` | 16 bytes | the host's session nonce; zero only in a developer direct-join Hello |
 | 24 | `sender_tick` | u32 | 0 before play |
@@ -45,6 +45,11 @@ Reliable messages are at most 16384 bytes and unreliable ones 1152, header inclu
 | 21 | ResyncRequest | reliable | client to host | active |
 | 22 | DeltaSnapshot | unreliable | host to client | active |
 | 23 | SnapshotAck | unreliable | client to host | active |
+| 24 | MapPrepare | reliable | host to client | active: announces the next map |
+| 25 | MapReady | reliable | client to host | answers MapPrepare once prepared |
+| 26 | MapReject | reliable | client to host | answers MapPrepare when it can't |
+| 27 | MapCommit | reliable | host to client | to ready clients: reconnect to the next session |
+| 28 | MapAbort | reliable | host to client | calls a rotation off |
 
 ### 1 Hello
 
@@ -224,14 +229,14 @@ An authored object (`prefab_id` 0) has an `authored_key`; a spawned prefab has a
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
-| 0 | `reason_code` | u16 reason | 0..14 |
+| 0 | `reason_code` | u16 reason | 0..15 |
 | 2 | `diagnostic` | string(160) | 0..160 bytes UTF-8, no NUL |
 
 ### 20 Goodbye
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
-| 0 | `reason_code` | u16 reason | 0..14 |
+| 0 | `reason_code` | u16 reason | 0..15 |
 
 ### 21 ResyncRequest
 
@@ -265,6 +270,57 @@ Bit i of `received_bits` is `latest_tick - 1 - i`.
 |---|---|---|---|
 | 0 | `latest_tick` | u32 |  |
 | 4 | `received_bits` | u32 |  |
+
+### 24 MapPrepare
+
+`level_id` is a level catalog ID (letters, digits, `_`, `-`, `.`; not starting with `.`), never a path.
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `transition_id` | u32 | >= 1 |
+| 4 | `next_epoch` | u32 | >= 2 |
+| 8 | `level_id` | string(64) | 1..64 bytes UTF-8, no NUL |
+|  | `scene_id` | u16 | >= 1 |
+|  | `schema_digest` | digest (32 bytes, SHA-256) |  |
+|  | `content_digest` | digest (32 bytes, SHA-256) |  |
+|  | `roster_revision` | u32 |  |
+|  | `load_deadline_ms` | u32 | 1000..600000 |
+
+### 25 MapReady
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `transition_id` | u32 | >= 1 |
+| 4 | `next_epoch` | u32 | >= 2 |
+| 8 | `content_digest` | digest (32 bytes, SHA-256) |  |
+
+### 26 MapReject
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `transition_id` | u32 | >= 1 |
+| 4 | `reason_code` | u16 reason | 0..15 |
+
+### 27 MapCommit
+
+Sent only to clients that answered MapReady. A rejoining client stamps its Hello's header with `session_nonce`, which reclaims its slot in the next session.
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `transition_id` | u32 | >= 1 |
+| 4 | `next_epoch` | u32 | >= 2 |
+| 8 | `start_tick` | u32 |  |
+| 12 | `session_nonce` | 16 bytes |  |
+
+### 28 MapAbort
+
+`return_to` 0: stay on the current map; 1: go back to the menu.
+
+| Offset | Field | Type | Allowed |
+|---|---|---|---|
+| 0 | `transition_id` | u32 | >= 1 |
+| 4 | `reason_code` | u16 reason | 0..15 |
+| 6 | `return_to` | u8 | 0..1 |
 
 ## Input command (24 bytes)
 
@@ -324,3 +380,4 @@ Profiles 1..31 belong to the engine and 32..1023 to games.
 | 12 | SimulationOverrun |
 | 13 | ServiceUnavailable |
 | 14 | UnsupportedFeature |
+| 15 | MapRotation |
