@@ -678,6 +678,54 @@ Arena does this: `arena.shot_resolved` (shooter, life, input tick, ordinal, orig
 victim, damage) for every player's shot, `arena.player_died` for the kill feed and
 `arena.round_changed`. Its HUD's health, ammo and scores still come from snapshots.
 
+## Map rotation
+
+A match changes maps by **controlled session restart with lobby continuity** (shipping plan
+S11). Nothing of the old map's session survives: no Jolt state, network objects, IDs,
+baselines, histories or events. The lobby and its members stay, and every player gets its
+slot back.
+
+1. **Announce.** The host asks for a level (`game.flow().request(...)` or
+   `game.flow().rotateMap()`). LevelHost turns it into a rotation: `NetworkWorld::prepareRotation`
+   sends `MapPrepare` (transition ID, next map epoch, level catalog ID, scene ID, digests,
+   roster revision, load deadline) to every Active client. Anyone still joining is refused
+   with `MapRotation`, as is anyone who connects until the next map is up; the lobby is
+   closed to joins and says `sw_state "changing map"`.
+2. **Prepare.** Each client checks the level is in its catalog and plays the same manifest
+   scene, starts its own travel (reason `OnlineMap`) and loads the level beside the one
+   still playing. Prepared, it answers `MapReady`; if it can't, `MapReject` with a reason.
+   The host prepares too.
+3. **Commit.** Once the host and every announced client are ready, the host sends
+   `MapCommit` with the next session's nonce to the ready clients. At the deadline
+   (`rotation_ready_seconds`) it drops players who aren't ready with `MapNotLoaded`, or,
+   with `rotation_drop_unready 0`, calls the change off with `MapAbort` (travel ends as
+   `RotationAborted`; the current map plays on). A client that rejects is dropped (or the
+   change is called off) at once.
+4. **Restart.** Each side's LevelHost crosses the boundary: the old session ends with
+   `Goodbye(MapRotation)` (which is not a failure, and doesn't leave the lobby), and the
+   next level starts with `NetworkWorld::nextStart()`. The host listens with the announced
+   nonce and holds the ready players' slots; a client reconnects (retrying every 0.25 s
+   while the host starts) and stamps its `Hello` with the nonce, which the host's
+   `Challenge` must carry back. Old messages can't reach the new session: they belong to
+   closed connections and another nonce.
+5. **Resume.** Each client gets a fresh baseline and is Active again on map epoch + 1. The
+   lobby advertises the new map (`sw_scene`) and opens to joins; a newcomer plays the map
+   the lobby is on.
+
+The host leaving during preparation ends the match (`HostLeft`); a host that never starts
+the next map makes clients time out (`Timeout`) after the rejoin window. Host migration is
+a separate, later feature.
+
+Settings: `map_rotation` (level catalog IDs in order, separated by spaces; empty: no
+rotation), `rotation_ready_seconds` (5 to 300, default 30) and `rotation_drop_unready`
+(default 1). `--check` reports rotation levels that aren't in the catalog or don't play a
+manifest scene. The editor's Network window shows the map epoch, the rotation's phase and
+who's ready. `player --net-test --scenario map_rotation [--rotations N]` runs rotations over
+the loopback hub with every fault preset; `network_map_rotation` tests the edge cases.
+
+Wire protocol 2 added the five messages and reason `MapRotation`; a v1 peer is refused as
+`ProtocolMismatch`, and lobbies advertise `sw_protocol 2`.
+
 ## The wire protocol
 
 Every message is a 32-byte header (`SWMP`, version, kind, flags, session nonce, sender

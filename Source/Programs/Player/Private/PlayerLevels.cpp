@@ -266,6 +266,19 @@ shockwave::LevelHost::Hooks Player::levelHooks() {
         session.setOnlineMatch(m_match.configured() ? &m_match : nullptr);
         if (m_levelNetworkStart) session.setNetworkStart(*m_levelNetworkStart, m_levelServices);
     };
+    // Online map rotation: a level's scene as the network manifest numbers it.
+    hooks.networkScene = [this](const std::string& level, std::string& error) -> uint16_t {
+        const fs::path scene = sceneForLevel(level);
+        if (scene.empty()) {
+            error = "no level \"" + level + "\" in the catalog";
+            return 0;
+        }
+        const std::string relative = m_project.relative(scene);
+        for (const auto& [id, path] : m_match.setup().scenes)
+            if (path == relative) return id;
+        error = relative + " isn't a scene of the network manifest";
+        return 0;
+    };
     hooks.started = [this](shockwave::PlaySession&, const shockwave::LevelRequest&) {
         // --camera named an entity of the first level; later levels use their own camera.
         if (m_levels && m_levels->epoch() > 1) m_toolCamera = shockwave::kNullEntity;

@@ -82,6 +82,7 @@ const char* travelErrorName(TravelError error) {
     case TravelError::StartFailed: return "StartFailed";
     case TravelError::Cancelled: return "Cancelled";
     case TravelError::RedirectCycle: return "RedirectCycle";
+    case TravelError::RotationAborted: return "RotationAborted";
     }
     return "None";
 }
@@ -142,6 +143,7 @@ TravelTicket LevelFlow::request(TravelRequest request) const {
 TravelTicket LevelFlow::restartLevel() const { return m_flow ? m_flow->restartLevel(m_epoch) : refused(); }
 TravelTicket LevelFlow::returnToMenu() const { return m_flow ? m_flow->returnToMenu(m_epoch) : refused(); }
 TravelTicket LevelFlow::useExit(Entity exit) const { return m_flow ? m_flow->useExit(exit, m_epoch) : refused(); }
+TravelTicket LevelFlow::rotateMap() const { return m_flow ? m_flow->rotateMap(m_epoch) : refused(); }
 TravelError LevelFlow::cancel(uint64_t ticket) const {
     return m_flow ? m_flow->cancel(ticket) : TravelError::UnknownTicket;
 }

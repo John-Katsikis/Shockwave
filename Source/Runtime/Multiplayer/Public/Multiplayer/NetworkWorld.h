@@ -145,12 +145,72 @@ struct NetworkStart {
     // Record every message this session sends and receives into this open capture
     // (Network/CaptureTransport.h), AuthTicket bytes redacted. It must outlive the session.
     CaptureWriter* capture = nullptr;
+    // ---- Map rotation (filled by nextStart(); the first map leaves them as they are) ----
+    uint32_t mapEpoch = 1;   // which map of the match this session plays, from 1
+    // The session's nonce, decided by the previous session's MapCommit. Host: used instead
+    // of a random one. Client: its Hello carries it, and the host's Challenge must too.
+    bool presetSession = false;
+    Nonce session{};
+    // Host: the players who were ready, by peer, and the slots they get back when they
+    // rejoin within reservationSeconds. Nobody else takes a reserved slot meanwhile.
+    std::vector<std::pair<PeerId, uint16_t>> reservedSlots;
+    double reservationSeconds = 0;
+    // Client: how long to keep trying to reach the host's next session (it may still be
+    // starting). 0: one attempt, as for a first join.
+    double rejoinSeconds = 0;
+};
+
+// Map rotation (docs/Networking.md, "Map rotation"): the host announces the next map,
+// every Active client prepares it while the current one plays on, and the host commits
+// once everyone is ready (or the deadline passes): this session ends and every peer
+// reconnects to the next one, in the same lobby and slot. LevelHost drives it; tools and
+// tests can call it directly.
+enum class RotationPhase : uint8_t {
+    Idle,
+    Preparing,   // announced: waiting for MapReady (host) or our own preparation (client)
+    Committed,   // the next session is decided (nextStart()); this one is about to end
+    Aborted,   // called off (rotation().abortReason); the current map plays on
+};
+const char* rotationPhaseName(RotationPhase phase);
+
+struct MapRotationRequest {
+    std::string level;   // a level catalog ID (MapPrepare's rules)
+    uint16_t sceneId = 1;   // its scene's manifest ID
+    double readySeconds = 30;   // the load deadline
+    bool dropUnready = true;   // at the deadline: drop who isn't ready (else abort)
+};
+
+struct RotationPlayer {
+    uint16_t slot = 0;
+    PeerId peer;
+    bool ready = false;
+    ReasonCode rejected = ReasonCode::Normal;   // MapReject's reason, or Normal
+    bool left = false;   // after the commit: it closed this session to join the next
+};
+
+struct MapRotation {
+    RotationPhase phase = RotationPhase::Idle;
+    uint32_t transitionId = 0;   // 0 until the first rotation
+    uint32_t nextEpoch = 0;
+    std::string level;
+    uint16_t sceneId = 0;
+    double deadline = 0;   // on the session's clock (pump's nowSeconds)
+    bool localReady = false;   // this machine has prepared the map
+    bool dropUnready = true;
+    ReasonCode abortReason = ReasonCode::Normal;
+    uint8_t returnTo = 0;   // MapAbort::kStay or kMenu
+    Nonce nextSession{};   // Committed: the next session's nonce
+    std::vector<RotationPlayer> players;   // host: the Active clients when it was announced
+    uint64_t duplicates = 0;   // repeated MapPrepare or MapCommit, ignored
 };
 
 enum class NetworkEventKind : uint8_t {
     StateChanged,   // state() changed; `state` is the new one
     PlayerJoined,   // host: a client was admitted (Welcome sent) in `slot`
     PlayerLeft,   // host: an admitted client left or was dropped
+    RotationPrepared,   // a map rotation was announced (rotation())
+    RotationCommitted,   // it's decided: the next session starts (nextStart())
+    RotationAborted,   // it was called off; `reason` says why
 };
 
 struct NetworkEvent {
@@ -281,6 +341,12 @@ struct NetworkWorldStats {
     uint64_t gameEventsSent = 0;   // host: events made (each goes to every Active client)
     uint64_t gameEventsReceived = 0, duplicateEvents = 0;   // client
     uint64_t gameEventsMissed = 0;   // readers that fell more than kGameEventHistory behind
+    // Map rotation.
+    uint64_t rotationsPrepared = 0, rotationsCommitted = 0, rotationsAborted = 0;
+    uint64_t rotationDrops = 0;   // host: players dropped for not being ready
+    uint64_t rotationRefusals = 0;   // host: joins refused while the map changes
+    uint64_t rejoinAttempts = 0;   // client: connection attempts to the next session
+    uint64_t slotsReclaimed = 0;   // host: rejoining players given their old slot
     // Cost: time in pump, drain, prepareStep, endTick and present, and the part of it a
     // client spent replaying predicted movement (physics). Nanoseconds, from the start.
     uint64_t workNanos = 0, replayNanos = 0;
@@ -398,6 +464,30 @@ public:
     // Host: sends player `slot` away with this reason (Reject, then the connection
     // closes). False if no admitted client has that slot.
     bool disconnect(uint16_t slot, ReasonCode reason);
+
+    // ---- Map rotation ----
+    // Host: announces the next map to every Active client (MapPrepare). Clients still in
+    // the handshake are refused with MapRotation, as is anyone who connects until the
+    // next session starts. Refused while one is under way.
+    NetResult<void> prepareRotation(const MapRotationRequest& request);
+    // Both sides: this machine has prepared the map. A client answers MapReady; the host
+    // commits once every announced client is ready too.
+    void rotationReady();
+    // Client: it can't prepare the map (MapReject with this reason). Host: aborts.
+    void rejectRotation(ReasonCode reason);
+    // Host: calls it off (MapAbort to everyone announced).
+    void abortRotation(ReasonCode reason, uint8_t returnTo = MapAbort::kStay);
+    const MapRotation& rotation() const;
+    // Committed, and safe to end this session: a client at once; the host once every
+    // player it committed to has left for the next map (so the commit reached them), or
+    // kHandoverSeconds after the commit.
+    bool rotationHandedOver() const;
+    static constexpr double kHandoverSeconds = 3;
+    // The map epoch this session plays (NetworkStart::mapEpoch).
+    uint32_t mapEpoch() const { return m_start.mapEpoch; }
+    // Committed: how to start the next session (role, address and lobby as now; the next
+    // scene, epoch and nonce; the host's reserved slots, or a client's rejoin window).
+    NetworkStart nextStart() const;
 
     // ---- Input and commands ----
     // Client, once per fixed tick while Active: sends this command for the next host tick

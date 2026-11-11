@@ -41,6 +41,7 @@ std::string allowed(const NetworkSettingField& field) {
     }
     case SettingKind::Integer: return number(field.min) + ".." + number(field.max);
     case SettingKind::Seconds: return number(field.min) + ".." + number(field.max) + " seconds";
+    case SettingKind::Text: return "quoted level catalog IDs separated by spaces, or \"\"";
     case SettingKind::Path:
         return std::string(field.key) == "match_scene" ? "quoted path inside the project, ending .swscene, or \"\""
                                                        : "quoted path inside the project, ending .swnetmanifest";
@@ -295,6 +296,8 @@ std::string networkInfoJson(const NetworkInfo& info) {
                 out += jsonQuote(settingText(s, field));
             else if (field.kind == SettingKind::Path)
                 out += jsonQuote(std::string_view(field.key) == "match_scene" ? s.matchScene : s.manifest);
+            else if (field.kind == SettingKind::Text)
+                out += jsonQuote(s.mapRotation);
             else if (std::string_view(field.key) == "steam_app_id")
                 out += jsonU64(s.steamAppId);   // an ID: a string, like every ID in network JSON
             else

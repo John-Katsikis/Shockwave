@@ -179,6 +179,11 @@ int main(int argc, char** argv) {
                 clearPipelineCache = true;
                 continue;
             }
+            // Kept out of the else-if chain below: MSVC refuses chains this long (C1061).
+            if (arg == "--rotations" && i + 1 < argc) {
+                netTest.rotations = uint32_t(wholeNumber(argv[++i], 100, "--rotations"));
+                continue;
+            }
             if ((arg == "--save-info" || arg == "--save-migrate") && i + 1 < argc) {
                 (arg == "--save-info" ? saveInfoFile : saveMigrateFile) = argv[++i];
                 continue;
@@ -728,7 +733,7 @@ int main(int argc, char** argv) {
                     "                                    start Steam for the project's steam_app_id, print\n"
                     "                                    sign-in and relay status, shut it down\n"
                     "player --net-test [--scenario handshake|rejections|stop-start|replication|prediction] [--seed N]\n"
-                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--json file]\n"
+                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--rotations N] [--json file]\n"
                     "                                    run the session handshake over an in-process\n"
                     "                                    loopback network; no Steam, sockets or window\n"
                     "player --net-preview [clean|cafe|poor|hostile]\n"

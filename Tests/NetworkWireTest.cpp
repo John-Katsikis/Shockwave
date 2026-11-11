@@ -14,6 +14,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -59,48 +60,57 @@ struct GoldenMessage {
 
 // Golden bytes (see the comment at the top of this file).
 const GoldenMessage kGolden[] = {
-    {"Hello", "53574d500100010000000000000000000000000000000000000000006400000008006172656e612e763101080f161d24"
+    {"Hello", "53574d500200010000000000000000000000000000000000000000006400000008006172656e612e763101080f161d24"
               "2b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da030e19242f3a45505b66717c87929da8b3bec9d4dfea"
               "f5000b16212c37424d5801000100000001001001c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"},
-    {"Challenge", "53574d5001000200101112131415161718191a1b1c1d1e1f000000006c000000c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
+    {"Challenge", "53574d5002000200101112131415161718191a1b1c1d1e1f000000006c000000c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
                   "08006172656e612e763101080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da030e19242f3a"
                   "45505b66717c87929da8b3bec9d4dfeaf5000b16212c37424d580100020000000100100178001e006400c800"},
-    {"AuthTicket", "53574d5001000300101112131415161718191a1b1c1d1e1f00000000070000000500deadbeef01"},
-    {"Welcome", "53574d5001000400101112131415161718191a1b1c1d1e1f000000000c000000030007000000efcdab000002"},
-    {"BaselineBegin", "53574d5001000500101112131415161718191a1b1c1d1e1f000000000e00000007000000efcdab0002008a000000"},
-    {"Spawn", "53574d5001000600101112131415161718191a1b1c1d1e1f000000001d00000001000000020000000100000001000000"
+    {"AuthTicket", "53574d5002000300101112131415161718191a1b1c1d1e1f00000000070000000500deadbeef01"},
+    {"Welcome", "53574d5002000400101112131415161718191a1b1c1d1e1f000000000c000000030007000000efcdab000002"},
+    {"BaselineBegin", "53574d5002000500101112131415161718191a1b1c1d1e1f000000000e00000007000000efcdab0002008a000000"},
+    {"Spawn", "53574d5002000600101112131415161718191a1b1c1d1e1f000000001d00000001000000020000000100000001000000"
               "03000100000020000300010203"},
-    {"Despawn", "53574d5001000700101112131415161718191a1b1c1d1e1f000000000d000000020000002a0000000000000001"},
-    {"Ownership", "53574d5001000800101112131415161718191a1b1c1d1e1f0000000012000000030000002a0000000000000002000000"
+    {"Despawn", "53574d5002000700101112131415161718191a1b1c1d1e1f000000000d000000020000002a0000000000000001"},
+    {"Ownership", "53574d5002000800101112131415161718191a1b1c1d1e1f0000000012000000030000002a0000000000000002000000"
                   "0400"},
-    {"InitialState", "53574d5001000900101112131415161718191a1b1c1d1e1f000000004b0000000700000001002a000000000000000200"
+    {"InitialState", "53574d5002000900101112131415161718191a1b1c1d1e1f000000004b0000000700000001002a000000000000000200"
                      "0000010035000000c03f000010c000007a440000000000000000000000000000803f0000003f00000000000040c00000"
                      "00000000a03f0000000002"},
-    {"BaselineEnd", "53574d5001000a00101112131415161718191a1b1c1d1e1f0000000028000000070000000300000005121f2c39465360"
+    {"BaselineEnd", "53574d5002000a00101112131415161718191a1b1c1d1e1f0000000028000000070000000300000005121f2c39465360"
                     "6d7a8794a1aebbc8d5e2effc091623303d4a5764717e8b98"},
-    {"Ready", "53574d5001000b00101112131415161718191a1b1c1d1e1f00000000240000000700000005121f2c394653606d7a8794"
+    {"Ready", "53574d5002000b00101112131415161718191a1b1c1d1e1f00000000240000000700000005121f2c394653606d7a8794"
               "a1aebbc8d5e2effc091623303d4a5764717e8b98"},
-    {"Active", "53574d5001000c00101112131415161718191a1b1c1d1e1fe803000014000000e8030000ec0300002a00000000000000"
+    {"Active", "53574d5002000c00101112131415161718191a1b1c1d1e1fe803000014000000e8030000ec0300002a00000000000000"
                "02000000"},
-    {"Inputs", "53574d5001000d00101112131415161718191a1b1c1d1e1fec0300003100000002ec030000020000005aa6008050fb01"
+    {"Inputs", "53574d5002000d00101112131415161718191a1b1c1d1e1fec0300003100000002ec030000020000005aa6008050fb01"
                "000000e60300000040ed03000002000000007fffffff7f03000300e70300000000"},
-    {"Snapshot", "53574d5001000e00101112131415161718191a1b1c1d1e1ff20300006b00000037000000f20300000300000000000100"
+    {"Snapshot", "53574d5002000e00101112131415161718191a1b1c1d1e1ff20300006b00000037000000f20300000300000000000100"
                  "02002a0000000000000002000000010035000000c03f000010c000007a440000000000000000000000000000803f0000"
                  "003f00000000000040c0000000000000a03f0000000002010000000100100100000000210004000a0b0c0d"},
-    {"Command", "53574d5001000f00101112131415161718191a1b1c1d1e1fed0300001100000009000000000000000000000020000100"
+    {"Command", "53574d5002000f00101112131415161718191a1b1c1d1e1fed0300001100000009000000000000000000000020000100"
                 "01"},
-    {"GameEvent", "53574d5001001000101112131415161718191a1b1c1d1e1ff40300001c00000004000000f40300002a00000000000000"
+    {"GameEvent", "53574d5002001000101112131415161718191a1b1c1d1e1ff40300001c00000004000000f40300002a00000000000000"
                   "210008000001020304050607"},
-    {"Ping", "53574d5001001100101112131415161718191a1b1c1d1e1ff50300000c0000004d0000009078563412000000"},
-    {"Pong", "53574d5001001200101112131415161718191a1b1c1d1e1ff5030000200000004d0000009078563412000000404b4c00"
+    {"Ping", "53574d5002001100101112131415161718191a1b1c1d1e1ff50300000c0000004d0000009078563412000000"},
+    {"Pong", "53574d5002001200101112131415161718191a1b1c1d1e1ff5030000200000004d0000009078563412000000404b4c00"
              "000000003a4c4c0000000000f5030000"},
-    {"Reject", "53574d5001001300101112131415161718191a1b1c1d1e1f000000001200000003000e00736572766572206973206675"
+    {"Reject", "53574d5002001300101112131415161718191a1b1c1d1e1f000000001200000003000e00736572766572206973206675"
                "6c6c"},
-    {"Goodbye", "53574d5001001400101112131415161718191a1b1c1d1e1ff6030000020000000a00"},
-    {"ResyncRequest", "53574d5001001500101112131415161718191a1b1c1d1e1ff103000005000000f103000002"},
-    {"DeltaSnapshot", "53574d5001001600101112131415161718191a1b1c1d1e1ffc0300001a000000fc030000f60300000300000001000205"
+    {"Goodbye", "53574d5002001400101112131415161718191a1b1c1d1e1ff6030000020000000a00"},
+    {"ResyncRequest", "53574d5002001500101112131415161718191a1b1c1d1e1ff103000005000000f103000002"},
+    {"DeltaSnapshot", "53574d5002001600101112131415161718191a1b1c1d1e1ffc0300001a000000fc030000f60300000300000001000205"
                       "000c0002000300a53c0f"},
-    {"SnapshotAck", "53574d5001001700101112131415161718191a1b1c1d1e1ffd03000008000000fc03000001000080"},
+    {"SnapshotAck", "53574d5002001700101112131415161718191a1b1c1d1e1ffd03000008000000fc03000001000080"},
+    {"MapPrepare", "53574d5002001800101112131415161718191a1b1c1d1e1f060400005b00000001000000020000000700666163746f72"
+                   "79020001080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3da030e19242f3a45505b66717c87"
+                   "929da8b3bec9d4dfeaf5000b16212c37424d580700000030750000"},
+    {"MapReady", "53574d5002001900101112131415161718191a1b1c1d1e1f07040000280000000100000002000000030e19242f3a4550"
+                 "5b66717c87929da8b3bec9d4dfeaf5000b16212c37424d58"},
+    {"MapReject", "53574d5002001a00101112131415161718191a1b1c1d1e1f0704000006000000010000000b00"},
+    {"MapCommit", "53574d5002001b00101112131415161718191a1b1c1d1e1f080400001c000000010000000200000000000000c0c1c2c3"
+                  "c4c5c6c7c8c9cacbcccdcecf"},
+    {"MapAbort", "53574d5002001c00101112131415161718191a1b1c1d1e1f0804000007000000010000000b0000"},
 };
 const char* kPoseHex =
     "0000c03f000010c000007a440000000000000000000000000000803f0000003f00000000000040c0000000000000a03f0000000002";
@@ -228,6 +238,11 @@ static Built goldenMessage(size_t index) {
         return {
             DeltaSnapshot{1020, 1014, 3, DeltaSnapshot::kHasBaseline, 0, 2, 5, 12, 2, kDeltaPayload}, kSession, 1020};
     case 23: return {SnapshotAck{1020, 0x80000001u}, kSession, 1021};
+    case 24: return {MapPrepare{1, 2, "factory", 2, kSchema, kContent, 7, 30000}, kSession, 1030};
+    case 25: return {MapReady{1, 2, kContent}, kSession, 1031};
+    case 26: return {MapReject{1, ReasonCode::MapNotLoaded}, kSession, 1031};
+    case 27: return {MapCommit{1, 2, 0, kClientNonce}, kSession, 1032};
+    case 28: return {MapAbort{1, ReasonCode::MapNotLoaded, MapAbort::kStay}, kSession, 1032};
     }
     std::abort();
 }
@@ -261,7 +276,11 @@ static void testGolden() {
         const Built built = goldenMessage(i);
         CHECK(kindOf(built.body) == d.kind);
         const std::vector<uint8_t> encoded = encode(built);
-        if (encoded != golden) std::fprintf(stderr, "  %s: encoded bytes differ from golden\n", d.name);
+        if (encoded != golden) {
+            std::string hex;
+            for (const uint8_t b : encoded) hex += std::format("{:02x}", b);
+            std::fprintf(stderr, "  %s: encoded bytes differ from golden: %s\n", d.name, hex.c_str());
+        }
         CHECK(encoded == golden);
 
         DecodedMessage decoded;
@@ -279,6 +298,16 @@ static void testGolden() {
         uint32_t written = 0;
         CHECK(bool(encodeMessage(decoded.body, decoded.header.session, decoded.header.senderTick, out, written)));
         CHECK(std::vector<uint8_t>(out.begin(), out.begin() + written) == golden);
+    }
+
+    // MapPrepare names a level by catalog ID, never a path.
+    {
+        std::vector<uint8_t> out2(kMaxReliableMessageBytes);
+        uint32_t written2 = 0;
+        for (const char* bad : {"../secret", ".hidden", "a/b", "c:\\x", "two words"})
+            CHECK(!encodeMessage(MapPrepare{1, 2, bad, 2, {}, {}, 0, 30000}, {}, 0, out2, written2));
+        CHECK(bool(encodeMessage(MapPrepare{1, 2, "map-2_b.v1", 2, {}, {}, 0, 30000}, {}, 0, out2, written2)));
+        CHECK(!encodeMessage(MapPrepare{1, 2, "factory", 2, {}, {}, 0, 500}, {}, 0, out2, written2));
     }
 
     // Spot checks of decoded values.
@@ -315,7 +344,7 @@ static void testHeaderLayout() {
     CHECK(kHeaderBytes == 32);
     CHECK(bytes.size() == 34);
     CHECK(std::memcmp(bytes.data(), "SWMP", 4) == 0);
-    CHECK(bytes[4] == 1 && bytes[5] == 0);   // version 1, little endian
+    CHECK(bytes[4] == 2 && bytes[5] == 0);   // version 2, little endian
     CHECK(bytes[6] == 20);   // kind
     CHECK(bytes[7] == 0);   // flags
     CHECK(std::memcmp(bytes.data() + 8, kSession.data(), 16) == 0);
@@ -379,7 +408,7 @@ static void testBadHeaders() {
         return b;
     };
     CHECK(decodeAs(with(0, 'X'), MessageKind::Goodbye).code == WireStatusCode::BadMagic);
-    WireStatus version = decodeAs(with(4, 2), MessageKind::Goodbye);
+    WireStatus version = decodeAs(with(4, 1), MessageKind::Goodbye);   // a v1 peer
     CHECK(version.code == WireStatusCode::BadVersion);
     CHECK(version.reason() == ReasonCode::ProtocolMismatch);
     WireStatus kind0 = decodeAs(with(6, 0), MessageKind::Goodbye);
@@ -393,7 +422,7 @@ static void testBadHeaders() {
     CHECK(decodeAs(with(28, 3), MessageKind::Goodbye).code == WireStatusCode::LengthMismatch);
     CHECK(decodeAs(with(31, 1), MessageKind::Goodbye).code == WireStatusCode::LengthMismatch);
     // An unknown reason code.
-    CHECK(decodeAs(with(32, 15), MessageKind::Goodbye).code == WireStatusCode::OutOfRange);
+    CHECK(decodeAs(with(32, 16), MessageKind::Goodbye).code == WireStatusCode::OutOfRange);
 
     // Size limits: unreliable messages are capped at 1152 bytes, reliable at 16384.
     std::vector<uint8_t> ping = unhex(kGolden[16].hex);
@@ -544,7 +573,7 @@ static void testRanges() {
     const std::vector<uint8_t> ticket(kMaxAuthTicketBytes + 1, 1);
     CHECK(encodeStatus(AuthTicket{ticket}).code == WireStatusCode::OutOfRange);
     CHECK(bool(encodeStatus(AuthTicket{std::span(ticket).first(kMaxAuthTicketBytes)})));
-    CHECK(encodeStatus(Reject{ReasonCode(15), ""}).code == WireStatusCode::OutOfRange);
+    CHECK(encodeStatus(Reject{ReasonCode(16), ""}).code == WireStatusCode::OutOfRange);
 
     // A Snapshot that doesn't fit an unreliable message.
     std::vector<uint8_t> many(4096);

@@ -63,12 +63,16 @@ struct NetworkSettings {
     uint32_t maxReceiveMessagesPerPump = 256;
     std::string manifest = "Config/NetworkManifest.swnetmanifest";   // project-relative
     std::string matchScene;   // project-relative; empty: the manifest's first scene
+    // Map rotation (S11): level catalog IDs, in order, separated by spaces; empty: none.
+    std::string mapRotation;
+    double rotationReadySeconds = 30;   // how long players have to load the next map
+    bool rotationDropUnready = true;   // at the deadline: go without them (else call it off)
     bool operator==(const NetworkSettings&) const = default;
 };
 
 // ---- The descriptor table ----------------------------------------------------------------
 
-enum class SettingKind { Bool, Choice, Integer, Seconds, Path };
+enum class SettingKind { Bool, Choice, Integer, Seconds, Path, Text };
 
 struct NetworkSettingField {
     const char* key;
@@ -114,6 +118,9 @@ struct NetworkSettingsFile {
 void validateNetworkSettings(
     const NetworkSettings& settings, double projectTickRate, std::string_view shown, const NetworkSettingsFile* lines,
     std::vector<NetProblem>& problems);
+// The level IDs of map_rotation, in order.
+std::vector<std::string> mapRotationLevels(const NetworkSettings& settings);
+
 bool hasErrors(std::span<const NetProblem> problems);
 
 // ---- Files ------------------------------------------------------------------------------

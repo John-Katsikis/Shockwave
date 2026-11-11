@@ -46,6 +46,11 @@ constexpr MessageDescriptor kCatalog[] = {
     {MessageKind::ResyncRequest, "ResyncRequest", R, ToHost, "active"},
     {MessageKind::DeltaSnapshot, "DeltaSnapshot", U, ToClient, "active"},
     {MessageKind::SnapshotAck, "SnapshotAck", U, ToHost, "active"},
+    {MessageKind::MapPrepare, "MapPrepare", R, ToClient, "active: announces the next map"},
+    {MessageKind::MapReady, "MapReady", R, ToHost, "answers MapPrepare once prepared"},
+    {MessageKind::MapReject, "MapReject", R, ToHost, "answers MapPrepare when it can't"},
+    {MessageKind::MapCommit, "MapCommit", R, ToClient, "to ready clients: reconnect to the next session"},
+    {MessageKind::MapAbort, "MapAbort", R, ToClient, "calls a rotation off"},
 };
 static_assert(std::size(kCatalog) == kLastMessageKind);
 
@@ -129,6 +134,15 @@ const char* Spawn::invalid() const {
 }
 
 const char* Snapshot::invalid() const { return partIndex < partCount ? nullptr : "part_index"; }
+
+const char* MapPrepare::invalid() const {
+    if (levelId.empty() || levelId.front() == '.') return "level_id";
+    for (const char c : levelId)
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+              c == '.'))
+            return "level_id";
+    return nullptr;
+}
 
 const char* DeltaSnapshot::invalid() const {
     if (partIndex >= partCount) return "part_index";
@@ -484,6 +498,16 @@ std::string protocolReferenceMarkdown() {
         "most `slot_count`. `baseline_tick` is 0 unless `flags` has bit 0 (has baseline), and then comes before "
         "`snapshot_tick`. The payload's bit layout is in docs/Networking.md (Delta snapshots).");
     section(c[22], fieldTable<SnapshotAck>(), "Bit i of `received_bits` is `latest_tick - 1 - i`.");
+    section(
+        c[23], fieldTable<MapPrepare>(),
+        "`level_id` is a level catalog ID (letters, digits, `_`, `-`, `.`; not starting with `.`), never a path.");
+    section(c[24], fieldTable<MapReady>(), "");
+    section(c[25], fieldTable<MapReject>(), "");
+    section(
+        c[26], fieldTable<MapCommit>(),
+        "Sent only to clients that answered MapReady. A rejoining client stamps its Hello's header with "
+        "`session_nonce`, which reclaims its slot in the next session.");
+    section(c[27], fieldTable<MapAbort>(), "`return_to` 0: stay on the current map; 1: go back to the menu.");
 
     md += std::format("## Input command ({} bytes)\n\n", kInputCommandBytes);
     md += "`yaw` 0..65535 maps to -pi..pi (exclusive), `pitch` -32767..32767 to -89..89 degrees. ";

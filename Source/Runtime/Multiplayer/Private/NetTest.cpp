@@ -21,7 +21,8 @@ namespace shockwave::net {
 
 namespace {
 
-constexpr const char* kScenarios[] = {"handshake", "rejections", "stop-start", "replication", "prediction"};
+constexpr const char* kScenarios[] = {"handshake",   "rejections", "stop-start",
+                                      "replication", "prediction", "map_rotation"};
 constexpr uint64_t kHostIdentity = 1000;
 
 struct Node {
@@ -156,6 +157,13 @@ public:
         m_replication.expiredSnapshots += s.expiredSnapshots;
         m_replication.resyncRequests += w.role() == NetworkRole::Client ? s.resyncRequests : 0;
         m_replication.controlQueueHigh = std::max(m_replication.controlQueueHigh, s.controlQueueHigh);
+    }
+    // Map rotation: the node's session ends and the next one starts from `start`.
+    bool restart(Node& node, const NetworkStart& start, std::vector<std::string>& errors) {
+        node.world->close();
+        node.world = std::make_unique<NetworkWorld>(start, node.services.get(), node.scene.get());
+        node.joinMs = -1;
+        return begin(node, errors);
     }
     void stop(Node& node) {
         if (!node.world) return;
@@ -732,6 +740,97 @@ void prediction(const NetTestOptions& options, const FaultProfile& faults, NetTe
     checkClean(report);
 }
 
+void mapRotation(const NetTestOptions& options, const FaultProfile& faults, NetTestReport& report) {
+    Harness h(options, faults);
+    Node& host = h.add("host", h.start(NetworkRole::Authority), kHostIdentity);
+    if (!h.begin(host, report.errors)) return h.finish(report);
+    for (uint32_t i = 0; i < options.clients; ++i) {
+        Node& client = h.add("client " + std::to_string(i + 1), h.start(NetworkRole::Client), kHostIdentity + 1 + i);
+        h.begin(client, report.errors);
+    }
+    auto everyoneActive = [&](uint32_t epoch) {
+        for (Node& n : h.nodes())
+            if (n.world->state() != NetworkState::Active || n.world->mapEpoch() != epoch) return false;
+        return h.nodes()[0].world->stats().activePeers == options.clients;
+    };
+    if (!h.runUntil([&] { return everyoneActive(1); }, h.ticksFor(options.settings.handshakeTimeoutSeconds + 1))) {
+        report.errors.push_back("not every client reached active");
+        h.stopAll(report);
+        return;
+    }
+    std::vector<uint16_t> slots;
+    for (Node& n : h.nodes()) slots.push_back(n.world->localSlot());
+    DeterministicRandom random(options.seed ^ 0x707a7e);
+    NetTestRotation r;
+    double totalMs = 0;
+    for (uint32_t k = 0; k < options.rotations; ++k) {
+        // Each client takes its own (seeded) time to load the next map.
+        std::vector<uint32_t> loadTicks;
+        for (size_t i = 0; i < h.nodes().size(); ++i) loadTicks.push_back(1 + random.next() % h.ticksFor(0.5));
+        MapRotationRequest request;
+        request.level = "map-" + std::to_string(k + 2);
+        request.sceneId = uint16_t(1 + (k + 1) % 2);
+        request.readySeconds = 10;
+        const double began = h.nowSeconds();
+        if (auto prepared = host.world->prepareRotation(request); !prepared) {
+            report.errors.push_back(std::string("the host couldn't announce a map: ") + prepared.error().message);
+            break;
+        }
+        const uint32_t from = h.ticks();
+        auto committed = [&] {
+            for (Node& n : h.nodes())
+                if (n.world->rotation().phase != RotationPhase::Committed) return false;
+            return true;
+        };
+        bool ok = h.runUntil(
+            [&] {
+                for (size_t i = 0; i < h.nodes().size(); ++i) {
+                    NetworkWorld& w = *h.nodes()[i].world;
+                    if (w.rotation().phase == RotationPhase::Preparing && h.ticks() - from >= loadTicks[i])
+                        w.rotationReady();
+                }
+                return committed();
+            },
+            h.ticksFor(request.readySeconds + 2));
+        if (!ok) {
+            report.errors.push_back("rotation " + std::to_string(k + 1) + " wasn't committed by everyone");
+            break;
+        }
+        // Everyone ends this session and starts the next: the host first, as LevelHost does
+        // a frame later on a client that learnt of the commit later.
+        std::vector<NetworkStart> next;
+        for (Node& n : h.nodes()) next.push_back(n.world->nextStart());
+        for (size_t i = 0; i < h.nodes().size(); ++i) h.restart(h.nodes()[i], next[i], report.errors);
+        ok = h.runUntil([&] { return everyoneActive(k + 2); }, h.ticksFor(15));
+        if (!ok) {
+            report.errors.push_back("not everyone rejoined after rotation " + std::to_string(k + 1));
+            break;
+        }
+        for (size_t i = 0; i < h.nodes().size(); ++i)
+            if (h.nodes()[i].world->localSlot() != slots[i]) {
+                report.errors.push_back(h.nodes()[i].name + " came back in another slot");
+                break;
+            }
+        if (h.nodes()[0].world->start().compatibility.sceneId != request.sceneId)
+            report.errors.push_back("the host's next session plays another scene");
+        const NetworkWorldStats& hs = h.nodes()[0].world->stats();
+        r.slotsReclaimed += hs.slotsReclaimed;
+        for (Node& n : h.nodes()) r.rejoinAttempts += n.world->stats().rejoinAttempts;
+        const double ms = (h.nowSeconds() - began) * 1000;
+        r.maxRotationMs = std::max(r.maxRotationMs, ms);
+        totalMs += ms;
+        ++r.rotations;
+    }
+    if (r.rotations) r.meanRotationMs = totalMs / r.rotations;
+    if (r.slotsReclaimed != uint64_t(r.rotations) * options.clients)
+        report.errors.push_back(
+            "the host gave " + std::to_string(r.slotsReclaimed) + " slots back; expected " +
+            std::to_string(uint64_t(r.rotations) * options.clients));
+    report.rotation = r;
+    h.stopAll(report);
+    checkClean(report);
+}
+
 }   // namespace
 
 std::span<const char* const> netTestScenarios() { return kScenarios; }
@@ -762,9 +861,12 @@ bool runNetTest(const NetTestOptions& options, NetTestReport& report) {
         replication(options, preset->profile, report);
     else if (options.scenario == "prediction")
         prediction(options, preset->profile, report);
+    else if (options.scenario == "map_rotation")
+        mapRotation(options, preset->profile, report);
     else {
         report.errors.push_back(
-            "unknown scenario " + options.scenario + " (handshake, rejections, stop-start, replication or prediction)");
+            "unknown scenario " + options.scenario +
+            " (handshake, rejections, stop-start, replication, prediction or map_rotation)");
         return false;
     }
     report.ok = report.errors.empty();
@@ -791,6 +893,14 @@ std::string netTestText(const NetTestReport& r) {
         out += "\n";
     }
     if (r.rounds) out += "rounds " + std::to_string(r.rounds) + "\n";
+    if (r.scenario == "map_rotation") {
+        std::snprintf(
+            line, sizeof(line),
+            "rotations %u, slots reclaimed %llu, rejoin attempts %llu, longest %.0f ms, mean %.0f ms\n",
+            r.rotation.rotations, (unsigned long long)r.rotation.slotsReclaimed,
+            (unsigned long long)r.rotation.rejoinAttempts, r.rotation.maxRotationMs, r.rotation.meanRotationMs);
+        out += line;
+    }
     std::snprintf(
         line, sizeof(line),
         "ticks %u, messages %llu sent, %llu received, %llu rejected, %llu malformed; after stop: %llu packets in "
@@ -856,6 +966,12 @@ std::string netTestJson(const NetTestReport& r) {
                "\", \"join_ms\": " + (p.joinMs >= 0 ? std::to_string(int64_t(p.joinMs)) : std::string("null")) + "}";
     }
     out += r.peers.empty() ? "],\n" : "\n  ],\n";
+    if (r.scenario == "map_rotation")
+        out += "  \"rotation\": {\"rotations\": " + std::to_string(r.rotation.rotations) +
+               ", \"slots_reclaimed\": " + std::to_string(r.rotation.slotsReclaimed) +
+               ", \"rejoin_attempts\": " + std::to_string(r.rotation.rejoinAttempts) +
+               ", \"max_ms\": " + std::to_string(int64_t(r.rotation.maxRotationMs)) +
+               ", \"mean_ms\": " + std::to_string(int64_t(r.rotation.meanRotationMs)) + "},\n";
     out += "  \"counters\": {\"rounds\": " + std::to_string(r.rounds) +
            ", \"messages_sent\": " + std::to_string(r.messagesSent) +
            ", \"messages_received\": " + std::to_string(r.messagesReceived) +

@@ -630,6 +630,13 @@ shockwave_warnings(network_session_test)
 add_test(NAME network_session COMMAND network_session_test)
 set_tests_properties(network_session PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
 
+# Map rotation (shipping plan S11): controlled session restart with lobby continuity.
+add_executable(network_map_rotation_test NetworkMapRotationTest.cpp)
+target_link_libraries(network_map_rotation_test PRIVATE Shockwave::GameFramework)
+shockwave_warnings(network_map_rotation_test)
+add_test(NAME network_map_rotation COMMAND network_map_rotation_test)
+set_tests_properties(network_map_rotation PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
+
 # Replication without prediction: baselines, keys, spawns, snapshots, budgets, bad data.
 add_executable(network_replication_test NetworkReplicationTest.cpp)
 target_link_libraries(network_replication_test PRIVATE Shockwave::Multiplayer)

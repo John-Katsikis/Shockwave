@@ -275,6 +275,7 @@ struct NetTestCommand {
     std::string scenario = "handshake", preset = "cafe";
     uint64_t seed = 1;
     uint32_t clients = 3;
+    uint32_t rotations = 3;   // map_rotation
 };
 int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json);
 // --net-dump capture.swnetcap [--json out.json]: the capture decoded, every record with its

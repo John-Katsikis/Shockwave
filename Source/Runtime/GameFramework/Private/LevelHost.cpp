@@ -199,6 +199,11 @@ void LevelHost::startSession(StartReason reason, const LevelArrival& arrival) {
     m_session->setArrival(arrival);
     m_session->setCampaign(&m_campaign);
     if (m_hooks.configure) m_hooks.configure(*m_session, m_current);
+    if (m_nextNetwork) {   // the next map of a rotation: a client rejoins with a new baseline
+        if (m_nextNetwork->role == net::NetworkRole::Client) m_session->setStartReason(StartReason::OnlineBaseline);
+        m_session->setNetworkStart(std::move(*m_nextNetwork), m_nextServices);
+        m_nextNetwork.reset();
+    }
     m_starting = true;
     try {
         m_session->start();
@@ -293,9 +298,15 @@ TravelTicket LevelHost::request(TravelRequest r) {
     if (r.level.empty()) return refuse(TravelError::InvalidRequest, "no level named", r);
     if (r.resetCampaign && r.reason != TravelReason::NewGame)
         return refuse(TravelError::InvalidRequest, "only a new game resets the campaign", r);
-    if (m_session && m_session->online())
-        return refuse(
-            TravelError::AuthorityRequired, "levels can't change during network play yet (map rotation is S11)", r);
+    // Online only the host changes maps, for everyone: a map rotation (S11).
+    net::NetworkWorld* network = m_session && m_session->online() ? m_session->network() : nullptr;
+    if (network && !m_followingRotation) {
+        if (!network->authority()) return refuse(TravelError::AuthorityRequired, "only the host changes maps", r);
+        if (network->state() != net::NetworkState::Active || !m_hooks.networkScene)
+            return refuse(TravelError::AuthorityRequired, "this network session can't change maps", r);
+        r.reason = TravelReason::OnlineMap;
+        r.restore.reset();
+    }
     // One at a time; a level asking for another from its beginPlay is a redirect.
     const uint64_t active = m_pending ? m_pending->id : m_candidate ? m_candidate->next.id : m_inFlight;
     if (active && !(m_starting && !m_pending)) {
@@ -315,7 +326,28 @@ TravelTicket LevelHost::request(TravelRequest r) {
         }
         if (!ok) return refuse(code == TravelError::None ? TravelError::UnknownLevel : code, error, r);
     }
+    // The host announces the map now, so every player loads it while the host does.
+    if (network && !m_followingRotation) {
+        std::string error;
+        const uint16_t scene = m_hooks.networkScene(r.level, error);
+        if (!scene)
+            return refuse(
+                TravelError::UnknownLevel,
+                error.empty() ? "level \"" + r.level + "\" isn't a scene of the network manifest" : error, r);
+        const net::NetworkSettings& s = network->start().settings;
+        net::MapRotationRequest rotation;
+        rotation.level = r.level;
+        rotation.sceneId = scene;
+        rotation.readySeconds = s.rotationReadySeconds;
+        rotation.dropUnready = s.rotationDropUnready;
+        if (auto prepared = network->prepareRotation(rotation); !prepared)
+            return refuse(TravelError::Busy, prepared.error().message, r);
+    }
     const uint64_t id = m_nextId++;
+    if (network) {
+        m_rotationTicket = id;
+        m_rotationReadySent = false;
+    }
     TravelProgress progress;
     progress.ticket = id;
     progress.request = r;
@@ -375,6 +407,79 @@ TravelTicket LevelHost::restartLevel(uint64_t fromEpoch) {
     return request(std::move(r));
 }
 
+TravelTicket LevelHost::rotateMap(uint64_t fromEpoch) {
+    TravelRequest r;
+    r.reason = TravelReason::OnlineMap;
+    r.fromEpoch = fromEpoch;
+    net::NetworkWorld* network = m_session && m_session->online() ? m_session->network() : nullptr;
+    if (!network) return refuse(TravelError::InvalidRequest, "map rotation is for network play", r);
+    const std::vector<std::string> levels = net::mapRotationLevels(network->start().settings);
+    if (levels.empty()) return refuse(TravelError::InvalidRequest, "the network settings have no map_rotation", r);
+    auto it = std::find(levels.begin(), levels.end(), m_current.level);
+    r.level = it == levels.end() || std::next(it) == levels.end() ? levels.front() : *std::next(it);
+    return request(std::move(r));
+}
+
+// A client follows the host: each announced map starts a travel of its own, held at the
+// boundary until the commit. One it can't prepare is refused (MapReject).
+void LevelHost::followRotation() {
+    net::NetworkWorld* network = m_session && m_session->online() ? m_session->network() : nullptr;
+    if (!network || network->authority()) return;
+    const net::MapRotation& rotation = network->rotation();
+    if (rotation.phase != net::RotationPhase::Preparing || rotation.transitionId == m_rotationSeen) return;
+    m_rotationSeen = rotation.transitionId;
+    std::string error;
+    const uint16_t scene = m_hooks.networkScene ? m_hooks.networkScene(rotation.level, error) : 0;
+    if (scene == 0 || scene != rotation.sceneId) {
+        SW_LOG(
+            LogGame, Warning, "Can't follow the host to \"{}\": {}", rotation.level,
+            error.empty() ? std::string("its scene differs here") : error);
+        network->rejectRotation(net::ReasonCode::ContentMismatch);
+        return;
+    }
+    TravelRequest r;
+    r.level = rotation.level;
+    r.reason = TravelReason::OnlineMap;
+    m_followingRotation = true;
+    const TravelTicket ticket = request(std::move(r));
+    m_followingRotation = false;
+    if (!ticket) {
+        SW_LOG(LogGame, Warning, "Can't follow the host to \"{}\": {}", rotation.level, ticket.message);
+        network->rejectRotation(net::ReasonCode::MapNotLoaded);
+        return;
+    }
+    m_rotationTicket = ticket.id;
+    m_rotationReadySent = false;
+}
+
+bool LevelHost::holdForRotation() {
+    if (!m_rotationTicket || m_candidate->next.id != m_rotationTicket) return false;
+    net::NetworkWorld* network = m_session && m_session->online() ? m_session->network() : nullptr;
+    const net::RotationPhase phase = network && network->state() != net::NetworkState::Failed
+                                         ? network->rotation().phase
+                                         : net::RotationPhase::Aborted;
+    // Committed: the host waits for its players to leave for the next map, so the commit
+    // reached them before this session (and its connections) ends.
+    if (phase == net::RotationPhase::Committed) return !network->rotationHandedOver();
+    if (phase == net::RotationPhase::Preparing) {
+        if (!m_rotationReadySent) {   // prepared: say so (the host may commit at once)
+            m_rotationReadySent = true;
+            network->rotationReady();
+            if (network->rotation().phase == net::RotationPhase::Committed) return !network->rotationHandedOver();
+        }
+        return true;
+    }
+    // Called off (or the session ended): the current map plays on.
+    const uint64_t id = m_candidate->next.id;
+    const char* why = network ? net::reasonName(network->rotation().abortReason) : nullptr;
+    resume(*m_candidate);
+    m_candidate.reset();
+    finish(
+        id, TravelStatus::Failed, TravelError::RotationAborted,
+        std::string("the map change was called off") + (why ? std::string(" (") + why + ")" : std::string()));
+    return true;
+}
+
 TravelTicket LevelHost::returnToMenu(uint64_t fromEpoch) {
     TravelRequest r;
     r.level = m_menuLevel;
@@ -413,6 +518,18 @@ void LevelHost::setPhase(uint64_t id, TravelPhase phase) {
 }
 
 void LevelHost::finish(uint64_t id, TravelStatus status, TravelError code, std::string error) {
+    if (id == m_rotationTicket) {
+        m_rotationTicket = 0;
+        // This side can't go: the host calls the rotation off, a client says it can't follow.
+        if (status != TravelStatus::Succeeded && m_session)
+            if (net::NetworkWorld* network = m_session->network();
+                network && network->rotation().phase == net::RotationPhase::Preparing) {
+                if (network->authority())
+                    network->abortRotation(net::ReasonCode::MapNotLoaded);
+                else
+                    network->rejectRotation(net::ReasonCode::MapNotLoaded);
+            }
+    }
     TravelProgress p;
     if (const auto it = m_tickets.find(id); it != m_tickets.end()) {
         p = std::move(it->second);
@@ -489,8 +606,10 @@ void LevelHost::process() {
             ~Done() { flag = false; }
         } done{m_processing};
         m_stopped = false;
+        followRotation();
         while (true) {
             if (m_candidate) {   // prepared last frame: across the boundary now
+                if (holdForRotation()) break;   // online: until every player is ready
                 Candidate candidate = std::move(*m_candidate);
                 m_candidate.reset();
                 if (!commit(std::move(candidate))) break;
@@ -502,7 +621,7 @@ void LevelHost::process() {
             Candidate candidate;
             if (!prepare(next, candidate)) continue;   // a request made by a hook meanwhile still gets its turn
             setPhase(next.id, TravelPhase::AwaitingBoundary);
-            if (m_staged && !next.redirect) {
+            if ((m_staged || next.id == m_rotationTicket) && !next.redirect) {
                 // A frame renders before the current level ends: a loading screen shows, and
                 // the ticket can still be cancelled. The level waits, paused, meanwhile.
                 if (m_session && m_session->state() == PlaySession::State::Playing && !m_session->online())
@@ -607,6 +726,13 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
 }
 
 bool LevelHost::commit(Candidate candidate) {
+    // A committed map rotation: the next session is the one the old one announced.
+    if (candidate.next.id == m_rotationTicket && m_session)
+        if (net::NetworkWorld* network = m_session->network();
+            network && network->rotation().phase == net::RotationPhase::Committed) {
+            m_nextNetwork = network->nextStart();
+            m_nextServices = m_session->networkServices();
+        }
     m_inFlight = candidate.next.id;
     Reset clear{m_inFlight};
     auto clock = Clock::now();

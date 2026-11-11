@@ -80,7 +80,7 @@ struct PeerId {
     friend bool operator==(PeerId, PeerId) = default;
 };
 
-// Why a session or connection ended. These numbers are part of wire protocol v1 (the
+// Why a session or connection ended. These numbers are part of the wire protocol (the
 // Reject and Goodbye messages): append new codes, never renumber.
 enum class ReasonCode : uint16_t {
     Normal = 0,
@@ -98,8 +98,9 @@ enum class ReasonCode : uint16_t {
     SimulationOverrun = 12,
     ServiceUnavailable = 13,
     UnsupportedFeature = 14,
+    MapRotation = 15,   // the session ended for the next map (protocol v2): reconnect, don't leave
 };
-inline constexpr uint16_t kLastReasonCode = 14;
+inline constexpr uint16_t kLastReasonCode = 15;
 
 // "ProtocolMismatch", or nullptr for a number with no name.
 const char* reasonName(ReasonCode reason);
