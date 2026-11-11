@@ -18,6 +18,10 @@
 //               character the host spawns for it; clients walk and jump by scripted
 //               commands through the faults, then stand still: every client must end
 //               where the host has it, with no correction offset left
+//   map_rotation the host and `clients` clients change maps `rotations` times (default 3):
+//               each client loads the next map for a seeded time, the host commits, and
+//               everyone rejoins the next session; every client must be back, Active, in
+//               its own slot, on the right map epoch, with nothing of the old session left
 //
 // The JSON follows the network tool layout of docs/Networking.md: version, mode,
 // scenario, ok, errors, warnings, seed, duration_ticks, peers, counters.
@@ -39,6 +43,7 @@ struct NetTestOptions {
     uint64_t seed = 1;
     std::string preset = "cafe";   // a FaultPreset name
     uint32_t clients = 3;
+    uint32_t rotations = 3;   // map_rotation
     NetworkSettings settings;   // tick_rate, max_players and timeouts; the transport is loopback
 };
 
@@ -60,6 +65,14 @@ struct NetTestReplication {
     uint64_t heldSnapshots = 0, expiredSnapshots = 0, resyncRequests = 0;
     uint32_t controlQueueHigh = 0;
     double maxPositionError = 0;   // replication: client vs host after traffic settled
+};
+
+// Map rotation counters (map_rotation).
+struct NetTestRotation {
+    uint32_t rotations = 0;   // committed and rejoined
+    uint64_t slotsReclaimed = 0, drops = 0, refusals = 0, rejoinAttempts = 0;
+    double maxRotationMs = 0;   // announced until every client was Active on the next map
+    double meanRotationMs = 0;
 };
 
 // Prediction counters, summed over clients.
@@ -87,6 +100,7 @@ struct NetTestReport {
     uint64_t openAuthSessionsAfterStop = 0, liveTicketsAfterStop = 0;   // must be 0
     NetTestReplication replication;
     NetTestPrediction prediction;
+    NetTestRotation rotation;
 };
 
 // False only for an unknown scenario or preset (errors say which); a scenario that runs

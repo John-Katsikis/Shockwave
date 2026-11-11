@@ -56,6 +56,7 @@ public:
         m_services = services;
     }
     const net::NetworkStart& networkStart() const { return m_networkStart; }
+    net::IOnlineServices* networkServices() const { return m_services; }
     // The application's match control, which game code sees as game.onlineMatch. Must
     // outlive the session.
     void setOnlineMatch(net::OnlineMatch* match) { m_context.onlineMatch = match; }

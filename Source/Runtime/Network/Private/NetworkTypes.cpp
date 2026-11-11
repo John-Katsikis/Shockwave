@@ -36,6 +36,7 @@ const char* reasonName(ReasonCode reason) {
     case ReasonCode::SimulationOverrun: return "SimulationOverrun";
     case ReasonCode::ServiceUnavailable: return "ServiceUnavailable";
     case ReasonCode::UnsupportedFeature: return "UnsupportedFeature";
+    case ReasonCode::MapRotation: return "MapRotation";
     }
     return nullptr;
 }

@@ -258,6 +258,26 @@ void Editor::drawNetworkProjectSettings() {
         if (network->authority())
             ImGui::Text(
                 "Players in the game: %u of %u welcomed", unsigned(stats.activePeers), unsigned(stats.admitted));
+        // Map rotation (S11): the map of the match, and a change under way with who's ready.
+        const net::MapRotation& rotation = network->rotation();
+        ImGui::Text(
+            "Map %u of the match, rotation %s", unsigned(network->mapEpoch()), net::rotationPhaseName(rotation.phase));
+        if (rotation.phase == net::RotationPhase::Preparing) {
+            unsigned ready = 0;
+            for (const net::RotationPlayer& p : rotation.players) ready += p.ready;
+            ImGui::Text(
+                "Changing to \"%s\": %s, %u of %zu players ready", rotation.level.c_str(),
+                rotation.localReady ? "loaded here" : "loading here", ready, rotation.players.size());
+            for (const net::RotationPlayer& p : rotation.players)
+                ImGui::BulletText(
+                    "Player %u: %s", unsigned(p.slot),
+                    p.ready                                 ? "ready"
+                    : p.rejected != net::ReasonCode::Normal ? net::reasonName(p.rejected)
+                                                            : "loading");
+        } else if (rotation.phase == net::RotationPhase::Aborted) {
+            const char* why = net::reasonName(rotation.abortReason);
+            ImGui::TextColored(warningColor, "The last map change was called off (%s)", why ? why : "?");
+        }
         if (network->state() == net::NetworkState::Failed)
             ImGui::TextColored(
                 errorColor, "%s (%s)", network->failureText().c_str(),
@@ -395,6 +415,11 @@ std::string Editor::networkDiagnostics() {
         out += "messages: " + std::to_string(s.messagesReceived) + " in (" + std::to_string(s.bytesReceived) +
                " bytes), " + std::to_string(s.messagesSent) + " out; malformed " + std::to_string(s.malformed) +
                ", rejected " + std::to_string(s.rejected) + "\n";
+        out += std::string("rotation: map ") + std::to_string(network->mapEpoch()) + ", " +
+               net::rotationPhaseName(network->rotation().phase) +
+               (network->rotation().level.empty() ? "" : " \"" + network->rotation().level + "\"") + ", " +
+               std::to_string(s.rotationsCommitted) + " committed, " + std::to_string(s.rotationsAborted) +
+               " called off\n";
         out += "prediction: " + std::to_string(s.corrections) + " corrections (max " + std::to_string(s.maxCorrection) +
                " m), " + std::to_string(s.replayedTicks) + " ticks replayed, " + std::to_string(s.predictionResets) +
                " resets\n";

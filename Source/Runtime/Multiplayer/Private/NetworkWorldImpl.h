@@ -33,6 +33,7 @@ struct Peer {
     double since = -1;   // when the phase began; -1 until the first pump gives a time
     double heard = -1;   // when its last message arrived (the idle timeout counts from here)
     uint16_t slot = 0;
+    uint16_t reservedSlot = 0;   // host: a rejoining player's slot from the last map
     RequestId ticketRequest;   // our ticket for this peer
     bool ticketSent = false;
     bool authBegun = false;   // we're validating its ticket
@@ -151,6 +152,24 @@ struct NetworkWorld::Impl final : TransportSink {
     // destroyed from its own callback.
     bool polling = false, failPending = false;
     NetworkWorldStats stats;
+
+    // ---- Map rotation (NetworkRotation.cpp) ----
+    MapRotation rotation;
+    uint32_t rosterRevision = 0;   // host: bumped on every join and leave
+    double reservationUntil = -1;   // host: reserved slots expire then (set on the first pump)
+    std::vector<std::pair<PeerId, uint16_t>> reservations;   // host: not yet reclaimed
+    double rejoinUntil = -1, retryAt = -1;   // client: the rejoin window and the next attempt
+    bool handedOver = false;   // client: the host ended this session for the next map
+    // Host: what a message from p means for the rotation; false when it isn't one.
+    bool hostRotationMessage(Peer& p, const DecodedMessage& decoded);
+    bool clientRotationMessage(const DecodedMessage& decoded);
+    void checkRotation();   // host, every pump: commit or abort at the deadline
+    void commitRotation();
+    void finishRotation(RotationPhase phase, NetworkEventKind kind, ReasonCode reason);
+    void rotationPlayerLeft(uint16_t slot);
+    uint16_t reservedFor(PeerId peer) const;
+    bool slotReserved(uint16_t slot) const;
+    void retryRejoin();   // client: connect again while the rejoin window lasts
 
     // ---- Replication state ----
     std::vector<NetObject> objects;   // by ascending network ID
@@ -293,7 +312,7 @@ struct NetworkWorld::Impl final : TransportSink {
     void clientEvent(const TransportEvent& event);
     void onMessage(const ReceivedMessage& message) override;
     void hostMessage(Peer& p, const ReceivedMessage& message);
-    void hello(Peer& p, const Hello& hello);
+    void hello(Peer& p, const MessageHeader& header, const Hello& hello);
     void clientMessage(Peer& h, const ReceivedMessage& message);
     void challenge(Peer& h, const MessageHeader& header, const Challenge& c);
     void checkTimeouts();

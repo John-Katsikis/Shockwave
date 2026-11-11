@@ -172,6 +172,7 @@ int netTest(const shockwave::Project& project, const NetTestCommand& command, co
     options.seed = command.seed;
     options.preset = command.preset;
     options.clients = command.clients;
+    options.rotations = command.rotations;
     // The project's settings when it has them: tick rate, player count and timeouts.
     const fs::path settingsFile = net::networkSettingsPath(project);
     if (std::error_code ec; fs::is_regular_file(settingsFile, ec)) {
@@ -280,6 +281,27 @@ void Player::checkNetworkProject(std::vector<std::string>& problems) {
         }
         net::ContentDigest content;
         net::computeContentDigest(m_project, *network.manifest, network.manifestShown, content, found);
+        // Map rotation: every level is in the catalog and plays a scene of the manifest.
+        const std::vector<std::string> rotation = net::mapRotationLevels(network.settings.settings);
+        if (!rotation.empty()) loadLevelCatalog();
+        for (const std::string& level : rotation) {
+            const fs::path scene = sceneForLevel(level);
+            const std::string where = network.settingsShown + ": map_rotation: ";
+            if (scene.empty()) {
+                found.push_back({false, where + "level \"" + level + "\" isn't in the level catalog"});
+                continue;
+            }
+            const std::string relative = m_project.relative(scene);
+            const bool networked = std::any_of(
+                network.manifest->scenes.begin(), network.manifest->scenes.end(),
+                [&](const net::ManifestScene& s) { return s.path == relative; });
+            if (!networked)
+                found.push_back(
+                    {false, where + "level \"" + level + "\" plays " + relative + ", which isn't a scene of " +
+                                network.manifestShown});
+        }
+        if (rotation.size() == 1)
+            found.push_back({true, network.settingsShown + ": map_rotation has one level: the map never changes"});
     }
     const size_t before = problems.size();
     for (const net::NetProblem& problem : found) print(problem, problems);
@@ -612,7 +634,7 @@ void Player::updateOnline() {
     net::NetworkStart start;
     if (m_match.takeStart(start)) {
         try {
-            playScene(m_project.root / m_match.setup().scenePath, &start);
+            playScene(m_project.root / m_match.startScenePath(), &start);
         } catch (const std::exception& e) {
             m_match.leave();
             (void)m_match.takeEnded();

@@ -92,6 +92,9 @@ public:
         // level ended is a failed start: nothing is playing (failure() says why).
         std::function<bool(const LevelRequest&, const World& level, std::vector<AssetCost>& assets, std::string& error)>
             assets;
+        // Online map rotation (S11): the manifest scene ID of a level's scene, or 0 with
+        // the reason when it isn't a network scene. Unset: maps can't change online.
+        std::function<uint16_t(const std::string& level, std::string& error)> networkScene;
     };
 
     LevelHost(World& world, JobSystem& jobs, GameInstance& instance, Engine* engine, Hooks hooks);
@@ -121,6 +124,7 @@ public:
     TravelTicket restartLevel(uint64_t fromEpoch = 0) override;
     TravelTicket returnToMenu(uint64_t fromEpoch = 0) override;
     TravelTicket useExit(Entity exit, uint64_t fromEpoch = 0) override;
+    TravelTicket rotateMap(uint64_t fromEpoch = 0) override;
 
     // The level returnToMenu goes to (the player's: the catalog's menu level).
     void setMenuLevel(std::string level) { m_menuLevel = std::move(level); }
@@ -211,6 +215,11 @@ private:
     bool travelOnDemand(Candidate& candidate, Clock::time_point& clock);
     // After the current level ended: the new one didn't start, so nothing plays.
     void failStarted(const Pending& next, LoadReport& load, TravelError code, const std::string& why);
+    // Online map rotation (docs/Networking.md, "Map rotation"). A client starts travel when
+    // the host announces a map; both sides hold the prepared level at the boundary until
+    // the session commits (true: still holding), and an abort cancels the travel.
+    void followRotation();
+    bool holdForRotation();
 
     World& m_world;
     JobSystem& m_jobs;
@@ -247,6 +256,14 @@ private:
     CampaignState m_entryCampaign;   // as the current level was entered
     bool m_rememberDestroyed = true;
     std::set<std::string> m_authored;   // the current level's PersistentIdentity ids at its start
+    // Map rotation: the ticket carrying it, the last announcement a client followed, and
+    // the next session's start, taken from the old session as it retires.
+    uint64_t m_rotationTicket = 0;
+    uint32_t m_rotationSeen = 0;
+    bool m_rotationReadySent = false;
+    bool m_followingRotation = false;   // a client's own request for the host's map
+    std::optional<net::NetworkStart> m_nextNetwork;
+    net::IOnlineServices* m_nextServices = nullptr;
 };
 
 }   // namespace shockwave

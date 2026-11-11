@@ -49,6 +49,7 @@ const char* matchStateName(MatchState state) {
     case MatchState::Starting: return "starting";
     case MatchState::Hosting: return "hosting";
     case MatchState::Joined: return "joined";
+    case MatchState::Rotating: return "rotating";
     case MatchState::Failed: return "failed";
     }
     return "?";
@@ -94,6 +95,7 @@ bool prepareMatchSetup(
     setup.compatibility.contentDigest = content.digest;
     setup.compatibility.sceneId = sceneId;
     setup.scenePath = scenePath;
+    for (const ManifestScene& s : network.manifest->scenes) setup.scenes.emplace_back(s.id, s.path);
     setup.registry = &registry;
     setup.visibility = setup.settings.lobbyVisibility;
     setup.addressKind = setup.settings.transport == NetTransportKind::Loopback ? TransportAddress::Loopback
@@ -107,7 +109,8 @@ bool OnlineMatch::busy() const {
 }
 
 bool OnlineMatch::inMatch() const {
-    return m_state == MatchState::Starting || m_state == MatchState::Hosting || m_state == MatchState::Joined;
+    return m_state == MatchState::Starting || m_state == MatchState::Hosting || m_state == MatchState::Joined ||
+           m_state == MatchState::Rotating;
 }
 
 bool OnlineMatch::failRequest(std::string why) {
@@ -139,6 +142,7 @@ void OnlineMatch::finish(MatchState state, std::string status) {
 // What every request needs: a setup, services that are signed in, and nothing else on.
 bool OnlineMatch::begin(const char* what) {
     m_error.clear();
+    m_startScene.clear();
     if (!configured()) return failRequest(std::string("can't ") + what + ": this project has no network scene to play");
     if (busy()) return failRequest(std::string("can't ") + what + ": leave the current match first");
     if (!m_services) {
@@ -308,7 +312,16 @@ bool OnlineMatch::applyMetadata() {
     for (const auto& [key, value] : values)
         if (!m_services->setLobbyMetadata(m_lobby, key, value)) return false;
     m_advertisedPlayers = 1;
+    m_advertisedScene = m_setup.compatibility.sceneId;
     return true;
+}
+
+const std::pair<uint16_t, std::string>* OnlineMatch::lobbyScene(const std::string& value) const {
+    uint64_t id = 0;
+    if (!parseU64(value, id)) return nullptr;
+    for (const auto& scene : m_setup.scenes)
+        if (scene.first == id) return &scene;
+    return nullptr;
 }
 
 // Is this lobby a match we can join? The checks a join repeats once inside the lobby.
@@ -336,8 +349,8 @@ bool OnlineMatch::checkLobby(const LobbySummary& lobby, std::string& problem) co
         problem = "it runs a different build of the game (network types differ)";
     else if (*content != toHex(m_setup.compatibility.contentDigest))
         problem = "it has different content (maps, prefabs or circuits differ)";
-    else if (*scene != std::to_string(m_setup.compatibility.sceneId))
-        problem = "it plays a different map";
+    else if (!lobbyScene(*scene))
+        problem = "it plays a map this build doesn't have";
     else if (!parseU64(*port, portNumber) || portNumber != m_setup.settings.virtualPort)
         problem = "it listens on a different port";
     else
@@ -384,6 +397,12 @@ bool OnlineMatch::handleOnlineEvent(const OnlineEvent& event) {
             return true;
         }
         m_start = makeStart(NetworkRole::Client, info->owner, uint16_t(m_setup.settings.virtualPort));
+        // The map the lobby is on now: the host may have rotated since it was made.
+        if (const std::string* value = metadata(info.value(), "sw_scene"))
+            if (const auto* scene = lobbyScene(*value)) {
+                m_start.compatibility.sceneId = scene->first;
+                m_startScene = scene->second;
+            }
         m_startReady = true;
         finish(MatchState::Starting, "in lobby " + std::to_string(m_lobby.value) + "; connecting to the host");
         return true;
@@ -473,7 +492,43 @@ void OnlineMatch::update(const NetworkWorld* session) {
                                             : session->failureText()));
         return;
     }
-    if (session->state() != NetworkState::Active) return;
+    if (session->state() != NetworkState::Active) return;   // connecting (a new map's session too)
+    // The map is changing: the lobby stays, closed to joins until the next map is up.
+    const RotationPhase rotation = session->rotation().phase;
+    if ((rotation == RotationPhase::Preparing || rotation == RotationPhase::Committed) &&
+        (m_state == MatchState::Hosting || m_state == MatchState::Joined)) {
+        if (m_role == NetworkRole::Authority && m_lobby.valid()) {
+            (void)m_services->setLobbyJoinable(m_lobby, false);
+            (void)m_services->setLobbyMetadata(m_lobby, "sw_state", "changing map");
+        }
+        finish(MatchState::Rotating, "changing the map to \"" + session->rotation().level + "\"");
+        return;
+    }
+    if (m_state == MatchState::Rotating && rotation == RotationPhase::Aborted) {
+        if (m_role == NetworkRole::Authority && m_lobby.valid()) {
+            (void)m_services->setLobbyJoinable(m_lobby, true);
+            (void)m_services->setLobbyMetadata(m_lobby, "sw_state", "playing");
+        }
+        finish(
+            m_role == NetworkRole::Authority ? MatchState::Hosting : MatchState::Joined,
+            "the map change was called off");
+        return;
+    }
+    if (m_state == MatchState::Rotating && rotation == RotationPhase::Idle) {   // the next map's session is up
+        const uint16_t scene = session->start().compatibility.sceneId;
+        if (m_role == NetworkRole::Authority && m_lobby.valid()) {
+            if (scene != m_advertisedScene) {
+                (void)m_services->setLobbyMetadata(m_lobby, "sw_scene", std::to_string(scene));
+                m_advertisedScene = scene;
+            }
+            (void)m_services->setLobbyMetadata(m_lobby, "sw_state", "playing");
+            (void)m_services->setLobbyJoinable(m_lobby, true);
+        }
+        finish(
+            m_role == NetworkRole::Authority ? MatchState::Hosting : MatchState::Joined,
+            "playing map " + std::to_string(session->mapEpoch()) + " of the match");
+        return;
+    }
     if (m_state == MatchState::Starting) {
         if (m_role == NetworkRole::Authority) {
             if (m_lobby.valid() && !m_services->setLobbyJoinable(m_lobby, true)) {

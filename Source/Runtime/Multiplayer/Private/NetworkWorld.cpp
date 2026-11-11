@@ -39,6 +39,7 @@ namespace {
 
 // A client waiting on the host gives up this much later than the host would.
 constexpr double kHostReasonGraceSeconds = 5;
+constexpr double kRejoinRetrySeconds = 0.25;   // a rejoining client tries again this often
 
 const char* reasonText(ReasonCode reason) {
     const char* name = reasonName(reason);
@@ -98,6 +99,7 @@ void NetworkWorld::Impl::drop(Peer& p, ReasonCode reason) {
         SW_LOG(LogNetwork, Info, "Player in slot {} left ({})", slot, reasonText(reason));
         w.push({NetworkEventKind::PlayerLeft, w.m_state, peer, slot, reason});
         ownerLeft(slot);
+        rotationPlayerLeft(slot);
     }
 }
 
@@ -115,12 +117,24 @@ void NetworkWorld::Impl::reject(Peer& p, ReasonCode reason, std::string_view dia
 
 void NetworkWorld::Impl::admit(Peer& p) {
     if (admittedCount() >= maxClients()) return reject(p, ReasonCode::ServerFull, "server full");
-    uint16_t slot = 2;
-    for (; slot <= maxClients() + 1; ++slot) {
-        const bool taken =
-            std::any_of(peers.begin(), peers.end(), [&](const Peer& o) { return o.admitted() && o.slot == slot; });
-        if (!taken) break;
+    auto taken = [&](uint16_t slot) {
+        return std::any_of(peers.begin(), peers.end(), [&](const Peer& o) { return o.admitted() && o.slot == slot; });
+    };
+    // A player rejoining after a map rotation gets its slot back; nobody else takes a
+    // reserved one while the reservation lasts.
+    uint16_t slot = p.reservedSlot && !taken(p.reservedSlot) ? p.reservedSlot : 0;
+    if (slot) {
+        ++stats.slotsReclaimed;
+        reservations.erase(
+            std::remove_if(reservations.begin(), reservations.end(), [&](const auto& r) { return r.first == p.peer; }),
+            reservations.end());
+    } else {
+        for (slot = 2; slot <= maxClients() + 1; ++slot)
+            if (!taken(slot) && !slotReserved(slot)) break;
+        if (slot > maxClients() + 1)
+            return reject(p, ReasonCode::ServerFull, "server full (slots held for the last map's players)");
     }
+    ++rosterRevision;
     Welcome welcome;
     welcome.playerSlot = slot;
     welcome.baselineId = 1;
@@ -246,6 +260,16 @@ void NetworkWorld::Impl::clientEvent(const TransportEvent& event) {
     // Closed: the connection is gone, so there's no one to say Goodbye to.
     h.connection = {};
     h.connected = false;
+    // The host ended this session for the next map: LevelHost starts that one.
+    if (handedOver || rotation.phase == RotationPhase::Committed) {
+        handedOver = true;
+        return;
+    }
+    // Rejoining after a map rotation: the host's next session may not be listening yet.
+    if (w.m_state == NetworkState::Connecting && rejoinUntil >= 0 && now < rejoinUntil) {
+        retryAt = now + kRejoinRetrySeconds;
+        return;
+    }
     ReasonCode reason = event.reason;
     const char* why = "the host closed the connection";
     if (reason == ReasonCode::Normal) {
@@ -298,7 +322,7 @@ void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
         return reject(p, ReasonCode::MalformedPacket, "wrong session");
     }
     switch (kind) {
-    case MessageKind::Hello: return hello(p, std::get<Hello>(decoded.body));
+    case MessageKind::Hello: return hello(p, decoded.header, std::get<Hello>(decoded.body));
     case MessageKind::AuthTicket: {
         const auto& ticket = std::get<AuthTicket>(decoded.body);
         if (!w.m_start.authenticate || p.phase != Peer::Phase::Authenticating || p.authBegun)
@@ -322,13 +346,21 @@ void NetworkWorld::Impl::hostMessage(Peer& p, const ReceivedMessage& message) {
         if (kind == MessageKind::Command) return commandMessage(p, std::get<Command>(decoded.body));
         if (kind == MessageKind::Ping) return pingMessage(p, std::get<Ping>(decoded.body));
         if (kind == MessageKind::Pong) return hostPong(p, std::get<Pong>(decoded.body));
+        if (hostRotationMessage(p, decoded)) return;
         ++stats.ignored;
         return;
     }
 }
 
-void NetworkWorld::Impl::hello(Peer& p, const Hello& hello) {
+void NetworkWorld::Impl::hello(Peer& p, const MessageHeader& header, const Hello& hello) {
     if (p.phase != Peer::Phase::AwaitingHello) return reject(p, ReasonCode::MalformedPacket, "Hello twice");
+    // While the map changes nobody joins this session: they join the next one.
+    if (rotation.phase == RotationPhase::Preparing || rotation.phase == RotationPhase::Committed) {
+        ++stats.rotationRefusals;
+        return reject(p, ReasonCode::MapRotation, "the map is changing; join again in a moment");
+    }
+    // A player from the last map, stamped with the session the commit announced.
+    if (w.m_start.presetSession && header.session == session) p.reservedSlot = reservedFor(p.peer);
     const NetworkCompatibility& c = w.m_start.compatibility;
     if (hello.gameProtocol != c.gameProtocol) return reject(p, ReasonCode::ProtocolMismatch, "game protocol differs");
     if (hello.schemaDigest != c.schemaDigest) return reject(p, ReasonCode::ContentMismatch, "schema differs");
@@ -407,6 +439,12 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
     }
     case MessageKind::Goodbye: {
         const ReasonCode reason = std::get<Goodbye>(decoded.body).reason;
+        if (reason == ReasonCode::MapRotation && rotation.phase == RotationPhase::Committed) {
+            handedOver = true;   // on to the next map
+            return;
+        }
+        if (reason == ReasonCode::MapRotation)
+            return failClient(ReasonCode::MapNotLoaded, "the host changed maps without us");
         return failClient(reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host ended the session");
     }
     default:
@@ -424,6 +462,7 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
         if (kind == MessageKind::Pong) return pongMessage(std::get<Pong>(decoded.body));
         if (kind == MessageKind::Ping) return clientPing(h, std::get<Ping>(decoded.body));
         if (kind == MessageKind::GameEvent) return gameEventMessage(std::get<GameEvent>(decoded.body));
+        if (clientRotationMessage(decoded)) return;
         if (!replicationMessage(decoded)) ++stats.ignored;
         return;
     }
@@ -441,6 +480,8 @@ void NetworkWorld::Impl::challenge(Peer& h, const MessageHeader& header, const C
     if (c.sceneId != ours.sceneId) return failClient(ReasonCode::MapNotLoaded, "the host is playing another scene");
     if (c.tickRate != settings().tickRate || c.snapshotRate != settings().snapshotRate)
         return failClient(ReasonCode::ContentMismatch, "the host's network settings differ");
+    if (w.m_start.presetSession && header.session != w.m_start.session)
+        return failClient(ReasonCode::MapNotLoaded, "the host's next map isn't the session it announced");
     session = header.session;
     challenged = true;
     if (!w.m_start.authenticate) return;
@@ -487,7 +528,8 @@ void NetworkWorld::Impl::checkTimeouts() {
     const Peer& h = peers[0];
     switch (w.m_state) {
     case NetworkState::Connecting:
-        if (expired(h, s.connectTimeoutSeconds)) failClient(ReasonCode::Timeout, "couldn't connect to the host");
+        if (retryAt >= 0 ? now >= rejoinUntil : expired(h, s.connectTimeoutSeconds) && !(now < rejoinUntil))
+            failClient(ReasonCode::Timeout, "couldn't connect to the host");
         break;
     case NetworkState::Authenticating:
         // Waiting on the host (our side is done): give its own timeout, and the
@@ -503,7 +545,9 @@ void NetworkWorld::Impl::checkTimeouts() {
             failClient(ReasonCode::Timeout, "synchronization didn't finish");
         break;
     case NetworkState::Active:
-        if (silent(h)) failClient(ReasonCode::Timeout, "the host stopped answering");
+        // After a commit the host is starting the next map: this session is ending anyway.
+        if (silent(h) && !handedOver && rotation.phase != RotationPhase::Committed)
+            failClient(ReasonCode::Timeout, "the host stopped answering");
         break;
     default: break;
     }
@@ -641,6 +685,10 @@ NetResult<void> NetworkWorld::begin() {
         return failStart(ReasonCode::ContentMismatch, replication.error());
     if (!secureRandomBytes(m_role == NetworkRole::Authority ? impl.session : impl.clientNonce))
         return failStart(ReasonCode::ServiceUnavailable, {NetErrorCode::Io, "the system random source failed"});
+    // The next map of a rotation: the session the commit announced (a client stamps its
+    // Hello with it), and the slots the last map's players get back.
+    if (m_start.presetSession) impl.session = m_start.session;
+    impl.reservations = m_start.reservedSlots;
     auto transport = m_services->createTransport();
     if (!transport) return failStart(ReasonCode::ServiceUnavailable, transport.error());
     m_transport = std::move(transport.value());
@@ -679,11 +727,15 @@ void NetworkWorld::pump(double nowSeconds) {
         impl.haveClock = true;
         for (Peer& p : impl.peers)
             if (p.phase != Peer::Phase::Free && p.since < 0) p.since = nowSeconds;
+        if (m_start.reservationSeconds > 0) impl.reservationUntil = nowSeconds + m_start.reservationSeconds;
+        if (m_start.rejoinSeconds > 0) impl.rejoinUntil = nowSeconds + m_start.rejoinSeconds;
     }
     impl.poll();
+    if (m_transport) impl.retryRejoin();
     if (m_transport) impl.checkTimeouts();
     if (!m_transport) return;
     if (impl.host()) {
+        impl.checkRotation();
         impl.sendHostPings();
         impl.flushAll();
     } else {
@@ -788,6 +840,10 @@ void NetworkWorld::release(ReasonCode reason) {
     if (impl.released) return;
     impl.released = true;
     const bool host = m_role == NetworkRole::Authority;
+    // After a commit the session ends for the next map: everyone is told so, and the lobby
+    // (the match itself) stays.
+    const bool rotating = impl.rotation.phase == RotationPhase::Committed;
+    if (rotating) reason = ReasonCode::MapRotation;
     // Joins stop first, so nobody arrives while the rest shuts down.
     if (host && m_start.lobby.valid() && m_services) (void)m_services->setLobbyJoinable(m_start.lobby, false);
     if (m_transport) {
@@ -807,7 +863,7 @@ void NetworkWorld::release(ReasonCode reason) {
         if (p.ticketRequest.valid() && m_services) m_services->cancel(p.ticketRequest);
         p = Peer{};
     }
-    if (m_start.lobby.valid() && m_services) (void)m_services->leaveLobby(m_start.lobby);
+    if (m_start.lobby.valid() && m_services && !rotating) (void)m_services->leaveLobby(m_start.lobby);
     m_transport.reset();
     // The world's entities stay as they are (PlaySession restores the authored scene);
     // the session's maps, queues and held snapshots go.

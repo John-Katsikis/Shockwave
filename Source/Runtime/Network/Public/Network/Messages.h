@@ -1,6 +1,6 @@
 #pragma once
 
-// Wire protocol v1: the 32-byte message header, the catalog of message kinds and their
+// Wire protocol v2: the 32-byte message header, the catalog of message kinds and their
 // payloads, input commands, state records and the built-in pose state.
 //
 // Each message is a plain struct whose fields() lists its wire fields in order, with
@@ -26,7 +26,8 @@
 
 namespace shockwave::net {
 
-inline constexpr uint16_t kProtocolVersion = 1;
+// 2: map rotation (MapPrepare..MapAbort, reason MapRotation), shipping plan S11.
+inline constexpr uint16_t kProtocolVersion = 2;
 inline constexpr uint32_t kHeaderBytes = 32;
 inline constexpr std::array<uint8_t, 4> kMagic = {'S', 'W', 'M', 'P'};
 
@@ -42,6 +43,7 @@ inline constexpr uint16_t kMaxAuthTicketBytes = 4096;
 inline constexpr uint16_t kMaxGameProtocolBytes = 64;
 inline constexpr uint16_t kMaxAuthoredKeyBytes = 96;
 inline constexpr uint16_t kMaxDiagnosticBytes = 160;
+inline constexpr uint16_t kMaxLevelIdBytes = 64;   // MapPrepare's level_id
 inline constexpr uint8_t kMaxInputsPerMessage = 4;
 inline constexpr uint32_t kInputCommandBytes = 24;
 inline constexpr uint32_t kStateRecordHeaderBytes = 16;
@@ -92,8 +94,13 @@ enum class MessageKind : uint8_t {
     ResyncRequest = 21,
     DeltaSnapshot = 22,
     SnapshotAck = 23,
+    MapPrepare = 24,
+    MapReady = 25,
+    MapReject = 26,
+    MapCommit = 27,
+    MapAbort = 28,
 };
-inline constexpr uint8_t kLastMessageKind = 23;
+inline constexpr uint8_t kLastMessageKind = 28;
 
 enum class PeerRole : uint8_t { Host, Client };
 enum class MessageDirection : uint8_t { ClientToHost, HostToClient, Either };
@@ -576,11 +583,101 @@ struct SnapshotAck {
     const char* invalid() const { return nullptr; }
 };
 
+// ---- Map rotation (protocol v2; docs/Networking.md, "Map rotation") ----
+//
+// The host announces the next map with MapPrepare; each Active client prepares it while
+// the current map plays on and answers MapReady (or MapReject). The host then sends
+// MapCommit to the clients that are ready: the current session ends and every peer
+// reconnects to the host's next session, whose nonce the commit carries. MapAbort calls
+// it off. Only the host sends prepare, commit and abort; a level is named by its catalog
+// ID, never by a path.
+
+struct MapPrepare {
+    static constexpr MessageKind kKind = MessageKind::MapPrepare;
+    uint32_t transitionId = 1;
+    uint32_t nextEpoch = 2;   // the map epoch the rotation starts (the first map is epoch 1)
+    std::string_view levelId;   // a level catalog ID: letters, digits, '_', '-' and '.'
+    uint16_t sceneId = 1;   // the manifest's ID of its scene
+    Digest schemaDigest{}, contentDigest{};
+    uint32_t rosterRevision = 0;   // changes whenever the host's admitted players change
+    uint32_t loadDeadlineMs = 30000;   // from now, to answer MapReady
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("transition_id", m.transitionId, 1);
+        v.u32("next_epoch", m.nextEpoch, 2);
+        v.string("level_id", m.levelId, 1, kMaxLevelIdBytes);
+        v.u16("scene_id", m.sceneId, 1);
+        v.digest("schema_digest", m.schemaDigest);
+        v.digest("content_digest", m.contentDigest);
+        v.u32("roster_revision", m.rosterRevision);
+        v.u32("load_deadline_ms", m.loadDeadlineMs, 1000, 600000);
+    }
+    // level_id holds only letters, digits, '_', '-' and '.', and doesn't start with '.'.
+    const char* invalid() const;
+};
+
+struct MapReady {
+    static constexpr MessageKind kKind = MessageKind::MapReady;
+    uint32_t transitionId = 1;
+    uint32_t nextEpoch = 2;
+    Digest contentDigest{};   // the client's own, checked again
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("transition_id", m.transitionId, 1);
+        v.u32("next_epoch", m.nextEpoch, 2);
+        v.digest("content_digest", m.contentDigest);
+    }
+    const char* invalid() const { return nullptr; }
+};
+
+struct MapReject {
+    static constexpr MessageKind kKind = MessageKind::MapReject;
+    uint32_t transitionId = 1;
+    ReasonCode reason = ReasonCode::MapNotLoaded;
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("transition_id", m.transitionId, 1);
+        v.reason("reason_code", m.reason);
+    }
+    const char* invalid() const { return nullptr; }
+};
+
+struct MapCommit {
+    static constexpr MessageKind kKind = MessageKind::MapCommit;
+    uint32_t transitionId = 1;
+    uint32_t nextEpoch = 2;
+    uint32_t startTick = 0;   // the next session's first tick
+    Nonce sessionNonce{};   // the next session's; a rejoining client's Hello carries it
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("transition_id", m.transitionId, 1);
+        v.u32("next_epoch", m.nextEpoch, 2);
+        v.u32("start_tick", m.startTick);
+        v.nonce("session_nonce", m.sessionNonce);
+    }
+    const char* invalid() const { return nullptr; }
+};
+
+struct MapAbort {
+    static constexpr MessageKind kKind = MessageKind::MapAbort;
+    static constexpr uint8_t kStay = 0, kMenu = 1;   // where players go
+    uint32_t transitionId = 1;
+    ReasonCode reason = ReasonCode::MapNotLoaded;
+    uint8_t returnTo = kStay;
+    template <class Self, class V>
+    static void fields(Self& m, V& v) {
+        v.u32("transition_id", m.transitionId, 1);
+        v.reason("reason_code", m.reason);
+        v.u8("return_to", m.returnTo, 0, 1);
+    }
+    const char* invalid() const { return nullptr; }
+};
+
 // Alternative i is message kind i + 1.
 using MessageBody = std::variant<
     Hello, Challenge, AuthTicket, Welcome, BaselineBegin, Spawn, Despawn, Ownership, InitialState, BaselineEnd, Ready,
     Active, Inputs, Snapshot, Command, GameEvent, Ping, Pong, Reject, Goodbye, ResyncRequest, DeltaSnapshot,
-    SnapshotAck>;
+    SnapshotAck, MapPrepare, MapReady, MapReject, MapCommit, MapAbort>;
 static_assert(std::variant_size_v<MessageBody> == kLastMessageKind);
 
 inline MessageKind kindOf(const MessageBody& body) { return MessageKind(body.index() + 1); }

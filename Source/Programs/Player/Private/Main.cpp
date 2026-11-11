@@ -580,6 +580,8 @@ int main(int argc, char** argv) {
                 tool.mode = Tool::Mode::AssignNetworkKeys;
             } else if (arg == "--clients" && i + 1 < argc) {
                 netTest.clients = uint32_t(wholeNumber(argv[++i], 63, "--clients"));
+            } else if (arg == "--rotations" && i + 1 < argc) {
+                netTest.rotations = uint32_t(wholeNumber(argv[++i], 100, "--rotations"));
             } else if (arg == "--saves") {
                 tool.listSaves = true;
             } else if (arg == "--load" && i + 1 < argc) {
@@ -728,7 +730,7 @@ int main(int argc, char** argv) {
                     "                                    start Steam for the project's steam_app_id, print\n"
                     "                                    sign-in and relay status, shut it down\n"
                     "player --net-test [--scenario handshake|rejections|stop-start|replication|prediction] [--seed N]\n"
-                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--json file]\n"
+                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--rotations N] [--json file]\n"
                     "                                    run the session handshake over an in-process\n"
                     "                                    loopback network; no Steam, sockets or window\n"
                     "player --net-preview [clean|cafe|poor|hostile]\n"

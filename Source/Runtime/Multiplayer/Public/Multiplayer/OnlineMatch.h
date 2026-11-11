@@ -17,6 +17,11 @@
 //   find():   a bounded search for lobbies of this game and protocol (at most 50)
 //   leave():  leaves the lobby; the application stops Play and goes back to a safe menu
 //
+// Map rotation (S11): while the session changes maps the match is Rotating. The host
+// closes the lobby to joins, the session restarts on the next map (LevelHost), and once
+// it's Active again the lobby advertises the new map (sw_scene) and opens again. A
+// session that ends for the next map is not the end of the match.
+//
 // A session that fails or ends (the host left, a timeout, a rejection) ends the match:
 // Failed with the reason, until the next request. An invite accepted in Steam, or a cold
 // launch with +connect_lobby, is a pending join: taken at once when idle, otherwise held
@@ -50,6 +55,9 @@ struct MatchSetup {
     NetworkSettings settings;
     NetworkCompatibility compatibility;   // protocol, schema and content digests, scene ID
     std::string scenePath;   // the scene to play, inside the project ("Scenes/arena-mp.swscene")
+    // Every scene of the manifest (ID, path): a lobby that has rotated to another map
+    // is still joinable, and the join plays the map the lobby is on.
+    std::vector<std::pair<uint16_t, std::string>> scenes;
     const ReplicationRegistry* registry = nullptr;   // frozen; must outlive the match
     std::vector<NetworkPrefab> prefabs;
     TransportAddress::Kind addressKind = TransportAddress::SteamPeer;   // Loopback in tests
@@ -73,6 +81,7 @@ enum class MatchState : uint8_t {
     Starting,   // a NetworkStart is ready (takeStart), or the session is connecting
     Hosting,   // host: the session is Active and the lobby open to joins
     Joined,   // client: the session is Active
+    Rotating,   // the map is changing: the lobby stays, the session restarts (S11)
     Failed,   // see error(); the next request starts over
 };
 const char* matchStateName(MatchState state);
@@ -98,7 +107,11 @@ public:
     OnlineMatch(const OnlineMatch&) = delete;
     OnlineMatch& operator=(const OnlineMatch&) = delete;
 
-    void setSetup(MatchSetup setup) { m_setup = std::move(setup); }
+    void setSetup(MatchSetup setup) {
+        m_setup = std::move(setup);
+        if (m_setup.scenes.empty() && !m_setup.scenePath.empty())   // made by hand: its own scene only
+            m_setup.scenes.emplace_back(m_setup.compatibility.sceneId, m_setup.scenePath);
+    }
     const MatchSetup& setup() const { return m_setup; }
     bool configured() const { return !m_setup.scenePath.empty(); }
     void setServiceProvider(ServiceProvider provider) { m_provider = std::move(provider); }
@@ -126,6 +139,9 @@ public:
     // Once a start is ready: the NetworkStart to play setup().scenePath with, replacing any
     // Play (so a pending takeEnded() is dropped). Taken once.
     bool takeStart(NetworkStart& out);
+    // The scene the taken start plays (inside the project): the setup's for a host, the
+    // lobby's current map for a client.
+    const std::string& startScenePath() const { return m_startScene.empty() ? m_setup.scenePath : m_startScene; }
     // The session the start made (null when Play stopped): its state moves the match on,
     // and its end ends the match. Call after the session pumped.
     void update(const NetworkWorld* session);
@@ -144,7 +160,7 @@ public:
     NetworkRole role() const { return m_role; }
     LobbyId lobby() const { return m_lobby; }
     bool busy() const;   // a request in flight or a match on
-    bool inMatch() const;   // Starting, Hosting or Joined
+    bool inMatch() const;   // Starting, Hosting, Joined or Rotating
     const std::string& status() const { return m_status; }   // one line for the UI
     const std::string& error() const { return m_error; }
     bool searching() const { return m_findRequest.valid(); }
@@ -152,7 +168,7 @@ public:
     bool directOnly() const { return m_direct; }
 
     static constexpr uint32_t kMaxLobbyResults = 50;
-    static constexpr const char* kProtocol = "1";
+    static constexpr const char* kProtocol = "2";   // 2: map rotation (wire protocol v2)
 
 private:
     bool begin(const char* what);
@@ -161,6 +177,8 @@ private:
     void finish(MatchState state, std::string status);
     bool applyMetadata();
     bool checkLobby(const LobbySummary& lobby, std::string& problem) const;
+    // The manifest scene a lobby's sw_scene names, or null.
+    const std::pair<uint16_t, std::string>* lobbyScene(const std::string& value) const;
     NetworkStart makeStart(NetworkRole role, PeerId host, uint16_t port) const;
     void leaveLobby();
 
@@ -179,6 +197,8 @@ private:
     bool m_sessionSeen = false;   // the started session existed at the last update
     uint32_t m_advertisedPlayers = 0;
     NetworkStart m_start;
+    std::string m_startScene;   // a client's: the lobby's map when it joined
+    uint16_t m_advertisedScene = 0;   // host: sw_scene as last set
     std::string m_status = "offline", m_error;
     std::vector<LobbyListing> m_lobbies;
 };

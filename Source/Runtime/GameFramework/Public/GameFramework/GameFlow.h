@@ -71,7 +71,7 @@ enum class TravelError {
     UnknownLevel,   // not in the level catalog
     UnknownSpawn,   // the destination has no LevelSpawn with that id
     InvalidRequest,   // an empty level, a reset outside NewGame, a disabled exit, no menu level
-    AuthorityRequired,   // online: map travel is the host's, and it isn't supported yet (S11)
+    AuthorityRequired,   // online: only the host changes maps
     UnknownTicket,   // never issued, or too old to remember
     AlreadyFinished,   // the ticket has ended
     TooLateToCancel,   // the old level is already retiring; the travel carries on
@@ -80,6 +80,7 @@ enum class TravelError {
     StartFailed,   // the new level didn't start: nothing is playing
     Cancelled,   // cancelled, replaced by Stop, or Play ended first
     RedirectCycle,   // levels kept asking for another before playing
+    RotationAborted,   // online: the map change was called off (players weren't ready, the host gave up)
 };
 const char* travelErrorName(TravelError error);   // "None", "Busy", ... as in the enum
 
@@ -151,6 +152,14 @@ public:
     // Exit. A disabled exit is InvalidRequest; a one-shot exit is disabled once accepted,
     // so a second contact doesn't travel again. Busy while another travel is active.
     virtual TravelTicket useExit(Entity exit, uint64_t fromEpoch = 0) = 0;
+    // Online, the host: the next level of the network settings' map_rotation after the
+    // current one (the first when the current isn't in it), reason OnlineMap. Every
+    // player loads it, then the match goes on there (docs/Networking.md, "Map rotation").
+    // InvalidRequest without a rotation, AuthorityRequired on a client.
+    virtual TravelTicket rotateMap(uint64_t fromEpoch = 0) {
+        (void)fromEpoch;
+        return {0, TravelError::InvalidRequest, "this flow has no map rotation"};
+    }
 
     // ---- Observers ----
     // Ends the subscription when it goes (or with reset()). Safe to outlive the flow.
@@ -204,6 +213,7 @@ public:
     TravelTicket restartLevel() const;
     TravelTicket returnToMenu() const;
     TravelTicket useExit(Entity exit) const;
+    TravelTicket rotateMap() const;
     TravelError cancel(uint64_t ticket) const;
     std::optional<TravelProgress> status(uint64_t ticket) const;
     uint64_t activeTicket() const { return m_flow ? m_flow->activeTicket() : 0; }

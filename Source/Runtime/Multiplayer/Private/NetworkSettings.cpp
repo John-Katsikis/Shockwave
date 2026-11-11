@@ -205,6 +205,30 @@ const NetworkSettingField kFields[] = {
      {},
      "Match scene",
      "The manifest scene Host plays (.swscene, relative to the project folder); empty: the manifest's first"},
+    {"map_rotation",
+     SettingKind::Text,
+     &S::mapRotation,
+     0,
+     0,
+     {},
+     "Map rotation",
+     "Level catalog IDs the host plays in turn, separated by spaces; empty: no rotation"},
+    {"rotation_ready_seconds",
+     SettingKind::Seconds,
+     &S::rotationReadySeconds,
+     5,
+     300,
+     {},
+     "Rotation load time",
+     "How long players have to load the next map before the host goes on"},
+    {"rotation_drop_unready",
+     SettingKind::Bool,
+     &S::rotationDropUnready,
+     0,
+     0,
+     {},
+     "Drop unready players",
+     "At the deadline: 1 goes on without players who aren't ready, 0 calls the map change off"},
 };
 
 constexpr size_t kFieldCount = std::size(kFields);
@@ -296,6 +320,17 @@ bool setSettingText(
                 settings.*member = value;
             } else if constexpr (std::is_same_v<M, std::string>) {
                 std::string problem;
+                if (key == "map_rotation") {
+                    std::istringstream words{std::string(text)};
+                    std::string id;
+                    while (words >> id)
+                        if (id.size() > 64 || id.front() == '.' ||
+                            id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.") !=
+                                std::string::npos)
+                            return why = key + ": \"" + id + "\" isn't a level ID (letters, digits, _, - and .)", false;
+                    settings.*member = std::string(text);
+                    return true;
+                }
                 const bool scene = key == "match_scene";
                 if (scene && text.empty()) {
                     settings.*member = std::string();   // the manifest's first scene
@@ -351,7 +386,8 @@ void validateNetworkSettings(
     for (const NetworkSettingField& field : kFields) {
         NetworkSettings copy = s;
         std::string why, text = settingText(s, field);
-        if (field.kind == SettingKind::Path) text = s.*std::get<std::string NetworkSettings::*>(field.member);
+        if (field.kind == SettingKind::Path || field.kind == SettingKind::Text)
+            text = s.*std::get<std::string NetworkSettings::*>(field.member);
         if (!setSettingText(copy, field, text, why)) error(field.key, why);
     }
     if (projectTickRate > 0 && double(s.tickRate) != projectTickRate)
@@ -390,6 +426,13 @@ void validateNetworkSettings(
             "max_rewind_ms", "max_rewind_ms " + std::to_string(s.maxRewindMs) + " is less than interpolation_ms " +
                                  std::to_string(s.interpolationMs) +
                                  ": shots at players shown that far back can't be checked");
+}
+
+std::vector<std::string> mapRotationLevels(const NetworkSettings& settings) {
+    std::vector<std::string> ids;
+    std::istringstream words(settings.mapRotation);
+    for (std::string id; words >> id;) ids.push_back(id);
+    return ids;
 }
 
 bool hasErrors(std::span<const NetProblem> problems) {
@@ -443,8 +486,9 @@ bool parseNetworkSettings(std::string_view text, std::string_view shown, Network
             return fail("duplicate setting " + key + " (first on line " + std::to_string(result.lines[index]) + ")");
         std::string value, extra;
         row >> std::ws;
-        if (field->kind == SettingKind::Path) {
-            if (row.peek() != '"' || !(row >> std::quoted(value))) return fail(key + " takes a quoted path");
+        if (field->kind == SettingKind::Path || field->kind == SettingKind::Text) {
+            if (row.peek() != '"' || !(row >> std::quoted(value)))
+                return fail(key + (field->kind == SettingKind::Path ? " takes a quoted path" : " takes quoted text"));
         } else if (!(row >> value)) {
             return fail(key + " needs a value");
         }
