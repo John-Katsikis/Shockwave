@@ -192,6 +192,12 @@ if(NOT json MATCHES "\"mode\": \"net-test\"" OR NOT json MATCHES "\"ok\": true" 
 endif()
 run(0 "net-test prediction seed 2 preset hostile: ok.*prediction: [0-9]+ ticks predicted.*final error 0.0000 m"
     --net-test --scenario prediction --seed 2 --preset hostile --clients 4)
+# A match: predicted characters shooting through the preset's faults, a late join and a map
+# change; --net-set overrides a setting for the run.
+run(0 "net-test match seed 1 preset poor: ok.*match: 4 players over 10 s.*refused 0.*final error 0.0000 m"
+    --net-test --scenario match --clients 3 --preset poor --net-set max_players=16)
+run(2 "--net-set takes key=value" --net-test --net-set bogus=1)
+run(2 "max_players must be a whole number from 2 to 64" --net-test --net-set max_players=99)
 run(2 "unknown scenario bogus" --net-test --scenario bogus)
 run(2 "unknown fault preset bogus" --net-test --preset bogus)
 run(2 "--clients must be 1 to max_players - 1" --net-test --clients 12)

@@ -229,6 +229,14 @@ const NetworkSettingField kFields[] = {
      {},
      "Drop unready players",
      "At the deadline: 1 goes on without players who aren't ready, 0 calls the map change off"},
+    {"degrade_updates",
+     SettingKind::Bool,
+     &S::degradeUpdates,
+     0,
+     0,
+     {},
+     "Degrade updates",
+     "1: a player whose connection can't keep up gets other objects, then players, less often until it catches up"},
 };
 
 constexpr size_t kFieldCount = std::size(kFields);

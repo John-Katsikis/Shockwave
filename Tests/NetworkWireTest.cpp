@@ -422,7 +422,7 @@ static void testBadHeaders() {
     CHECK(decodeAs(with(28, 3), MessageKind::Goodbye).code == WireStatusCode::LengthMismatch);
     CHECK(decodeAs(with(31, 1), MessageKind::Goodbye).code == WireStatusCode::LengthMismatch);
     // An unknown reason code.
-    CHECK(decodeAs(with(32, 16), MessageKind::Goodbye).code == WireStatusCode::OutOfRange);
+    CHECK(decodeAs(with(32, 17), MessageKind::Goodbye).code == WireStatusCode::OutOfRange);
 
     // Size limits: unreliable messages are capped at 1152 bytes, reliable at 16384.
     std::vector<uint8_t> ping = unhex(kGolden[16].hex);
@@ -573,7 +573,7 @@ static void testRanges() {
     const std::vector<uint8_t> ticket(kMaxAuthTicketBytes + 1, 1);
     CHECK(encodeStatus(AuthTicket{ticket}).code == WireStatusCode::OutOfRange);
     CHECK(bool(encodeStatus(AuthTicket{std::span(ticket).first(kMaxAuthTicketBytes)})));
-    CHECK(encodeStatus(Reject{ReasonCode(16), ""}).code == WireStatusCode::OutOfRange);
+    CHECK(encodeStatus(Reject{ReasonCode(17), ""}).code == WireStatusCode::OutOfRange);
 
     // A Snapshot that doesn't fit an unreliable message.
     std::vector<uint8_t> many(4096);

@@ -184,6 +184,10 @@ int main(int argc, char** argv) {
                 netTest.rotations = uint32_t(wholeNumber(argv[++i], 100, "--rotations"));
                 continue;
             }
+            if (arg == "--net-set" && i + 1 < argc) {
+                netTest.sets.push_back(argv[++i]);
+                continue;
+            }
             if ((arg == "--save-info" || arg == "--save-migrate") && i + 1 < argc) {
                 (arg == "--save-info" ? saveInfoFile : saveMigrateFile) = argv[++i];
                 continue;
@@ -732,10 +736,12 @@ int main(int argc, char** argv) {
                     "player --steam-status [client|server]\n"
                     "                                    start Steam for the project's steam_app_id, print\n"
                     "                                    sign-in and relay status, shut it down\n"
-                    "player --net-test [--scenario handshake|rejections|stop-start|replication|prediction] [--seed N]\n"
-                    "       [--preset clean|cafe|poor|hostile] [--clients N] [--rotations N] [--json file]\n"
-                    "                                    run the session handshake over an in-process\n"
-                    "                                    loopback network; no Steam, sockets or window\n"
+                    "player --net-test [--scenario handshake|rejections|stop-start|replication|prediction|\n"
+                    "       map_rotation|match] [--seed N] [--preset clean|cafe|poor|hostile] [--clients N]\n"
+                    "       [--rotations N] [--net-set key=value]... [--json file]\n"
+                    "                                    run network sessions over an in-process loopback\n"
+                    "                                    network; no Steam, sockets or window. match measures\n"
+                    "                                    a whole match (--net-set max_players=64 for 63 clients)\n"
                     "player --net-preview [clean|cafe|poor|hostile]\n"
                     "                                    play the scene as a client of a host in this\n"
                     "                                    process over a simulated network (default poor),\n"

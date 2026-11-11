@@ -276,6 +276,9 @@ struct NetTestCommand {
     uint64_t seed = 1;
     uint32_t clients = 3;
     uint32_t rotations = 3;   // map_rotation
+    // --net-set key=value: network settings for this run over the project's (or the
+    // defaults), such as max_players 64 for a 63-client match.
+    std::vector<std::string> sets;
 };
 int netTest(const shockwave::Project& project, const NetTestCommand& command, const fs::path& json);
 // --net-dump capture.swnetcap [--json out.json]: the capture decoded, every record with its

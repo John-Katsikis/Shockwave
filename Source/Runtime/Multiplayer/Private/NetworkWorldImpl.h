@@ -52,6 +52,14 @@ struct Peer {
     double outTokensAt = -1;
     uint32_t sentSerial = 0;   // the newest control serial handed to the transport
     uint32_t propCursor = 0;   // round-robin position among non-player objects
+    uint32_t playerCursor = 0;   // the same among players, so none is always left out
+    // Update degradation (degrade_updates): 0 everything every snapshot, 1 other objects
+    // every second snapshot, 2 players every second and other objects every fourth.
+    uint8_t updateLevel = 0;
+    uint8_t pressured = 0;   // snapshots in a row that couldn't send everything due
+    double calmSince = -1;   // since when nothing was held back, with room to spare
+    double levelChangedAt = -1e9;
+    uint32_t snapshotTurn = 0;   // snapshot ticks while Active, for the level's spacing
     bool fullRefresh = false;   // the next snapshot carries every object
     std::array<double, NetworkWorld::kMaxResyncsPerMinute> resyncs{-1e9, -1e9, -1e9};
 
@@ -158,6 +166,7 @@ struct NetworkWorld::Impl final : TransportSink {
     uint32_t rosterRevision = 0;   // host: bumped on every join and leave
     double reservationUntil = -1;   // host: reserved slots expire then (set on the first pump)
     std::vector<std::pair<PeerId, uint16_t>> reservations;   // host: not yet reclaimed
+    std::vector<PeerId> kicked;   // host: refused for the rest of the match
     double rejoinUntil = -1, retryAt = -1;   // client: the rejoin window and the next attempt
     bool handedOver = false;   // client: the host ended this session for the next map
     double committedAt = -1;   // host: when the commit went out
@@ -344,6 +353,10 @@ struct NetworkWorld::Impl final : TransportSink {
     void sweepDestroyed();
     void sendSnapshots();
     void sendSnapshot(Peer& p);
+    // After a snapshot tick: raises or lowers the peer's update level (degrade_updates).
+    // roomy: the snapshot used at most one undegraded snapshot's budget, so the level
+    // below would fit too.
+    void adjustUpdateLevel(Peer& p, bool pressured, bool roomy);
     // Client. replicationMessage is false for a message that isn't replication's.
     bool replicationMessage(const DecodedMessage& decoded);
     bool spawnMessage(const Spawn& spawn);

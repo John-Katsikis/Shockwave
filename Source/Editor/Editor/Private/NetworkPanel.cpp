@@ -430,7 +430,7 @@ std::string Editor::networkDiagnostics() {
             out += "peer slot " + std::to_string(p.slot) + ": " + p.status + ", rtt " + std::to_string(int(p.rttMs)) +
                    " ms, pending " + std::to_string(p.pendingReliableBytes) + "+" +
                    std::to_string(p.pendingUnreliableBytes) + " bytes, " + std::to_string(p.bytesReceived) + " in, " +
-                   std::to_string(p.bytesSent) + " out\n";
+                   std::to_string(p.bytesSent) + " out, update level " + std::to_string(p.updateLevel) + "\n";
         if (network->state() == net::NetworkState::Failed) out += "failure: " + network->failureText() + "\n";
     } else {
         out += "session: offline\n";
@@ -655,12 +655,17 @@ void Editor::drawNetworkWindow() {
                 m_peerRates = std::move(next);
                 m_peerRateAge = 0;
             }
+            const bool host = network->role() == net::NetworkRole::Authority;
             if (ImGui::BeginTable(
-                    "peers", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                    "peers", host ? 11 : 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
                     ImVec2(0, 190))) {
                 for (const char* column :
                      {"Slot", "Name", "Status", "RTT", "In KiB/s", "Out KiB/s", "Pending", "Input age", "Snapshot age"})
                     ImGui::TableSetupColumn(column);
+                if (host) {
+                    ImGui::TableSetupColumn("Updates");
+                    ImGui::TableSetupColumn("");
+                }
                 ImGui::TableHeadersRow();
                 for (const net::NetworkPeerInfo& p : m_peers) {
                     ImGui::TableNextRow();
@@ -699,17 +704,38 @@ void Editor::drawNetworkWindow() {
                         ImGui::Text("%.0f ms", p.snapshotAge * 1000);
                     else
                         ImGui::TextDisabled("-");
+                    if (!host) continue;
+                    ImGui::TableNextColumn();
+                    static constexpr const char* kLevels[] = {"full", "others 1/2", "players 1/2"};
+                    if (p.updateLevel == 0)
+                        ImGui::TextDisabled("full");
+                    else
+                        ImGui::TextColored(warningColor, "%s", kLevels[std::min<int>(p.updateLevel, 2)]);
+                    ImGui::SetItemTooltip(
+                        "degrade_updates: when this player's connection can't keep up, other objects and then "
+                        "players are sent to it less often, until it catches up");
+                    ImGui::TableNextColumn();
+                    if (p.slot) {
+                        ImGui::PushID(int(p.slot));
+                        if (gui::button("Kick")) {
+                            if (net::NetworkWorld* live = session() ? session()->network() : nullptr)
+                                if (!live->kick(p.slot)) error("Couldn't kick that player");
+                        }
+                        ImGui::SetItemTooltip("Remove this player from the match; they can't rejoin it (Kicked)");
+                        ImGui::PopID();
+                    }
                 }
                 ImGui::EndTable();
             }
             const net::NetworkWorldStats& s = network->stats();
             ImGui::TextDisabled(
                 "Corrections %llu (max %.3f m), %llu ticks replayed, %llu input fallbacks, %llu invalid messages; "
-                "budget %u B/s per peer",
+                "budget %u B/s per peer, %u players degraded (%s)",
                 static_cast<unsigned long long>(s.corrections), double(s.maxCorrection),
                 static_cast<unsigned long long>(s.replayedTicks), static_cast<unsigned long long>(s.inputFallbacks),
                 static_cast<unsigned long long>(s.malformed),
-                unsigned(network->start().settings.outboundBytesPerSecond));
+                unsigned(network->start().settings.outboundBytesPerSecond), unsigned(s.degradedPeers),
+                network->start().settings.degradeUpdates ? "degrade_updates on" : "degrade_updates off");
             if (network->state() == net::NetworkState::Failed)
                 ImGui::TextColored(errorColor, "%s", network->failureText().c_str());
         }

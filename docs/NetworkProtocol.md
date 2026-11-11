@@ -229,14 +229,14 @@ An authored object (`prefab_id` 0) has an `authored_key`; a spawned prefab has a
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
-| 0 | `reason_code` | u16 reason | 0..15 |
+| 0 | `reason_code` | u16 reason | 0..16 |
 | 2 | `diagnostic` | string(160) | 0..160 bytes UTF-8, no NUL |
 
 ### 20 Goodbye
 
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
-| 0 | `reason_code` | u16 reason | 0..15 |
+| 0 | `reason_code` | u16 reason | 0..16 |
 
 ### 21 ResyncRequest
 
@@ -299,7 +299,7 @@ Bit i of `received_bits` is `latest_tick - 1 - i`.
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
 | 0 | `transition_id` | u32 | >= 1 |
-| 4 | `reason_code` | u16 reason | 0..15 |
+| 4 | `reason_code` | u16 reason | 0..16 |
 
 ### 27 MapCommit
 
@@ -319,7 +319,7 @@ Sent only to clients that answered MapReady. A rejoining client stamps its Hello
 | Offset | Field | Type | Allowed |
 |---|---|---|---|
 | 0 | `transition_id` | u32 | >= 1 |
-| 4 | `reason_code` | u16 reason | 0..15 |
+| 4 | `reason_code` | u16 reason | 0..16 |
 | 6 | `return_to` | u8 | 0..1 |
 
 ## Input command (24 bytes)
@@ -381,3 +381,4 @@ Profiles 1..31 belong to the engine and 32..1023 to games.
 | 13 | ServiceUnavailable |
 | 14 | UnsupportedFeature |
 | 15 | MapRotation |
+| 16 | Kicked |
