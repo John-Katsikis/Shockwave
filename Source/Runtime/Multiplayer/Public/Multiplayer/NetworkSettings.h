@@ -67,6 +67,10 @@ struct NetworkSettings {
     std::string mapRotation;
     double rotationReadySeconds = 30;   // how long players have to load the next map
     bool rotationDropUnready = true;   // at the deadline: go without them (else call it off)
+    // S11: when a peer's budget or queues can't keep up, the host sends it other objects,
+    // then players, less often (and back once it catches up); off sends everything it can
+    // every snapshot, as before.
+    bool degradeUpdates = true;
     bool operator==(const NetworkSettings&) const = default;
 };
 

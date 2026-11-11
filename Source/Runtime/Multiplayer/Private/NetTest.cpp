@@ -11,18 +11,21 @@
 #include <Physics/Physics.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <deque>
+#include <format>
 #include <functional>
 #include <memory>
+#include <numeric>
 
 namespace shockwave::net {
 
 namespace {
 
-constexpr const char* kScenarios[] = {"handshake",   "rejections", "stop-start",
-                                      "replication", "prediction", "map_rotation"};
+constexpr const char* kScenarios[] = {"handshake",  "rejections",   "stop-start", "replication",
+                                      "prediction", "map_rotation", "match"};
 constexpr uint64_t kHostIdentity = 1000;
 
 struct Node {
@@ -33,6 +36,7 @@ struct Node {
     std::unique_ptr<NetworkWorld> world;
     ReasonCode expected = ReasonCode::Normal;
     double joinMs = -1;
+    uint64_t stepNanos = 0;   // wall-clock time of its last step()
     NetTestPeer result;
 };
 
@@ -109,6 +113,7 @@ public:
         const double now = nowSeconds();
         for (Node& node : m_nodes) {
             if (!node.world) continue;
+            const auto began = std::chrono::steady_clock::now();
             node.services->pump();
             OnlineEvent event;
             while (node.services->pollEvent(event)) node.world->handleOnlineEvent(event);
@@ -117,6 +122,8 @@ public:
             if (node.world->role() == NetworkRole::Authority && onHostTick) onHostTick(m_ticks);
             if (onTick) onTick(node, m_ticks);
             node.world->endTick(m_ticks);
+            node.stepNanos = uint64_t(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - began).count());
             if (node.world->role() == NetworkRole::Client && node.joinMs < 0 &&
                 node.world->state() == NetworkState::Active)
                 node.joinMs = now * 1000;
@@ -831,6 +838,449 @@ void mapRotation(const NetTestOptions& options, const FaultProfile& faults, NetT
     checkClean(report);
 }
 
+// ---- match: a measured match at 2 to 64 players ----------------------------------------------
+
+constexpr uint16_t kScoreEvent = 40;   // nettest.score {shooter u8 1..64, victim u8 1..64}
+constexpr float kEyeHeight = 1.6f, kChestHeight = 0.9f;
+
+glm::vec3 spawnFor(uint16_t slot) {
+    const uint32_t i = slot > 0 ? slot - 1u : 0u;
+    return {float(i % 8) * 3.0f - 10.5f, 0.05f, float(i / 8) * 3.0f - 10.5f};
+}
+
+// The scenario's aim rule, the same on both sides: yaw 0 looks down -z.
+void aimAt(InputCommand& c, glm::vec3 from, glm::vec3 to) {
+    glm::vec3 d = to - from;
+    const float length = glm::length(d);
+    if (length < 1e-3f) return;
+    d /= length;
+    constexpr float kPi = 3.14159265358979f;
+    const float yaw = std::atan2(d.x, -d.z);
+    const float pitch = std::asin(std::clamp(d.y, -1.0f, 1.0f));
+    c.yaw = uint16_t(std::lround((yaw + kPi) / (2 * kPi) * 65536.0f) & 0xffff);
+    c.pitch = int16_t(std::clamp<long>(std::lround(pitch / glm::radians(89.0f) * 32767.0f), -32767, 32767));
+}
+
+glm::vec3 aimDirection(const InputCommand& c) {
+    constexpr float kPi = 3.14159265358979f;
+    const float yaw = float(c.yaw) / 65536.0f * 2 * kPi - kPi;
+    const float pitch = float(c.pitch) / 32767.0f * glm::radians(89.0f);
+    return {std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch)};
+}
+
+double percentile(std::vector<double> values, double p) {
+    if (values.empty()) return 0;
+    std::sort(values.begin(), values.end());
+    return values[std::min(values.size() - 1, size_t(p * double(values.size() - 1) + 0.5))];
+}
+
+void match(const NetTestOptions& options, const FaultProfile& faults, NetTestReport& report) {
+    ReplicationRegistry registry;
+    registerEngineReplication(registry);
+    std::string why;
+    EventDesc score;
+    score.id = kScoreEvent;
+    score.name = "nettest.score";
+    score.payload = {
+        netInt("shooter", NetFieldType::U8, 1, kMaxPlayers, NetFieldRole::Counter),
+        netInt("victim", NetFieldType::U8, 1, kMaxPlayers, NetFieldRole::Counter)};
+    std::vector<std::string> problems;
+    if (!registry.addEvent(std::move(score), why) || !registry.freeze(problems)) {
+        report.errors.push_back("the match registry didn't freeze: " + why);
+        return;
+    }
+    JobSystem jobs(1);
+    Harness h(options, faults);
+    auto spawnCharacter = [](World& world, const NetworkPrefab& prefab, const Transform& at) {
+        const Entity e = world.create();
+        world.add<Transform>(e, at);
+        world.add<Name>(e, {"character"});
+        world.add<CharacterController>(e, {});
+        NetworkObject n;
+        n.profile = prefab.profile;
+        n.mode = NetworkObject::Mode::PredictedCharacter;
+        world.add<NetworkObject>(e, n);
+        return e;
+    };
+    auto makeScene = [](World& world, uint32_t) {
+        const Entity e = world.create();
+        world.add<Name>(e, {"floor"});
+        Transform t;
+        t.position = {0, -0.5f, 0};
+        world.add<Transform>(e, t);
+        Collider c;
+        c.halfExtents = {60, 0.5f, 60};
+        world.add<Collider>(e, c);
+        RigidBody body;
+        body.motion = RigidBody::Motion::Static;
+        world.add<RigidBody>(e, body);
+    };
+    h.replicate(registry, {{1, "Prefabs/Net Character.swprefab", "engine.pose.v1"}}, spawnCharacter, makeScene);
+    const uint32_t rate = std::max<uint32_t>(options.settings.tickRate, 1);
+    const uint32_t players = options.clients + 1;
+    NetTestMatch& m = report.match;
+    m.players = players;
+
+    // Host state: each player's character by slot, and the match's switches.
+    std::vector<Entity> pawns(kMaxPlayers + 1, kNullEntity);
+    bool shooting = false, quiet = false;
+    uint64_t physicsNanos = 0;   // the host's, this tick
+    auto setup = [&](Node& node) {
+        node.physics = std::make_unique<PhysicsWorld>(*node.scene, jobs);
+        node.world->setPhysics(node.physics.get());
+        if (node.world->role() == NetworkRole::Client) {
+            node.world->setPredictionMove([](const World&, Entity, const InputCommand& c) { return scriptedMove(c); });
+        } else {
+            node.world->setCombatTargets([](const World& world, Entity e, CombatTarget& out) {
+                const auto* id = world.get<NetworkIdentity>(e);
+                if (!id || id->ownerSlot == 0) return false;
+                out.team = uint8_t(id->ownerSlot % 2);
+                out.eyeHeight = kEyeHeight;
+                return true;
+            });
+        }
+        return h.begin(node, report.errors);
+    };
+    // A map change or the first start: a fresh scene, physics and session.
+    auto reload = [&](Node& node, const NetworkStart& start) {
+        if (node.world) node.world->close();
+        node.world.reset();
+        node.physics.reset();
+        node.scene = std::make_unique<World>();
+        makeScene(*node.scene, 0);
+        node.world = std::make_unique<NetworkWorld>(start, node.services.get(), node.scene.get());
+        node.joinMs = -1;
+        return setup(node);
+    };
+
+    Node& host = h.add("host", h.start(NetworkRole::Authority), kHostIdentity);
+    if (!setup(host)) return h.finish(report);
+    const uint32_t late = options.clients >= 2 ? options.clients : 0;   // the late joiner, 1-based
+    for (uint32_t i = 1; i <= options.clients; ++i) {
+        Node& client = h.add("client " + std::to_string(i), h.start(NetworkRole::Client), kHostIdentity + i);
+        if (i != late)
+            setup(client);
+        else
+            client.world.reset();   // it starts 3 s later
+    }
+    auto hostSpawnOwn = [&] {
+        NetworkWorld& net = *h.nodes()[0].world;
+        Transform at;
+        at.position = spawnFor(1);
+        if (auto own = net.spawn(1, at, 1)) pawns[1] = own.value();
+    };
+    hostSpawnOwn();
+
+    // Score events each client read, while counting.
+    std::vector<uint64_t> cursors(h.nodes().size(), 0), scores(h.nodes().size(), 0);
+    bool counting = false;
+    h.onHostTick = [&](uint32_t tick) {
+        Node& hn = h.nodes()[0];
+        NetworkWorld& net = *hn.world;
+        World& world = *hn.scene;
+        NetworkEvent event;
+        while (net.pollEvent(event)) {
+            if (event.kind == NetworkEventKind::PlayerJoined && event.slot <= kMaxPlayers) {
+                Transform at;
+                at.position = spawnFor(event.slot);
+                if (auto pawn = net.spawn(1, at, event.slot))
+                    pawns[event.slot] = pawn.value();
+                else
+                    report.errors.push_back(std::string("spawn failed: ") + pawn.error().message);
+            } else if (event.kind == NetworkEventKind::PlayerLeft && event.slot <= kMaxPlayers) {
+                if (world.alive(pawns[event.slot])) (void)net.despawn(pawns[event.slot]);
+                pawns[event.slot] = kNullEntity;
+            }
+        }
+        for (uint16_t slot = 1; slot <= players; ++slot) {
+            const Entity pawn = pawns[slot];
+            if (!world.alive(pawn)) continue;
+            InputCommand c;
+            if (slot == 1)
+                c = scripted(0, tick, rate, quiet);
+            else
+                net.takeInput(slot, net.identity(pawn) ? net.identity(pawn)->incarnation : 0, c);
+            const PredictedMove move = scriptedMove(c);
+            CharacterController& controller = *world.get<CharacterController>(pawn);
+            controller.desiredVelocity = move.desiredVelocity;
+            controller.jumpRequested = controller.jumpRequested || move.jump;
+            if (slot == 1 || !shooting || !(c.heldBits & InputCommand::kHeldFire)) continue;
+            ShotQuery shot;
+            shot.shooter = pawn;
+            shot.origin = world.get<Transform>(pawn)->position + glm::vec3(0, kEyeHeight, 0);
+            shot.direction = aimDirection(c);
+            shot.range = 100;
+            shot.command = &c;
+            ShotResult result;
+            if (!net.resolveShot(shot, result)) continue;
+            ++m.shots;
+            m.refusedShots += result.rewind == ShotRewind::Refused;
+            if (!result.player) continue;
+            const NetworkIdentity* victim = net.identity(result.hit);
+            if (!victim || victim->ownerSlot == 0) continue;
+            ++m.hits;
+            const uint16_t victimSlot = victim->ownerSlot;
+            Transform at;
+            at.position = spawnFor(victimSlot);
+            if (net.respawn(result.hit, &at)) ++m.respawns;
+            ProfileValue payload;
+            payload.fields[0].u = slot;
+            payload.fields[1].u = victimSlot;
+            if (auto sent = net.sendEvent(kScoreEvent, result.hit, payload); !sent)
+                report.errors.push_back(std::string("a score event was refused: ") + sent.error().message);
+        }
+    };
+    h.onTick = [&](Node& node, uint32_t tick) {
+        NetworkWorld& net = *node.world;
+        uint32_t index = 0;
+        for (uint32_t i = 0; i < h.nodes().size(); ++i)
+            if (&h.nodes()[i] == &node) index = i;
+        if (net.role() == NetworkRole::Client && net.state() == NetworkState::Active) {
+            const Entity mine = net.controlledEntity();
+            const NetworkIdentity* identity = net.identity(mine);
+            InputCommand c = scripted(index, tick, rate, quiet);
+            c.incarnation = identity ? identity->incarnation : 0;
+            const uint16_t slot = net.localSlot();
+            // Once a second, aim at the next player as this machine shows them, and fire.
+            if (shooting && !quiet && identity && (tick + slot * 13u) % rate == 0) {
+                const uint16_t target = uint16_t(slot % players + 1);
+                Entity aimed = kNullEntity;
+                node.scene->each<const NetworkIdentity>([&](Entity e, const NetworkIdentity& id) {
+                    if (id.ownerSlot == target) aimed = e;
+                });
+                const Transform* own = node.scene->get<Transform>(mine);
+                if (own && node.scene->alive(aimed)) {
+                    const PresentationTransform* shown = node.scene->get<PresentationTransform>(aimed);
+                    const glm::vec3 there = shown ? shown->value.position : node.scene->get<Transform>(aimed)->position;
+                    aimAt(c, own->position + glm::vec3(0, kEyeHeight, 0), there + glm::vec3(0, kChestHeight, 0));
+                    c.heldBits |= InputCommand::kHeldFire;
+                }
+            }
+            if (identity) net.sendInput(c);
+        }
+        net.prepareStep();
+        const auto began = std::chrono::steady_clock::now();
+        node.physics->step(1.0 / double(rate));
+        if (net.role() == NetworkRole::Authority)
+            physicsNanos = uint64_t(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - began).count());
+        if (net.role() == NetworkRole::Client) {
+            net.present(1.0f);
+            if (counting) {
+                ReceivedGameEvent e;
+                while (net.readGameEvent(cursors[index], e)) scores[index] += e.eventId == kScoreEvent;
+            }
+        }
+    };
+
+    // ---- Joining, one player late ----
+    auto everyoneActive = [&](uint32_t epoch) {
+        for (Node& n : h.nodes())
+            if (!n.world || n.world->state() != NetworkState::Active || n.world->mapEpoch() != epoch) return false;
+        return h.nodes()[0].world->stats().activePeers == options.clients;
+    };
+    if (late) {
+        h.runUntil([] { return false; }, h.ticksFor(3) - 1);
+        const double lateBegan = h.nowSeconds() * 1000;
+        Node& lateNode = h.nodes()[late];
+        lateNode.world =
+            std::make_unique<NetworkWorld>(h.start(NetworkRole::Client), lateNode.services.get(), lateNode.scene.get());
+        setup(lateNode);
+        if (!h.runUntil([&] { return everyoneActive(1); }, h.ticksFor(options.settings.handshakeTimeoutSeconds + 5))) {
+            report.errors.push_back("not every player joined");
+            return h.stopAll(report);
+        }
+        m.lateJoinMs = h.nodes()[late].joinMs - lateBegan;
+    } else if (!h.runUntil(
+                   [&] { return everyoneActive(1); }, h.ticksFor(options.settings.handshakeTimeoutSeconds + 5))) {
+        report.errors.push_back("not every player joined");
+        return h.stopAll(report);
+    }
+    std::vector<uint16_t> slots;
+    for (Node& n : h.nodes()) slots.push_back(n.world->localSlot());
+
+    // ---- 10 s of play, measured ----
+    std::vector<NetworkPeerInfo> info;
+    struct Totals {
+        uint64_t up = 0, down = 0;
+    };
+    auto totals = [&](Node& n) {
+        Totals t;
+        n.world->peerInfo(info);
+        for (const NetworkPeerInfo& p : info) t.up += p.bytesSent, t.down += p.bytesReceived;
+        return t;
+    };
+    std::vector<Totals> before;
+    for (Node& n : h.nodes()) before.push_back(totals(n));
+    for (size_t i = 1; i < h.nodes().size(); ++i) cursors[i] = h.nodes()[i].world->gameEventCursor();
+    const NetworkWorldStats startStats = h.nodes()[0].world->stats();
+    shooting = counting = true;
+    const uint32_t measured = 10 * rate;
+    std::vector<double> hostTicks;
+    double physicsTotal = 0, clientTotal = 0;
+    uint64_t clientSteps = 0;
+    for (uint32_t t = 0; t < measured; ++t) {
+        h.step();
+        hostTicks.push_back(double(h.nodes()[0].stepNanos) / 1e6);
+        physicsTotal += double(physicsNanos) / 1e6;
+        for (size_t i = 1; i < h.nodes().size(); ++i) {
+            const double ms = double(h.nodes()[i].stepNanos) / 1e6;
+            clientTotal += ms;
+            ++clientSteps;
+            m.clientTickMaxMs = std::max(m.clientTickMaxMs, ms);
+        }
+        if (t % (rate / 2) == 0) {
+            for (size_t i = 0; i < h.nodes().size(); ++i) {
+                NetworkWorld& w = *h.nodes()[i].world;
+                (i == 0 ? m.hostMemoryBytes : m.clientMemoryBytes) =
+                    std::max<uint64_t>(i == 0 ? m.hostMemoryBytes : m.clientMemoryBytes, w.memoryBytes());
+            }
+            h.nodes()[0].world->peerInfo(info);
+            for (const NetworkPeerInfo& p : info) {
+                m.pendingReliableHigh = std::max(m.pendingReliableHigh, p.pendingReliableBytes);
+                m.pendingUnreliableHigh = std::max(m.pendingUnreliableHigh, p.pendingUnreliableBytes);
+            }
+            m.degradedPeersHigh = std::max(m.degradedPeersHigh, h.nodes()[0].world->stats().degradedPeers);
+        }
+    }
+    shooting = false;
+    m.measuredSeconds = double(measured) / rate;
+    const NetworkWorldStats& hs = h.nodes()[0].world->stats();
+    m.hostTickMs = hostTicks.empty() ? 0 : std::accumulate(hostTicks.begin(), hostTicks.end(), 0.0) / hostTicks.size();
+    m.hostTickP99Ms = percentile(hostTicks, 0.99);
+    m.hostTickMaxMs = percentile(hostTicks, 1.0);
+    m.hostPhysicsMs = physicsTotal / measured;
+    m.hostNetworkMs = double(hs.workNanos - startStats.workNanos) / 1e6 / measured;
+    m.clientTickMs = clientSteps ? clientTotal / double(clientSteps) : 0;
+    const Totals hostNow = totals(h.nodes()[0]);
+    m.hostUpBytesPerSecond = double(hostNow.up - before[0].up) / m.measuredSeconds;
+    m.hostDownBytesPerSecond = double(hostNow.down - before[0].down) / m.measuredSeconds;
+    m.hostUpPerClient = m.hostUpBytesPerSecond / options.clients;
+    m.hostMessagesPerSecond = double(hs.messagesSent - startStats.messagesSent) / m.measuredSeconds;
+    for (size_t i = 1; i < h.nodes().size(); ++i) {
+        const Totals now = totals(h.nodes()[i]);
+        m.clientDownBytesPerSecond += double(now.down - before[i].down) / m.measuredSeconds / options.clients;
+        m.clientUpBytesPerSecond += double(now.up - before[i].up) / m.measuredSeconds / options.clients;
+    }
+    m.controlQueueHigh = hs.controlQueueHigh;
+    m.recordsLimited = hs.recordsLimited - startStats.recordsLimited;
+    m.updateLevelRaises = hs.updateLevelRaises - startStats.updateLevelRaises;
+    m.updateLevelDrops = hs.updateLevelDrops - startStats.updateLevelDrops;
+    // Every score event reaches every client (reliably, in order); how long the last
+    // one took is reported.
+    m.scoreEvents = hs.gameEventsSent - startStats.gameEventsSent;
+    const double settleBegan = h.nowSeconds();
+    h.runUntil(
+        [&] {
+            for (size_t i = 1; i < h.nodes().size(); ++i)
+                if (scores[i] < m.scoreEvents) return false;
+            return true;
+        },
+        5 * rate);
+    m.eventsSettledMs = (h.nowSeconds() - settleBegan) * 1000;
+    counting = false;
+    for (size_t i = 1; i < h.nodes().size(); ++i)
+        if (scores[i] != m.scoreEvents)
+            report.errors.push_back(
+                h.nodes()[i].name + " read " + std::to_string(scores[i]) + " of " + std::to_string(m.scoreEvents) +
+                " score events within 5 s");
+    if (m.hostUpPerClient > 1.1 * double(options.settings.outboundBytesPerSecond))
+        report.errors.push_back(
+            "the host sent " + std::to_string(int64_t(m.hostUpPerClient)) +
+            " bytes/s per player, over outbound_bytes_per_second " +
+            std::to_string(options.settings.outboundBytesPerSecond));
+
+    // ---- The map changes ----
+    MapRotationRequest request;
+    request.level = "map-2";
+    request.sceneId = 2;
+    request.readySeconds = 10;
+    const double rotationBegan = h.nowSeconds();
+    if (auto prepared = h.nodes()[0].world->prepareRotation(request); !prepared) {
+        report.errors.push_back(std::string("the host couldn't announce a map: ") + prepared.error().message);
+        return h.stopAll(report);
+    }
+    DeterministicRandom random(options.seed ^ 0x3a7c4);
+    std::vector<uint32_t> loadTicks;
+    for (size_t i = 0; i < h.nodes().size(); ++i) loadTicks.push_back(1 + uint32_t(random.next() % h.ticksFor(0.5)));
+    const uint32_t from = h.ticks();
+    const bool committed = h.runUntil(
+        [&] {
+            bool all = true;
+            for (size_t i = 0; i < h.nodes().size(); ++i) {
+                NetworkWorld& w = *h.nodes()[i].world;
+                if (w.rotation().phase == RotationPhase::Preparing && h.ticks() - from >= loadTicks[i])
+                    w.rotationReady();
+                all = all && w.rotation().phase == RotationPhase::Committed;
+            }
+            return all;
+        },
+        h.ticksFor(request.readySeconds + 2));
+    if (!committed) {
+        report.errors.push_back("the map change wasn't committed by everyone");
+        return h.stopAll(report);
+    }
+    std::vector<NetworkStart> next;
+    for (Node& n : h.nodes()) next.push_back(n.world->nextStart());
+    std::fill(pawns.begin(), pawns.end(), kNullEntity);
+    for (size_t i = 0; i < h.nodes().size(); ++i) reload(h.nodes()[i], next[i]);
+    hostSpawnOwn();
+    if (!h.runUntil([&] { return everyoneActive(2); }, h.ticksFor(15))) {
+        report.errors.push_back("not everyone rejoined after the map change");
+        return h.stopAll(report);
+    }
+    m.rotationMs = (h.nowSeconds() - rotationBegan) * 1000;
+    for (size_t i = 0; i < h.nodes().size(); ++i)
+        if (h.nodes()[i].world->localSlot() != slots[i])
+            report.errors.push_back(h.nodes()[i].name + " came back in another slot");
+
+    // ---- 4 s more, then everyone stands still ----
+    shooting = true;
+    h.runUntil([] { return false; }, 4 * rate);
+    shooting = false;
+    quiet = true;
+    h.runUntil([] { return false; }, 3 * rate);
+    Node& hn = h.nodes()[0];
+    for (size_t i = 1; i < h.nodes().size(); ++i) {
+        Node& n = h.nodes()[i];
+        if (n.world->state() != NetworkState::Active) {
+            report.errors.push_back(n.name + " isn't active (" + networkStateName(n.world->state()) + ")");
+            continue;
+        }
+        const Entity mine = n.world->controlledEntity();
+        const Transform* a = n.scene->get<Transform>(mine);
+        const Transform* b = hn.scene->get<Transform>(hn.world->entity(n.world->networkId(mine)));
+        if (!a || !b) {
+            report.errors.push_back(n.name + "'s character is missing on one side");
+            continue;
+        }
+        m.finalError = std::max(m.finalError, double(glm::length(a->position - b->position)));
+        for (uint16_t slot = 1; slot <= players; ++slot) {
+            const Entity pawn = pawns[slot];
+            if (!hn.scene->alive(pawn)) continue;
+            const Entity e = n.world->entity(hn.world->networkId(pawn));
+            const PresentationTransform* shown = n.scene->get<PresentationTransform>(e);
+            if (!shown) {
+                report.errors.push_back(n.name + " doesn't show player " + std::to_string(slot));
+                continue;
+            }
+            m.finalPresentationError = std::max(
+                m.finalPresentationError,
+                double(glm::length(shown->value.position - hn.scene->get<Transform>(pawn)->position)));
+        }
+    }
+    if (m.finalError > NetworkWorld::kPositionTolerance + 0.002)
+        report.errors.push_back("a client's character isn't where the host has it after standing still");
+    if (m.finalPresentationError > 0.01)
+        report.errors.push_back("a client draws a character away from where the host has it after standing still");
+    if (m.shots && !m.hits) report.warnings.push_back("no shot hit anyone");
+    if (m.shots && m.refusedShots * 4 > m.shots) report.warnings.push_back("over a quarter of the shots were refused");
+    const NetTestMatch kept = m;
+    h.stopAll(report);
+    report.match = kept;
+    checkClean(report);
+}
+
 }   // namespace
 
 std::span<const char* const> netTestScenarios() { return kScenarios; }
@@ -863,10 +1313,12 @@ bool runNetTest(const NetTestOptions& options, NetTestReport& report) {
         prediction(options, preset->profile, report);
     else if (options.scenario == "map_rotation")
         mapRotation(options, preset->profile, report);
+    else if (options.scenario == "match")
+        match(options, preset->profile, report);
     else {
         report.errors.push_back(
             "unknown scenario " + options.scenario +
-            " (handshake, rejections, stop-start, replication, prediction or map_rotation)");
+            " (handshake, rejections, stop-start, replication, prediction, map_rotation or match)");
         return false;
     }
     report.ok = report.errors.empty();
@@ -900,6 +1352,26 @@ std::string netTestText(const NetTestReport& r) {
             r.rotation.rotations, (unsigned long long)r.rotation.slotsReclaimed,
             (unsigned long long)r.rotation.rejoinAttempts, r.rotation.maxRotationMs, r.rotation.meanRotationMs);
         out += line;
+    }
+    if (r.scenario == "match") {
+        const NetTestMatch& m = r.match;
+        out += std::format(
+            "match: {} players over {:.0f} s; late join {:.0f} ms, map change {:.0f} ms\n"
+            "  host tick {:.3f} ms (p99 {:.3f}, max {:.3f}): physics {:.3f}, network {:.3f}; client tick {:.3f} ms "
+            "(max {:.3f})\n"
+            "  host up {:.0f} B/s ({:.0f} per player, {:.0f} messages/s), down {:.0f} B/s; client down {:.0f} B/s, up "
+            "{:.0f} B/s\n"
+            "  queues: control {} B, transport reliable {} B, unreliable {} B; memory host {} KiB, client {} KiB\n"
+            "  budget: {} records held back, {} slow-downs, {} speed-ups, at most {} players degraded\n"
+            "  shots {}, hits {}, refused {}, respawns {}, score events {} (all in {:.0f} ms); final error {:.4f} m "
+            "(drawn {:.4f} m)\n",
+            m.players, m.measuredSeconds, m.lateJoinMs, m.rotationMs, m.hostTickMs, m.hostTickP99Ms, m.hostTickMaxMs,
+            m.hostPhysicsMs, m.hostNetworkMs, m.clientTickMs, m.clientTickMaxMs, m.hostUpBytesPerSecond,
+            m.hostUpPerClient, m.hostMessagesPerSecond, m.hostDownBytesPerSecond, m.clientDownBytesPerSecond,
+            m.clientUpBytesPerSecond, m.controlQueueHigh, m.pendingReliableHigh, m.pendingUnreliableHigh,
+            m.hostMemoryBytes / 1024, m.clientMemoryBytes / 1024, m.recordsLimited, m.updateLevelRaises,
+            m.updateLevelDrops, m.degradedPeersHigh, m.shots, m.hits, m.refusedShots, m.respawns, m.scoreEvents,
+            m.eventsSettledMs, m.finalError, m.finalPresentationError);
     }
     std::snprintf(
         line, sizeof(line),
@@ -972,6 +1444,30 @@ std::string netTestJson(const NetTestReport& r) {
                ", \"rejoin_attempts\": " + std::to_string(r.rotation.rejoinAttempts) +
                ", \"max_ms\": " + std::to_string(int64_t(r.rotation.maxRotationMs)) +
                ", \"mean_ms\": " + std::to_string(int64_t(r.rotation.meanRotationMs)) + "},\n";
+    if (r.scenario == "match") {
+        const NetTestMatch& m = r.match;
+        out += std::format(
+            "  \"match\": {{\"players\": {}, \"measured_s\": {:.1f}, \"late_join_ms\": {:.0f}, \"rotation_ms\": "
+            "{:.0f}, "
+            "\"host_tick_ms\": {:.4f}, \"host_tick_p99_ms\": {:.4f}, \"host_tick_max_ms\": {:.4f}, "
+            "\"host_physics_ms\": {:.4f}, \"host_network_ms\": {:.4f}, \"client_tick_ms\": {:.4f}, "
+            "\"client_tick_max_ms\": {:.4f}, \"host_up_bytes_per_s\": {:.0f}, \"host_up_per_player\": {:.0f}, "
+            "\"host_down_bytes_per_s\": {:.0f}, \"host_messages_per_s\": {:.0f}, \"client_down_bytes_per_s\": {:.0f}, "
+            "\"client_up_bytes_per_s\": {:.0f}, \"control_queue_high\": {}, \"pending_reliable_high\": {}, "
+            "\"pending_unreliable_high\": {}, \"host_memory_bytes\": {}, \"client_memory_bytes\": {}, "
+            "\"records_limited\": {}, \"update_level_raises\": {}, \"update_level_drops\": {}, "
+            "\"degraded_peers_high\": {}, \"shots\": {}, "
+            "\"hits\": {}, \"refused_shots\": {}, \"respawns\": {}, \"score_events\": {}, \"events_settled_ms\": "
+            "{:.0f}, \"final_error_m\": {:.6f}, "
+            "\"final_presentation_error_m\": {:.6f}}},\n",
+            m.players, m.measuredSeconds, m.lateJoinMs, m.rotationMs, m.hostTickMs, m.hostTickP99Ms, m.hostTickMaxMs,
+            m.hostPhysicsMs, m.hostNetworkMs, m.clientTickMs, m.clientTickMaxMs, m.hostUpBytesPerSecond,
+            m.hostUpPerClient, m.hostDownBytesPerSecond, m.hostMessagesPerSecond, m.clientDownBytesPerSecond,
+            m.clientUpBytesPerSecond, m.controlQueueHigh, m.pendingReliableHigh, m.pendingUnreliableHigh,
+            m.hostMemoryBytes, m.clientMemoryBytes, m.recordsLimited, m.updateLevelRaises, m.updateLevelDrops,
+            m.degradedPeersHigh, m.shots, m.hits, m.refusedShots, m.respawns, m.scoreEvents, m.eventsSettledMs,
+            m.finalError, m.finalPresentationError);
+    }
     out += "  \"counters\": {\"rounds\": " + std::to_string(r.rounds) +
            ", \"messages_sent\": " + std::to_string(r.messagesSent) +
            ", \"messages_received\": " + std::to_string(r.messagesReceived) +

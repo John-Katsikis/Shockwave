@@ -35,6 +35,7 @@ A project without this file plays offline only. The first line is `shockwave_net
 | `map_rotation` | quoted level catalog IDs separated by spaces, or "" | "" | Level catalog IDs the host plays in turn, separated by spaces; empty: no rotation |
 | `rotation_ready_seconds` | 5..300 seconds | 30 | How long players have to load the next map before the host goes on |
 | `rotation_drop_unready` | 0, 1 | 1 | At the deadline: 1 goes on without players who aren't ready, 0 calls the map change off |
+| `degrade_updates` | 0, 1 | 1 | 1: a player whose connection can't keep up gets other objects, then players, less often until it catches up |
 
 Rules between keys, checked by `player --check`:
 

@@ -184,6 +184,21 @@ int netTest(const shockwave::Project& project, const NetTestCommand& command, co
         }
         options.settings = file.settings;
     }
+    for (const std::string& set : command.sets) {
+        const size_t eq = set.find('=');
+        const net::NetworkSettingField* field =
+            eq == std::string::npos ? nullptr : net::findNetworkSettingField(std::string_view(set).substr(0, eq));
+        std::string why;
+        if (!field) {
+            std::fprintf(
+                stderr, "Player: --net-set takes key=value with a key from docs/NetworkSchema.md: %s\n", set.c_str());
+            return 2;
+        }
+        if (!net::setSettingText(options.settings, *field, std::string_view(set).substr(eq + 1), why)) {
+            std::fprintf(stderr, "Player: --net-set %s: %s\n", set.c_str(), why.c_str());
+            return 2;
+        }
+    }
     net::NetTestReport report;
     if (!net::runNetTest(options, report)) {
         for (const std::string& e : report.errors) std::fprintf(stderr, "Player: %s\n", e.c_str());

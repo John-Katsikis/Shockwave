@@ -26,7 +26,8 @@
 
 namespace shockwave::net {
 
-// 2: map rotation (MapPrepare..MapAbort, reason MapRotation), shipping plan S11.
+// 2: map rotation (MapPrepare..MapAbort, reason MapRotation) and reason Kicked, shipping
+//    plan S11.
 inline constexpr uint16_t kProtocolVersion = 2;
 inline constexpr uint32_t kHeaderBytes = 32;
 inline constexpr std::array<uint8_t, 4> kMagic = {'S', 'W', 'M', 'P'};

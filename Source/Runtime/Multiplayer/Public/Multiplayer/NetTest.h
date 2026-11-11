@@ -22,6 +22,15 @@
 //               each client loads the next map for a seeded time, the host commits, and
 //               everyone rejoins the next session; every client must be back, Active, in
 //               its own slot, on the right map epoch, with nothing of the old session left
+//   match       a measured match (S11): the host and `clients` clients, each a predicted
+//               character on Jolt physics, walk, jump and shoot one another through the
+//               faults; the host resolves the shots with lag compensation, respawns whoever
+//               is hit and tells everyone the score. The last client joins 3 s late. After
+//               10 s of play the map rotates and everyone plays 4 s more, then stands still.
+//               Every client must be back in its slot with every score event, its own
+//               character where the host has it and every other one drawn there too.
+//               Reports host and client CPU per tick, physics, bytes each way, queues,
+//               memory and update degradation, for 2 to 64 players (docs/Networking.md)
 //
 // The JSON follows the network tool layout of docs/Networking.md: version, mode,
 // scenario, ok, errors, warnings, seed, duration_ticks, peers, counters.
@@ -75,6 +84,29 @@ struct NetTestRotation {
     double meanRotationMs = 0;
 };
 
+// The measured match (match). Rates and times are over the 10 s of play before the map
+// changes, with everyone in; CPU is wall-clock time in this one process (every machine
+// stepped in turn on one thread), so it varies with the computer, unlike the rest.
+struct NetTestMatch {
+    uint32_t players = 0;   // the host included
+    double measuredSeconds = 0;
+    double hostTickMs = 0, hostTickP99Ms = 0, hostTickMaxMs = 0;   // everything the host did per tick
+    double hostPhysicsMs = 0, hostNetworkMs = 0;   // its share in Jolt and in NetworkWorld
+    double clientTickMs = 0, clientTickMaxMs = 0;   // the mean client, and the slowest tick of any
+    double hostUpBytesPerSecond = 0, hostDownBytesPerSecond = 0;   // payload over every connection
+    double hostUpPerClient = 0;   // the mean connection
+    double clientDownBytesPerSecond = 0, clientUpBytesPerSecond = 0;   // the mean client
+    double hostMessagesPerSecond = 0;   // sent: transport overhead is per message
+    uint32_t controlQueueHigh = 0, pendingReliableHigh = 0, pendingUnreliableHigh = 0;   // bytes, any peer
+    uint64_t hostMemoryBytes = 0, clientMemoryBytes = 0;   // session buffers, the most seen
+    uint64_t recordsLimited = 0, updateLevelRaises = 0, updateLevelDrops = 0;
+    uint32_t degradedPeersHigh = 0;
+    uint64_t shots = 0, hits = 0, refusedShots = 0, respawns = 0, scoreEvents = 0;
+    double lateJoinMs = -1, rotationMs = -1;
+    double eventsSettledMs = 0;   // after play stopped, until every client had every score event
+    double finalError = 0, finalPresentationError = 0;   // metres, after standing still
+};
+
 // Prediction counters, summed over clients.
 struct NetTestPrediction {
     uint64_t predictedTicks = 0, checks = 0, matches = 0, corrections = 0, replayedTicks = 0, resets = 0;
@@ -101,6 +133,7 @@ struct NetTestReport {
     NetTestReplication replication;
     NetTestPrediction prediction;
     NetTestRotation rotation;
+    NetTestMatch match;
 };
 
 // False only for an unknown scenario or preset (errors say which); a scenario that runs

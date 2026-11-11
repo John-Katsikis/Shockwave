@@ -178,12 +178,12 @@ bool NetworkWorld::Impl::clientRotationMessage(const DecodedMessage& decoded) {
         rotation.sceneId = prepare.sceneId;
         rotation.deadline = now + prepare.loadDeadlineMs / 1000.0;
         ++stats.rotationsPrepared;
+        rotation.phase = RotationPhase::Preparing;   // so it can be answered, even with a refusal
         const NetworkCompatibility& ours = w.m_start.compatibility;
         if (prepare.schemaDigest != ours.schemaDigest || prepare.contentDigest != ours.contentDigest) {
             w.rejectRotation(ReasonCode::ContentMismatch);
             return true;
         }
-        rotation.phase = RotationPhase::Preparing;
         SW_LOG(LogNetwork, Info, "The host is changing the map to \"{}\"", rotation.level);
         w.push({NetworkEventKind::RotationPrepared, w.m_state, {}, 0, ReasonCode::Normal});
         return true;
@@ -344,6 +344,7 @@ NetworkStart NetworkWorld::nextStart() const {
     next.reservationSeconds = 0;
     next.rejoinSeconds = 0;
     if (impl.host()) {
+        next.kicked = impl.kicked;
         for (const RotationPlayer& p : impl.rotation.players)
             if (p.ready) next.reservedSlots.emplace_back(p.peer, p.slot);
         next.reservationSeconds = window;

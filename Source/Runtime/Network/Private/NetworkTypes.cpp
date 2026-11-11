@@ -37,6 +37,7 @@ const char* reasonName(ReasonCode reason) {
     case ReasonCode::ServiceUnavailable: return "ServiceUnavailable";
     case ReasonCode::UnsupportedFeature: return "UnsupportedFeature";
     case ReasonCode::MapRotation: return "MapRotation";
+    case ReasonCode::Kicked: return "Kicked";
     }
     return nullptr;
 }

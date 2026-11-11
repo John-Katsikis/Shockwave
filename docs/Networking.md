@@ -264,8 +264,10 @@ In the editor, Project settings > Multiplayer > Start Steam does the same and ke
 Steam running until Stop Steam or the project closes.
 
 ```sh
-build/bin/player --project <file.swproject> --net-test [--scenario handshake|rejections|stop-start|replication|prediction]
-    [--seed N] [--preset clean|cafe|poor|hostile] [--clients N] [--json out.json]
+build/bin/player --project <file.swproject> --net-test
+    [--scenario handshake|rejections|stop-start|replication|prediction|map_rotation|match]
+    [--seed N] [--preset clean|cafe|poor|hostile] [--clients N] [--rotations N]
+    [--net-set key=value]... [--json out.json]
 ```
 
 `--net-test` runs the real session handshake between `NetworkWorld`s over an in-process
@@ -285,7 +287,18 @@ machine Jolt physics, a floor, a wall and a trigger, and a predicted character f
 client, which walk, sprint and jump by script through the preset's faults and then stand
 still: every client must end, and draw every character, where the host has it, with no
 correction offset left, its replays running no game code and making no contact events
-(`prediction: ... corrections (... ticks replayed, max ... m) ... final error 0.0000 m`). Each prints one line per peer and what was left open after stopping (packets in
+(`prediction: ... corrections (... ticks replayed, max ... m) ... final error 0.0000 m`);
+`match` is a small game: a host and `--clients` predicted Jolt characters walk, jump and
+shoot each other (the host rewinds each shot to the shooter's view, respawns the target
+and sends a score event), the last client joins 3 s late, then 10 measured seconds, one
+map change, 4 s more and 3 s standing still. It reports the host's and clients' time per
+tick, bandwidth each way and per player, queue highs, memory, records held back by the
+budget and slowed-down players (see [Updates under load](#updates-under-load)), shots,
+hits, refused shots, how long score events took to reach everyone, the late join and the
+map change, and fails on a refused honest shot, a lost event, a player over its upload
+budget, or a final or drawn error past tolerance. `--net-set key=value` (repeatable)
+overrides one network setting for the run, so `--clients 63 --net-set max_players=64`
+measures a full 64-player match. Each prints one line per peer and what was left open after stopping (packets in
 flight, auth sessions, tickets: all must be 0), and exits 1 when anything is wrong, 2
 for an unknown scenario or preset.
 
@@ -475,6 +488,35 @@ go in every snapshot, the others take turns. A record goes to a client only afte
 lifecycle change it depends on has been sent to it. A client whose queue overflows (its
 baseline plus `max_pending_reliable_bytes`) is dropped with `RateLimited`; it can join
 again. No heap memory is allocated per tick once a session is running.
+
+### Updates under load
+
+With `degrade_updates 1` (the default) the host slows down what it sends a client that
+can't keep up, instead of letting every snapshot fall short the same way. Each client has
+an update level:
+
+| Level | Players' objects | Other objects |
+|---|---|---|
+| 0 | every snapshot | every snapshot (in turn, within the budget) |
+| 1 | every snapshot | every 2nd snapshot |
+| 2 | every 2nd snapshot | every 4th snapshot |
+
+A snapshot is *pressured* when the budget held records back, the client's lifecycle queue
+is more than half full, or the transport holds more than half of
+`max_pending_reliable_bytes` unsent. After 3 pressured snapshots in a row the level goes up
+one; after 3 s with none, while a snapshot's spend fits an undegraded snapshot's share, it
+comes down one. Levels change at most once a second, and a degraded client's budget is
+spread over the snapshots it actually gets. Players' objects take turns too (round-robin),
+so at 64 players nobody at the end of the list is starved. `stats()` counts raises and
+drops and how many clients are degraded; `peerInfo()` and the editor's Network window show
+each client's level. With `degrade_updates 0` the host sends everything it can every
+snapshot, as before; at 64 players that holds records back but nothing breaks.
+
+Clients follow the slower stream on their own: the interpolation delay is
+`interpolation_ms` or twice the shortest recent gap between snapshots, whichever is longer,
+moving by at most a tick per snapshot, and the host's lag compensation uses the same rule
+for each shooter (twice the snapshot gap at level 2), so a degraded client's shots still
+land.
 
 The host fills `NetworkStart` with the frozen registry its schema digest came from
 (`registry`), the manifest's prefabs (`prefabs`) and, optionally, a `spawnPrefab`
@@ -721,9 +763,22 @@ rotation), `rotation_ready_seconds` (5 to 300, default 30) and `rotation_drop_un
 (default 1). `--check` reports rotation levels that aren't in the catalog or don't play a
 manifest scene. The editor's Network window shows the map epoch, the rotation's phase and
 who's ready. `player --net-test --scenario map_rotation [--rotations N]` runs rotations over
-the loopback hub with every fault preset; `network_map_rotation` tests the edge cases.
+the loopback hub with every fault preset; `network_map_rotation` tests the edge cases,
+including through a man-in-the-middle proxy: duplicated `MapPrepare` and `MapCommit` (each
+counted once), a prepare naming other content (`ContentMismatch`, the host goes on), an old
+session's snapshot on the new connection (`MalformedPacket`, nothing applied), 4 s and 12 s
+outages (also across a map change), a ticket refused on the next map, kicks and 64 players.
 
-Wire protocol 2 added the five messages and reason `MapRotation`; a v1 peer is refused as
+### Kicking a player
+
+`NetworkWorld::kick(slot)` (host only) ends that player's connection with reason `Kicked`
+(the client's failure says "the host removed you from the match") and remembers them for
+the rest of the match: their `Hello` is refused with `Kicked`, on this map and the next
+ones (the list, up to 64 players, travels in `NetworkStart::kicked` and `nextStart()`). The
+editor's Network window has a Kick button on each client's row. Ready checks and team
+balance are game rules and live in the game's code (Arena's round start and team picks).
+
+Wire protocol 2 added the five messages and reasons `MapRotation` and `Kicked`; a v1 peer is refused as
 `ProtocolMismatch`, and lobbies advertise `sw_protocol 2`.
 
 ## The wire protocol
@@ -818,11 +873,15 @@ A client draws every network object it doesn't predict this way, except Static o
 Remote objects are shown slightly in the past, so a late or lost snapshot still leaves a
 sample ahead to move towards. `InterpolationEngine` keeps 32 samples per slot, in tick
 order whatever order they arrive in. `observeServerTick()` estimates the server clock
-from the earliest arrivals; `renderTime()` is that clock minus `interpolation_ms`
-(25 ms at 120 Hz is a 3-tick jitter buffer). `sample()` blends the two samples around
+from the earliest arrivals; `renderTime()` is that clock minus the delay:
+`interpolation_ms` (25 ms at 120 Hz is a 3-tick jitter buffer), or twice the shortest of
+the last 8 gaps between snapshots if that's longer (`adaptiveDelay`, on by default; see
+[Updates under load](#updates-under-load)). `sample()` blends the two samples around
 that time: positions along cubic Hermite curves through both velocities (or linearly),
 rotations by the shortest slerp, velocities linearly. Past the newest sample an object
 keeps its velocity for up to `max_extrapolation_ms` and then holds, reported as `Held`.
+A sample flagged grounded has its downward velocity ignored, in curves and extrapolation
+alike, so a character standing on the floor isn't drawn sinking into it.
 A teleport, a new incarnation or an emptied slot clears the slot's samples.
 
 ## Rewind history
@@ -987,6 +1046,7 @@ ctest --test-dir build -R "network_|test_steam|test_sdr|test_snapshot|test_rewin
 | `network_combat` | Lag compensation at 20 ms and 120 ms round trips, with Jolt on the host: a delayed real hit, the present position missed with the same claimed view, a future view clamped, no view time and a forged old one refused, one out of the window refused, the host's own shot at the present, a target behind a static wall, a dead target, a hit from before a respawn naming the old life; a view 12 ticks back a hit at 120 ms but refused at 20 ms; game events under loss and jitter arriving once each in order, refused for an unknown ID, an out-of-range payload or a client sender, none replayed to a late joiner, a reader that falls behind; a scripted host's duplicated and old events kept once; `PresentationDedup`; circuit scopes when compiled, and at run time on a client: a LocalOwner circuit that sets health and the host's circuit not running, the host's events running a Presentation circuit's handler once each, a duplicated event once |
 | `network_arena` | Arena on its multiplayer scene with a host and eleven clients, each a real PlaySession with Jolt: six a side, one primary camera per process following the local pawn, each client predicting only its own pawn; a full team and a host-only restart refused; the round starting when everyone is ready; four inputs a tick moving a pawn no faster; ten seconds of autoplay with every client ending on the host's teams, ammo, health, kills and positions, the clients' shots rewound to their view times (none refused) and every shot's event reaching every client once; clients sent away for a shot event, an ownership claim, an unknown command, far-ahead inputs and an over-long move; a client that stops sending (two ticks of fallback, then standing, fire never held); the offline input path at 24, 30, 60, 144, 240 and 1000 fps (same shots and reloads, each press in exactly one command, catch-up ticks, menus) |
 | `network_arena_soak` | `arena_network_test --soak all 20`: twelve Arena sessions on autoplay for 20 s on clean, cafe, poor, hostile and throttled (cafe at 64 KiB/s a direction), each with a 500 ms outage, a player leaving and a new one taking the slot, rounds restarted by the host: never more than twelve players or six a side, nobody disconnected or rejected, no honest shot refused, every client ending on the host's state, no event shown twice, buffers under 32 MiB, and a report of network cost, traffic and late-join time. Then a 12 s outage: every client fails with Timeout, the host frees the slots and new players join. `--soak <preset> <seconds>` runs one preset for longer (Batch 10 ran 30 minutes) |
+| `network_map_rotation` | Map rotation edge cases (drops, call-offs, refused joins, held slots, host loss, nonces, real Play sessions through LevelHost); through a proxy, duplicated prepare and commit, mismatched content and an old session's snapshot; 4 s and 12 s outages, one across a map change; a ticket refused on the next map; kicks kept across maps; 63 clients joining slots 2..64 with the 65th refused `ServerFull`, under 8 MiB, and a rotation; `match` runs at 2 (cafe), 12 (hostile), 32 (poor) and 64 (cafe, degraded, nothing lost) players, and 64 with `degrade_updates 0` |
 | `online_match` | `OnlineMatch` over the Steam mock with real sessions: host, find (compatible and full listings), join, the lobby's details and player count, invite, leave; a mismatched build refused before connecting; invites while idle and while playing; developer direct joins; no services; a capture of a client's session (tickets redacted, peers opaque) round-tripping through JSON; the peer table |
 | `arena_online_menu` | Arena's online menu in the real RmlUi document over the Steam mock: every button clicked, searching, the lobby list with a refused lobby's reason, join, cancel and join again, a friend's invite declined, leave, a failed host with Retry, invite; greyed out without a match control; the panels side by side at 720p |
 | `package_steam` | A copy of Arena packaged as a Steam game: AppID 480 refused, then a development package; the runtime library shipped (Steam builds) or the offline-only warning (others); no `steam_appid.txt` or captures shipped; the folder moved and run from elsewhere (`--check`, and `--host` failing with the reason without the SDK) |

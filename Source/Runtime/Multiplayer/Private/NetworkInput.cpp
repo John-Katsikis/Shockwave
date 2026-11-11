@@ -306,6 +306,18 @@ bool NetworkWorld::disconnect(uint16_t slot, ReasonCode reason) {
     return true;
 }
 
+bool NetworkWorld::kick(uint16_t slot) {
+    if (m_role != NetworkRole::Authority) return false;
+    Peer* p = m_closed ? nullptr : m_impl->peerForSlot(slot);
+    if (!p) return false;
+    auto& kicked = m_impl->kicked;
+    if (kicked.size() >= kMaxKicked) kicked.erase(kicked.begin());
+    kicked.push_back(p->peer);
+    SW_LOG(LogNetwork, Info, "Kicked player {}", slot);
+    m_impl->reject(*p, ReasonCode::Kicked, "the host removed this player");
+    return true;
+}
+
 // ---- Commands -------------------------------------------------------------------------------
 
 bool NetworkWorld::Impl::commandAllowed(

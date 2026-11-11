@@ -17,6 +17,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec3.hpp>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -31,7 +32,15 @@ struct InterpolationSettings {
     double maxExtrapolationTicks = 6;
     uint16_t samplesPerSlot = 32;   // 4..64
     bool hermite = true;   // false: linear positions
+    // Snapshots coming further apart than delayTicks / 2 (a host slowing this client's
+    // updates, or a low snapshot_rate) widen the delay to two of their intervals, so
+    // objects stay interpolated instead of extrapolated. NetworkWorld's host allows the
+    // same delay for lag compensation (snapshotDelayTicks).
+    bool adaptiveDelay = true;
 };
+// The delay a client shows remote objects at when snapshots arrive every `spacingTicks`:
+// the settings' delay, or two intervals if that's longer.
+double snapshotDelayTicks(const InterpolationSettings& settings, double spacingTicks);
 // From the session's settings: interpolation_ms and max_extrapolation_ms in ticks.
 // At tick_rate 120 with interpolation_ms 25 that is a 3-tick jitter buffer.
 InterpolationSettings interpolationSettings(const NetworkSettings& settings);
@@ -80,6 +89,10 @@ public:
     bool hasClock() const { return m_hasClock; }
     // Where to show objects at `nowSeconds`: estimated server time minus the delay.
     NetTime renderTime(double nowSeconds) const;
+    // The delay in use now (ticks), and the snapshot spacing it follows.
+    double delayTicks() const { return m_delay; }
+    double snapshotSpacingTicks() const;
+    static constexpr uint32_t kSpacingSamples = 8;
 
     InterpolationResult sample(uint16_t slot, NetTime time, InterpolatedPose& out) const;
     // Heap bytes it holds (its samples).
@@ -100,6 +113,13 @@ private:
     bool m_hasClock = false;
     uint32_t m_clockBase = 0;   // ticks are measured from here so doubles stay exact
     double m_offset = 0;   // server time (ticks since m_clockBase) minus local time in ticks
+    // Adaptive delay: the last snapshot tick, recent spacings between snapshot ticks, and
+    // the delay now (moving towards snapshotDelayTicks of the smallest recent spacing).
+    double m_delay = 0;
+    bool m_hasLastTick = false;
+    uint32_t m_lastTick = 0;
+    std::array<uint32_t, kSpacingSamples> m_spacings{};
+    uint32_t m_spacingCount = 0;
 };
 
 }   // namespace shockwave::net

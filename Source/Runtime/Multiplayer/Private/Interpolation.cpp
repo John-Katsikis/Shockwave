@@ -12,6 +12,13 @@ namespace {
 
 glm::vec3 vec(const NetVec3& v) { return {v.x, v.y, v.z}; }
 glm::quat quat(const NetQuat& q) { return {q.w, q.x, q.y, q.z}; }
+// A sample's velocity for moving it on. A grounded character's downward velocity is it
+// pressing into the floor (gravity for one step), not motion: shown, it would sink.
+glm::vec3 motion(const PoseState& pose) {
+    glm::vec3 v = vec(pose.linearVelocity);
+    if ((pose.flags & PoseState::kGrounded) && v.y < 0) v.y = 0;
+    return v;
+}
 
 // Server ticks past `from`, as a signed count (ticks wrap).
 double ticksAfter(uint32_t tick, uint32_t from) { return double(int32_t(tick - from)); }
@@ -26,8 +33,13 @@ InterpolationSettings interpolationSettings(const NetworkSettings& s) {
     return out;
 }
 
+double snapshotDelayTicks(const InterpolationSettings& settings, double spacingTicks) {
+    return std::max(settings.delayTicks, 2 * spacingTicks);
+}
+
 InterpolationEngine::InterpolationEngine(uint16_t slotCount, const InterpolationSettings& settings)
     : m_settings(settings), m_slotCount(std::clamp<uint16_t>(slotCount, 1, kMaxDeltaSlots)) {
+    m_delay = m_settings.delayTicks;
     m_settings.samplesPerSlot = std::clamp<uint16_t>(m_settings.samplesPerSlot, 4, 64);
     m_settings.tickRate = std::max<uint32_t>(m_settings.tickRate, 1);
     m_samples = std::make_unique<Sample[]>(size_t(m_slotCount) * m_settings.samplesPerSlot);
@@ -83,8 +95,28 @@ void InterpolationEngine::pushSnapshot(uint32_t tick, std::span<const NetEntityS
     }
 }
 
+double InterpolationEngine::snapshotSpacingTicks() const {
+    if (m_spacingCount < 2) return 0;
+    const uint32_t n = std::min<uint32_t>(m_spacingCount, kSpacingSamples);
+    return double(*std::min_element(m_spacings.begin(), m_spacings.begin() + n));
+}
+
 void InterpolationEngine::observeServerTick(uint32_t tick, double nowSeconds) {
     const double rate = m_settings.tickRate;
+    // The spacing between snapshots (parts of one snapshot share its tick). The smallest
+    // recent one: a lost snapshot doesn't count, a slower host does after a few.
+    if (m_hasLastTick && tickNewer(tick, m_lastTick)) {
+        m_spacings[m_spacingCount++ % kSpacingSamples] = std::min<uint32_t>(tick - m_lastTick, 4 * rate);
+        m_lastTick = tick;
+        if (m_settings.adaptiveDelay) {
+            // Moves at most a tick per snapshot, so shown motion doesn't jump.
+            const double want = snapshotDelayTicks(m_settings, snapshotSpacingTicks());
+            m_delay += std::clamp(want - m_delay, -1.0, 1.0);
+        }
+    } else if (!m_hasLastTick) {
+        m_hasLastTick = true;
+        m_lastTick = tick;
+    }
     if (!m_hasClock) {
         m_hasClock = true;
         m_clockBase = tick;
@@ -100,7 +132,7 @@ void InterpolationEngine::observeServerTick(uint32_t tick, double nowSeconds) {
 
 NetTime InterpolationEngine::renderTime(double nowSeconds) const {
     if (!m_hasClock) return {};
-    const double server = m_offset + nowSeconds * m_settings.tickRate - m_settings.delayTicks;
+    const double server = m_offset + nowSeconds * m_settings.tickRate - m_delay;
     const double whole = std::floor(server);
     return {uint32_t(m_clockBase + int64_t(whole)), float(server - whole)};
 }
@@ -128,7 +160,7 @@ InterpolationResult InterpolationEngine::sample(uint16_t slot, NetTime time, Int
         fill(newest);
         if (ahead <= 0) return InterpolationResult::Interpolated;
         const double used = std::min(ahead, m_settings.maxExtrapolationTicks);
-        if (!(newest.pose.flags & PoseState::kSleeping)) out.position += out.velocity * float(used / rate);
+        if (!(newest.pose.flags & PoseState::kSleeping)) out.position += motion(newest.pose) * float(used / rate);
         return ahead <= m_settings.maxExtrapolationTicks ? InterpolationResult::Extrapolated
                                                          : InterpolationResult::Held;
     }
@@ -143,10 +175,11 @@ InterpolationResult InterpolationEngine::sample(uint16_t slot, NetTime time, Int
     const glm::vec3 pa = vec(a.pose.position), pb = vec(b.pose.position);
     const glm::vec3 va = vec(a.pose.linearVelocity), vb = vec(b.pose.linearVelocity);
     if (m_settings.hermite) {
+        const glm::vec3 ma = motion(a.pose), mb = motion(b.pose);
         const float dt = float(span / rate);
         const float s2 = s * s, s3 = s2 * s;
         out.position =
-            (2 * s3 - 3 * s2 + 1) * pa + (s3 - 2 * s2 + s) * dt * va + (-2 * s3 + 3 * s2) * pb + (s3 - s2) * dt * vb;
+            (2 * s3 - 3 * s2 + 1) * pa + (s3 - 2 * s2 + s) * dt * ma + (-2 * s3 + 3 * s2) * pb + (s3 - s2) * dt * mb;
     } else {
         out.position = glm::mix(pa, pb, s);
     }

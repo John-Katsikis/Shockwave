@@ -124,7 +124,12 @@ bool NetworkWorld::resolveShot(const ShotQuery& shot, ShotResult& out) {
             const size_t index = shot.command->targetTick % kInputHistory;
             if (p->inputs[index].targetTick == shot.command->targetTick) arrival = p->inputArrival[index];
         }
-        const double delay = interpolationSettings(m_start.settings).delayTicks;
+        // The delay the shooter's client shows players at: the settings', or two snapshot
+        // intervals of what this host sends it, if that's longer (degraded updates).
+        const Peer* shooterPeer = impl.peerForSlot(shooterSlot);
+        const double spacing = double(rate) / double(std::max<uint32_t>(1, m_start.settings.snapshotRate)) *
+                               (shooterPeer && shooterPeer->updateLevel >= 2 ? 2.0 : 1.0);
+        const double delay = snapshotDelayTicks(interpolationSettings(m_start.settings), spacing);
         const double tolerance = double(scaledTicks(kViewToleranceTicks, rate)) +
                                  double(rate) / double(std::max<uint32_t>(1, m_start.settings.snapshotRate));
         double view = double(int32_t(shot.command->viewTick - arrival)) + double(shot.command->viewFraction) / 65536.0;

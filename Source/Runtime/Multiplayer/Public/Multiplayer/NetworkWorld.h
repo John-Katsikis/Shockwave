@@ -158,6 +158,9 @@ struct NetworkStart {
     // Client: how long to keep trying to reach the host's next session (it may still be
     // starting). 0: one attempt, as for a first join.
     double rejoinSeconds = 0;
+    // Host: players kicked earlier in this match (kick()), refused with Kicked if they
+    // try again; carried to the next map by nextStart(). At most kMaxKicked, newest kept.
+    std::vector<PeerId> kicked;
 };
 
 // Map rotation (docs/Networking.md, "Map rotation"): the host announces the next map,
@@ -310,6 +313,10 @@ struct NetworkWorldStats {
     uint64_t snapshotsSent = 0, snapshotPartsSent = 0, snapshotBytesSent = 0;   // host
     uint64_t recordsSent = 0, recordsLimited = 0;   // host: records the budget held back
     uint64_t controlBytesSent = 0;   // host: reliable lifecycle messages, baseline included
+    // Host, degrade_updates: times a peer's update level went up and down, and how many
+    // peers are below full rate now.
+    uint64_t updateLevelRaises = 0, updateLevelDrops = 0;
+    uint32_t degradedPeers = 0;
     uint32_t controlQueueHigh = 0;   // host: the most bytes one peer's control queue held
     uint64_t captureFailures = 0;   // host: state out of its profile's ranges; not sent
     uint64_t snapshotPartsReceived = 0, recordsApplied = 0;   // client
@@ -361,6 +368,7 @@ struct NetworkPeerInfo {
     double rttMs = 0;   // 0 until measured
     uint32_t pendingReliableBytes = 0, pendingUnreliableBytes = 0;   // the transport's queues
     uint32_t queuedControlBytes = 0;   // host: lifecycle messages waiting for the peer's budget
+    uint8_t updateLevel = 0;   // host: 0 full rate; 1 other objects half; 2 players half too
     uint64_t bytesReceived = 0, bytesSent = 0;   // over the connection so far
     double inputAge = -1;   // host: since this player's newest input arrived
     double snapshotAge = -1;   // client: since a snapshot was last applied
@@ -464,6 +472,11 @@ public:
     // Host: sends player `slot` away with this reason (Reject, then the connection
     // closes). False if no admitted client has that slot.
     bool disconnect(uint16_t slot, ReasonCode reason);
+    // Host: removes player `slot` from the match (disconnect with Kicked). Only the host
+    // can; a client's request is a game command the host may act on.
+    // They're refused if they try again during this match, next maps included.
+    bool kick(uint16_t slot);
+    static constexpr uint32_t kMaxKicked = 64;
 
     // ---- Map rotation ----
     // Host: announces the next map to every Active client (MapPrepare). Clients still in
@@ -603,6 +616,13 @@ public:
     static constexpr double kHoldSeconds = 0.25;
     static constexpr double kResyncIntervalSeconds = 1;   // at most one a second,
     static constexpr uint32_t kMaxResyncsPerMinute = 3;   // and three a minute
+    // Update degradation (degrade_updates): a peer goes down a level after this many
+    // snapshots in a row held something back (or found its queues half full), and back up
+    // after this long with nothing held back; never twice within kUpdateLevelHoldSeconds.
+    static constexpr uint8_t kMaxUpdateLevel = 2;
+    static constexpr uint32_t kPressuredSnapshots = 3;
+    static constexpr double kCalmSeconds = 3;
+    static constexpr double kUpdateLevelHoldSeconds = 1;
 
     struct Impl;
 

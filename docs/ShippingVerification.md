@@ -1208,12 +1208,82 @@ Multiplayer matches change maps by **controlled session restart with lobby conti
 
 ### Still unverified
 
-- **Part 2**: 2, 12, 32 and 64 player runs with CPU, bandwidth and memory figures; queue and
-  update-rate degradation; kick, ready and team-balance controls; the 12-second outage and
-  re-authentication failure cases.
-- **Real-service gates**: two accounts on two machines over Steam (host, invite, play,
-  rotate, leave, rejoin); not run here, as there is no Steam in CI.
-- **The editor's own Play** doesn't rotate maps: it plays the open scene without the level
-  catalog. The player does.
-- **A client's duplicate `MapPrepare` or `MapCommit`** is handled in code (ignored and
-  counted) but not driven by a test: a raw host is needed for that.
+Part 2 (below) covers the player counts, degradation, kicks, outages, re-authentication
+and the duplicate-message cases. What part 1 still leaves open is listed there.
+
+## S11: Scale, degradation and match control, part 2
+
+Plan section 19.2: measured matches at 2, 12, 32 and 64 players, queue bounds and update
+degradation, kicks, and the outage and re-authentication cases. See
+[Networking: Updates under load](Networking.md#updates-under-load) and
+[Kicking a player](Networking.md#kicking-a-player).
+
+### What was built
+
+- **Update degradation** (`degrade_updates`, default on): per-client update levels 0 to 2
+  (other objects every 2nd, then players every 2nd and others every 4th snapshot), raised
+  after 3 pressured snapshots (records held back, queue or transport half full), lowered
+  after 3 s calm, at most once a second. Players take turns within the budget too, so
+  nobody at the end of a 64-player list starves.
+- **Adaptive interpolation delay**: clients draw `max(interpolation_ms, 2 x snapshot gap)`
+  behind, and the host's lag compensation follows the shooter's level, so degraded
+  clients' shots aren't refused. Grounded samples ignore downward velocity (characters
+  were drawn up to 1.6 cm into the floor).
+- **Kick**: `NetworkWorld::kick(slot)`, reason `Kicked` (16, wire protocol 2, reference
+  regenerated), kept for the rest of the match across map changes. The editor's Network
+  window has a Kick button and an Updates column per client. Ready checks and team balance
+  stay game rules (Arena already has both).
+- **Fix**: a client that couldn't accept a `MapPrepare` for content reasons now sends
+  `MapReject(ContentMismatch)`; before, the reject was skipped and the host waited for the
+  deadline.
+- **Command line**: `player --net-test --scenario match` and `--net-set key=value`.
+
+### Evidence
+
+`player --project Games/Arena --net-test --scenario match --clients N --preset P --net-set
+max_players=64`, seed 1, on the CI container (one process, virtual clock; CPU figures are
+this machine's, all machines in one process):
+
+| Players | Preset | Host tick mean / p99 | Host up (per player) | Client down / up | Degraded | Held back | Events settle | Late join | Map change | Drawn error | Memory host / client |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2 | cafe | 0.036 / 0.062 ms | 4.0 KB/s | 4.0 / 7.9 KB/s | 0 | 0 | 0 ms | n/a | 933 ms | 0.5 mm | 0.94 / 1.84 MiB |
+| 12 | cafe | 0.079 / 0.124 ms | 213 KB/s (19.4) | 19.2 / 7.8 KB/s | 0 | 0 | 17 ms | 350 ms | 1033 ms | 0.5 mm | 0.95 / 1.84 MiB |
+| 32 | cafe | 0.179 / 0.331 ms | 1.59 MB/s (51.3) | 50.8 / 7.8 KB/s | 0 | 0 | 83 ms | 433 ms | 1083 ms | 0.5 mm | 1.01 / 1.84 MiB |
+| 64 | cafe | 0.270 / 0.492 ms | 3.39 MB/s (53.8) | 53.3 / 7.8 KB/s | 63 | 391 | 117 ms | 367 ms | 1167 ms | 0.6 mm | 1.23 / 1.84 MiB |
+| 2 | hostile | 0.037 / 0.066 ms | 3.9 KB/s | 3.5 / 7.8 KB/s | 0 | 0 | 0 ms | n/a | 3250 ms | 0.5 mm | 0.94 / 1.84 MiB |
+| 12 | hostile | 0.063 / 0.092 ms | 198 KB/s (18.0) | 16.7 / 7.8 KB/s | 0 | 0 | 0 ms | 2433 ms | 4266 ms | 0.5 mm | 0.95 / 1.84 MiB |
+| 32 | hostile | 0.182 / 0.340 ms | 1.52 MB/s (49.2) | 45.2 / 7.8 KB/s | 0 | 0 | 1117 ms | 3067 ms | 5850 ms | 0.6 mm | 1.01 / 1.84 MiB |
+| 64 | hostile | 0.272 / 0.410 ms | 3.20 MB/s (50.7) | 46.5 / 7.8 KB/s | 63 | 252 | 1433 ms | 2417 ms | 6283 ms | 0.6 mm | 1.20 / 1.84 MiB |
+
+Every run: no honest shot refused, every score event reached every client, final error
+0.0000 m, nothing left open after stopping. At 64 players every client sits at level 2
+and stays within its 64 KiB/s upload budget; a 64-player host needs about 3.4 MB/s
+(27 Mbit/s) up, which is a home connection's limit, not the engine's. On hostile, events
+arrive late (up to 1.4 s, resent through loss) but none are lost. 64 players with
+`degrade_updates 0` also passes, with more records held back each snapshot.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `network_map_rotation` | unit | through a proxy: duplicated `MapPrepare`/`MapCommit` counted once, other content refused with `ContentMismatch` while the host goes on, an old session's snapshot on the new connection refused as `MalformedPacket` with nothing applied; a 4 s outage everyone survives; a 12 s outage (clients `Timeout`, host keeps hosting, they rejoin) and one across a map change (host commits at the deadline without them); a ticket refused on the next map (`AuthenticationFailed`, the rest play on); kicks refused on rejoin and on the next map; 63 clients in slots 2..64, the 65th `ServerFull`, under 8 MiB, and a rotation with all of them; `match` at 2, 12, 32 and 64 players and 64 with degradation off |
+| `network_cli` | unit | `--net-test --scenario match` on poor with `--net-set`; bad `--net-set` keys and values exit 2 |
+| `network_wire` | unit | reason `Kicked` in range, 17 refused; the reference is current |
+
+### Still unverified (gates for Yianni)
+
+These need real Steam and real machines; nothing here can run them:
+
+- [ ] Two accounts on two machines: host, invite, join, play a round, rotate the map,
+      leave, rejoin.
+- [ ] Kick from the editor's Network window over Steam; the kicked player can't rejoin
+      until the match ends.
+- [ ] Pull the client's network cable for 4 s (stays) and for 15 s (times out cleanly, can
+      rejoin), during play and during a map change.
+- [ ] Three or more real machines on home connections, watching the Updates column: no
+      one should sit degraded on a decent line.
+- [ ] Render frame times with 12 players over Steam (the figures above are network and
+      simulation only).
+- **32 and 64 players over real Steam** need that many accounts; the numbers above come
+  from the loopback hub.
+- **The editor's own Play** still doesn't rotate maps (the player does).

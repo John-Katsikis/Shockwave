@@ -359,6 +359,8 @@ void NetworkWorld::Impl::hello(Peer& p, const MessageHeader& header, const Hello
         ++stats.rotationRefusals;
         return reject(p, ReasonCode::MapRotation, "the map is changing; join again in a moment");
     }
+    if (std::find(kicked.begin(), kicked.end(), p.peer) != kicked.end())
+        return reject(p, ReasonCode::Kicked, "removed from this match by the host");
     // A player from the last map, stamped with the session the commit announced.
     if (w.m_start.presetSession && header.session == session) p.reservedSlot = reservedFor(p.peer);
     const NetworkCompatibility& c = w.m_start.compatibility;
@@ -435,6 +437,7 @@ void NetworkWorld::Impl::clientMessage(Peer& h, const ReceivedMessage& message) 
         ++stats.rejected;
         const ReasonCode reason = std::get<Reject>(decoded.body).reason;
         // The diagnostic is the host's text: shown nowhere, only the reason is.
+        if (reason == ReasonCode::Kicked) return failClient(reason, "the host removed you from the match");
         return failClient(reason == ReasonCode::Normal ? ReasonCode::HostLeft : reason, "the host refused to admit us");
     }
     case MessageKind::Goodbye: {
@@ -618,6 +621,7 @@ void NetworkWorld::peerInfo(std::vector<NetworkPeerInfo>& out) const {
             if (!info.peer.valid()) info.peer = stats->peer;
         }
         info.queuedControlBytes = uint32_t(p.queued());
+        info.updateLevel = p.updateLevel;
         if (m_role == NetworkRole::Authority && p.lastInputAt >= 0) info.inputAge = impl.now - p.lastInputAt;
         if (m_role == NetworkRole::Client && impl.lastSnapshotAt >= 0)
             info.snapshotAge = impl.now - impl.lastSnapshotAt;
@@ -689,6 +693,7 @@ NetResult<void> NetworkWorld::begin() {
     // Hello with it), and the slots the last map's players get back.
     if (m_start.presetSession) impl.session = m_start.session;
     impl.reservations = m_start.reservedSlots;
+    impl.kicked = m_start.kicked;
     auto transport = m_services->createTransport();
     if (!transport) return failStart(ReasonCode::ServiceUnavailable, transport.error());
     m_transport = std::move(transport.value());

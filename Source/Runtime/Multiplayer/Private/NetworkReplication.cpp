@@ -395,17 +395,61 @@ void NetworkWorld::Impl::sendSnapshots() {
         for (NetObject& o : objects) o.changed = false;
 }
 
-// One Snapshot for one peer: its players, then other moving objects round-robin, as far
-// as the budget goes, split into parts of at most max_snapshot_bytes. A record is only
-// sent once the lifecycle change it depends on has gone out to this peer.
+void NetworkWorld::Impl::adjustUpdateLevel(Peer& p, bool pressured, bool roomy) {
+    if (!settings().degradeUpdates) {
+        pressured = false;
+        if (p.updateLevel == 0) return;
+    }
+    p.pressured = pressured ? uint8_t(std::min<uint32_t>(p.pressured + 1u, 255u)) : uint8_t(0);
+    if (pressured || !roomy)
+        p.calmSince = -1;
+    else if (p.calmSince < 0)
+        p.calmSince = now;
+    if (now - p.levelChangedAt < kUpdateLevelHoldSeconds && settings().degradeUpdates) return;
+    const uint8_t before = p.updateLevel;
+    if (p.pressured >= kPressuredSnapshots && p.updateLevel < kMaxUpdateLevel) {
+        ++p.updateLevel;
+        ++stats.updateLevelRaises;
+        p.pressured = 0;
+    } else if (
+        p.updateLevel > 0 && (!settings().degradeUpdates || (p.calmSince >= 0 && now - p.calmSince >= kCalmSeconds))) {
+        p.updateLevel = settings().degradeUpdates ? uint8_t(p.updateLevel - 1) : uint8_t(0);
+        ++stats.updateLevelDrops;
+        p.calmSince = now;
+    }
+    if (p.updateLevel == before) return;
+    p.levelChangedAt = now;
+    stats.degradedPeers = 0;
+    for (const Peer& q : peers) stats.degradedPeers += q.admitted() && q.updateLevel > 0;
+    SW_LOG(
+        LogNetwork, Info, "Player {}'s updates {}: level {} ({})", p.slot,
+        p.updateLevel > before ? "slowed" : "sped up", p.updateLevel,
+        p.updateLevel == 0   ? "everything every snapshot"
+        : p.updateLevel == 1 ? "other objects every second snapshot"
+                             : "players every second snapshot, other objects every fourth");
+}
+
+// One Snapshot for one peer: its players, then other moving objects, each round-robin, as
+// far as the budget goes, split into parts of at most max_snapshot_bytes. A record is only
+// sent once the lifecycle change it depends on has gone out to this peer. A degraded peer
+// (updateLevel) gets other objects, then players, only on some snapshot ticks.
 void NetworkWorld::Impl::sendSnapshot(Peer& p) {
     const NetworkSettings& s = settings();
     const double rate = double(s.outboundBytesPerSecond);
     if (p.outTokensAt >= 0) p.outTokens = std::min(kOutboundBurstBytes, p.outTokens + (now - p.outTokensAt) * rate);
     p.outTokensAt = now;
+    const uint32_t turn = p.snapshotTurn++;
+    const bool sendPlayers = p.fullRefresh || p.updateLevel < 2 || turn % 2 == 0;
+    const bool sendProps = p.fullRefresh || p.updateLevel == 0 || turn % (p.updateLevel == 1 ? 2u : 4u) == 0;
+    if (!sendPlayers && !sendProps) return;
+    const uint64_t limitedBefore = stats.recordsLimited;
     const double reserve = std::min(double(kReservedControlBytesPerSecond), rate / 2);
     const bool full = p.fullRefresh;
-    double budget = full ? 1e18 : std::min((rate - reserve) / std::max<uint32_t>(1, s.snapshotRate), p.outTokens);
+    // A degraded peer's fuller snapshots may spend what the skipped ones saved; the token
+    // bucket still holds it to outbound_bytes_per_second.
+    const double spread = p.updateLevel == 0 ? 1.0 : 2.0;
+    double budget =
+        full ? 1e18 : std::min(spread * (rate - reserve) / std::max<uint32_t>(1, s.snapshotRate), p.outTokens);
     const uint32_t partLimit = std::min<uint32_t>(
         std::max<uint32_t>(s.maxSnapshotBytes, kSnapshotOverheadBytes + 69), kMaxUnreliableMessageBytes);
     const uint32_t partRoom = partLimit - kSnapshotOverheadBytes;
@@ -434,21 +478,34 @@ void NetworkWorld::Impl::sendSnapshot(Peer& p) {
         return o.stateBytes > 0 && !newer(o.serial, p.sentSerial) && (full || !o.isStatic || o.changed);
     };
     auto player = [](const NetObject& o) { return o.owner != 0 || o.profile->perPlayer; };
-    for (uint32_t i = 0; i < objects.size(); ++i)
-        if (sendable(objects[i]) && player(objects[i]) && !take(i)) ++stats.recordsLimited;
+    // Round-robin from `cursor` over players (or the rest): where the next snapshot starts.
     const uint32_t n = uint32_t(objects.size());
-    uint32_t start = p.propCursor % std::max<uint32_t>(n, 1), next = start;
-    for (uint32_t k = 0; k < n; ++k) {
-        const uint32_t i = (start + k) % n;
-        if (!sendable(objects[i]) || player(objects[i])) continue;
-        if (!take(i)) {
-            ++stats.recordsLimited;
-            continue;
+    auto sweep = [&](uint32_t cursor, bool players) {
+        const uint32_t start = cursor % std::max<uint32_t>(n, 1);
+        uint32_t next = start;
+        bool held = false;
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint32_t i = (start + k) % n;
+            if (!sendable(objects[i]) || player(objects[i]) != players) continue;
+            if (!take(i)) {
+                ++stats.recordsLimited;
+                held = true;
+                continue;
+            }
+            if (!held) next = (i + 1) % n;
         }
-        next = (i + 1) % n;
-    }
-    p.propCursor = next;
+        return next;
+    };
+    if (sendPlayers) p.playerCursor = sweep(p.playerCursor, true);
+    if (sendProps) p.propCursor = sweep(p.propCursor, false);
     p.fullRefresh = false;
+    // Pressure, judged on the snapshots that carry everything due: the budget held
+    // something back, or the connection's queues are half full.
+    bool pressured = stats.recordsLimited != limitedBefore || p.queued() * 2 > p.queueCap;
+    if (const auto link = w.m_transport->stats(p.connection))
+        pressured = pressured || link->pendingReliableBytes * 2 > s.maxPendingReliableBytes ||
+                    link->pendingUnreliableBytes * 2 > s.maxPendingReliableBytes;
+    if (sendProps) adjustUpdateLevel(p, pressured, spent <= (rate - reserve) / std::max<uint32_t>(1, s.snapshotRate));
     if (pick.empty()) return;
     uint32_t first = 0;
     for (uint32_t partIndex = 0; partIndex < partEnds.size(); ++partIndex) {

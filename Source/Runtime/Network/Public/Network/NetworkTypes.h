@@ -99,8 +99,9 @@ enum class ReasonCode : uint16_t {
     ServiceUnavailable = 13,
     UnsupportedFeature = 14,
     MapRotation = 15,   // the session ended for the next map (protocol v2): reconnect, don't leave
+    Kicked = 16,   // the host removed this player (protocol v2, S11)
 };
-inline constexpr uint16_t kLastReasonCode = 15;
+inline constexpr uint16_t kLastReasonCode = 16;
 
 // "ProtocolMismatch", or nullptr for a number with no name.
 const char* reasonName(ReasonCode reason);
