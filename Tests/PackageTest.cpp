@@ -61,6 +61,7 @@ int main() {
     settings.build = false;
     settings.archive = false;
     settings.strip = false;
+    settings.keepSymbols = false;
     settings.cppRuntime = false;
     check(savePackageSettings(project, settings, error), "settings save");
     PackageSettings loaded;

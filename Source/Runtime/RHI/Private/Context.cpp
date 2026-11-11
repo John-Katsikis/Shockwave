@@ -1,5 +1,6 @@
 #include <RHI/Context.h>
 
+#include <Core/Diagnostics.h>
 #include <Core/Log.h>
 
 #include <SDL3/SDL.h>
@@ -344,6 +345,13 @@ VkPhysicalDevice Context::chooseGpu(
          }())
         SW_LOG(LogVulkan, Info, "{}", line);
     for (const std::string& warning : m_gpuChoice.warnings) SW_LOG(LogVulkan, Warning, "{}", warning);
+    if (m_gpuChoice.chosen >= 0) {
+        // For crash reports and logs (docs/Diagnostics.md).
+        const GpuCandidate& chosen = m_gpuChoice.gpus[size_t(m_gpuChoice.chosen)];
+        diagnostics::setContext("gpu", chosen.name);
+        diagnostics::setContext("gpu_driver", chosen.driver);
+        diagnostics::setContext("vulkan", chosen.vulkanVersion);
+    }
     if (m_gpuChoice.chosen < 0) {
         std::string reasons;
         for (const GpuCandidate& gpu : m_gpuChoice.gpus) reasons += "; " + gpu.name + ": " + gpu.problem;

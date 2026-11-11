@@ -104,14 +104,16 @@ bool loadPackageSettings(const Project& project, PackageSettings& settings, std:
                 (key == "exclude" ? result.exclude : result.include).push_back(pattern);
                 row >> std::ws;
             }
-        } else if (key == "build" || key == "archive" || key == "strip" || key == "cpp_runtime") {
+        } else if (
+            key == "build" || key == "archive" || key == "strip" || key == "cpp_runtime" || key == "keep_symbols") {
             std::string value;
             row >> value;
             if (value != "true" && value != "false") return fail(key + " must be true or false");
-            (key == "build"     ? result.build
-             : key == "archive" ? result.archive
-             : key == "strip"   ? result.strip
-                                : result.cppRuntime) = value == "true";
+            (key == "build"          ? result.build
+             : key == "archive"      ? result.archive
+             : key == "strip"        ? result.strip
+             : key == "keep_symbols" ? result.keepSymbols
+                                     : result.cppRuntime) = value == "true";
         } else
             return fail("unknown key '" + key + "'");
         row >> std::ws;
@@ -146,6 +148,7 @@ bool savePackageSettings(const Project& project, const PackageSettings& settings
     out << "build " << (settings.build ? "true" : "false") << "\n"
         << "archive " << (settings.archive ? "true" : "false") << "\n"
         << "strip " << (settings.strip ? "true" : "false") << "\n"
+        << "keep_symbols " << (settings.keepSymbols ? "true" : "false") << "\n"
         << "cpp_runtime " << (settings.cppRuntime ? "true" : "false") << "\n";
     std::error_code ec;
     fs::create_directories(path.parent_path(), ec);

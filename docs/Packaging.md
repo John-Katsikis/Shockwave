@@ -94,6 +94,7 @@ exclude "*.blend" "Content/Raw"
 | `build` | `true` | Build the player and your game code first, so the package is never out of date. |
 | `archive` | `true` | Also make a `.tar.gz` of the folder. |
 | `strip` | `true` | Leave out symbol tables players don't need. Packages get about half as big. |
+| `keep_symbols` | `true` | Before stripping, keep each program and library's full copy in `<package>-symbols/<build ID>/`, beside the package and never in it or its archive, so `player --symbolize` can read players' crash reports ([Diagnostics](Diagnostics.md)). Keep that folder with the build. |
 | `cpp_runtime` | `true` | Ship your machine's C++ runtime for older systems (see below). |
 
 In the editor these are the fields of the Package game window. Save settings writes the

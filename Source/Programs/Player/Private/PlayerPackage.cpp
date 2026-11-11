@@ -48,6 +48,7 @@ int packageGame(const shockwave::Project& project, const PackageCommand& command
             "cook %s (%zu assets; %zu project files left out)\n", result.cook.string().c_str(), result.cookedAssets,
             result.leftOut);
     if (!result.archive.empty()) std::printf("archive %s\n", result.archive.string().c_str());
+    if (!result.symbols.empty()) std::printf("symbols %s\n", result.symbols.string().c_str());
     std::printf("run %s\n", result.launcher.string().c_str());
     return 0;
 }

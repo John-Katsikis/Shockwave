@@ -125,6 +125,19 @@ run a packaged game must pass `--user-dir <temp>`, so they never touch real play
 build/bin/player --project <file.swproject> --user-paths [--json -]
 ```
 
+## Diagnostics and crashes
+
+A player playing keeps a rotating log and a session marker in its Logs folder, and every
+run writes a crash report to its Crashes folder on a fatal fault (`docs/Diagnostics.md`).
+Name a report's frames, and see whether the last run ended cleanly, with:
+
+```sh
+build/bin/player --symbolize <report.crash.txt> [--symbols <package>-symbols]
+build/bin/player --project <file.swproject> --diagnostics [--json -]
+```
+
+Never add a way for a shipped program to crash on request: tests crash `crash_program`.
+
 ## Levels
 
 A game's levels, their scenes, kinds, entry and links are in an optional level catalog named

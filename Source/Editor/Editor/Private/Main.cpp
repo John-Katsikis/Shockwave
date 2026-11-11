@@ -2,6 +2,8 @@
 
 #include "GraphicsGuide.h"
 
+#include <Core/Diagnostics.h>
+
 #include <charconv>
 #include <cstdio>
 #include <exception>
@@ -54,6 +56,7 @@ int main(int argc, char** argv) {
         editor::EditorOptions options;
         options.prefsPath = editor::defaultPreferencesPath();
         bool uncapped = false;
+        bool noCrashHandler = false;   // --no-crash-handler
         std::string renderer;   // --renderer
         std::string gpu;   // --gpu
         auto integer = [](const std::string& text, const char* flag, int minimum) {
@@ -90,6 +93,10 @@ int main(int argc, char** argv) {
                 options.showLevels = true;
             else if (arg == "--residency")
                 options.showResidency = true;
+            else if (arg == "--diagnostics")
+                options.showDiagnostics = true;
+            else if (arg == "--no-crash-handler")
+                noCrashHandler = true;
             else if (arg == "--player-settings")
                 options.showPlayerSettings = true;
             else if (arg == "--package-release")
@@ -133,7 +140,7 @@ int main(int argc, char** argv) {
                           "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
                           "       [--play] [--select N] [--circuit path] [--level-cycles N] [--level-authoring]\n"
                           "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting] [--release]\n"
-                          "       [--levels] [--residency] [--frames N]");
+                          "       [--levels] [--residency] [--diagnostics] [--no-crash-handler] [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;
@@ -147,6 +154,24 @@ int main(int argc, char** argv) {
         }
 
         std::string error;
+        // Diagnostics (docs/Diagnostics.md): a log file, crash reports and the session
+        // marker, beside the editor's preferences.
+        shockwave::diagnostics::startRecording();
+        shockwave::diagnostics::setContext("program", "editor");
+        if (!options.prefsPath.empty()) {
+            const std::filesystem::path folder = std::filesystem::path(options.prefsPath).parent_path();
+            if (!noCrashHandler && !shockwave::diagnostics::installCrashHandler({folder / "Crashes", "editor"}, error))
+                std::fprintf(stderr, "Editor: no crash reports this run: %s\n", error.c_str());
+            shockwave::diagnostics::LogFileOptions logFile;
+            logFile.folder = folder / "Logs";
+            logFile.name = "editor";
+            if (!shockwave::diagnostics::openLogFile(logFile, error))
+                std::fprintf(stderr, "Editor: no log file this run: %s\n", error.c_str());
+            shockwave::diagnostics::PreviousSession previous;
+            if (shockwave::diagnostics::beginSession(folder / "Logs", folder / "Crashes", "editor", previous, error) &&
+                previous.found && !previous.stillRunning)
+                std::fprintf(stderr, "Editor: the last session didn't end cleanly (Window > Diagnostics)\n");
+        }
         if (!editor::loadPreferences(options.prefsPath, options.prefs, error)) {
             std::fprintf(stderr, "Editor: preferences not loaded (using defaults): %s\n", error.c_str());
         }
@@ -180,9 +205,11 @@ int main(int argc, char** argv) {
         shockwave::Engine& engine = *started;
         editor::Editor editor(std::move(options));
         engine.run(editor);
+        shockwave::diagnostics::endSession();
         if (editor.exitCode()) return editor.exitCode();
     } catch (const std::exception& e) {
         std::fprintf(stderr, "Editor: %s\n", e.what());
+        shockwave::diagnostics::endSession();
         return 1;
     }
     return 0;

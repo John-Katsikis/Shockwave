@@ -30,6 +30,20 @@ list(FILTER shipped_saved EXCLUDE REGEX "^Cache/Textures/[^/]+\\.ktx2$")
 if(texture_count EQUAL 0 OR shipped_saved)
     message(FATAL_ERROR "The package should ship compressed textures and nothing else from Saved: ${shipped_saved}")
 endif()
+# Linux strips symbols, keeping full copies by build ID beside the package (never in it).
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    if(NOT output MATCHES "\nsymbols ([^\n]+)")
+        message(FATAL_ERROR "The package kept no symbols beside it:\n${output}")
+    endif()
+    set(symbols "${CMAKE_MATCH_1}")
+    if(NOT EXISTS "${symbols}/shockwave-symbols.txt")
+        message(FATAL_ERROR "The kept symbols have no marker: ${symbols}")
+    endif()
+    file(GLOB kept "${symbols}/*/ShockwaveSample")
+    if(NOT kept OR EXISTS "${package}/Binaries/shockwave-symbols.txt" OR symbols MATCHES "^${package}/")
+        message(FATAL_ERROR "The kept symbols should hold the program, outside the package: ${symbols}")
+    endif()
+endif()
 # Started from elsewhere, the packaged player still finds its own project.
 execute_process(COMMAND "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
         "${package}/Binaries/ShockwaveSample" --check --user-dir "${TEMP}/user"

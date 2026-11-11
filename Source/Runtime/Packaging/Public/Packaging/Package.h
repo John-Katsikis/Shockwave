@@ -46,6 +46,10 @@ struct PackageSettings {
     bool build = true;   // build the player and game module first, so the package is never stale
     bool archive = true;   // also make a .tar.gz of the folder, ready to upload or send
     bool strip = true;   // drop symbol tables from the program and libraries (much smaller)
+    // When stripping, first keep each binary's full copy beside the package (never in it),
+    // in <package>-symbols/<GNU build ID>/<file>, so `player --symbolize` can name the frames
+    // of a player's crash report (docs/Diagnostics.md).
+    bool keepSymbols = true;
     // Ship this machine's C++ runtime too, used only on systems whose own is too old to
     // run the game. Lets a game built on a rolling distro run on older LTS ones.
     bool cppRuntime = true;
@@ -127,6 +131,7 @@ struct PackageResult {
     std::filesystem::path folder;   // the finished package
     std::filesystem::path archive;   // its .tar.gz, when settings.archive is on
     std::filesystem::path launcher;   // the program players start
+    std::filesystem::path symbols;   // the kept symbols (keep_symbols), outside the package
     size_t files = 0;
     uintmax_t bytes = 0;   // the folder's size
     double seconds = 0;

@@ -1,6 +1,8 @@
 // player: the standalone game executable and its command-line tools; see Player.h.
 #include "Player.h"
 
+#include <Core/Diagnostics.h>
+
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
 #include <Engine/Engine.h>
@@ -29,7 +31,20 @@
 using player::Player;
 using player::Tool;
 
+namespace {
+// Ends the run's diagnostics on every way out of main() but a crash: the session marker
+// goes, so the next start knows this one ended cleanly.
+struct RunDiagnostics {
+    bool begun = false;
+    ~RunDiagnostics() {
+        if (begun) player::endRunDiagnostics();
+    }
+};
+}   // namespace
+
 int main(int argc, char** argv) {
+    player::startDiagnostics();
+    RunDiagnostics runDiagnostics;
     try {
         std::filesystem::path manifest;
         std::filesystem::path newProjectFolder;
@@ -65,6 +80,7 @@ int main(int argc, char** argv) {
         std::filesystem::path levelSchema;   // --level-schema
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
+        player::DiagnosticsCommand diagnostics;   // --diagnostics, --symbolize, --safe-mode, ...
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
@@ -102,6 +118,25 @@ int main(int argc, char** argv) {
                 std::string error;
                 if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
                     throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            // Diagnostics (docs/Diagnostics.md).
+            if (arg == "--diagnostics" || arg == "--safe-mode" || arg == "--no-crash-handler" ||
+                arg == "--no-log-file") {
+                (arg == "--diagnostics"        ? diagnostics.info
+                 : arg == "--safe-mode"        ? diagnostics.safeMode
+                 : arg == "--no-crash-handler" ? diagnostics.noCrashHandler
+                                               : diagnostics.noLogFile) = true;
+                continue;
+            }
+            if ((arg == "--symbolize" || arg == "--symbols" || arg == "--log-file") && i + 1 < argc) {
+                const std::filesystem::path value = argv[++i];
+                if (arg == "--symbolize")
+                    diagnostics.symbolize = value;
+                else if (arg == "--symbols")
+                    diagnostics.symbols.push_back(value);
+                else
+                    diagnostics.logFile = value;
                 continue;
             }
             // The graphics release tier (docs/ReleaseTier.md).
@@ -696,6 +731,15 @@ int main(int argc, char** argv) {
                     "                                    play the scene N seconds (default 3) with no audio\n"
                     "                                    device, write the mix and print per-channel levels\n"
                     "player --user-paths [--json file]   the per-user folders this run writes to\n"
+                    "player --diagnostics [--json file]  logs, crash reports and whether the last run ended\n"
+                    "                                    cleanly (docs/Diagnostics.md)\n"
+                    "player --symbolize report.crash.txt [--symbols folder]... [--json file]\n"
+                    "                                    name a crash report's frames (symbols kept beside a\n"
+                    "                                    package: <package>-symbols)\n"
+                    "player --safe-mode                  play with the lowest graphics, windowed, no pipeline\n"
+                    "                                    cache, ignoring the player's graphics file\n"
+                    "player --log-file path | --no-log-file | --no-crash-handler\n"
+                    "                                    this run's log file there, none, or no crash reports\n"
                     "player --user-dir folder            write saves, settings and caches there this run\n"
                     "player --profile id                 the player profile (default: default)\n"
                     "player --import-legacy-saves folder [--preview]\n"
@@ -831,6 +875,8 @@ int main(int argc, char** argv) {
             mode(!levelSchema.empty(), "--level-schema");
             mode(steamStatus != 0, "--steam-status");
             mode(netTest.requested, "--net-test");
+            mode(diagnostics.info, "--diagnostics");
+            mode(!diagnostics.symbolize.empty(), "--symbolize");
             mode(!netDump.empty(), "--net-dump");
             mode(!lightingSchema.empty(), "--lighting-schema");
             mode(!lightingExport.empty(), "--lighting-export");
@@ -867,7 +913,9 @@ int main(int argc, char** argv) {
                 "--cook",
                 "--cook-info",
                 "--release-tier",
-                "--perf-run"};
+                "--perf-run",
+                "--diagnostics",
+                "--symbolize"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -946,6 +994,8 @@ int main(int argc, char** argv) {
         if (!cookVerify.empty() && cookInfoFile.empty()) throw player::UsageError("--verify goes with --cook-info");
         if (!cookInfoFile.empty())
             return player::cookInfo(cookInfoFile, cookVerify, tool.benchmarkJson);   // no project
+        if (!diagnostics.symbolize.empty())
+            return player::symbolizeReport(diagnostics, tool.benchmarkJson);   // no project
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
         if (!effectInfo.empty()) return player::effectInfo(effectInfo, tool.benchmarkJson);   // no project
@@ -1067,6 +1117,21 @@ int main(int argc, char** argv) {
             if (!userPathsCommand.importLegacy.empty())
                 return player::importLegacySaves(userPathsCommand.importLegacy, paths, userPathsCommand.preview);
         }
+        if (diagnostics.info)
+            return player::diagnosticsInfo(
+                project, tool.userPaths ? &*tool.userPaths : nullptr, diagnostics, tool.benchmarkJson);
+        {
+            // A player playing (not a tool, a measurement or an automated test) keeps a log
+            // file and the session marker; every run gets crash reports.
+            const bool gameRun = tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
+                                 tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested &&
+                                 !tool.captureReflections && !tool.listSaves && saveInfoFile.empty() &&
+                                 saveMigrateFile.empty() && !netTest.requested && !networkInfo &&
+                                 networkSchema.empty() && steamStatus == 0 && !releaseInfo && tool.save.empty() &&
+                                 tool.flowTest.empty() && !tool.perfRun;
+            player::beginRunDiagnostics(project, tool.userPaths ? &*tool.userPaths : nullptr, diagnostics, gameRun);
+            runDiagnostics.begun = true;
+        }
         // Reproducible tools ignore local user preferences. Explicit --graphics still
         // loads (and --check validates) the file, without a window or GPU.
         if (!graphicsFile.empty()) {
@@ -1074,9 +1139,9 @@ int main(int argc, char** argv) {
             if (!shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
                 throw std::runtime_error(error);
         } else if (
-            !noUserGraphics && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
-            tool.screenshot.empty() && tool.graphicsReportFrame == 0 && !package.requested &&
-            !tool.captureReflections) {
+            !noUserGraphics && !diagnostics.safeMode && tool.mode == Tool::Mode::Play && !tool.optimise &&
+            tool.benchmarkSeconds == 0 && tool.screenshot.empty() && tool.graphicsReportFrame == 0 &&
+            !package.requested && !tool.captureReflections) {
             // The player's own settings, in their profile's config folder.
             if (tool.userPaths) {
                 tool.graphicsFile = tool.userPaths->config() / "Graphics.swgraphics";
@@ -1084,6 +1149,17 @@ int main(int argc, char** argv) {
                     !shockwave::loadGraphicsSettings(tool.graphicsFile, tool.graphics, error))
                     SW_LOG(shockwave::LogEngine, Warning, "Ignoring user graphics settings: {}", error);
             }
+        }
+        if (diagnostics.safeMode) {
+            // Safe graphics (docs/Diagnostics.md): the lowest tier, windowed, no pipeline
+            // cache. The player's own files are neither read nor written; anything given on
+            // the command line still applies on top.
+            tool.graphics = player::safeGraphics(project, tool.graphics);
+            tool.graphicsFile.clear();
+            tool.preferenceSets.emplace_back("window_mode", "windowed");
+            noPipelineCache = true;
+            noPipelineWarmup = true;
+            SW_LOG(shockwave::LogEngine, Warning, "Safe mode: lowest graphics, windowed, no pipeline cache");
         }
         if (!graphicsPresetArg.empty()) {
             // Before the other overrides, so --graphics-set can change one setting of a preset.
@@ -1114,6 +1190,10 @@ int main(int argc, char** argv) {
         for (const auto& [key, value] : graphicsSets)
             if (!shockwave::setGraphicsSetting(tool.graphics, key, value, error))
                 throw std::runtime_error("--graphics-set: " + error);
+        {
+            const auto preset = shockwave::matchingGraphicsPreset(tool.graphics);
+            shockwave::diagnostics::setContext("graphics", preset ? shockwave::graphicsPresetName(*preset) : "custom");
+        }
         // The player's preferences file, under the same rule as the graphics one: tools and
         // reproducible runs leave it alone.
         if (!noUserPreferences && tool.mode == Tool::Mode::Play && !tool.optimise && tool.benchmarkSeconds == 0 &&
