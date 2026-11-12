@@ -8,6 +8,9 @@
 # the clone (docs/Effects.md, "Changes to Effekseer"). The Effekseer editor is meant to be
 # built from the same patches, so effects look the same in both:
 #   0001  flipbook motion vectors: a third flipbook interpolation, "Motion vectors"
+#   0002  editor build fixes for newer compilers (editor only)
+#   0003  flipbook motion vectors in the editor: UI, saving, its OpenGL shaders (editor only)
+# cmake/BuildEffekseerEditor.sh builds that editor on Linux.
 # Their hash is part of the patch step, so editing a patch re-applies them all.
 set(effekseer_patch_dir ${CMAKE_CURRENT_LIST_DIR}/patches/effekseer)
 file(GLOB effekseer_patches ${effekseer_patch_dir}/*.patch)

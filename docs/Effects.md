@@ -58,7 +58,9 @@ slowed down. Its effect is `Games/Sample/Content/Effects/laser.efkefc`.
 ## Make an effect
 
 1. Download the Effekseer editor from [effekseer.github.io](https://effekseer.github.io/).
-   It runs on Linux, Windows and macOS, and is free.
+   It runs on Linux, Windows and macOS, and is free. To use Shockwave's own additions,
+   such as motion vector flipbooks, build the patched editor instead (see *The Effekseer
+   editor* below).
 2. Make your effect, or start from one of its samples.
 3. Save it as an `.efkefc` file inside your project's `Content` folder, with its
    textures and models next to it or in a folder below it, such as `Content/Effects/`.
@@ -178,6 +180,10 @@ instead of fading: a 16-frame explosion looks like it has many more frames.
 - Leave a few clear pixels round each cell: a pixel pushed past its cell's edge reads the
   neighbouring cell.
 - With no motion vector texture it cross-fades, and `--check` warns.
+- In the patched Effekseer editor, pick *Motion Vectors* under *Flipbook Frame Blend* in
+  *Basic Render Settings*; *Motion Vector Texture* and *Motion Vector Strength* appear
+  below it, and the viewport plays the blend as the game does. The official editor can't
+  open an effect saved with it.
 
 `particle_motion_vectors false` cross-fades every flipbook (Low does). The graphics
 report's `particles` block counts `motion_draws`.
@@ -221,11 +227,41 @@ a change load and play exactly as in the official Effekseer.
 | Patch | What it adds |
 |---|---|
 | `0001-flipbook-motion-vectors.patch` | Flipbook interpolation *Motion vectors* (2), with a motion vector texture and strength. Only an effect that uses it stores the two extra values, so older effects keep their layout; an effect saved with it needs this patched Effekseer. |
+| `0002-editor-build-fixes.patch` | Missing `<cstdint>` includes, so the editor's C++ parts build with GCC 13 and newer. Editor only. |
+| `0003-flipbook-motion-vectors-editor.patch` | The editor side of 0001: the *Motion Vectors* choice, its texture and strength in *Basic Render Settings* (English, Japanese, Spanish), saving them, and Effekseer's own shaders, so the editor's viewport draws the blend. The shader source is the DirectX 11 HLSL; only the OpenGL shaders (which the Linux editor uses) are regenerated from it. Editor only. |
 
 To change a patch, edit a clean Effekseer 1.7.3.0 checkout, write it out with
 `git diff > cmake/patches/effekseer/<name>.patch`, and configure again: the build resets
 its copy of Effekseer and applies every patch, in name order. A patch that no longer
-applies stops the configure with its name.
+applies stops the configure with its name. Shockwave itself only compiles the files 0001
+changes; the editor-only patches still have to apply, so they are checked on every
+configure too.
+
+### The Effekseer editor
+
+The official editor doesn't know Shockwave's additions. To build one that does, on Linux:
+
+```sh
+cmake/BuildEffekseerEditor.sh
+~/.local/share/shockwave/effekseer-editor/effekseer-editor
+```
+
+The script lists the packages it needs at its top (for Arch Linux: `git-lfs`, `cmake`,
+`ninja`, `dotnet-sdk` and a few X11, OpenGL and GTK libraries). It downloads Effekseer
+1.7.3.0 with its submodules, the editor's images and fonts from Git LFS, applies every
+patch in `cmake/patches/effekseer`, and builds the C++ viewer and the C# editor. It takes
+a few minutes and about 600 MB. Give it a folder to build somewhere else. Run it again
+after a patch changes: it reuses the download and rebuilds what changed.
+
+The editor targets .NET Core 3.1, which is no longer shipped; the `effekseer-editor`
+launcher runs it on the newer .NET that's installed (`DOTNET_ROLL_FORWARD=Major`).
+
+To regenerate the editor's OpenGL shaders after changing the HLSL in
+`Dev/Cpp/EffekseerRendererDX11/EffekseerRenderer/Shader`, build `ShaderTranspiler` from
+[LLGI](https://github.com/altseed/LLGI) (`tools/`), run the OpenGL part of
+`Dev/Cpp/CreateShader.py` from `Dev/Cpp`, then `combine_shader.py` from
+`Dev/Cpp/EffekseerRendererGL/EffekseerRenderer`. With unchanged HLSL, it reproduces
+Effekseer's shipped shaders byte for byte.
 
 ## Check effects for mistakes
 
