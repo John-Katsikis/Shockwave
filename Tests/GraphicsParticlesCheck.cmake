@@ -7,6 +7,9 @@
 #     scene copy and no memory for one;
 #   - scene lighting: lamps either side tint the lit smoke red and blue, which simple
 #     lighting doesn't;
+#   - flipbook motion vectors (Effekseer patch 0001): a dot moving right, halfway between
+#     its two cells, is one dot in the middle along its motion vectors, and two faint ones,
+#     where the cells have it, cross-faded or with particle_motion_vectors false;
 #   - the report's particles block and effective settings follow each setting.
 cmake_policy(SET CMP0054 NEW)   # quoted strings in if() are never variables
 file(MAKE_DIRECTORY "${TEMP}")
@@ -136,6 +139,41 @@ foreach(case "red;0.40;0;2" "blue;0.55;2;0")
     endif()
 endforeach()
 
+# ---- Flipbook motion vectors ----
+render(particles-flipbook-lerp flipbook-lerp)
+render(particles-flipbook-motion flipbook-motion --graphics-set particle_motion_vectors=true)
+render(particles-flipbook-motion flipbook-motion-off --graphics-set particle_motion_vectors=false)
+# Where the first cell has the dot, halfway, and where the second has it.
+set(first "0.39,0.48,0.02,0.04")
+set(middle "0.49,0.48,0.02,0.04")
+set(second "0.585,0.48,0.02,0.04")
+foreach(image flipbook-lerp flipbook-motion-off)
+    mean(${image} "${first}" a)
+    mean(${image} "${middle}" m)
+    mean(${image} "${second}" b)
+    list(GET a 0 a)
+    list(GET m 0 m)
+    list(GET b 0 b)
+    if(a LESS 100 OR b LESS 100 OR m GREATER 60)
+        message(FATAL_ERROR "${image} isn't a cross-fade of the two cells: ${a}, ${m}, ${b} across")
+    endif()
+endforeach()
+mean(flipbook-motion "${first}" a)
+mean(flipbook-motion "${middle}" m)
+mean(flipbook-motion "${second}" b)
+list(GET a 0 a)
+list(GET m 0 m)
+list(GET b 0 b)
+message(STATUS "flipbook along motion vectors: ${a}, ${m}, ${b} across")
+if(m LESS 150 OR a GREATER 60 OR b GREATER 60)
+    message(FATAL_ERROR "the flipbook doesn't follow its motion vectors: ${a}, ${m}, ${b} across")
+endif()
+rmse(flipbook-motion-off flipbook-lerp "0,0,1,1" off)
+less_than("${off}" "1" 1000 same)
+if(NOT same)
+    message(FATAL_ERROR "particle_motion_vectors false isn't the plain cross-fade (rmse ${off})")
+endif()
+
 # ---- Reports ----
 report(particles-soft soft-on --graphics-set soft_particles=true)
 string(JSON soft_draws GET "${json}" particles soft_draws)
@@ -172,4 +210,14 @@ report(particles-lit lit-scene --graphics-set particle_lighting=scene)
 string(JSON lit GET "${json}" particles scene_lit_draws)
 if(lit EQUAL 0)
     message(FATAL_ERROR "particle_lighting scene lit nothing by every light: ${json}")
+endif()
+report(particles-flipbook-motion flipbook-on --graphics-set particle_motion_vectors=true)
+string(JSON motion GET "${json}" particles motion_draws)
+if(motion EQUAL 0)
+    message(FATAL_ERROR "particle_motion_vectors true blended no flipbook along motion vectors: ${json}")
+endif()
+report(particles-flipbook-motion flipbook-off --graphics-set particle_motion_vectors=false)
+string(JSON motion GET "${json}" particles motion_draws)
+if(NOT motion EQUAL 0)
+    message(FATAL_ERROR "particle_motion_vectors false still blended ${motion} flipbooks along motion vectors")
 endif()

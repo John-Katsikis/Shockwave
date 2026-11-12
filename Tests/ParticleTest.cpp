@@ -48,7 +48,7 @@ void testSettings() {
             std::string(particleLightingName(ParticleLighting::Scene)) == "scene",
         "particle_lighting names");
     std::string error;
-    for (const char* key : {"soft_particles", "particle_distortion", "particle_lighting"}) {
+    for (const char* key : {"soft_particles", "particle_distortion", "particle_lighting", "particle_motion_vectors"}) {
         const GraphicsSettingInfo* info = findGraphicsSetting(key);
         check(info && info->preset, std::string(key) + " is a preset setting");
     }
@@ -64,13 +64,21 @@ void testSettings() {
     check(
         !lighting->set(s, "full", error) && error.find("particle_lighting") != std::string::npos, "bad values refused");
     check(!soft->set(s, "maybe", error), "soft_particles takes true or false");
-    // Low turns all three down; the others turn them up.
+    const GraphicsSettingInfo* motion = findGraphicsSetting("particle_motion_vectors");
+    check(
+        motion && motion->set(s, "false", error) && !s.particleMotionVectors && motion->get(s) == "false",
+        "particle_motion_vectors false");
+    // Low turns all four down; the others turn them up.
     const GraphicsSettings low = graphicsPreset(GraphicsPreset::Low, s);
-    check(!low.softParticles && !low.particleDistortion && low.particleLighting == ParticleLighting::Simple, "Low");
+    check(
+        !low.softParticles && !low.particleDistortion && low.particleLighting == ParticleLighting::Simple &&
+            !low.particleMotionVectors,
+        "Low");
     for (GraphicsPreset p : {GraphicsPreset::Medium, GraphicsPreset::High, GraphicsPreset::Ultra}) {
         const GraphicsSettings g = graphicsPreset(p, low);
         check(
-            g.softParticles && g.particleDistortion && g.particleLighting == ParticleLighting::Scene,
+            g.softParticles && g.particleDistortion && g.particleLighting == ParticleLighting::Scene &&
+                g.particleMotionVectors,
             std::string(graphicsPresetName(p)));
     }
 }

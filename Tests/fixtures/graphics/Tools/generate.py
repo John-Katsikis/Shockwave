@@ -33,6 +33,9 @@ after changing it; the outputs are committed so tests don't need Python.
                                      smoke in each blend mode, heat haze, lit smoke, two layers
                                      (Content/effects/upstream/ is Effekseer's own, not generated)
   Content/effects/textures/*.png     their textures: a soft puff and a ripple distortion map
+  Content/effects/flipbook-*.efkefc  a two-cell dot flipbook, cross-faded and blended along motion
+                                     vectors (Effekseer patch 0001), and one missing its vectors
+  Scenes/particles-flipbook-*.swscene  each flipbook caught halfway between its cells
   Scenes/particles-soft.swscene, particles-distortion.swscene, particles-lit.swscene, and
                                      particles-soft-empty.swscene (the same room without them)
   Content/postprocess/*.swpostprocess  fog, grading, neutral and auto exposure profiles (A05, A06)
@@ -830,10 +833,31 @@ def ripple(size=64, waves=3):
     return png(size, size, pixels)
 
 
-def fx_sprite(at, size, color, blend=FX_ALPHA, material=FX_DEFAULT, soft=(0, 0, 0), distortion=1.0):
+FX_LERP, FX_MOTION_VECTORS = 1, 2   # flipbook interpolation; 2 is Shockwave's patch to Effekseer
+FX_FLIPBOOK_FRAMES = 8   # simulation frames a flipbook cell shows
+
+
+def fx_sprite(at, size, color, blend=FX_ALPHA, material=FX_DEFAULT, soft=(0, 0, 0), distortion=1.0, texture=0,
+              flipbook=None):
     """One still, camera-facing sprite at `at` (metres), size metres wide. soft: Effekseer's
-    soft particle distances (far, near, near offset)."""
-    return dict(at=at, size=size, color=color, blend=blend, material=material, soft=soft, distortion=distortion)
+    soft particle distances (far, near, near offset). flipbook: a UV animation, a dict of cells
+    (x, y), frame_length (simulation frames a cell), interpolation (FX_LERP or
+    FX_MOTION_VECTORS), and for motion vectors, motion (normal image index, strength)."""
+    return dict(at=at, size=size, color=color, blend=blend, material=material, soft=soft, distortion=distortion,
+                texture=texture, flipbook=flipbook)
+
+
+def fx_uv(flipbook):
+    """The first UV parameter: none, or a flipbook played once from its first cell."""
+    if not flipbook:
+        return i32(0)
+    cx, cy = flipbook['cells']
+    out = [i32(2), f32(0, 0, 1 / cx, 1 / cy), i32(flipbook['frame_length'], cx, cy, 0), i32(0, 0),
+           i32(flipbook['interpolation'])]
+    if flipbook['interpolation'] == FX_MOTION_VECTORS:
+        index, strength = flipbook['motion']
+        out += [i32(index), f32(strength)]
+    return b''.join(out)
 
 
 def fx_node(n, number):
@@ -846,14 +870,14 @@ def fx_node(n, number):
     out += [i32(3, 24), f32(n['size'], n['size']), f32(0, 0), f32(0, 0)]   # one scale for x and y
     out += [i32(0, 0), f32(*n['at'], *n['at'])]   # spawned at a point
     out += [f32(0), i32(0, 0), f32(1, 3.4028234663852886e38), i32(0, 0), f32(1)]   # depth: defaults
-    texture = 0
+    texture = n['texture']
     out += [i32(n['material'])]
     if n['material'] != FX_DISTORTION:
         out += [f32(1)]   # emissive scaling
     out += [i32(texture, *[-1] * 6), i32(n['blend'])]
     out += [i32(1, 1) * 7, i32(1, 0)]   # linear, clamped textures; depth test, no depth write
     out += [i32(0), i32(0)]   # no fade in or out
-    out += [i32(0, 0, 0), f32(0.01), i32(0, -1, 0, 0), f32(0.01)]   # no UV animation
+    out += [fx_uv(n['flipbook']), i32(0, 0), f32(0.01), i32(0, -1, 0, 0), f32(0.01)]   # no other UV animation
     out += [i32(0), f32(n['distortion']), i32(0, 0), i32(0), i32(0), f32(*n['soft'])]
     out += [i32(2, 0, 0), i32(0), bytes(max(0, min(255, round(c * 255))) for c in n['color'])]
     out += [i32(0), i32(1), f32(-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5)]
@@ -861,11 +885,15 @@ def fx_node(n, number):
     return b''.join(out)
 
 
-def fx_file(*nodes):
-    body = [b'SKFE', i32(FX_VERSION), i32(len(FX_COLOR_TEXTURES))]
-    for path in FX_COLOR_TEXTURES:
+def fx_file(*nodes, color=FX_COLOR_TEXTURES, normal=()):
+    """normal: normal images, which are linear: data such as motion vectors."""
+    body = [b'SKFE', i32(FX_VERSION), i32(len(color))]
+    for path in color:
         body += [i32(len(path) + 1), (path + '\0').encode('utf-16-le')]
-    body += [i32(0), i32(len(FX_DISTORTION_TEXTURES))]   # no normal images; distortion images
+    body += [i32(len(normal))]
+    for path in normal:
+        body += [i32(len(path) + 1), (path + '\0').encode('utf-16-le')]
+    body += [i32(len(FX_DISTORTION_TEXTURES))]
     for path in FX_DISTORTION_TEXTURES:
         body += [i32(len(path) + 1), (path + '\0').encode('utf-16-le')]
     body += [i32(0) * 5]   # sounds, models, materials, curves, procedural models
@@ -876,11 +904,34 @@ def fx_file(*nodes):
     return b'EFKE' + i32(0) + b'BIN_' + i32(len(runtime)) + runtime
 
 
+def dot_flipbook(cell=64):
+    """Two cells side by side, a soft white dot on clear black in each: at 0.3 of the way
+    across the first, 0.7 across the second. Cross-fading them halfway shows two faint dots;
+    following the motion vectors shows one, in the middle."""
+    pixels = []
+    for y in range(cell):
+        for x in range(cell * 2):
+            u, v = (x % cell + 0.5) / cell, (y + 0.5) / cell
+            centre = 0.3 if x < cell else 0.7
+            a = max(0.0, 1 - math.hypot(u - centre, v - 0.5) / 0.15)
+            pixels += [255, 255, 255, round(min(1.0, a * 2) * 255)]
+    return png(cell * 2, cell, pixels)
+
+
+def dot_motion(cell=64):
+    """dot_flipbook's motion vectors: everything moves 0.4 of a cell right by the next frame.
+    Red is along u, green along v, 0.5 for still; with strength 1, full red is a whole cell."""
+    red = round((0.4 * 0.5 + 0.5) * 255)
+    return png(cell * 2, cell, [red, 128, 128, 255] * (cell * 2 * cell))
+
+
 def particle_fixtures():
     fx = root / 'Content/effects'
     (fx / 'textures').mkdir(parents=True, exist_ok=True)
     (fx / 'textures/puff.png').write_bytes(puff())
     (fx / 'textures/ripple.png').write_bytes(ripple())
+    (fx / 'textures/dot-flipbook.png').write_bytes(dot_flipbook())
+    (fx / 'textures/dot-motion.png').write_bytes(dot_motion())
     soft = (1.0, 0.0, 0.0)   # fade over a metre to the scene behind
     # Big puffs half sunk into the floor and against the wall, in each blend mode, left to right.
     for name, blend, color in [('alpha', FX_ALPHA, (0.85, 0.85, 0.9, 0.9)), ('add', FX_ADD, (1, 0.6, 0.25, 1)),
@@ -897,6 +948,15 @@ def particle_fixtures():
     # sorted in parts the far one goes first (EffectsTest).
     (fx / 'two-layers.efkefc').write_bytes(fx_file(fx_sprite((0, 0, 0), 1.0, (1, 1, 1, 0.8)),
                                                    fx_sprite((0, 0, -3), 1.0, (1, 0.5, 0.2, 1), FX_ADD)))
+    # The dot flipbook, halfway between its two cells when the test's screenshot is taken:
+    # cross-faded, and blended along its motion vectors (Effekseer patch 0001); the last one
+    # asks for motion vectors without a texture, which --check warns about.
+    for name, interpolation, motion in [('lerp', FX_LERP, None), ('motion', FX_MOTION_VECTORS, (0, 1.0)),
+                                        ('motion-missing', FX_MOTION_VECTORS, (-1, 1.0))]:
+        flipbook = dict(cells=(2, 1), frame_length=FX_FLIPBOOK_FRAMES, interpolation=interpolation, motion=motion)
+        (fx / f'flipbook-{name}.efkefc').write_bytes(
+            fx_file(fx_sprite((0, 0, 0), 2.0, (1, 1, 1, 1), FX_ADD, flipbook=flipbook),
+                    color=['textures/dot-flipbook.png'], normal=['textures/dot-motion.png']))
 
     def effect(name, file, position, **extra):
         out = [f'entity "{name}"', '  Transform', f'    position {position[0]:g} {position[1]:g} {position[2]:g}',
@@ -954,6 +1014,18 @@ def particle_fixtures():
     lines += ['entity "Main Camera"', '  Transform', '    position 0 1.6 4', '  Camera', '    fov 50',
               '    near_plane 0.1', '    primary 1', 'end', '']
     (root / 'Scenes/particles-lit.swscene').write_text('\n'.join(lines))
+
+    for name in ['lerp', 'motion']:
+        lines = head + [
+            f'# Flipbook blending ({name}): a two-cell flipbook of a dot moving right, caught halfway',
+            '# between its cells. Cross-faded it shows two faint dots; along its motion vectors one, in',
+            '# the middle. particle_motion_vectors false cross-fades both. Camera: "Main Camera".',
+            'shockwave_scene 2', '', 'entity "Environment"', '  Environment', '    sky_color 0.02 0.02 0.03 1',
+            '    ground_color 0.02 0.02 0.03 1', '    ambient_intensity 0', 'end', '']
+        lines += effect('Flipbook', f'flipbook-{name}.efkefc', (0, 0, 0))
+        lines += ['entity "Main Camera"', '  Transform', '    position 0 0 2.5', '  Camera', '    fov 50',
+                  '    near_plane 0.1', '    primary 1', 'end', '']
+        (root / f'Scenes/particles-flipbook-{name}.swscene').write_text('\n'.join(lines))
 
 
 

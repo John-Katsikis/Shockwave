@@ -52,11 +52,20 @@ inline constexpr uint32_t kParticleAlphaCutoff = 1u << 4;   // discard at or bel
 // up to ParticleBatch::distortion metres along the tangent and binormal, as projected
 // on screen. Drawn only with the particle_distortion setting on.
 inline constexpr uint32_t kParticleDistortion = 1u << 5;
+// Flipbook motion vectors (Effekseer's "Motion vectors" interpolation, with
+// kParticleFlipbookBlend): instead of a plain cross-fade, each frame is pushed along
+// ParticleBatch::motionTexture's vectors toward the other before they blend, so smoke
+// and fire move smoothly between frames. The texture's red and green, 0.5 for still,
+// map to -1..1 and times motionScale give the uv a pixel moves over one frame. Drawn
+// as a cross-fade with the particle_motion_vectors setting off.
+inline constexpr uint32_t kParticleFlipbookMotion = 1u << 6;
 
 struct ParticleBatch {
     uint32_t firstIndex = 0, indexCount = 0;   // a range of ParticleDrawList::indices
     TextureHandle texture;   // color; 0 is white
     TextureHandle alphaTexture;
+    TextureHandle motionTexture;   // kParticleFlipbookMotion: laid out like the color flipbook
+    glm::vec2 motionScale{0.0f};   // kParticleFlipbookMotion: uv a full vector moves over one frame
     ParticleBlend blend = ParticleBlend::Alpha;
     ParticleCull cull = ParticleCull::None;
     bool depthTest = true;   // against the scene (reverse-Z)
@@ -98,6 +107,7 @@ struct ParticleSettings {
     bool softParticles = true;   // soft_particles
     bool distortion = true;   // particle_distortion; off skips distortion batches
     ParticleLighting lighting = ParticleLighting::Scene;   // particle_lighting
+    bool flipbookMotion = true;   // particle_motion_vectors; off blends flipbook frames by cross-fading
     bool operator==(const ParticleSettings&) const = default;
 };
 
@@ -122,6 +132,7 @@ struct ParticleStats {
     uint32_t distortionDraws = 0;   // distortion batches drawn
     uint32_t skippedDistortion = 0;   // distortion batches not drawn: particle_distortion off
     uint32_t sceneLitDraws = 0;   // lit batches lit by every light (particle_lighting scene)
+    uint32_t motionDraws = 0;   // flipbooks blended along motion vectors (particle_motion_vectors)
     bool depthPass = false;   // the frame drew depth-writing batches in a pass of their own first
 };
 

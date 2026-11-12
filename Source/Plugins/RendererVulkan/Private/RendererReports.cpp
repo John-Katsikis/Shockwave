@@ -309,6 +309,7 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         const bool soft = softParticles.load(std::memory_order_relaxed);
         const bool distortion = particleDistortion.load(std::memory_order_relaxed);
         const ParticleLighting lighting = particleLighting.load(std::memory_order_relaxed);
+        const bool motion = particleFlipbookMotion.load(std::memory_order_relaxed);
         char detail[160];
         std::snprintf(
             detail, sizeof(detail), "last frame %u of %u particle draws faded against scene depth%s", p.softDraws,
@@ -322,6 +323,9 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
         std::snprintf(detail, sizeof(detail), "last frame %u lit particle draws took every light", p.sceneLitDraws);
         settings.push_back(
             {"particle_lighting", particleLightingName(lighting), particleLightingName(lighting), "", detail});
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u flipbook draws blended along motion vectors", p.motionDraws);
+        settings.push_back({"particle_motion_vectors", onOff(motion), onOff(motion), "", detail});
     }
 
     // Character and specialized shading (A07-A09): what last frame drew.

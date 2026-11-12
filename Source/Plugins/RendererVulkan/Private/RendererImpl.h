@@ -1054,9 +1054,11 @@ struct VulkanRenderer::Impl {
         float softNear;   // metres; 0: no fade near the camera
         float softNearOffset;
         float distortion;   // metres at full strength (kParticleDistortion)
-        float pad[2];
+        glm::vec2 motionScale;   // uv a full flipbook motion vector moves over one frame
+        uint32_t motionTexture;   // kParticleFlipbookMotion
+        float pad[3];
     };
-    static_assert(sizeof(ParticleBatchData) == 112, "ParticleBatchData must match shaders/particle.frag");
+    static_assert(sizeof(ParticleBatchData) == 128, "ParticleBatchData must match shaders/particle.frag");
     struct ParticleDraw {
         uint32_t firstIndex, indexCount;
         ParticleBlend blend;
@@ -1087,6 +1089,7 @@ struct VulkanRenderer::Impl {
     std::atomic<bool> softParticles{true};
     std::atomic<bool> particleDistortion{true};
     std::atomic<ParticleLighting> particleLighting{ParticleLighting::Scene};
+    std::atomic<bool> particleFlipbookMotion{true};
     // Decided by prepareParticles for this frame.
     bool particleSoftThisFrame = false;   // the main particle pass samples scene depth (read-only)
     bool particleDepthPassThisFrame = false;   // opaque depth-writing batches go first, in a pass of their own

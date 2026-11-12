@@ -1,0 +1,291 @@
+diff --git a/Dev/Cpp/Effekseer/Effekseer.h b/Dev/Cpp/Effekseer/Effekseer.h
+index 0156088..7e3e96a 100644
+--- a/Dev/Cpp/Effekseer/Effekseer.h
++++ b/Dev/Cpp/Effekseer/Effekseer.h
+@@ -144,7 +144,7 @@ const int32_t UserUniformSlotMax = 16;
+ const int32_t UserGradientSlotMax = 2;
+ 
+ //! the maximum number of texture slot including textures system specified
+-const int32_t TextureSlotMax = 8;
++const int32_t TextureSlotMax = 9;
+ 
+ const int32_t LocalFieldSlotMax = 4;
+ 
+@@ -954,6 +954,7 @@ enum class RendererTextureType : int32_t
+ 	Blend = 4,
+ 	BlendAlpha = 5,
+ 	BlendUVDistortion = 6,
++	FlipbookMotionVector = 7,
+ };
+ 
+ /**
+@@ -1013,6 +1014,9 @@ struct NodeRendererFlipbookParameter
+ 	int32_t FlipbookDivideY = 1;
+ 	std::array<float, 2> OneSize = {0, 0};
+ 	std::array<float, 2> Offset = {0, 0};
++
++	//! How far, in cells, a fully saturated motion vector moves a pixel between two frames (InterpolationType 2)
++	float MotionVectorStrength = 0.0f;
+ };
+ 
+ /**
+diff --git a/Dev/Cpp/Effekseer/Effekseer/Effekseer.Base.Pre.h b/Dev/Cpp/Effekseer/Effekseer/Effekseer.Base.Pre.h
+index 4e964e9..1af5c98 100644
+--- a/Dev/Cpp/Effekseer/Effekseer/Effekseer.Base.Pre.h
++++ b/Dev/Cpp/Effekseer/Effekseer/Effekseer.Base.Pre.h
+@@ -144,7 +144,7 @@ const int32_t UserUniformSlotMax = 16;
+ const int32_t UserGradientSlotMax = 2;
+ 
+ //! the maximum number of texture slot including textures system specified
+-const int32_t TextureSlotMax = 8;
++const int32_t TextureSlotMax = 9;
+ 
+ const int32_t LocalFieldSlotMax = 4;
+ 
+@@ -954,6 +954,7 @@ enum class RendererTextureType : int32_t
+ 	Blend = 4,
+ 	BlendAlpha = 5,
+ 	BlendUVDistortion = 6,
++	FlipbookMotionVector = 7,
+ };
+ 
+ /**
+@@ -1013,6 +1014,9 @@ struct NodeRendererFlipbookParameter
+ 	int32_t FlipbookDivideY = 1;
+ 	std::array<float, 2> OneSize = {0, 0};
+ 	std::array<float, 2> Offset = {0, 0};
++
++	//! How far, in cells, a fully saturated motion vector moves a pixel between two frames (InterpolationType 2)
++	float MotionVectorStrength = 0.0f;
+ };
+ 
+ /**
+diff --git a/Dev/Cpp/Effekseer/Effekseer/Effekseer.EffectNode.h b/Dev/Cpp/Effekseer/Effekseer/Effekseer.EffectNode.h
+index 1662943..d44fdf4 100644
+--- a/Dev/Cpp/Effekseer/Effekseer/Effekseer.EffectNode.h
++++ b/Dev/Cpp/Effekseer/Effekseer/Effekseer.EffectNode.h
+@@ -244,7 +244,7 @@ struct ParameterRendererCommon
+ 	RendererMaterialType MaterialType = RendererMaterialType::Default;
+ 
+ 	//! texture index except a MaterialType::File
+-	std::array<int32_t, TextureSlotMax> TextureIndexes{-1, -1, -1, -1, -1, -1, -1, -1};
++	std::array<int32_t, TextureSlotMax> TextureIndexes{-1, -1, -1, -1, -1, -1, -1, -1, -1};
+ 	std::array<TextureFilterType, TextureSlotMax> TextureFilters{};
+ 	std::array<TextureWrapType, TextureSlotMax> TextureWraps{};
+ 
+@@ -565,6 +565,14 @@ struct ParameterRendererCommon
+ 			CustomData2.load(pos, version);
+ 		}
+ 
++		if (UVs[0].Type == UVAnimationType::Animation && UVs[0].Animation.InterpolationType == UVs[0].Animation.MOTION_VECTOR)
++		{
++			const auto slot = static_cast<size_t>(RendererTextureType::FlipbookMotionVector);
++			TextureIndexes[slot] = UVs[0].Animation.MotionVectorTextureIndex;
++			TextureFilters[slot] = TextureFilterType::Linear;
++			TextureWraps[slot] = TextureWraps[0];
++		}
++
+ 		// copy to basic parameter
+ 		BasicParameter.AlphaBlend = AlphaBlend;
+ 		BasicParameter.TextureFilters = TextureFilters;
+diff --git a/Dev/Cpp/Effekseer/Effekseer/Parameter/UV.h b/Dev/Cpp/Effekseer/Effekseer/Parameter/UV.h
+index 1680cf7..c58d137 100644
+--- a/Dev/Cpp/Effekseer/Effekseer/Parameter/UV.h
++++ b/Dev/Cpp/Effekseer/Effekseer/Parameter/UV.h
+@@ -67,8 +67,15 @@ struct UVParameter
+ 			{
+ 				NONE = 0,
+ 				LERP = 1,
++				MOTION_VECTOR = 2,
+ 			} InterpolationType;
+ 
++			//! MOTION_VECTOR only: an index of normal images, laid out like the color flipbook
++			int32_t MotionVectorTextureIndex;
++
++			//! MOTION_VECTOR only: cells a fully saturated vector moves a pixel between two frames
++			float MotionVectorStrength;
++
+ 		} Animation;
+ 
+ 		struct
+@@ -136,6 +143,19 @@ struct UVParameter
+ 			{
+ 				Animation.InterpolationType = Animation.NONE;
+ 			}
++
++			Animation.MotionVectorTextureIndex = -1;
++			Animation.MotionVectorStrength = 0.0f;
++
++			// Written only for MOTION_VECTOR, so effects without it keep their layout
++			if (Animation.InterpolationType == Animation.MOTION_VECTOR)
++			{
++				memcpy(&Animation.MotionVectorTextureIndex, pos, sizeof(Animation.MotionVectorTextureIndex));
++				pos += sizeof(Animation.MotionVectorTextureIndex);
++
++				memcpy(&Animation.MotionVectorStrength, pos, sizeof(Animation.MotionVectorStrength));
++				pos += sizeof(Animation.MotionVectorStrength);
++			}
+ 		}
+ 		else if (Type == UVAnimationType::Scroll)
+ 		{
+@@ -167,6 +187,7 @@ struct UVFunctions
+ 		flipbook.OneSize[1] = uv.Animation.Position.h;
+ 		flipbook.Offset[0] = uv.Animation.Position.x;
+ 		flipbook.Offset[1] = uv.Animation.Position.y;
++		flipbook.MotionVectorStrength = uv.Animation.MotionVectorStrength;
+ 
+ 		return flipbook;
+ 	}
+diff --git a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.CommonUtils.h b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.CommonUtils.h
+index 724f087..ef8999d 100644
+--- a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.CommonUtils.h
++++ b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.CommonUtils.h
+@@ -992,6 +992,7 @@ struct ShaderParameterCollector
+ 		::Effekseer::Backend::TextureRef BlendTexturePtr = nullptr;
+ 		::Effekseer::Backend::TextureRef BlendAlphaTexturePtr = nullptr;
+ 		::Effekseer::Backend::TextureRef BlendUVDistortionTexturePtr = nullptr;
++		::Effekseer::Backend::TextureRef FlipbookMotionVectorTexturePtr = nullptr;
+ 
+ 		Textures.fill(nullptr);
+ 		TextureFilterTypes.fill(::Effekseer::TextureFilterType::Linear);
+@@ -1163,11 +1164,11 @@ struct ShaderParameterCollector
+ 			{
+ 				if (param->MaterialType == ::Effekseer::RendererMaterialType::Default)
+ 				{
+-					TextureCount = 6;
++					TextureCount = 7;
+ 				}
+ 				else
+ 				{
+-					TextureCount = 7;
++					TextureCount = 8;
+ 				}
+ 
+ 				if (IsDepthRequired)
+@@ -1357,6 +1358,22 @@ struct ShaderParameterCollector
+ 				Textures[offset + 4] = BlendUVDistortionTexturePtr;
+ 				TextureFilterTypes[offset + 4] = param->TextureFilters[6];
+ 				TextureWrapTypes[offset + 4] = param->TextureWraps[6];
++
++				// flipbook motion vectors: linear data, so a normal image; a flat normal means no motion
++				{
++					const auto slot = static_cast<size_t>(::Effekseer::RendererTextureType::FlipbookMotionVector);
++					auto resource = effect->GetNormalImage(param->TextureIndexes[slot]);
++					FlipbookMotionVectorTexturePtr = (resource != nullptr) ? resource->GetBackend() : nullptr;
++
++					if (FlipbookMotionVectorTexturePtr == nullptr && renderer != nullptr)
++					{
++						FlipbookMotionVectorTexturePtr = renderer->GetImpl()->GetProxyTexture(EffekseerRenderer::ProxyTextureType::Normal);
++					}
++
++					Textures[offset + 5] = FlipbookMotionVectorTexturePtr;
++					TextureFilterTypes[offset + 5] = param->TextureFilters[slot];
++					TextureWrapTypes[offset + 5] = param->TextureWraps[slot];
++				}
+ 			}
+ 		}
+ 	}
+@@ -1395,6 +1412,10 @@ struct FlipbookParameter
+ 		{
+ 			float EnableInterpolation;
+ 			float InterpolationType;
++
++			//! motion vector strength times the size of a cell, in UV
++			float MotionVectorScaleX;
++			float MotionVectorScaleY;
+ 		};
+ 	};
+ };
+@@ -1497,10 +1518,12 @@ struct PixelConstantBuffer
+ 	float UVInversedBack[4];
+ 	std::array<float, 4> MiscFlags;
+ 
+-	void SetModelFlipbookParameter(float enableInterpolation, float interpolationType)
++	void SetModelFlipbookParameter(float enableInterpolation, float interpolationType, float motionVectorScaleX = 0.0f, float motionVectorScaleY = 0.0f)
+ 	{
+ 		FlipbookParam.EnableInterpolation = enableInterpolation;
+ 		FlipbookParam.InterpolationType = interpolationType;
++		FlipbookParam.MotionVectorScaleX = motionVectorScaleX;
++		FlipbookParam.MotionVectorScaleY = motionVectorScaleY;
+ 	}
+ 
+ 	void SetModelUVDistortionParameter(float intensity, float blendIntensity, const std::array<float, 2>& uvInversed)
+@@ -1605,6 +1628,7 @@ struct RendererStateFlipbook
+ 	float OneSizeY = 0;
+ 	float OffsetX = 0;
+ 	float OffsetY = 0;
++	float MotionVectorStrength = 0;
+ 
+ 	bool operator==(const RendererStateFlipbook& state) const
+ 	{
+@@ -1631,6 +1655,8 @@ struct RendererStateFlipbook
+ 			return true;
+ 		if (OffsetY != state.OffsetY)
+ 			return true;
++		if (MotionVectorStrength != state.MotionVectorStrength)
++			return true;
+ 		return false;
+ 	}
+ };
+@@ -1661,6 +1687,7 @@ inline RendererStateFlipbook ToState(const Effekseer::NodeRendererFlipbookParame
+ 	ret.OneSizeY = param.OneSize[1];
+ 	ret.OffsetX = param.Offset[0];
+ 	ret.OffsetY = param.Offset[1];
++	ret.MotionVectorStrength = param.MotionVectorStrength;
+ 	return ret;
+ }
+ 
+diff --git a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.ModelRendererBase.h b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.ModelRendererBase.h
+index 1b8a3b0..87b5b59 100644
+--- a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.ModelRendererBase.h
++++ b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.ModelRendererBase.h
+@@ -601,6 +601,8 @@ protected:
+ 
+ 			pcb->FlipbookParam.EnableInterpolation = static_cast<float>(param.BasicParameterPtr->Flipbook.EnableInterpolation);
+ 			pcb->FlipbookParam.InterpolationType = static_cast<float>(param.BasicParameterPtr->Flipbook.InterpolationType);
++			pcb->FlipbookParam.MotionVectorScaleX = param.BasicParameterPtr->Flipbook.MotionVectorStrength * param.BasicParameterPtr->Flipbook.OneSize[0];
++			pcb->FlipbookParam.MotionVectorScaleY = param.BasicParameterPtr->Flipbook.MotionVectorStrength * param.BasicParameterPtr->Flipbook.OneSize[1];
+ 
+ 			pcb->UVDistortionParam.Intensity = param.BasicParameterPtr->UVDistortionIntensity;
+ 			pcb->UVDistortionParam.BlendIntensity = param.BasicParameterPtr->BlendUVDistortionIntensity;
+@@ -650,7 +652,8 @@ protected:
+ 
+ 			if (REQUIRE_ADVANCED_DATA)
+ 			{
+-				pcb->SetModelFlipbookParameter(param.BasicParameterPtr->Flipbook.EnableInterpolation, static_cast<float>(param.BasicParameterPtr->Flipbook.InterpolationType));
++				const auto& flipbook = param.BasicParameterPtr->Flipbook;
++				pcb->SetModelFlipbookParameter(flipbook.EnableInterpolation, static_cast<float>(flipbook.InterpolationType), flipbook.MotionVectorStrength * flipbook.OneSize[0], flipbook.MotionVectorStrength * flipbook.OneSize[1]);
+ 				pcb->SetModelUVDistortionParameter(param.BasicParameterPtr->UVDistortionIntensity, param.BasicParameterPtr->BlendUVDistortionIntensity, {uvInversed[0], uvInversed[1]});
+ 				pcb->SetModelBlendTextureParameter(static_cast<float>(param.BasicParameterPtr->TextureBlendType));
+ 
+diff --git a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.StandardRenderer.h b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.StandardRenderer.h
+index 63a94aa..57b98ae 100644
+--- a/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.StandardRenderer.h
++++ b/Dev/Cpp/EffekseerRendererCommon/EffekseerRenderer.StandardRenderer.h
+@@ -810,6 +810,8 @@ public:
+ 
+ 			pcb.FlipbookParam.EnableInterpolation = static_cast<float>(renderState.Flipbook.EnableInterpolation);
+ 			pcb.FlipbookParam.InterpolationType = static_cast<float>(renderState.Flipbook.InterpolationType);
++			pcb.FlipbookParam.MotionVectorScaleX = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeX;
++			pcb.FlipbookParam.MotionVectorScaleY = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeY;
+ 
+ 			pcb.UVDistortionParam.Intensity = renderState.UVDistortionIntensity;
+ 			pcb.UVDistortionParam.BlendIntensity = renderState.BlendUVDistortionIntensity;
+@@ -864,6 +866,8 @@ public:
+ 
+ 				pcb.FlipbookParam.EnableInterpolation = static_cast<float>(renderState.Flipbook.EnableInterpolation);
+ 				pcb.FlipbookParam.InterpolationType = static_cast<float>(renderState.Flipbook.InterpolationType);
++				pcb.FlipbookParam.MotionVectorScaleX = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeX;
++				pcb.FlipbookParam.MotionVectorScaleY = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeY;
+ 
+ 				pcb.UVDistortionParam.Intensity = renderState.UVDistortionIntensity;
+ 				pcb.UVDistortionParam.BlendIntensity = renderState.BlendUVDistortionIntensity;
+@@ -895,6 +899,8 @@ public:
+ 				pcb.FalloffParam.Enable = 0;
+ 				pcb.FlipbookParam.EnableInterpolation = static_cast<float>(renderState.Flipbook.EnableInterpolation);
+ 				pcb.FlipbookParam.InterpolationType = static_cast<float>(renderState.Flipbook.InterpolationType);
++				pcb.FlipbookParam.MotionVectorScaleX = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeX;
++				pcb.FlipbookParam.MotionVectorScaleY = renderState.Flipbook.MotionVectorStrength * renderState.Flipbook.OneSizeY;
+ 
+ 				pcb.UVDistortionParam.Intensity = renderState.UVDistortionIntensity;
+ 				pcb.UVDistortionParam.BlendIntensity = renderState.BlendUVDistortionIntensity;
