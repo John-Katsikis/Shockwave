@@ -666,6 +666,31 @@ shockwave_warnings(test_snapshot_delta)
 add_test(NAME test_snapshot_delta COMMAND test_snapshot_delta)
 set_tests_properties(test_snapshot_delta PROPERTIES TIMEOUT 120)
 
+# Diagnostics (S12, docs/Diagnostics.md): the log ring, context, redaction, log files, the
+# session marker and symbolization; then real crashes in a child program.
+add_executable(diagnostics_test DiagnosticsTest.cpp)
+target_link_libraries(diagnostics_test PRIVATE Shockwave::Core)
+shockwave_warnings(diagnostics_test)
+add_test(NAME diagnostics COMMAND diagnostics_test)
+set_tests_properties(diagnostics PROPERTIES TIMEOUT 60 LABELS unit)
+if(UNIX)
+    # The only program that crashes on request; it's never packaged.
+    add_executable(crash_program CrashProgram.cpp)
+    target_link_libraries(crash_program PRIVATE Shockwave::Core)
+    shockwave_warnings(crash_program)
+    if(TARGET game_sample)
+        add_test(NAME diagnostics_cli COMMAND ${CMAKE_COMMAND}
+            -DPLAYER=$<TARGET_FILE:player>
+            -DCRASH=$<TARGET_FILE:crash_program>
+            -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
+            -DARENA=${CMAKE_SOURCE_DIR}/Games/Arena/Arena.swproject
+            -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/DiagnosticsCLI
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/DiagnosticsCheck.cmake)
+        set_tests_properties(diagnostics_cli PROPERTIES TIMEOUT 180 LABELS integration
+            ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=offscreen")
+    endif()
+endif()
+
 add_executable(test_rewind_buffer RewindBufferTest.cpp)
 target_link_libraries(test_rewind_buffer PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_rewind_buffer)

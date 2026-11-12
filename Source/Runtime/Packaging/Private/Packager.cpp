@@ -2,6 +2,7 @@
 #include "BinaryInfo.h"
 #include "ChildProcess.h"
 
+#include <Core/Diagnostics.h>
 #include <Core/Plugin.h>
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
@@ -32,6 +33,7 @@ using packaging::shellQuote;
 namespace {
 
 constexpr const char* kMarker = "shockwave-package.txt";   // in Binaries/, names the project
+constexpr const char* kSymbolsMarker = "shockwave-symbols.txt";   // in <package>-symbols/
 
 // Where everything goes inside a package, so other platforms can change it in one place.
 struct Layout {
@@ -133,6 +135,7 @@ public:
             m_result.error = failure.message;
             std::error_code ec;
             if (!m_staging.empty()) fs::remove_all(m_staging, ec);
+            if (!m_symbolsStaging.empty()) fs::remove_all(m_symbolsStaging, ec);
             log(LogLevel::Error, failure.message);
         }
         m_result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -417,6 +420,7 @@ private:
             if (packaging::readBinaryInfo(entry.path()).binary) files += " " + shellQuote(entry.path());
         }
         if (files.empty()) return;
+        if (m_settings.keepSymbols) keepSymbols(binaries);
         log(LogLevel::Info, "Stripping symbols");
         std::vector<std::string> lines;
         const int code = packaging::runCommand(
@@ -428,6 +432,57 @@ private:
 #else
         (void)binaries;
 #endif
+    }
+
+    // Copies each binary, before it's stripped, to <package>-symbols.partial/<build ID>/<file>;
+    // finishSymbols() puts the folder in place beside the package once the package is.
+    void keepSymbols(const fs::path& binaries) {
+        std::error_code ec;
+        m_symbolsStaging = m_final.string() + "-symbols.partial";
+        fs::remove_all(m_symbolsStaging, ec);
+        size_t kept = 0;
+        for (const auto& entry : fs::recursive_directory_iterator(binaries, ec)) {
+            if (!entry.is_regular_file(ec) || entry.is_symlink(ec)) continue;
+            if (entry.path().parent_path().filename() == "cpp-runtime") continue;
+            const std::string id = diagnostics::elfBuildId(entry.path());
+            if (id.empty()) continue;
+            const fs::path to = m_symbolsStaging / id / entry.path().filename();
+            fs::create_directories(to.parent_path(), ec);
+            fs::copy_file(entry.path(), to, fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                log(LogLevel::Warning,
+                    "Couldn't keep the symbols of " + entry.path().filename().string() + ": " + ec.message());
+                continue;
+            }
+            ++kept;
+        }
+        writeFile(
+            m_symbolsStaging / kSymbolsMarker,
+            "Symbols for " + m_final.filename().string() +
+                ", kept by Shockwave's packager. Not for players: keep this folder with the build, and name a\n"
+                "crash report's frames with\n  player --symbolize <report> --symbols " +
+                m_final.filename().string() + "-symbols\n");
+        log(LogLevel::Info, "Kept the symbols of " + std::to_string(kept) + " binaries beside the package");
+    }
+
+    void finishSymbols() {
+        if (m_symbolsStaging.empty()) return;
+        std::error_code ec;
+        const fs::path final = m_final.string() + "-symbols";
+        // Only a folder this packager made is ever replaced.
+        if (fs::exists(final, ec) && !fs::exists(final / kSymbolsMarker, ec)) {
+            log(LogLevel::Warning, final.string() + " exists and wasn't made by the packager; the symbols stay in " +
+                                       m_symbolsStaging.string());
+            return;
+        }
+        fs::remove_all(final, ec);
+        fs::rename(m_symbolsStaging, final, ec);
+        if (ec) {
+            log(LogLevel::Warning, "Couldn't move the symbols into place: " + ec.message());
+            return;
+        }
+        m_symbolsStaging.clear();
+        m_result.symbols = final;
     }
 
     void add(std::vector<CopyItem>& items, const fs::path& from, const fs::path& to) {
@@ -845,6 +900,7 @@ private:
         if (ec) fail("Can't move the package into place: " + ec.message());
         m_staging.clear();
         m_result.folder = m_final;
+        finishSymbols();
         for (const auto& entry : fs::recursive_directory_iterator(m_final, ec))
             if (entry.is_regular_file(ec) && !entry.is_symlink(ec)) m_result.bytes += entry.file_size(ec);
 
@@ -882,6 +938,7 @@ private:
     const PackageOptions& m_options;
     PackageResult m_result;
     fs::path m_engine, m_player, m_final, m_staging;
+    fs::path m_symbolsStaging;   // keepSymbols(), until finishSymbols()
     std::string m_executable, m_launcherText, m_readmeText;
     std::vector<std::pair<fs::path, std::string>> m_extraFiles;   // written with the copy
     bool m_steamEngine = false;   // the engine was built with Steamworks

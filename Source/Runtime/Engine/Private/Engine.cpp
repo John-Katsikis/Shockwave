@@ -1,5 +1,6 @@
 #include <Engine/Engine.h>
 
+#include <Core/Diagnostics.h>
 #include <Core/Log.h>
 #include <Core/Profile.h>
 #include <UI/Gui.h>
@@ -56,6 +57,7 @@ Engine::Engine(const EngineConfig& config) : m_config(config) {
     }
     if (!initialized) throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     m_jobs = std::make_unique<JobSystem>(m_config.workerThreads);
+    diagnostics::setContext("renderer", m_config.renderer);
     WindowDesc windowDesc = m_config.window;
     // The null renderer draws nothing, so tools (player --check) run without a Vulkan
     // driver. A swappable renderer may switch to one that does need it.

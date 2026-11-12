@@ -14,6 +14,7 @@ if(NOT result EQUAL 0 OR NOT "${out}${err}" MATCHES "package window: release ok,
     message(FATAL_ERROR "editor --package-release: exit ${result}\n${out}\n${err}")
 endif()
 file(GLOB package "${TEMP}/out/ReactorRun-1.0.0-*")
+list(FILTER package EXCLUDE REGEX "-symbols$")   # the kept symbols, beside the package
 if(NOT EXISTS "${package}/Game/Cook.swcook" OR EXISTS "${package}/Game/Docs")
     message(FATAL_ERROR "the window's release package isn't made from the cook: ${package}")
 endif()

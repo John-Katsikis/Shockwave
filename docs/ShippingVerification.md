@@ -1287,3 +1287,66 @@ These need real Steam and real machines; nothing here can run them:
 - **32 and 64 players over real Steam** need that many accounts; the numbers above come
   from the loopback hub.
 - **The editor's own Play** still doesn't rotate maps (the player does).
+
+## S12: Diagnostics and crashes, part 1
+
+Plan section 20: log files, crash capture, symbols and the unclean-exit check. See
+[Diagnostics](Diagnostics.md).
+
+### What was built
+
+- **Core/Diagnostics.h**: a 64 KiB recent-log ring; a session context the engine keeps
+  current (build, project, renderer, GPU and driver, graphics preset, level, epoch,
+  travel phase, last save, last error); redaction of the home folder and long hex runs;
+  rotating log files that stop at a size limit or a full disk; a session marker that
+  tells an unclean exit (and a second running copy).
+- **Crash capture**: Linux and macOS signal handlers on their own stack using only
+  signal-safe calls on prepared memory; a Windows unhandled-exception filter with a
+  minidump and `abort()` caught. Reports carry the context, raw frames, the memory map
+  (Linux) and the recent log. The folder is made only when a crash happens.
+- **Symbols**: `player --symbolize` names frames from ELF symbol tables. Packages keep
+  each binary's unstripped copy by GNU build ID in `<package>-symbols/` before stripping
+  (`keep_symbols`, default on, editor checkbox).
+- **Player**: `--diagnostics [--json]`, `--symbolize`, `--safe-mode` (lowest tier,
+  windowed, no pipeline cache, user graphics file untouched), `--log-file`,
+  `--no-log-file`, `--no-crash-handler`; a warning at start after an unclean exit.
+- **Editor**: its own log, crash reports and session marker beside its preferences;
+  Window > Diagnostics with both programs' sessions and reports, symbolized.
+- `crash_program` is the only thing that crashes on request (a test target, never
+  packaged).
+
+### Evidence
+
+A segfault in `crash_program`, symbolized:
+
+```text
+player crashed: SIGSEGV (11)
+  #0  shockwaveTestCrashHere(char const*)  (crash_program +0x4963)
+  #1  shockwaveTestCrashOuter(char const*)  (crash_program +0x497f)
+  #2  main  (crash_program +0x3dea)
+  #3  ??  (libc.so.6 +0x2a1ca)
+  #4  __libc_start_main  (libc.so.6 +0x2a28b)
+  #5  _start  (crash_program +0x4055)
+5 of 6 frames named
+```
+
+Packaging Sample kept 29 binaries' symbols beside the package.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `diagnostics` | unit | ring, context, redaction, log rotation, size limit and full disk, session markers, report order, frames named from the process's own map |
+| `diagnostics_cli` | integration | real crashes (segfault, abort, trap) and their reports; symbolization, also from kept symbols after stripping; `--diagnostics` after an unclean exit; game-run logs, rotation and clean exit; safe mode; no ticket in an authentication failure's log |
+| `package_cli` | gpu | symbols kept beside a Linux package, by build ID |
+
+### Still unverified
+
+- **Windows and macOS crash reports**: the code compiles in CI, but no crash was run
+  there; Windows minidumps need opening in a debugger with the PDBs (the Release build
+  makes none yet), and `--symbolize` doesn't name Windows or macOS frames.
+- **Line numbers**: only function names; lines need a RelWithDebInfo build.
+- **Window > Diagnostics** was built and started, not looked at on a display.
+- **Part 2**: the in-game recovery prompt (Safe graphics / Open logs / Restore last save),
+  device-lost restart, the Process API replacing shell commands, path hardening, and
+  Release readiness showing unresolved fatal errors.

@@ -48,6 +48,7 @@ package_release(0)
 expect_text("From the cook: [0-9]+ files the game needs; [0-9]+ other project files left out" "the release")
 expect_text("ok every game file matches the cook" "the package's check against its cook")
 file(GLOB P "${TEMP}/out/ReactorRun-1.0.0-*")
+list(FILTER P EXCLUDE REGEX "-symbols$")   # the kept symbols, beside the package
 string(REGEX REPLACE ".*ReactorRun-1\\.0\\.0-" "" platform "${P}")
 if(NOT IS_DIRECTORY "${P}" OR NOT EXISTS "${P}/Game/Cook.swcook")
     message(FATAL_ERROR "no release package with its cook in ${TEMP}/out")

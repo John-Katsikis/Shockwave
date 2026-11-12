@@ -215,6 +215,32 @@ struct UserPathsCommand {
 std::string applicationIdFor(const shockwave::Project& project);
 bool resolveUserPaths(
     const shockwave::Project& project, const UserPathsCommand& command, shockwave::UserPaths& out, std::string& error);
+// Diagnostics (docs/Diagnostics.md, S12): log files, crash reports, the session marker.
+struct DiagnosticsCommand {
+    bool info = false;   // --diagnostics [--json file]
+    fs::path symbolize;   // --symbolize report.crash.txt
+    std::vector<fs::path> symbols;   // --symbols folder (repeatable)
+    bool safeMode = false;   // --safe-mode
+    bool noCrashHandler = false;   // --no-crash-handler
+    bool noLogFile = false;   // --no-log-file
+    fs::path logFile;   // --log-file path: this run's log there (any run, tools too)
+};
+// Starts the log ring and the context every run has. First thing in main().
+void startDiagnostics();
+// Crash capture, the log file and (for a game run) the session marker, in the run's
+// per-user folders. `gameRun` is a player playing, not a tool. Failures only warn.
+void beginRunDiagnostics(
+    const shockwave::Project& project, const shockwave::UserPaths* paths, const DiagnosticsCommand& command,
+    bool gameRun);
+// A clean exit: the session marker goes, the log file closes.
+void endRunDiagnostics();
+int diagnosticsInfo(
+    const shockwave::Project& project, const shockwave::UserPaths* paths, const DiagnosticsCommand& command,
+    const fs::path& json);
+int symbolizeReport(const DiagnosticsCommand& command, const fs::path& json);   // no project
+// Safe graphics: the lowest tier, windowed, no pipeline cache (applied by main()).
+shockwave::GraphicsSettings safeGraphics(const shockwave::Project& project, const shockwave::GraphicsSettings& base);
+
 int userPathsInfo(
     const shockwave::Project& project, const UserPathsCommand& command, const shockwave::UserPaths* paths,
     const std::string& error, const fs::path& json);

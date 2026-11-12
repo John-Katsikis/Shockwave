@@ -2,6 +2,7 @@
 
 #include <Assets/Assets.h>
 #include <Core/Jobs.h>
+#include <Core/Diagnostics.h>
 #include <Core/Log.h>
 #include <Engine/Levels.h>
 #include <Engine/SceneFile.h>
@@ -806,6 +807,7 @@ bool writeOne(SaveJobs& shared, SaveJobs::Write& job) {
                                      (kept ? "this save is kept as " + aside.string() : "and " + asideError));
     } else if (writeSaveFile(info.file, text.str(), error)) {
         SW_LOG(LogGame, Info, "Saved {} ({} entities, revision {})", info.file.string(), info.entities, info.revision);
+        diagnostics::setContext("last_save", info.slot + " revision " + std::to_string(info.revision));
         std::lock_guard lock(shared.mutex);
         shared.revisions[info.slot] = info.revision;
         return true;

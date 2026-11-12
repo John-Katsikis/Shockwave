@@ -1,6 +1,7 @@
 #include <GameFramework/LevelHost.h>
 
 #include <Circuits/CircuitWorld.h>
+#include <Core/Diagnostics.h>
 #include <Core/Log.h>
 #include <Engine/Engine.h>
 #include <Engine/Hierarchy.h>
@@ -515,6 +516,7 @@ void LevelHost::setPhase(uint64_t id, TravelPhase phase) {
     p.phase = phase;
     p.progress = std::max(p.progress, travelPhaseProgress(phase));
     p.cancellable = travelPhaseCancellable(phase);
+    diagnostics::setContext("travel_phase", travelPhaseName(phase));
 }
 
 void LevelHost::finish(uint64_t id, TravelStatus status, TravelError code, std::string error) {
@@ -547,6 +549,14 @@ void LevelHost::finish(uint64_t id, TravelStatus status, TravelError code, std::
     if (const auto it = m_accepted.find(id); it != m_accepted.end()) {
         p.durationMs = std::chrono::duration<double, std::milli>(Clock::now() - it->second).count();
         m_accepted.erase(it);
+    }
+    diagnostics::setContext("travel_phase", travelPhaseName(p.phase));
+    if (status == TravelStatus::Succeeded) {
+        diagnostics::setContext("level", p.request.level);
+        diagnostics::setContext("level_epoch", std::to_string(m_epoch));
+        diagnostics::updateSession();
+    } else {
+        diagnostics::setContext("travel_error", std::string(travelErrorName(code)) + ": " + p.message);
     }
     if (status == TravelStatus::Succeeded)
         SW_LOG(LogGame, Info, "Level \"{}\" (epoch {})", p.request.level, m_epoch);

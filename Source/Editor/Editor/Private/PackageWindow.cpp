@@ -254,6 +254,12 @@ void PackageWindow::drawSettings(const shockwave::Project& project) {
     gui::propertyLabel("Strip symbols");
     ImGui::Checkbox("##strip", &m_edit.strip);
     ImGui::SetItemTooltip("Leave out symbol tables players don't need; makes the package much smaller (strip)");
+    gui::propertyLabel("Keep symbols");
+    ImGui::BeginDisabled(!m_edit.strip);
+    ImGui::Checkbox("##keep_symbols", &m_edit.keepSymbols);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Before stripping, keep each program and library's full copy in <package>-symbols,\n"
+                          "beside the package (never in it), so crash reports can be read (keep_symbols)");
     gui::propertyLabel("Ship C++ runtime");
     ImGui::Checkbox("##cpp_runtime", &m_edit.cppRuntime);
     ImGui::SetItemTooltip("Include this machine's C++ runtime, used only on older systems whose own is too old\n"

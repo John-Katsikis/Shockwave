@@ -101,6 +101,7 @@ void Editor::onStart() {
     m_release.open = m_options.showRelease && m_hasProject;
     m_levels.open = m_options.showLevels && m_hasProject;
     m_showResidency = m_options.showResidency;
+    m_showDiagnostics = m_options.showDiagnostics;
     m_showPlayerSettings = m_options.showPlayerSettings;
     if (m_options.previewLanguage || m_options.previewUiScale > 0) {
         m_previewLanguage = m_options.previewLanguage;
@@ -241,6 +242,7 @@ void Editor::onGui() {
     if (m_showConsole) drawConsole();
     if (m_showOptimisation) drawOptimisationWindow();
     if (m_showResidency) drawResidencyWindow();
+    if (m_showDiagnostics) drawDiagnosticsWindow();
     if (m_showStats) drawStatsWindow();
     if (m_showInput) drawInputWindow();
     if (m_showSaveGames) drawSaveGamesWindow();

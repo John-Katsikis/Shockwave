@@ -6,6 +6,9 @@ shockwave_module(Core PUBLIC_DEPS glm::glm Threads::Threads PRIVATE_DEPS ${CMAKE
 target_compile_definitions(ShockwaveCore PUBLIC SHOCKWAVE_MODULAR=$<BOOL:${SHOCKWAVE_MODULAR}>)
 # Vulkan clip space has depth 0..1; GLM must produce matching projection matrices.
 target_compile_definitions(ShockwaveCore PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
+if(WIN32)
+    target_link_libraries(ShockwaveCore PRIVATE dbghelp)   # MiniDumpWriteDump (CrashHandler.cpp)
+endif()
 if(SHOCKWAVE_PROFILE)
     target_link_libraries(ShockwaveCore PUBLIC Tracy::TracyClient)
     target_compile_definitions(ShockwaveCore PUBLIC SHOCKWAVE_PROFILE=1)
