@@ -34,7 +34,9 @@ struct ParticleBatchData {
     float softNear;     // metres; 0: no fade near the camera
     float softNearOffset;
     float distortion;   // metres at full strength
-    float pad0, pad1;
+    vec2 motionScale;   // kFlipbookMotion: uv a full motion vector moves over one frame
+    uint motionTexture;
+    float pad0, pad1, pad2;
 };
 
 layout(buffer_reference, scalar) readonly buffer ParticleVertices {
@@ -63,6 +65,7 @@ const uint kAlphaTexture = 1u << 2;
 const uint kClampUv = 1u << 3;
 const uint kAlphaCutoff = 1u << 4;
 const uint kDistortion = 1u << 5;
+const uint kFlipbookMotion = 1u << 6;
 const uint kBlendMultiply = 4u;
 // ParticlePushConstants::flags, as in RendererParticles.cpp.
 const uint kPassSceneLighting = 1u << 0;
@@ -88,6 +91,19 @@ const uint kBlendOpaque = 0u, kBlendAlpha = 1u;
 vec4 sampleTexture(uint index, vec2 uv, bool clampUv) {
     if (clampUv) uv = clamp(uv, 0.0, 1.0);
     return texture(sampler2D(textures[nonuniformEXT(index)], linearSampler), uv);
+}
+
+// A flipbook frame between two cells, blended along motion vectors (kFlipbookMotion):
+// each cell's motion texture says where its pixels go by the next frame, in -1..1 times
+// b.motionScale (red right, green down, 0.5 for still). The current frame is pushed
+// forward by the rate and the next one pulled back by the rest, so they meet where the
+// smoke is at this moment, and only then cross-fade: no double image.
+vec4 flipbookMotion(ParticleBatchData b, float rate, bool clampUv) {
+    vec2 motion = (sampleTexture(b.motionTexture, inUv, clampUv).rg * 2.0 - 1.0) * b.motionScale;
+    vec2 nextMotion = (sampleTexture(b.motionTexture, inNextUv, clampUv).rg * 2.0 - 1.0) * b.motionScale;
+    vec4 current = sampleTexture(b.texture, inUv - motion * rate, clampUv);
+    vec4 next = sampleTexture(b.texture, inNextUv + nextMotion * (1.0 - rate), clampUv);
+    return mix(current, next, rate);
 }
 
 vec3 linearToSrgb(vec3 c) {
@@ -162,8 +178,13 @@ vec3 sceneLight(vec3 n, float z) {
 void main() {
     ParticleBatchData b = pc.batches.batches[inBatch];
     bool clampUv = (b.flags & kClampUv) != 0u;
-    vec4 tex = sampleTexture(b.texture, inUv, clampUv);
-    if ((b.flags & kFlipbookBlend) != 0u) tex = mix(tex, sampleTexture(b.texture, inNextUv, clampUv), inParams.x);
+    vec4 tex;
+    if ((b.flags & (kFlipbookBlend | kFlipbookMotion)) == (kFlipbookBlend | kFlipbookMotion)) {
+        tex = flipbookMotion(b, inParams.x, clampUv);
+    } else {
+        tex = sampleTexture(b.texture, inUv, clampUv);
+        if ((b.flags & kFlipbookBlend) != 0u) tex = mix(tex, sampleTexture(b.texture, inNextUv, clampUv), inParams.x);
+    }
     if ((b.flags & kAlphaTexture) != 0u) {
         vec4 a = sampleTexture(b.alphaTexture, inAlphaUv, clampUv);
         tex.a *= a.r * a.a;

@@ -100,6 +100,10 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `particle_lighting`: `scene` (the default) or `simple`. Lit particles are lit by every
   light through the light clusters, or by the first directional light and the ambient
   light alone. Low uses simple.
+- `particle_motion_vectors`: `true` (the default) or `false`. Flipbooks made with
+  Effekseer's *Motion vectors* interpolation flow smoothly from frame to frame along
+  their motion vector texture (docs/Effects.md, *Smooth flipbooks*). False cross-fades
+  them, two texture reads a pixel fewer. Low turns it off.
 - `color_grading`: `true` (the default) or `false`. Postprocess profiles' white balance
   and LUTs (docs/PostProcess.md). False shows the colours ungraded, pixel for pixel as
   without them. Presets leave it alone.

@@ -3,6 +3,22 @@
 # (EffekseerRendererCommon). Shockwave draws that geometry through its own renderer
 # plugins, so none of Effekseer's graphics backends, tools or submodules are needed.
 # MIT licensed; the license file is in ${effekseer_SOURCE_DIR}/LICENSE.
+#
+# Shockwave's changes to Effekseer are patches in cmake/patches/effekseer, applied after
+# the clone (docs/Effects.md, "Changes to Effekseer"). The Effekseer editor is meant to be
+# built from the same patches, so effects look the same in both:
+#   0001  flipbook motion vectors: a third flipbook interpolation, "Motion vectors"
+# Their hash is part of the patch step, so editing a patch re-applies them all.
+set(effekseer_patch_dir ${CMAKE_CURRENT_LIST_DIR}/patches/effekseer)
+file(GLOB effekseer_patches ${effekseer_patch_dir}/*.patch)
+list(SORT effekseer_patches)
+set(effekseer_patch_text "")
+foreach(patch IN LISTS effekseer_patches)
+    file(READ ${patch} text)
+    string(APPEND effekseer_patch_text "${text}")
+endforeach()
+string(MD5 effekseer_patch_hash "${effekseer_patch_text}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${effekseer_patches})
 # A shallow clone of one release, without the large example images kept in Git LFS.
 set(ENV{GIT_LFS_SKIP_SMUDGE} 1)
 FetchContent_Declare(effekseer
@@ -10,6 +26,9 @@ FetchContent_Declare(effekseer
     GIT_TAG 1.7.3.0
     GIT_SHALLOW TRUE
     GIT_SUBMODULES ""
+    UPDATE_DISCONNECTED TRUE
+    PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH_DIR=${effekseer_patch_dir} -DPATCH_HASH=${effekseer_patch_hash}
+                  -P ${CMAKE_CURRENT_LIST_DIR}/ApplyPatches.cmake
     SOURCE_SUBDIR Dev/Cpp/Effekseer/Effekseer   # no CMakeLists.txt there: fetch only
 )
 FetchContent_MakeAvailable(effekseer)

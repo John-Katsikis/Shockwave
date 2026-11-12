@@ -53,6 +53,7 @@ void VulkanRenderer::setParticleSettings(const ParticleSettings& settings) {
     m_impl->softParticles = settings.softParticles;
     m_impl->particleDistortion = settings.distortion;
     m_impl->particleLighting = settings.lighting;
+    m_impl->particleFlipbookMotion = settings.flipbookMotion;
 }
 ClusterStats VulkanRenderer::clusterStats() const { return m_impl->lastClusterStats; }
 bool VulkanRenderer::requestSceneCapture(std::string&) {

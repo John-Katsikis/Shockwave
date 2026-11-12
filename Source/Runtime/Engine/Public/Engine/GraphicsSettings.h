@@ -46,11 +46,13 @@ struct GraphicsSettings {
     // Clustered local lighting (G11): how pixels find their point and spot lights. The same
     // picture every way; brute force is the reference.
     LightCulling lightCulling = LightCulling::Auto;
-    // Particles (A04): soft edges against the scene, heat-haze distortion, and lighting by
-    // every light in the scene or by the sun and ambient alone. Low turns all three down.
+    // Particles (A04): soft edges against the scene, heat-haze distortion, lighting by
+    // every light in the scene or by the sun and ambient alone, and flipbooks blended along
+    // their motion vectors instead of cross-faded. Low turns all four down.
     bool softParticles = true;
     bool particleDistortion = true;
     ParticleLighting particleLighting = ParticleLighting::Scene;
+    bool particleMotionVectors = true;
     // Colour and fog (A05, A06): white balance and LUTs from postprocess profiles, their
     // auto exposure, and how fog is drawn. Grading and auto exposure are the scene's look,
     // so presets leave them alone; fog quality follows the preset.

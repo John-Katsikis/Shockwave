@@ -210,6 +210,7 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
     const glm::vec3 lightDirection =
         glm::length(list.lightDirection) > 0.0f ? glm::normalize(list.lightDirection) : glm::vec3(0, -1, 0);
     const bool distortion = particleDistortion.load(std::memory_order_relaxed);
+    const bool motion = particleFlipbookMotion.load(std::memory_order_relaxed);
     for (const ParticleBatch& batch : list.batches) {
         if (batch.indexCount == 0 || batch.firstIndex + batch.indexCount > list.indices.size()) continue;
         if ((batch.flags & kParticleDistortion) && !distortion) {
@@ -231,6 +232,13 @@ void VulkanRenderer::Impl::drawParticles(const ParticleDrawList& list) {
         data.softNear = std::max(batch.softNear, 0.0f);
         data.softNearOffset = batch.softNearOffset;
         data.distortion = batch.distortion;
+        // particle_motion_vectors off, or no texture to follow: the plain cross-fade.
+        if ((data.flags & kParticleFlipbookMotion) && (!motion || !isTexture(batch.motionTexture.id)))
+            data.flags &= ~kParticleFlipbookMotion;
+        if (data.flags & kParticleFlipbookMotion) {
+            data.motionTexture = textureSlot(batch.motionTexture.id);
+            data.motionScale = batch.motionScale;
+        }
         particleBatchData.push_back(data);
         // Opaque batches don't blend, so they have nothing to fade.
         const bool soft = batch.blend != ParticleBlend::Opaque && (data.softDistance > 0.0f || data.softNear > 0.0f);
@@ -272,6 +280,8 @@ void VulkanRenderer::Impl::prepareParticles() {
     for (const ParticleDraw& d : particleDraws) {
         lastParticleStats.softDraws += particleSoftThisFrame && d.soft && softParticles.load(std::memory_order_relaxed);
         lastParticleStats.distortionDraws += d.distortion && particleBackgroundThisFrame;
+        lastParticleStats.motionDraws +=
+            (particleBatchData[&d - particleDraws.data()].flags & kParticleFlipbookMotion) != 0;
         lastParticleStats.sceneLitDraws +=
             particleLighting.load(std::memory_order_relaxed) == ParticleLighting::Scene &&
             (particleBatchData[&d - particleDraws.data()].flags & kParticleLit) != 0;

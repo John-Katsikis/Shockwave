@@ -66,10 +66,11 @@ std::string particlesJson(const shockwave::ParticleSettings& s, const shockwave:
         text, sizeof(text),
         "{\"soft_particles\": %s, \"distortion\": %s, \"lighting\": \"%s\", \"draws\": %u, \"vertices\": %u, "
         "\"soft_draws\": %u, \"distortion_draws\": %u, \"skipped_distortion\": %u, \"scene_lit_draws\": %u, "
-        "\"depth_pass\": %s}",
+        "\"depth_pass\": %s, \"motion_vectors\": %s, \"motion_draws\": %u}",
         s.softParticles ? "true" : "false", s.distortion ? "true" : "false",
         shockwave::particleLightingName(s.lighting), p.draws, p.vertices, p.softDraws, p.distortionDraws,
-        p.skippedDistortion, p.sceneLitDraws, p.depthPass ? "true" : "false");
+        p.skippedDistortion, p.sceneLitDraws, p.depthPass ? "true" : "false", s.flipbookMotion ? "true" : "false",
+        p.motionDraws);
     return text;
 }
 

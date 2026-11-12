@@ -117,6 +117,12 @@ std::string metres(float value) {
     return text;
 }
 
+std::string cells(float value) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%g cells", value);
+    return text;
+}
+
 const char* nodeKind(Effekseer::EffectNodeType type) {
     switch (type) {
     case Effekseer::EffectNodeType::Sprite: return "sprite";
@@ -162,6 +168,16 @@ void nodeFeatures(Effekseer::EffectNode* node, const std::string& path, EffectIn
         }
         if (!material) {
             if (p.FlipbookParams.EnableInterpolation) add("flipbook blending", "supported", "");
+            // Effekseer's "Motion vectors" interpolation (cmake/patches/effekseer/0001).
+            if (p.FlipbookParams.EnableInterpolation && p.FlipbookParams.InterpolationType == 2) {
+                if (uses(Texture::FlipbookMotionVector))
+                    add("flipbook motion vectors", "supported",
+                        "frames flow into each other along the motion vector texture, " +
+                            cells(p.FlipbookParams.MotionVectorStrength) + " at full strength",
+                        "particle_motion_vectors");
+                else
+                    add("flipbook motion vectors", "approximated", "no motion vector texture chosen: cross-faded");
+            }
             if (uses(Texture::Alpha)) add("alpha texture", "supported", "");
             if (p.EdgeParam.Threshold > 0.0f || p.EdgeParam.Color[3] > 0.0f) add("alpha cutoff edge", "supported", "");
             if (uses(Texture::UVDistortion))
@@ -334,7 +350,8 @@ struct Effects::Impl {
         EffectInfo info;
         nodeFeatures(l.effect->GetRoot(), "", info);
         for (const EffectFeature& f : info.features)
-            if (f.status == "unsupported") problem("node " + f.node + ": " + f.feature + ": " + f.detail, true);
+            if (f.status == "unsupported" || (f.status == "approximated" && f.feature == "flipbook motion vectors"))
+                problem("node " + f.node + ": " + f.feature + ": " + f.detail, true);
         if (l.effect->GetMaterialCount() > 0 &&
             std::none_of(info.features.begin(), info.features.end(), [](const EffectFeature& f) {
                 return f.feature.find(".efkmat") != std::string::npos;

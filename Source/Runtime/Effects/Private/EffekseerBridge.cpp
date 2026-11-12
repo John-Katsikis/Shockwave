@@ -92,6 +92,14 @@ int alphaTextureSlot(RendererShaderType shader) {
     return -1;
 }
 
+// Effekseer's "Motion vectors" flipbook interpolation (cmake/patches/effekseer/0001): the
+// motion vector texture comes after the alpha, UV distortion and three blend textures.
+constexpr int32_t kFlipbookMotionVectors = 2;
+int motionTextureSlot(RendererShaderType shader) {
+    const int alpha = alphaTextureSlot(shader);
+    return alpha >= 0 ? alpha + 5 : -1;
+}
+
 bool advanced(RendererShaderType shader) {
     return shader == RendererShaderType::AdvancedUnlit || shader == RendererShaderType::AdvancedLit ||
            shader == RendererShaderType::AdvancedBackDistortion;
@@ -470,6 +478,14 @@ bool CaptureRenderer::beginBatch(const BatchState& state, uint32_t triangles) {
         batch.flags |= kParticleAlphaCutoff;
         if (batch.alphaTexture.id) batch.flags |= kParticleAlphaTexture;
         if (state.flipbook.EnableInterpolation) batch.flags |= kParticleFlipbookBlend;
+        const int motionSlot = motionTextureSlot(state.shader);
+        if (state.flipbook.EnableInterpolation && state.flipbook.InterpolationType == kFlipbookMotionVectors &&
+            motionSlot >= 0 && motionSlot < c.TextureCount) {
+            batch.motionTexture = textureOf(c.Textures[motionSlot]);
+            batch.motionScale =
+                state.flipbook.MotionVectorStrength * glm::vec2(state.flipbook.OneSizeX, state.flipbook.OneSizeY);
+            if (batch.motionTexture.id) batch.flags |= kParticleFlipbookMotion;
+        }
         const float scale = state.edgeScale;
         batch.edgeColor = glm::vec4(
             srgbToLinear(state.edgeColor[0] / 255.0f) * scale, srgbToLinear(state.edgeColor[1] / 255.0f) * scale,
@@ -483,7 +499,8 @@ bool CaptureRenderer::beginBatch(const BatchState& state, uint32_t triangles) {
     if (!m_batches.empty() && !m_newGroup) {
         ParticleBatch& last = m_batches.back();
         if (last.firstIndex + last.indexCount == batch.firstIndex && last.texture.id == batch.texture.id &&
-            last.alphaTexture.id == batch.alphaTexture.id && last.blend == batch.blend && last.cull == batch.cull &&
+            last.alphaTexture.id == batch.alphaTexture.id && last.motionTexture.id == batch.motionTexture.id &&
+            last.motionScale == batch.motionScale && last.blend == batch.blend && last.cull == batch.cull &&
             last.depthTest == batch.depthTest && last.depthWrite == batch.depthWrite && last.flags == batch.flags &&
             last.emissive == batch.emissive && last.edgeColor == batch.edgeColor &&
             last.softDistance == batch.softDistance && last.softNear == batch.softNear &&

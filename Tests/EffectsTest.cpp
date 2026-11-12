@@ -77,6 +77,24 @@ void testParticleFeatures(const fs::path& content) {
             [](const EffectFeature& f) { return f.feature == "soft particles" && f.setting == "soft_particles"; }) == 2,
         "soft-alpha's two soft nodes aren't reported");
     check(effects.validate("effects/soft-alpha.efkefc").empty(), "soft-alpha has problems");
+    // Flipbook motion vectors (Effekseer patch 0001): reported supported with its setting
+    // and strength; asked for without a texture, a warning that it's cross-faded.
+    const EffectInfo motion = effects.info("effects/flipbook-motion.efkefc");
+    check(
+        std::any_of(
+            motion.features.begin(), motion.features.end(),
+            [](const EffectFeature& f) {
+                return f.feature == "flipbook motion vectors" && f.status == "supported" &&
+                       f.setting == "particle_motion_vectors" && f.detail.find("1 cells") != std::string::npos;
+            }),
+        "flipbook-motion's motion vectors aren't reported");
+    check(effects.validate("effects/flipbook-motion.efkefc").empty(), "flipbook-motion has problems");
+    check(effects.validate("effects/flipbook-lerp.efkefc").empty(), "flipbook-lerp has problems");
+    const std::vector<EffectProblem> missing = effects.validate("effects/flipbook-motion-missing.efkefc");
+    check(
+        missing.size() == 1 && missing[0].warning &&
+            missing[0].message.find("no motion vector texture") != std::string::npos,
+        "motion vectors without a texture aren't a warning");
     // Effekseer's own distortion example (made in its editor; no textures here): its third
     // node, a ring, is a distortion one.
     const EffectInfo upstream = effects.info("effects/upstream/distortion.efk");
@@ -113,6 +131,15 @@ void testParticleFeatures(const fs::path& content) {
     e = show("effects/lit-smoke.efkefc", {0, 1, 0});
     list = frame();
     check(firstBatch(list, kParticleLit) && list.batches.size() == 1, "lit-smoke isn't lit");
+    world.destroy(e);
+
+    // A flipbook with motion vectors: blended, with its strength in uv (a cell is half the
+    // texture wide). No renderer here, so no texture, so no motion flag: a cross-fade.
+    e = show("effects/flipbook-motion.efkefc", {0, 1, 0});
+    list = frame();
+    const ParticleBatch* f = firstBatch(list, kParticleFlipbookBlend);
+    check(f && f->motionScale == glm::vec2(0.5f, 1.0f), "flipbook-motion's motion scale isn't a cell");
+    check(f && !(f->flags & kParticleFlipbookMotion), "motion vectors flagged without a texture");
     world.destroy(e);
 
     // Soft distances: the effect's own, or ParticleEffect's soft_distance (0 turns it off).

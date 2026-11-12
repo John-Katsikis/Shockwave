@@ -275,6 +275,16 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"particle_motion_vectors", "Smooth flipbooks", "Quality",
+         "Smoke, fire and explosions drawn from flipbooks with motion vectors flow smoothly from one frame to the "
+         "next, instead of fading between two blurry frames. Off cross-fades them: two texture reads a particle "
+         "pixel fewer.",
+         "true, false", kBool, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(s.particleMotionVectors ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.particleMotionVectors, "particle_motion_vectors", error);
+         }});
+    info.push_back(
         {"color_grading", "Colour grading", "Quality",
          "The scene's colour look from its postprocess profiles: white balance and creative LUTs. Off shows the "
          "colours ungraded, exactly as without them.",
@@ -490,6 +500,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = false;
         base.particleDistortion = false;
         base.particleLighting = ParticleLighting::Simple;
+        base.particleMotionVectors = false;
         base.fogQuality = FogQuality::Analytic;
         base.clearcoat = true;   // one more lobe, no pass
         base.transmissionQuality = TransmissionQuality::Low;
@@ -509,6 +520,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.particleMotionVectors = true;
         base.fogQuality = FogQuality::Low;
         base.clearcoat = true;
         base.transmissionQuality = TransmissionQuality::Medium;
@@ -528,6 +540,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.particleMotionVectors = true;
         base.fogQuality = FogQuality::Medium;
         base.clearcoat = true;
         base.transmissionQuality = TransmissionQuality::Medium;
@@ -547,6 +560,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.softParticles = true;
         base.particleDistortion = true;
         base.particleLighting = ParticleLighting::Scene;
+        base.particleMotionVectors = true;
         base.fogQuality = FogQuality::High;
         base.clearcoat = true;
         base.transmissionQuality = TransmissionQuality::High;
@@ -731,6 +745,7 @@ GraphicsSettings Graphics::running() const {
     s.softParticles = particles.softParticles;
     s.particleDistortion = particles.distortion;
     s.particleLighting = particles.lighting;
+    s.particleMotionVectors = particles.flipbookMotion;
     const PostProcessSettings post = r.postProcessSettings();
     s.colorGrading = post.colorGrading;
     s.autoExposure = post.autoExposure;
@@ -810,8 +825,8 @@ void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous)
     if (s.decals != previous.decals) r.setDecalQuality(s.decals);
     if (s.lightCulling != previous.lightCulling) r.setLightCulling(s.lightCulling);
     if (s.softParticles != previous.softParticles || s.particleDistortion != previous.particleDistortion ||
-        s.particleLighting != previous.particleLighting)
-        r.setParticleSettings({s.softParticles, s.particleDistortion, s.particleLighting});
+        s.particleLighting != previous.particleLighting || s.particleMotionVectors != previous.particleMotionVectors)
+        r.setParticleSettings({s.softParticles, s.particleDistortion, s.particleLighting, s.particleMotionVectors});
     if (s.colorGrading != previous.colorGrading || s.autoExposure != previous.autoExposure ||
         s.fogQuality != previous.fogQuality)
         r.setPostProcessSettings({s.colorGrading, s.autoExposure, s.fogQuality});

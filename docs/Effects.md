@@ -160,6 +160,28 @@ ground below. They face the camera, so the side you see is the lit side. They do
 or cast shadows. `particle_lighting simple` lights them by the scene's first directional
 light and the ambient light alone, as before.
 
+**Smooth flipbooks (motion vectors).** A flipbook (a node's UV *Animation*) shows one
+cell of its texture after another. Effekseer's *Lerp* interpolation cross-fades from one
+cell to the next, which shows two faint copies of fast-moving smoke halfway between them.
+Shockwave's copy of Effekseer adds a third choice, *Motion vectors* (see *Changes to
+Effekseer* below). You give it a second texture laid out exactly like the flipbook, whose
+red and green say where each pixel moves by the next cell, and a strength. Each frame is
+then pushed along those vectors toward the next before they blend, so the smoke flows
+instead of fading: a 16-frame explosion looks like it has many more frames.
+
+- Red is movement along the texture's width (right), green along its height (down), 0.5
+  (128) for none. Saved in a linear format (it's data, not colour), as Effekseer loads it
+  as a normal image.
+- Strength is how many cells a fully red or green pixel moves by the next frame. Tools
+  such as Blender or EmberGen write the vectors scaled to a range; set the strength to
+  that range divided by the cell size. A negative strength flips both directions.
+- Leave a few clear pixels round each cell: a pixel pushed past its cell's edge reads the
+  neighbouring cell.
+- With no motion vector texture it cross-fades, and `--check` warns.
+
+`particle_motion_vectors false` cross-fades every flipbook (Low does). The graphics
+report's `particles` block counts `motion_draws`.
+
 **Sorting.** Blended effects are drawn back to front, each by the middle of its own
 particles. Its parts draw in the order the effect was made. A `ParticleEffect` with
 `sorting parts` sorts each of its parts by its own particles instead, for an effect
@@ -189,6 +211,21 @@ Content/Effects/fire.efkefc: loaded
 ```
 
 It exits with 1 when the effect can't load or has a problem that isn't a warning.
+
+## Changes to Effekseer
+
+Shockwave builds Effekseer 1.7.3.0 with a few changes of its own, kept as patches in
+`cmake/patches/effekseer` and applied when the build downloads it. Effects that don't use
+a change load and play exactly as in the official Effekseer.
+
+| Patch | What it adds |
+|---|---|
+| `0001-flipbook-motion-vectors.patch` | Flipbook interpolation *Motion vectors* (2), with a motion vector texture and strength. Only an effect that uses it stores the two extra values, so older effects keep their layout; an effect saved with it needs this patched Effekseer. |
+
+To change a patch, edit a clean Effekseer 1.7.3.0 checkout, write it out with
+`git diff > cmake/patches/effekseer/<name>.patch`, and configure again: the build resets
+its copy of Effekseer and applies every patch, in name order. A patch that no longer
+applies stops the configure with its name.
 
 ## Check effects for mistakes
 
