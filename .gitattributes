@@ -1,1 +1,3 @@
 *.swnavmesh binary
+# Effekseer patches keep the line endings of the files they change (some are CRLF).
+cmake/patches/**/*.patch -text diff

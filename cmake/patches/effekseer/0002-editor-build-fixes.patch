@@ -1,0 +1,24 @@
+diff --git a/Dev/Cpp/EditorCommon/Common/StringHelper.h b/Dev/Cpp/EditorCommon/Common/StringHelper.h
+index b2b13c0..bc34904 100644
+--- a/Dev/Cpp/EditorCommon/Common/StringHelper.h
++++ b/Dev/Cpp/EditorCommon/Common/StringHelper.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <cstdint>
++
+ #include <array>
+ #include <string>
+ #include <vector>
+diff --git a/Dev/Cpp/EditorCommon/IO/FileReader.h b/Dev/Cpp/EditorCommon/IO/FileReader.h
+index c586678..a9ab335 100644
+--- a/Dev/Cpp/EditorCommon/IO/FileReader.h
++++ b/Dev/Cpp/EditorCommon/IO/FileReader.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <cstdint>
++
+ #include <string>
+ #include <vector>
+ 
