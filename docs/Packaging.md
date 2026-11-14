@@ -4,9 +4,13 @@ Packaging turns your project into a folder you can hand to players. They run one
 and play, without the editor, the engine's source code or a build folder. Shockwave
 also makes a `.tar.gz` of that folder, ready to upload or send.
 
-Packages are made for the platform you package on: Linux or macOS. A macOS package ships
-MoltenVK, so players need nothing installed, and runs on the macOS version it was built on
-or newer. Windows packages will come with that port.
+Packages are made for the platform you package on. Linux is the platform packages are
+tested on: CI packages and plays one in every run, and
+[`player --verify-install`](Release.md#platforms) proves one on a given machine. The packager
+also has macOS code (the package ships MoltenVK, so players need nothing installed, and
+runs on the macOS version it was built on or newer) and Windows code (no launcher or
+archive yet), but no macOS or Windows package has been verified, so neither is a supported
+target until that platform has its own install record.
 
 ## Package your game
 
@@ -58,7 +62,8 @@ player's options, like `--fps 144` or `--size 1920x1080`.
 
 The packaged player always runs the project packaged with it, wherever it's started
 from. `Binaries/shockwave-package.txt` tells it which one, and also records the
-version, the platform, the build type and the oldest system the package runs on.
+version, the platform, the build type, the program players start (`executable`) and the
+oldest system the package runs on.
 
 These parts of your project stay out of packages:
 
@@ -134,12 +139,18 @@ package of the same version is left as it was.
    and README.
 4. **Verify.** Makes sure the package stands on its own. Every library it uses must be
    inside it or on every Linux system, and nothing that never ships (`steam_appid.txt`,
-   captures) is there. Then the packaged game runs its own
+   captures) is there. A program or library built for another architecture (32-bit, or
+   AArch64 in an x86-64 package) stops packaging, and so does one that looks for libraries
+   in this machine's build folder. Then the packaged game runs its own
    `--check`, which proves it finds its project, code and plugins from inside the folder.
 5. **Archive.** Swaps the new folder in for the old one and makes the `.tar.gz`.
 
 Building and checking run without a window or sound device, so packaging also works on
 a server, in CI or for an AI agent.
+
+To prove a finished package on a machine, installed read-only at an awkward path with a
+clean environment and played there, run [`player --verify-install`](Release.md#platforms).
+Its record is the evidence a release needs for that platform.
 
 ## Steam
 
@@ -186,7 +197,8 @@ do.
 
 ## Limits
 
-- Packages are for the platform you package on, which is Linux for now.
+- Packages are for the platform you package on. Only Linux packages are verified so far
+  (see the top of this page).
 - There's no icon or desktop menu entry yet.
 - Packages use the modular build: the engine as shared libraries next to the program.
   A build with `SHOCKWAVE_MODULAR=OFF` packages too, as one program.

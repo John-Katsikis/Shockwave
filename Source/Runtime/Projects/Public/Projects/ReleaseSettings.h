@@ -26,6 +26,7 @@
 // editor's Project > Release readiness window and the generated docs/ReleaseSchema.md.
 
 #include <Projects/Diagnostic.h>
+#include <Projects/InstallRecord.h>
 #include <Projects/LevelCatalog.h>
 #include <Projects/Performance.h>
 
@@ -206,6 +207,13 @@ struct ReleaseInputs {
     bool crashSymbolsKept = true;   // packages keep their symbols (keep_symbols, or strip false)
     std::vector<std::string> unresolvedCrashes;   // "player-....crash.txt SIGSEGV (11)", newest first
     std::string uncleanSession;   // the last player run didn't end cleanly without a report: why
+    // Install records (S13, Projects/InstallRecord.h, docs/Release.md#platforms): checked
+    // means the project's Release/Installs folder was read. Each platform:<name> gate rests
+    // on them; unchecked leaves those gates unverified.
+    bool installChecked = false;
+    std::vector<InstallRecord> installRecords;
+    std::vector<std::string> installFiles;
+    std::vector<Diagnostic> installProblems;
 };
 
 // Fills the level_catalog inputs: reads the project's catalog and checks its files, and

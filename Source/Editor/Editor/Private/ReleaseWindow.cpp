@@ -96,6 +96,12 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     inputs.performanceFiles = std::move(records.files);
     inputs.performanceProblems = std::move(records.problems);
     shockwave::releaseTierInputs(project, inputs);
+    // Install records (S13): Release/Installs/*.swinstall, the evidence for the platform gates.
+    shockwave::InstallRecords installs = shockwave::readInstallRecords(project);
+    inputs.installChecked = true;
+    inputs.installRecords = std::move(installs.records);
+    inputs.installFiles = std::move(installs.files);
+    inputs.installProblems = std::move(installs.problems);
     if (const std::vector<std::string> targets = shockwave::cookTargets(); !targets.empty()) {
         shockwave::CookManifest cook;
         const fs::path manifest = shockwave::cookManifestPath(project.root, targets.front());
@@ -265,6 +271,7 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
     drawGates(report);
     drawTier(project, playing);
     drawPerformance();
+    drawPlatforms();
     drawFatalErrors(project);
     drawPlayerData(project, m_present ? m_edit.applicationId : shockwave::fallbackApplicationId(project));
     ImGui::End();
@@ -497,6 +504,75 @@ void ReleaseWindow::drawPerformance() {
                 ImGui::TextColored(gateColor(GateStatus::Passed), "meets every budget");
             else
                 ImGui::TextWrapped("%s%s", problems.front().c_str(), problems.size() > 1 ? " (and more)" : "");
+        }
+    }
+    ImGui::EndTable();
+}
+
+// Platforms (S13, docs/Release.md#platforms): each platform the contract names, the install
+// records behind its gate, and what each record proved, so "unverified" says what's missing.
+void ReleaseWindow::drawPlatforms() {
+    ImGui::SeparatorText("Platforms");
+    ImGui::TextDisabled(
+        "Release/Installs (player --verify-install <package> --install-record \"<machine>\" --project <game>)");
+    if (!m_present || m_edit.platforms.empty()) {
+        ImGui::TextWrapped("The contract names no platforms yet.");
+        return;
+    }
+    const ImGuiTableFlags flags =
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("platforms", 4, flags)) return;
+    ImGui::TableSetupColumn("Platform");
+    ImGui::TableSetupColumn("Machine");
+    ImGui::TableSetupColumn("Package");
+    ImGui::TableSetupColumn("Evidence", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableHeadersRow();
+    for (const std::string& platform : m_edit.platforms) {
+        bool any = false;
+        for (size_t i = 0; i < m_inputs.installRecords.size(); ++i) {
+            const shockwave::InstallRecord& r = m_inputs.installRecords[i];
+            if (r.platform != platform) continue;
+            any = true;
+            ImGui::PushID(int(i));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(platform.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(r.machine.c_str());
+            ImGui::SetItemTooltip(
+                "%s%s%s\n%s\n%s (%s) on the %s renderer\nrecorded %s", r.os.c_str(), r.distribution.empty() ? "" : ", ",
+                r.distribution.c_str(), r.cpu.c_str(), r.gpu.c_str(), r.gpuKind.c_str(), r.renderer.c_str(),
+                r.recorded.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s, build %s", r.version.c_str(), r.buildId.empty() ? "-" : r.buildId.c_str());
+            ImGui::SetItemTooltip(
+                "%s\n%llu files, %llu MiB\npackage sha256 %s\narchive sha256 %s", r.package.c_str(),
+                static_cast<unsigned long long>(r.files), static_cast<unsigned long long>(r.bytes >> 20),
+                r.packageSha256.c_str(), r.archiveSha256.empty() ? "(none)" : r.archiveSha256.c_str());
+            ImGui::TableNextColumn();
+            const std::vector<std::string> problems = shockwave::installProblems(r, m_inputs.currentBuildId);
+            if (problems.empty())
+                ImGui::TextColored(gateColor(GateStatus::Passed), "installed, played, updated and reinstalled");
+            else
+                ImGui::TextWrapped("%s%s", problems.front().c_str(), problems.size() > 1 ? " (and more)" : "");
+            if (ImGui::IsItemHovered() && !r.steps.empty()) {
+                ImGui::BeginTooltip();
+                for (const shockwave::InstallStep& s : r.steps)
+                    ImGui::Text(
+                        "%-8s %s: %s", shockwave::installStepResultName(s.result), s.name.c_str(), s.detail.c_str());
+                ImGui::EndTooltip();
+            }
+            ImGui::PopID();
+        }
+        if (!any) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(platform.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("none");
+            ImGui::TableNextColumn();
+            ImGui::TableNextColumn();
+            ImGui::TextWrapped("No install record yet: run player --verify-install on a %s machine.", platform.c_str());
         }
     }
     ImGui::EndTable();

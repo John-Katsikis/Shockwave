@@ -1060,10 +1060,21 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                     ? s.acceptanceScenario + " exists; running it (player --flow-test) arrives with S05"
                     : s.acceptanceScenario + " doesn't exist yet");
     }
-    for (const std::string& platform : s.platforms)
+    for (const std::string& platform : s.platforms) {
+        if (!inputs.installChecked) {
+            gate(
+                "platform:" + platform, GateStatus::Unverified, "S13",
+                "install records weren't read: a clean-machine install, play-through and update on " + platform);
+            continue;
+        }
+        const InstallGate g = installGate(platform, inputs.installRecords, inputs.installFiles, inputs.currentBuildId);
         gate(
-            "platform:" + platform, GateStatus::Unverified, "S13",
-            "no install evidence yet: a clean-machine install, play-through and update on " + platform);
+            "platform:" + platform,
+            g.verdict == InstallVerdict::Passed   ? GateStatus::Passed
+            : g.verdict == InstallVerdict::Failed ? GateStatus::Failed
+                                                  : GateStatus::Unverified,
+            "S13", g.reason);
+    }
 }
 
 ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs) {
@@ -1085,6 +1096,7 @@ ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs)
                 std::filesystem::is_regular_file(project.root / file.settings.acceptanceScenario, ec);
             validateRelease(file.settings, &withScenario, report.file, &file, report.diagnostics);
             for (const Diagnostic& problem : inputs.performanceProblems) report.diagnostics.push_back(problem);
+            for (const Diagnostic& problem : inputs.installProblems) report.diagnostics.push_back(problem);
             for (const Diagnostic& problem : inputs.tierProblems) report.diagnostics.push_back(problem);
             releaseGates(report, withScenario);
             return report;
@@ -1249,7 +1261,9 @@ std::string releaseSchema() {
         if (id == "level_travel")
             out += "| `acceptance_scenario` | S05 | the acceptance scenario plays the game from start to finish |\n";
     }
-    out += "| `platform:<name>` | S13 | a clean-machine install, play-through and update on that platform |\n\n"
+    out += "| `platform:<name>` | S13 | an install record (`player --verify-install --install-record`) from that "
+           "platform: a release package of the current, optimised build installed read-only at a path with spaces and "
+           "non-ASCII letters, played with a real GPU, updated and reinstalled, every step passed |\n\n"
            "Gates that later batches measure stay `unverified` until their evidence exists.\n\n"
            "## Diagnostic codes\n\n"
            "Codes are stable; tools can match them. Messages may change.\n\n"
@@ -1277,6 +1291,7 @@ std::string releaseSchema() {
            "| `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |\n"
            "| `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |\n"
            "| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |\n"
+           "| `InstallUnreadable` | warning | an install record in `Release/Installs` doesn't read |\n"
            "| `ReleaseTierUnreadable` | error | `Config/ReleaseTier.swtier` can't be opened |\n"
            "| `ReleaseTierSyntax` | error | the tier file has an unknown word, setting or value, or a line is "
            "incomplete |\n"

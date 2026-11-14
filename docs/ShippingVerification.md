@@ -1397,3 +1397,49 @@ shell, and paths from data files. See [Diagnostics](Diagnostics.md).
   on a display.
 - **Not done**: the editor Console doesn't link diagnostic codes to documentation and
   source files yet (plan section 20's last paragraph).
+
+## S13: Supported platforms, installs and updates, part 1
+
+Plan section 21: an installed package proven on a machine, with evidence a release can
+trust. See [Release](Release.md#platforms) and [Packaging](Packaging.md).
+
+### What was built
+
+- **`player --verify-install`**: hashes a package and its archive, installs an exact copy
+  read-only at a path with spaces and non-ASCII letters, and starts only the program its
+  marker names, from another folder, with a minimal environment (fresh home, no
+  `LD_LIBRARY_PATH`, no developer `PATH`). It runs the game's `--check`, plays scenarios in
+  order with shared player data (save and quit, then continue), checks each report comes
+  from this build, and checks the player's data landed in the fresh home while the install
+  folder stayed unchanged.
+- **Install records** (`Release/Installs/*.swinstall`, `Projects/InstallRecord.h`): the
+  machine, how the game drew, the package's hashes and build, every step. Strict to read;
+  a failed step can't be recorded as passed.
+- **Platform gates**: `platform:<name>` is measured from those records. It passes only on a
+  full record of the current optimised release build played with a real GPU (an update and
+  a reinstall included, from part 2), fails on the newest failed record, and otherwise says
+  what's missing. The editor's Release readiness lists each platform and its evidence.
+- **Packaging**: the marker names the program players start; Verify refuses a file built
+  for another architecture and a library search path into this machine's build folder.
+- **Flow reports** carry `run`: the build, renderer and GPU that played.
+- **Docs**: Packaging.md now says which platforms are verified (Linux) instead of
+  promising macOS and Windows packages.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `install_records` | unit | records round-trip and refuse unknown keys, missing keys and a contradicted "passed"; the gate's pass, fail and every unverified reason; a package marker and its entry point (nothing outside the package); ELF architecture read from the header |
+| `installed_game_flow` | integration, installed | a Reactor Run release package installed the hard way: check, save and quit, continue, user data, unchanged install folder; the record and the gate (null renderer: unverified); the contract's scenario by default; a broken package fails the gate; a non-package and a foreign work folder refused |
+
+### Still unverified
+
+- **A real GPU**: CI runs use the null renderer, so the Linux gate stays unverified until
+  a run on real hardware (Yianni's 3080: `player --verify-install <package>
+  --install-record "<machine>" --project <game>`).
+- **Updates and reinstalls**: part 2.
+- **Windows and macOS packages**: never verified; Packaging.md no longer claims them.
+- **A different distribution**: the install ran on the machine that built the package;
+  an older distribution (for example in a container) is still a manual check.
+- **Steam release checks** (launch through Steam, overlay, offline policy) need the real
+  service and an AppID.

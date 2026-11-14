@@ -768,6 +768,7 @@ private:
              << "project " << quoted("../" + std::string(kLayout.game) + "/" + m_project.file.filename().string())
              << "\n"
              << "name " << quoted(m_settings.displayName(m_project)) << "\n"
+             << "executable " << quoted(m_settings.executableName(m_project)) << "\n"
              << "version " << quoted(m_settings.version) << "\n"
              << "platform " << quoted(packagePlatform()) << "\n"
              << "engine " << quoted(SHOCKWAVE_VERSION) << "\n"
@@ -871,6 +872,18 @@ private:
                ") is Valve Corporation's, redistributed under the Steamworks SDK Access Agreement.\n\n";
     }
 
+    // A library search path in this machine's engine build or source folder.
+    bool insideBuild(const std::string& path) const {
+        const fs::path candidate = fs::path(path).lexically_normal();
+        auto under = [&](const fs::path& root) {
+            if (root.empty()) return false;
+            const fs::path normal = fs::path(root).lexically_normal();
+            const auto rel = candidate.lexically_relative(normal);
+            return !rel.empty() && *rel.begin() != "..";
+        };
+        return under(m_engine.parent_path()) || under(fs::path(SHOCKWAVE_BUILD_DIR));
+    }
+
     // ---- Verify -------------------------------------------------------------------------
     // The package must stand on its own: every library it links against is inside it or
     // on every system, it never looks for them in this machine's build folder, and its
@@ -889,13 +902,26 @@ private:
         std::set<std::string> missing;
         for (const fs::path& file : files) {
             const packaging::BinaryInfo info = packaging::readBinaryInfo(file);
-            if (!info.binary) continue;
             const std::string shown = file.lexically_relative(m_staging).generic_string();
+            // A file built for another architecture would fail on players' machines, not here.
+            if (info.elf && packaging::hostElfMachine() != 0 &&
+                (info.elfClass != 2 || info.byteOrder != 1 || info.machine != packaging::hostElfMachine()))
+                fail(
+                    shown + " is built for " + (info.elfClass == 1 ? std::string("32-bit ") : std::string()) +
+                    packaging::elfMachineName(info.machine) + ", not " +
+                    packaging::elfMachineName(packaging::hostElfMachine()) + " like the rest of the package");
+            if (!info.binary) continue;
             for (const std::string& path : info.searchPaths) {
-                if (path.rfind("$ORIGIN", 0) != 0)
-                    log(LogLevel::Warning, shown + " also looks for libraries in " + path +
-                                               ", which players won't have (harmless "
-                                               "as long as everything it needs is in the package)");
+                if (path.rfind("$ORIGIN", 0) == 0) continue;
+                // This machine's build or source folder: the package would quietly load
+                // libraries from here, and break everywhere else.
+                if (insideBuild(path))
+                    fail(
+                        shown + " looks for libraries in " + path +
+                        ", this machine's build folder; players won't have it. Build without that RUNPATH");
+                log(LogLevel::Warning, shown + " also looks for libraries in " + path +
+                                           ", which players won't have (harmless "
+                                           "as long as everything it needs is in the package)");
             }
             for (const std::string& library : info.needed) {
                 if (!shipped.count(library) && !systemLibrary(library) && missing.insert(library).second)
@@ -1071,6 +1097,87 @@ std::optional<fs::path> packagedProject() {
         return std::nullopt;
     }();
     return found;
+}
+
+bool readPackageInfo(const fs::path& package, PackageInfo& out, std::string& error) {
+    const fs::path marker = package / kLayout.binaries / kMarker;
+    std::ifstream in(marker, std::ios::binary);
+    if (!in) {
+        error = "no " + std::string(kLayout.binaries) + "/" + kMarker + ": not a Shockwave package";
+        return false;
+    }
+    PackageInfo info;
+    bool header = false;
+    int number = 0;
+    for (std::string line; std::getline(in, line);) {
+        ++number;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream row(line);
+        std::string key;
+        row >> key;
+        if (!header) {
+            std::string version;
+            if (key != "shockwave_package_info" || !(row >> version) || version != "1") {
+                error = std::string(kMarker) + ": expected shockwave_package_info 1 as the first line";
+                return false;
+            }
+            header = true;
+            continue;
+        }
+        std::string value;
+        row >> std::ws;
+        if (row.peek() == '"')
+            row >> std::quoted(value);
+        else
+            row >> value;
+        if (row.fail()) {
+            error = std::string(kMarker) + ":" + std::to_string(number) + ": " + key + " has no value";
+            return false;
+        }
+        if (key == "project")
+            info.project = value;
+        else if (key == "name")
+            info.name = value;
+        else if (key == "executable")
+            info.executable = value;
+        else if (key == "version")
+            info.version = value;
+        else if (key == "platform")
+            info.platform = value;
+        else if (key == "engine")
+            info.engine = value;
+        else if (key == "build_type")
+            info.buildType = value;
+        else if (key == "created")
+            info.created = value;
+        else if (key == "release")
+            info.release = value == "true";
+        else if (key == "content_id")
+            info.contentId = value;
+        else if (key == "build_id")
+            info.buildId = value;
+        else if (key == "minimum_glibc")
+            info.minimumGlibc = value;
+        else if (key == "minimum_cpp_runtime")
+            info.minimumCppRuntime = value;
+    }
+    if (!header || info.project.empty() || info.platform.empty()) {
+        error = std::string(kMarker) + " doesn't name the package's project and platform";
+        return false;
+    }
+    out = std::move(info);
+    error.clear();
+    return true;
+}
+
+fs::path packageEntryPoint(const fs::path& package, const PackageInfo& info) {
+    // Only a plain file name: a marker can't point the verifier at anything else.
+    if (info.executable.empty() || info.executable.find_first_of("/\\:") != std::string::npos ||
+        info.executable == "." || info.executable == "..")
+        return {};
+    if (info.platform.rfind("windows-", 0) == 0) return package / kLayout.binaries / (info.executable + ".exe");
+    return package / info.executable;
 }
 
 }   // namespace shockwave

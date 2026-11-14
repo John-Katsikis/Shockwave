@@ -68,6 +68,12 @@ add_executable(performance_test PerformanceTest.cpp)
 target_link_libraries(performance_test PRIVATE Shockwave::Projects Shockwave::Engine)
 shockwave_warnings(performance_test)
 add_test(NAME performance COMMAND performance_test)
+# Install records and platform gates (S13, docs/Release.md#platforms).
+add_executable(install_record_test InstallRecordTest.cpp)
+target_link_libraries(install_record_test PRIVATE Shockwave::Projects Shockwave::Packaging)
+shockwave_warnings(install_record_test)
+add_test(NAME install_records COMMAND install_record_test)
+set_tests_properties(install_records PROPERTIES TIMEOUT 60 LABELS unit)
 set_tests_properties(performance PROPERTIES TIMEOUT 60 LABELS unit)
 # The graphics release tier from the command line (S10 part 2, Tests/ReleaseTierCheck.cmake):
 # --release-tier, --check --release and --graphics-preset fallback on a copy of Reactor Run.
@@ -189,6 +195,15 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_shippingdemo)
         -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageReleaseCheck.cmake)
     set_tests_properties(package_release PROPERTIES TIMEOUT 300 LABELS integration)
+    # An installed package played the hard way (S13, docs/Release.md#platforms): read-only
+    # at an awkward path, a clean environment, save then continue, and the record it keeps.
+    add_test(NAME installed_game_flow COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/InstalledGame
+        -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/InstalledGameCheck.cmake)
+    set_tests_properties(installed_game_flow PROPERTIES TIMEOUT 300 LABELS "integration;installed")
 endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)

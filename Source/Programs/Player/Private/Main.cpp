@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
         int steamStatus = 0;   // --steam-status: 1 client, 2 dedicated server
         player::NetTestCommand netTest;   // --net-test
         player::DiagnosticsCommand diagnostics;   // --diagnostics, --symbolize, --safe-mode, ...
+        player::InstallCommand install;   // --verify-install (S13)
         std::filesystem::path netDump, netEncode;   // --net-dump, --net-encode
         std::filesystem::path imageStats, imageReference, imageCandidate;   // --image-stats, --image-diff
         std::filesystem::path materialInfo, textureInfo;   // --material-info, --texture-info
@@ -119,6 +120,22 @@ int main(int argc, char** argv) {
                 std::string error;
                 if (!shockwave::parseAppShellScreens(tool.appShell, screens, error))
                     throw player::UsageError("--app-shell: " + error);
+                continue;
+            }
+            // Installed-game verification (S13, docs/Release.md#platforms).
+            if ((arg == "--verify-install" || arg == "--install-record" || arg == "--install-dir") && i + 1 < argc) {
+                const std::string value = argv[++i];
+                if (value.empty()) throw player::UsageError(arg + " takes a value");
+                if (arg == "--verify-install")
+                    install.package = value;
+                else if (arg == "--install-record")
+                    install.machine = value;
+                else
+                    install.workFolder = value;
+                continue;
+            }
+            if (arg == "--keep-install" || arg == "--verbose") {
+                (arg == "--keep-install" ? install.keep : install.verbose) = true;
                 continue;
             }
             // Diagnostics (docs/Diagnostics.md).
@@ -198,6 +215,7 @@ int main(int argc, char** argv) {
             if (arg == "--flow-test" && i + 1 < argc) {
                 if (tool.perfRun) throw player::UsageError("--perf-run plays its own scenario: drop --flow-test");
                 tool.flowTest = argv[++i];
+                install.scenarios.push_back(tool.flowTest);   // --verify-install plays each in order
                 continue;
             }
             // Performance runs (S10, docs/Performance.md).
@@ -744,6 +762,13 @@ int main(int argc, char** argv) {
                     "player --symbolize report.crash.txt [--symbols folder]... [--json file]\n"
                     "                                    name a crash report's frames (symbols kept beside a\n"
                     "                                    package: <package>-symbols)\n"
+                    "player --verify-install package --flow-test scenario.json [--flow-test next.json]...\n"
+                    "       [--renderer null] [--install-record \"machine\" [--project p | --output folder]]\n"
+                    "       [--install-dir folder] [--keep-install] [--verbose] [--json report]\n"
+                    "                                    install a package read-only at a path with spaces and\n"
+                    "                                    non-ASCII letters, play the scenarios in it with a clean\n"
+                    "                                    environment; --install-record keeps the evidence for\n"
+                    "                                    the platform gates (docs/Release.md#platforms)\n"
                     "player --safe-mode                  play with the lowest graphics, windowed, no pipeline\n"
                     "                                    cache, ignoring the player's graphics file\n"
                     "player --log-file path | --no-log-file | --no-crash-handler\n"
@@ -888,6 +913,7 @@ int main(int argc, char** argv) {
             mode(netTest.requested, "--net-test");
             mode(diagnostics.info, "--diagnostics");
             mode(!diagnostics.symbolize.empty(), "--symbolize");
+            mode(!install.package.empty(), "--verify-install");
             mode(!netDump.empty(), "--net-dump");
             mode(!lightingSchema.empty(), "--lighting-schema");
             mode(!lightingExport.empty(), "--lighting-export");
@@ -926,7 +952,8 @@ int main(int argc, char** argv) {
                 "--release-tier",
                 "--perf-run",
                 "--diagnostics",
-                "--symbolize"};
+                "--symbolize",
+                "--verify-install"};
             const bool anyStrict = std::any_of(modes.begin(), modes.end(), [](const std::string& m) {
                 return std::find(strict.begin(), strict.end(), m) != strict.end();
             });
@@ -959,6 +986,15 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--laps and --perf-record go with --perf-run");
             if (tool.coldCache && !tool.perfRun && tool.benchmarkSeconds <= 0)
                 throw player::UsageError("--cold-cache goes with --perf-run or --benchmark");
+            if ((!install.machine.empty() || !install.workFolder.empty() || install.keep || install.verbose) &&
+                install.package.empty())
+                throw player::UsageError("--install-record, --install-dir, --keep-install and --verbose go with "
+                                         "--verify-install");
+            if (!install.package.empty() && !output.empty()) {
+                if (install.machine.empty()) throw player::UsageError("--output goes with --install-record here");
+                install.recordFolder = output;   // where the record goes instead of Release/Installs
+                output.clear();
+            }
             if (tool.perfRun && !tool.perfRecord.empty() && !output.empty()) {
                 tool.perfRecordFolder = output;   // where the record goes instead of Release/Performance
                 output.clear();
@@ -1003,6 +1039,34 @@ int main(int argc, char** argv) {
         if (!tool.cookTarget.empty() && tool.mode != Tool::Mode::Cook)
             throw player::UsageError("--target goes with --cook");
         if (!cookVerify.empty() && cookInfoFile.empty()) throw player::UsageError("--verify goes with --cook-info");
+        if (!install.package.empty()) {
+            // A project is optional: it says where records go and which scenario to play.
+            if (!manifest.empty()) {
+                std::filesystem::path file = manifest;
+                if (std::error_code ec; std::filesystem::is_directory(file, ec)) {
+                    const auto found = shockwave::findProjectFile(file);
+                    if (!found) throw std::runtime_error("no .swproject in " + file.string());
+                    file = *found;
+                }
+                shockwave::Project project;
+                std::string error;
+                if (!shockwave::loadProject(file, project, error)) throw std::runtime_error(error);
+                if (!install.machine.empty() && install.recordFolder.empty())
+                    install.recordFolder = shockwave::installFolder(project);
+                if (install.scenarios.empty()) {
+                    shockwave::ReleaseFile contract;
+                    shockwave::Diagnostic problem;
+                    if (shockwave::readRelease(
+                            shockwave::releasePath(project), "Config/Release.swrelease", contract, problem) &&
+                        !contract.settings.acceptanceScenario.empty())
+                        install.scenarios.push_back(project.root / contract.settings.acceptanceScenario);
+                }
+            }
+            if (!install.machine.empty() && install.recordFolder.empty())
+                throw player::UsageError("--install-record keeps the record in a project's Release/Installs: add "
+                                         "--project, or --output folder");
+            return player::verifyInstall(install, renderer, tool.benchmarkJson);   // the project is optional
+        }
         if (!cookInfoFile.empty())
             return player::cookInfo(cookInfoFile, cookVerify, tool.benchmarkJson);   // no project
         if (!diagnostics.symbolize.empty())

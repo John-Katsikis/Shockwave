@@ -104,6 +104,8 @@ Steps run in order:
 
 `--json report.json` (`-` for stdout) writes:
 
+- `run`: what ran: whether it's a package, the cook's `build_id`, the build type, the
+  renderer and the GPU with its kind and driver (`player --verify-install` checks these);
 - `ok`, `state`, `failed_step` and `message`;
 - every step run, with its milliseconds, frames and message;
 - `now`: where things stood when it ended (the level, its epoch, whether it plays, the

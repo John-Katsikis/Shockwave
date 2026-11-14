@@ -30,6 +30,7 @@ private:
     // S10: the graphics release tier and the performance records the gates above judge.
     void drawTier(const shockwave::Project& project, bool playing);
     void drawPerformance();
+    void drawPlatforms();
     // Unresolved crash reports from the game's runs and an unclean last run (S12).
     void drawFatalErrors(const shockwave::Project& project);
 

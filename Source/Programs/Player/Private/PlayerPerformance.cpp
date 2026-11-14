@@ -91,6 +91,17 @@ std::string framesLine(const shockwave::PerformanceFrames& f) {
 
 }   // namespace
 
+const char* gpuRecordKind(shockwave::GpuKind kind) {
+    switch (kind) {   // one word each: the records' gpu_kind
+    case shockwave::GpuKind::Discrete: return "dedicated";
+    case shockwave::GpuKind::Integrated: return "integrated";
+    case shockwave::GpuKind::Virtual: return "virtual";
+    case shockwave::GpuKind::Software: return "software";
+    case shockwave::GpuKind::Other: return "other";
+    }
+    return "other";
+}
+
 struct Player::PerfState {
     size_t lapSteps = 0;
     enum class Phase { Loading, Warmup, Play } phase = Phase::Warmup;
@@ -232,13 +243,7 @@ void Player::endPerformance(bool passed) {
     r.gpuKind = "none";
     if (const shockwave::GpuChoice* choice = renderer.gpuChoice())
         if (const shockwave::GpuCandidate* gpu = choice->chosenGpu()) {
-            switch (gpu->kind) {   // one word each: the record's gpu_kind
-            case shockwave::GpuKind::Discrete: r.gpuKind = "dedicated"; break;
-            case shockwave::GpuKind::Integrated: r.gpuKind = "integrated"; break;
-            case shockwave::GpuKind::Virtual: r.gpuKind = "virtual"; break;
-            case shockwave::GpuKind::Software: r.gpuKind = "software"; break;
-            case shockwave::GpuKind::Other: r.gpuKind = "other"; break;
-            }
+            r.gpuKind = gpuRecordKind(gpu->kind);
             r.gpuDriver = gpu->driver;
             r.gpuMemoryMib = gpu->memoryMB;
             r.unifiedMemory = gpu->kind == shockwave::GpuKind::Integrated;
