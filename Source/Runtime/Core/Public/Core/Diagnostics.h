@@ -110,6 +110,12 @@ void endSession();
 // not having ended cleanly (it quit after the GPU device was lost, say) and offers safe
 // graphics. endSession does nothing after it.
 void leaveSession();
+// Handing over to a new copy of this program (a restart): suspendSession removes the marker
+// but remembers it, so the new copy doesn't take this run for a crash. If the new copy
+// couldn't start, leaveSession writes it back; if it did, releaseSession forgets it without
+// touching the file again (it's the new copy's marker now).
+void suspendSession();
+void releaseSession();
 // The previous run, as beginSession found it (empty before it ran).
 const PreviousSession& previousSession();
 

@@ -218,7 +218,8 @@ bool startWindows(
     };
 
     STARTUPINFOEXW startup{};
-    startup.StartupInfo.cb = sizeof(startup);
+    // The extended structure only with EXTENDED_STARTUPINFO_PRESENT (not for a detached start).
+    startup.StartupInfo.cb = detached ? sizeof(STARTUPINFOW) : sizeof(startup);
     std::vector<char> attributes;
     HANDLE handles[2] = {writeEnd, nul};
     if (!detached) {

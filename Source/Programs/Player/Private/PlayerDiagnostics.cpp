@@ -196,8 +196,14 @@ bool restartPlayer(bool safe, std::string& error) {
         again.arguments.push_back(a);
     }
     if (safe) again.arguments.push_back("--safe-mode");
-    diag::endSession();   // so the new run doesn't take this one for a crash
-    if (!shockwave::startDetachedProcess(again, error)) return false;
+    // So the new run doesn't take this one for a crash; written back if it can't start, so
+    // the next start still offers safe graphics.
+    diag::suspendSession();
+    if (!shockwave::startDetachedProcess(again, error)) {
+        diag::leaveSession();
+        return false;
+    }
+    diag::releaseSession();
     SW_LOG(shockwave::LogEngine, Info, "Restarting: {}", shockwave::describeProcess(again));
     return true;
 }
@@ -255,12 +261,13 @@ void Player::onRendererLost(const std::string& reason) {
             game + "'s graphics device stopped responding (" + reason +
                 "), so it can't go on drawing.\n\nYour saved games are as they were at the last save.",
             {"Restart with safe graphics", "Restart", "Quit"});
+    // The next start sees this run didn't end cleanly and offers safe graphics (unless a
+    // restart takes over).
+    diag::setContext("renderer_state", "device lost");
     if (choice == 0 || choice == 1) {
         std::string error;
         if (!restartPlayer(choice == 0, error)) SW_LOG(shockwave::LogEngine, Error, "Couldn't restart: {}", error);
     } else {
-        // The next start sees this run didn't end cleanly and offers safe graphics.
-        diag::setContext("renderer_state", "device lost");
         diag::leaveSession();
     }
     engine().quit();
