@@ -2,10 +2,13 @@
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 
+#include <Core/SafePath.h>
+
 #include <algorithm>
 #include <charconv>
 #include <fstream>
 #include <iomanip>
+#include <set>
 #include <sstream>
 #include <system_error>
 
@@ -127,6 +130,7 @@ bool parseCookManifest(std::string_view text, CookManifest& manifest, std::strin
     int number = 0;
     bool header = false;
     uint64_t contentId = 0, buildId = 0;
+    std::set<std::string> seen;   // asset IDs by pathCaseKey
     auto fail = [&](const std::string& why) {
         error = "line " + std::to_string(number) + ": " + why;
         return false;
@@ -173,6 +177,8 @@ bool parseCookManifest(std::string_view text, CookManifest& manifest, std::strin
             CookLevel l;
             if (!(row >> l.id >> std::quoted(l.scene) >> a) || !parseHex(a, l.closure))
                 return fail("level is: id \"scene\" closure");
+            if (std::string why; !checkRelativePath(l.scene, why))
+                return fail("level " + l.id + "'s scene \"" + l.scene + "\" has " + why);
             m.levels.push_back(std::move(l));
         } else if (key == "root") {
             CookRoot r;
@@ -185,6 +191,15 @@ bool parseCookManifest(std::string_view text, CookManifest& manifest, std::strin
                 return fail("asset is: \"id\" \"kind\" bytes hash closure [levels]");
             std::string level;
             while (row >> level) asset.levels.push_back(level);
+            // A file the packager copies by this name and players' games read: it must
+            // stay inside the game folder, and not collide with another where case is
+            // ignored (Windows, macOS).
+            if (asset.kind != "builtin") {
+                std::string why;
+                if (!checkRelativePath(asset.id, why)) return fail("asset \"" + asset.id + "\" has " + why);
+                if (!seen.insert(pathCaseKey(asset.id)).second)
+                    return fail("asset \"" + asset.id + "\" differs from another only by case");
+            }
             m.assets.push_back(std::move(asset));
         } else
             return fail("unknown record '" + key + "'");
@@ -201,6 +216,13 @@ bool parseCookManifest(std::string_view text, CookManifest& manifest, std::strin
 }
 
 bool loadCookManifest(const fs::path& file, CookManifest& manifest, std::string& error) {
+    // Read whole, so its size is checked before anything is allocated for it.
+    std::error_code ec;
+    if (const auto size = fs::file_size(file, ec); !ec && size > kMaxCookManifestBytes) {
+        error = file.generic_string() + " is " + std::to_string(size / (1024 * 1024)) +
+                " MiB; a cook manifest is at most " + std::to_string(kMaxCookManifestBytes / (1024 * 1024)) + " MiB";
+        return false;
+    }
     std::string text;
     if (!readFile(file, text)) {
         error = "can't read " + file.generic_string();

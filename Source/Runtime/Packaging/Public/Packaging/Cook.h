@@ -29,6 +29,8 @@
 namespace shockwave {
 
 inline constexpr int kCookManifestVersion = 1;
+// A manifest larger than this isn't read (a damaged or hostile file, not a game).
+inline constexpr uintmax_t kMaxCookManifestBytes = 64ull * 1024 * 1024;
 
 struct CookLevel {
     std::string id;   // the catalog's level id

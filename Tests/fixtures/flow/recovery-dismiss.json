@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "name": "the recovery page after a crash, put aside for the main menu",
+  "timeout": 30,
+  "steps": [
+    {"assert_value": "flow.page", "equals": "recovery"},
+    {"assert_value": "flow.can_open_logs", "equals": "true"},
+    {"click": "dismiss_recovery"},
+    {"assert_value": "flow.page", "equals": "main"},
+    {"quit": true}
+  ]
+}

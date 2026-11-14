@@ -30,6 +30,8 @@ private:
     // S10: the graphics release tier and the performance records the gates above judge.
     void drawTier(const shockwave::Project& project, bool playing);
     void drawPerformance();
+    // Unresolved crash reports from the game's runs and an unclean last run (S12).
+    void drawFatalErrors(const shockwave::Project& project);
 
     std::filesystem::path m_project;   // the project the contract belongs to
     bool m_present = false, m_savedPresent = false;
@@ -43,6 +45,7 @@ private:
     std::string m_tierError;   // creating it failed
     std::string m_importResult;   // what the last Import development saves did
     bool m_importFailed = false;
+    std::string m_resolveError;   // Mark resolved failed: why
 };
 
 // The project's other settings as the contract's shared rules see them: tick rate, package

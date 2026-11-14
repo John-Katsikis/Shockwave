@@ -1,6 +1,8 @@
 // Config/Package.swpackage: reading, writing and validating package settings.
 #include <Packaging/Package.h>
 
+#include <Core/Diagnostics.h>
+
 #include <cctype>
 #include <fstream>
 #include <iomanip>
@@ -238,6 +240,62 @@ const char* packageStepName(PackageStep step) {
     case PackageStep::Done: return "Done";
     }
     return "?";
+}
+
+void crashReleaseInputs(const Project& project, ReleaseInputs& inputs) {
+    inputs.crashChecked = true;
+    inputs.crashCaptureSupported = diagnostics::crashCaptureSupported();
+    PackageSettings settings;
+    std::string error;
+    if (loadPackageSettings(project, settings, error))
+        inputs.crashSymbolsKept = settings.keepSymbols || !settings.strip;
+    inputs.unresolvedCrashes.clear();
+    inputs.uncleanSession.clear();
+    std::vector<fs::path> roots = {project.statePath()};
+    if (!inputs.userPathsRoot.empty()) roots.emplace_back(inputs.userPathsRoot);
+    std::error_code ec;
+    for (size_t r = 0; r < roots.size(); ++r) {
+        if (r > 0 && fs::equivalent(roots[r], roots[0], ec)) continue;
+        for (const fs::path& report : diagnostics::crashReports(roots[r] / "Crashes")) {
+            // Only the game's own: the editor keeps its reports beside its preferences.
+            const std::string name = report.filename().string();
+            if (name.rfind("player-", 0) != 0) continue;
+            std::string signal;
+            std::ifstream in(report, std::ios::binary);
+            for (std::string line; std::getline(in, line) && signal.empty();)
+                if (line.rfind("signal ", 0) == 0) signal = line.substr(7);
+            inputs.unresolvedCrashes.push_back(name + (signal.empty() ? "" : " " + signal));
+        }
+        const diagnostics::PreviousSession session =
+            diagnostics::inspectSession(roots[r] / "Logs", roots[r] / "Crashes", "player");
+        if (session.found && !session.stillRunning && session.crashReport.empty() && inputs.uncleanSession.empty()) {
+            std::string why;
+            for (const auto& [key, value] : session.context)
+                if (key == "renderer_state" && value == "device lost") why = ": its GPU device was lost";
+            inputs.uncleanSession = "the last player run (started " + session.startedAt + ") didn't end cleanly" + why;
+        }
+    }
+}
+
+bool resolveCrashReport(const fs::path& report, std::string& error) {
+    std::error_code ec;
+    if (!fs::is_regular_file(report, ec)) {
+        error = report.string() + " isn't a crash report here";
+        return false;
+    }
+    const fs::path folder = report.parent_path() / "Resolved";
+    fs::create_directories(folder, ec);
+    // A Windows report has its minidump beside it, with the same name.
+    fs::path dump = report;
+    dump.replace_extension();   // .crash
+    dump.replace_extension(".dmp");
+    if (fs::is_regular_file(dump, ec)) fs::rename(dump, folder / dump.filename(), ec);
+    fs::rename(report, folder / report.filename(), ec);
+    if (ec) {
+        error = "Can't move " + report.filename().string() + " into Resolved: " + ec.message();
+        return false;
+    }
+    return true;
 }
 
 }   // namespace shockwave

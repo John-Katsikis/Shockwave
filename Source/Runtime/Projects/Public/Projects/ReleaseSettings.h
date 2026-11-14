@@ -198,6 +198,14 @@ struct ReleaseInputs {
     std::string userPathsApplicationId;
     std::string userPathsRoot;
     std::string userPathsProblem;
+    // Crash recovery (S12, docs/Diagnostics.md): checked means the game's crash reports were
+    // looked for (Saved/Crashes from source, the installed per-user Crashes folder). A report
+    // is resolved by moving it into Crashes/Resolved (the editor's Release readiness does).
+    bool crashChecked = false;
+    bool crashCaptureSupported = false;   // this platform writes crash reports
+    bool crashSymbolsKept = true;   // packages keep their symbols (keep_symbols, or strip false)
+    std::vector<std::string> unresolvedCrashes;   // "player-....crash.txt SIGSEGV (11)", newest first
+    std::string uncleanSession;   // the last player run didn't end cleanly without a report: why
 };
 
 // Fills the level_catalog inputs: reads the project's catalog and checks its files, and

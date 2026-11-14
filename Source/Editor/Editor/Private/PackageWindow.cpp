@@ -1,6 +1,8 @@
 // Build > Package game: see PackageWindow.h and docs/Packaging.md.
 #include "PackageWindow.h"
 
+#include <Core/Process.h>
+
 #include <Multiplayer/NetworkValidation.h>
 
 #include <UI/Gui.h>
@@ -37,12 +39,6 @@ std::vector<std::string> splitPatterns(const std::string& text) {
     std::istringstream in(text);
     for (std::string pattern; in >> pattern;) patterns.push_back(pattern);
     return patterns;
-}
-
-std::string quote(const fs::path& path) {
-    std::string out = "'";
-    for (const char c : path.string()) out += c == '\'' ? std::string("'\\''") : std::string(1, c);
-    return out + "'";
 }
 
 }   // namespace
@@ -425,13 +421,12 @@ void PackageWindow::drawResult() {
     ImGui::SameLine();
     if (gui::button("Run game")) {
         // Started on its own, the way a player would, so it outlives the editor.
-#if defined(_WIN32)
-        const std::string command = "start \"\" \"" + result->launcher.string() + "\"";
-#else
-        const std::string command = quote(result->launcher) + " >/dev/null 2>&1 &";
-#endif
-        if (std::system(command.c_str()) != 0)
-            SW_LOG(shockwave::LogPackage, Error, "Couldn't start {}", result->launcher.string());
+        shockwave::ProcessOptions game;
+        game.executable = result->launcher;
+        game.workingDirectory = result->launcher.parent_path();
+        std::string error;
+        if (!shockwave::startDetachedProcess(game, error))
+            SW_LOG(shockwave::LogPackage, Error, "Couldn't start {}: {}", result->launcher.string(), error);
     }
     ImGui::SetItemTooltip("%s", result->launcher.string().c_str());
 }

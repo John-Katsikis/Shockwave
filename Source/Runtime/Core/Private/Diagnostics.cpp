@@ -499,6 +499,13 @@ void endSession() {
     s.markerPath.clear();
 }
 
+void leaveSession() {
+    State& s = state();
+    std::lock_guard lock(s.contextMutex);
+    writeMarkerLocked(s);
+    s.markerPath.clear();
+}
+
 const PreviousSession& previousSession() { return state().previous; }
 
 std::vector<fs::path> crashReports(const fs::path& folder) {

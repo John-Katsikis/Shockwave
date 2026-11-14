@@ -1347,6 +1347,53 @@ Packaging Sample kept 29 binaries' symbols beside the package.
   makes none yet), and `--symbolize` doesn't name Windows or macOS frames.
 - **Line numbers**: only function names; lines need a RelWithDebInfo build.
 - **Window > Diagnostics** was built and started, not looked at on a display.
-- **Part 2**: the in-game recovery prompt (Safe graphics / Open logs / Restore last save),
-  device-lost restart, the Process API replacing shell commands, path hardening, and
-  Release readiness showing unresolved fatal errors.
+- Part 2 follows.
+
+## S12: Diagnostics and crashes, part 2
+
+Plan section 20 and 20.1: recovering without losing the game, child processes without a
+shell, and paths from data files. See [Diagnostics](Diagnostics.md).
+
+### What was built
+
+- **Recovery**: after a run that didn't end cleanly, a system dialog before the window
+  (when that run never showed a frame or lost its GPU) offers safe graphics; otherwise the
+  main menu opens on a recovery page: Safe graphics for the session, Restore last save,
+  Open logs. Nothing is deleted or reset; `--no-recovery-prompt` turns it off.
+- **A lost GPU device**: `VK_ERROR_DEVICE_LOST` stops the renderer for good (nothing more
+  submitted), the engine tells the application once; the player stops simulating and
+  saving and offers a restart with safe graphics; the editor keeps unsaved changes in the
+  autosave and closes. `--inject-device-lost N` (refused in a package) tests it.
+- **Core/Process.h**: programs started with an argument vector, an explicit environment,
+  a working folder, captured output, a timeout and cancel that end the whole process tree
+  (process group, a Linux parent-death signal, a Windows job object). The packager, the
+  editor's game-code build and Run game use it; the shell-string `popen`/`system` calls
+  are gone. `runShellCommand` is a separate, explicit developer call.
+- **Core/SafePath.h** and the packager: cook asset IDs and scenes must be portable relative
+  paths that stay inside the game; no two package files may differ only by case; links
+  are followed deliberately (outside the project stops packaging); staging folders are
+  marked by the packager and only marked ones deleted; a cook manifest is size-checked
+  before it's read.
+- **Release readiness**: the `crash_recovery` gate is measured: failed while the game's
+  crash reports are unresolved or symbols aren't kept; a Fatal errors section lists the
+  reports with Mark resolved (moved to `Crashes/Resolved`).
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `process` | unit | hostile-looking arguments byte for byte and never run; environment, working folder, exit codes, output lines; a missing program; a timeout ending child and grandchild; a cancel; a detached start; Windows command-line encoding |
+| `failure_recovery` | integration | injected device loss: exit 1, marker kept, the next run warns; the recovery page's Safe graphics (graphics file untouched) and Restore last save; switched off; after a real crash the page and its report |
+| `package` | unit | escaping, absolute and case-colliding cook paths refused; an unmarked staging folder kept, a marked one taken over |
+
+### Still unverified
+
+- **Real device loss**: only injected; a real TDR or GPU reset is a manual check.
+- **The dialogs** (safe graphics at start, restart after device loss) need a display;
+  headless runs skip them, so they've only been built, not seen.
+- **Windows and macOS** child-process code compiles and runs the `process` test in CI;
+  nothing beyond that was run on those machines here.
+- **Editor**: the device-lost autosave and the Fatal errors section were built, not used
+  on a display.
+- **Not done**: the editor Console doesn't link diagnostic codes to documentation and
+  source files yet (plan section 20's last paragraph).

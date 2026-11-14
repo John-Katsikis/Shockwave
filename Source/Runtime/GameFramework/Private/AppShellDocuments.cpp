@@ -173,6 +173,18 @@ std::vector<std::pair<std::string, std::string>> AppShell::builtinText() {
         {"shell.no_new_game", "This game has no first level to start in"},
         {"shell.no_continue", "No saved game to continue yet"},
         {"shell.no_checkpoint", "No checkpoint reached yet"},
+        // After a run that didn't end cleanly (S12).
+        {"shell.recovery_title", "THE LAST SESSION DIDN'T END CLEANLY"},
+        {"shell.recovery_text", "The game stopped unexpectedly last time (started {started})."},
+        {"shell.recovery_device_lost", "The graphics device stopped responding last time (started {started})."},
+        {"shell.recovery_level", "It was in {level}."},
+        {"shell.recovery_report", "A crash report was kept: {report}"},
+        {"shell.recovery_kept", "Nothing was deleted or reset."},
+        {"shell.safe_graphics", "Safe graphics"},
+        {"shell.safe_graphics_on", "Safe graphics are on for this session; your own settings are unchanged"},
+        {"shell.open_logs", "Open logs"},
+        {"shell.restore_save", "Restore last save"},
+        {"shell.recovery_menu", "Main menu"},
         // The Settings page.
         {"shell.settings_title", "SETTINGS"},
         {"shell.apply", "Apply"},
@@ -231,6 +243,18 @@ std::string AppShell::builtinDocument(ShellScreen screen) {
     case ShellScreen::Menu:
         return screenDocument("Main menu", "back", std::string(R"(
 <h1>{{title}}</h1>
+<div data-if="page == 'recovery'">
+  <h2>{{text.shell.recovery_title}}</h2>
+  <p>{{recovery_text}}</p>
+  <p class="reason" data-if="recovery_report != ''">{{recovery_report}}</p>
+  <p class="reason">{{text.shell.recovery_kept}}</p>
+  <button id="safe_graphics" onclick="safe_graphics" data-class-disabled="!can_safe_graphics">{{text.shell.safe_graphics}}</button>
+  <button id="restore_save" onclick="restore_save" data-class-disabled="!can_continue">{{text.shell.restore_save}}</button>
+  <p class="reason" data-if="!can_continue">{{continue_reason}}</p>
+  <button id="open_logs" onclick="open_logs" data-if="can_open_logs">{{text.shell.open_logs}}</button>
+  <button id="dismiss_recovery" onclick="dismiss_recovery" autofocus>{{text.shell.recovery_menu}}</button>
+  <p class="reason" data-if="message != ''">{{message}}</p>
+</div>
 <div data-if="page == 'main'">
   <button id="new_game" onclick="new_game" data-class-disabled="!can_new_game" autofocus>{{text.shell.new_game}}</button>
   <p class="reason" data-if="!can_new_game">{{new_game_reason}}</p>

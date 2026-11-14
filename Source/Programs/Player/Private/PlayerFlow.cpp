@@ -53,6 +53,7 @@ void Player::startShell() {
                 setup.newGameLevel = level.id;
                 break;
             }
+    setup.recovery = recovery();
     m_shell = std::make_unique<shockwave::AppShell>(&engine(), *m_levels, std::move(setup));
 }
 

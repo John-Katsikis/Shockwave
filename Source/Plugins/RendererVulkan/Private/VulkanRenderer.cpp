@@ -214,7 +214,7 @@ RendererMemoryReport VulkanRenderer::memoryReport() const { return m_impl->memor
 bool VulkanRenderer::beginFrame() { return m_impl->beginFrame(); }
 void VulkanRenderer::endFrame() { m_impl->endFrame(); }
 void VulkanRenderer::onResize() { m_impl->needsResize = true; }
-void VulkanRenderer::waitIdle() { vkDeviceWaitIdle(m_impl->context->device()); }
+void VulkanRenderer::waitIdle() { vk::check(vkDeviceWaitIdle(m_impl->context->device()), "vkDeviceWaitIdle"); }
 void VulkanRenderer::initGui() { m_impl->initGui(); }
 void VulkanRenderer::shutdownGui() { m_impl->shutdownGui(); }
 void VulkanRenderer::newGuiFrame() { ImGui_ImplVulkan_NewFrame(); }

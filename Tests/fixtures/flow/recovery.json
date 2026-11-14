@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "name": "the menu after the GPU device was lost: safe graphics, then the last save",
+  "timeout": 30,
+  "steps": [
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"assert_value": "flow.page", "equals": "recovery"},
+    {"assert_value": "flow.can_safe_graphics", "equals": "true"},
+    {"click": "safe_graphics"},
+    {"assert_value": "flow.safe_graphics_on", "equals": "true"},
+    {"assert_value": "flow.can_safe_graphics", "equals": "false"},
+    {"click": "restore_save"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "a"},
+    {"quit": true}
+  ]
+}

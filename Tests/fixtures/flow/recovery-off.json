@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "name": "no recovery page: the main menu",
+  "timeout": 30,
+  "steps": [
+    {"assert_value": "flow.screen", "equals": "menu"},
+    {"assert_value": "flow.page", "equals": "main"},
+    {"quit": true}
+  ]
+}

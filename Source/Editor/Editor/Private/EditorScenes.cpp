@@ -186,6 +186,31 @@ void Editor::autosave(double frameDt) {
     }
 }
 
+void Editor::onRendererLost(const std::string& reason) {
+    SW_LOG(LogEditor, Error, "{}; the editor has to close", reason);
+    if (playing()) stop();   // back to the scene as authored
+    std::string saved;
+    if (m_hasProject && m_dirty) {
+        const fs::path path = autosavePath();
+        std::error_code ec;
+        fs::create_directories(path.parent_path(), ec);
+        std::string err;
+        if (shockwave::saveScene(m_world, engine().assets(), path.string(), err)) {
+            saved = "Your unsaved changes were kept: opening the scene again offers them back.";
+            log("Autosaved " + sceneDisplayName() + " after the GPU device was lost");
+        } else {
+            saved = "Your unsaved changes couldn't be kept: " + err;
+            warn(saved);
+        }
+    }
+    const std::string text = "The graphics device stopped responding (" + reason + "), so the editor has to close." +
+                             (saved.empty() ? std::string() : "\n\n" + saved);
+    const char* driver = SDL_getenv("SDL_VIDEO_DRIVER");
+    if (!driver || (std::string_view(driver) != "offscreen" && std::string_view(driver) != "dummy"))
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Shockwave Editor", text.c_str(), nullptr);
+    engine().quit();
+}
+
 // SDL calls back from another thread (or later on this one); results are picked up in
 // handleDialogResults at the start of a frame.
 namespace {
