@@ -17,6 +17,11 @@
 
 namespace shockwave {
 
+void Application::onRendererLost(const std::string& reason) {
+    SW_LOG(LogEngine, Error, "{}; quitting, since nothing more can be drawn", reason);
+    engine().quit();
+}
+
 namespace {
 
 // Wayland doesn't let programs place their own windows, so Dear ImGui can't put a panel
@@ -415,6 +420,13 @@ void Engine::run(Application& app) {
                 m_renderer->endFrame();
             }
             submitTicks = SDL_GetPerformanceCounter() - submitStart;
+            if (!m_presentedFrame && !m_renderer->deviceLost()) {
+                // A run that crashes before this never showed a picture: the next start
+                // offers safe graphics before it opens a window (docs/Diagnostics.md).
+                m_presentedFrame = true;
+                diagnostics::setContext("first_frame", "yes");
+                diagnostics::updateSession();
+            }
             m_graphics.afterFrame();   // the memory budget, when there is one
             if (m_config.gui) {
                 SW_PROFILE_SCOPE("Detached GUI windows");
@@ -422,6 +434,10 @@ void Engine::run(Application& app) {
             }
         } else {
             SDL_Delay(10);   // minimized: don't spin the CPU
+        }
+        if (m_renderer->deviceLost() && !m_reportedDeviceLost) {
+            m_reportedDeviceLost = true;
+            app.onRendererLost(m_renderer->deviceLostReason());
         }
 
         const Uint64 frameEnd = SDL_GetPerformanceCounter();

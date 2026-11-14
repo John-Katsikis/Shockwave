@@ -116,6 +116,7 @@ void AppShell::bindDefaultControls(Input& input) {
 
 AppShell::AppShell(Engine* engine, LevelHost& levels, Setup setup)
     : m_engine(engine), m_levels(levels), m_setup(std::move(setup)) {
+    m_recoveryPending = m_setup.recovery.has_value();
     registerBuiltins();
     m_input = m_setup.input ? m_setup.input : engine ? &engine->input() : nullptr;
     if (m_input) {
@@ -250,8 +251,10 @@ void AppShell::choose() {
     if (next != m_screen) {
         if (next == ShellScreen::Menu) refreshContinue();   // a save may have been made since
         if (next == ShellScreen::Pause) refreshCheckpoint();
-        // A screen opens on its first page, without the last one's complaint.
+        // A screen opens on its first page, without the last one's complaint; the menu after
+        // an unclean exit on the recovery page.
         if (next == ShellScreen::Menu || next == ShellScreen::Pause) m_page = "main";
+        if (next == ShellScreen::Menu && m_recoveryPending) m_page = "recovery";
         if (m_screen != ShellScreen::None || next != ShellScreen::None) m_message.clear();
         m_screen = next;
     }
@@ -338,6 +341,23 @@ void AppShell::publish() {
     ui.setValue("continue_reason", std::string_view(m_continueReason));
     ui.setValue("can_restart_checkpoint", m_checkpointReason.empty());
     ui.setValue("checkpoint_reason", std::string_view(m_checkpointReason));
+    // The recovery page (S12): what's known about the run that didn't end cleanly.
+    {
+        const Setup::Recovery* r = m_setup.recovery ? &*m_setup.recovery : nullptr;
+        std::string text;
+        if (r) {
+            text = tr(r->deviceLost ? "shell.recovery_device_lost" : "shell.recovery_text", {{"started", r->started}});
+            if (!r->level.empty()) text += " " + tr("shell.recovery_level", {{"level", r->level}});
+        }
+        ui.setValue("recovery", r != nullptr && m_recoveryPending);
+        ui.setValue("recovery_text", std::string_view(text));
+        ui.setValue(
+            "recovery_report",
+            std::string_view(r && !r->report.empty() ? tr("shell.recovery_report", {{"report", r->report}}) : ""));
+        ui.setValue("can_safe_graphics", r && r->safeGraphics && !m_safeGraphicsOn);
+        ui.setValue("safe_graphics_on", m_safeGraphicsOn);
+        ui.setValue("can_open_logs", r && bool(r->openLogs));
+    }
     // The last checkpoint's save, for a HUD: "", "saving", "saved" or "failed".
     const SaveGames* saves = m_levels.session() ? m_levels.session()->saves() : nullptr;
     const auto state = saves ? saves->checkpointState() : SaveGames::CheckpointState::None;
@@ -494,6 +514,32 @@ bool AppShell::command(std::string_view command, std::string_view argument, std:
         }
         r.reason = TravelReason::LoadSave;
         return request(std::move(r), send);
+    }
+    if (command == "safe_graphics" || command == "open_logs" || command == "restore_save" ||
+        command == "dismiss_recovery") {
+        if (!m_setup.recovery) return refuse(why, "The last session ended cleanly");
+        Setup::Recovery& r = *m_setup.recovery;
+        std::string reason;
+        if (command == "safe_graphics") {
+            if (!r.safeGraphics) return refuse(why, "Safe graphics aren't available here");
+            if (!r.safeGraphics(reason)) return refuse(why, reason);
+            m_safeGraphicsOn = true;
+            m_message = tr("shell.safe_graphics_on");
+            publish();
+            return true;
+        }
+        if (command == "open_logs") {
+            if (!r.openLogs) return refuse(why, "There's no log folder to show");
+            if (!r.openLogs(reason)) return refuse(why, reason);
+            return true;
+        }
+        if (command == "restore_save") {
+            if (!this->command("continue", {}, why)) return false;   // Continue's own refusal
+            m_recoveryPending = false;
+            return true;
+        }
+        m_recoveryPending = false;
+        return page("main");
     }
     if (command == "level_select") {
         if (!value("can_level_select").flag()) return refuse(why, "This game has no level select");

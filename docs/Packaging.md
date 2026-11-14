@@ -199,6 +199,12 @@ runs it on a background thread, so editing stays smooth while it works. The copy
 uses a few threads of its own and leaves the engine's job workers free for frames.
 
 The new package is built in a `.partial` folder and only replaces the old one after it
-passes Verify. The Verify step reads each program and library in the package to see
+passes Verify. The packager makes and marks that folder itself; a folder of that name it
+didn't make stops packaging and is left alone. Every tool it runs (`player --check`,
+`--cook`, `--optimise`, `cmake`, `strip`, `tar`) gets an argument vector, never a shell
+command, so no project or file name is ever run as a command; Cancel ends the tool and
+anything it started ([Diagnostics](Diagnostics.md#child-processes)). Files the cook names
+must stay inside the game and not differ only by case, and a link out of the project
+stops packaging ([Diagnostics](Diagnostics.md#paths-from-data-files)). The Verify step reads each program and library in the package to see
 which libraries it needs and where it looks for them. It has to find every one of them
 inside the package, through `$ORIGIN`, or on every Linux system.

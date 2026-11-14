@@ -1,6 +1,7 @@
 // Project > Release readiness: see ReleaseWindow.h and docs/Release.md.
 #include "ReleaseWindow.h"
 
+#include <Core/Diagnostics.h>
 #include <Core/Log.h>
 #include <Engine/GraphicsSettings.h>
 #include <Engine/ReleaseTier.h>
@@ -87,6 +88,7 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     // the Levels panel's Validate does (the gate says so meanwhile).
     shockwave::levelReleaseInputs(project, inputs);
     userPathsInputs(project, shockwave::projectApplicationId(project), inputs);
+    shockwave::crashReleaseInputs(project, inputs);   // S12: unresolved crash reports
     // Performance records (S10): Release/Performance, judged against the latest cook.
     shockwave::PerformanceRecords records = shockwave::readPerformanceRecords(project);
     inputs.performanceChecked = true;
@@ -263,6 +265,7 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
     drawGates(report);
     drawTier(project, playing);
     drawPerformance();
+    drawFatalErrors(project);
     drawPlayerData(project, m_present ? m_edit.applicationId : shockwave::fallbackApplicationId(project));
     ImGui::End();
 }
@@ -497,6 +500,47 @@ void ReleaseWindow::drawPerformance() {
         }
     }
     ImGui::EndTable();
+}
+
+// What crashed (S12, docs/Diagnostics.md): each crash report from the game's runs, from
+// source (Saved/Crashes) and installed on this machine, until it's marked resolved (moved
+// into Crashes/Resolved), and a last run that didn't end cleanly without one.
+void ReleaseWindow::drawFatalErrors(const shockwave::Project& project) {
+    ImGui::SeparatorText("Fatal errors");
+    const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
+    const ImVec4 warningColor = gui::semanticColor(gui::currentTheme().warning);
+    std::vector<fs::path> folders = {project.statePath() / "Crashes"};
+    if (!m_inputs.userPathsRoot.empty()) folders.push_back(fs::path(m_inputs.userPathsRoot) / "Crashes");
+    std::vector<fs::path> reports;
+    std::error_code ec;
+    for (size_t i = 0; i < folders.size(); ++i) {
+        if (i > 0 && fs::equivalent(folders[i], folders[0], ec)) continue;
+        for (const fs::path& report : shockwave::diagnostics::crashReports(folders[i]))
+            if (report.filename().string().rfind("player-", 0) == 0) reports.push_back(report);
+    }
+    if (reports.empty()) ImGui::TextDisabled("No unresolved crash reports from the game's runs.");
+    bool changed = false;
+    for (size_t i = 0; i < reports.size() && i < 20; ++i) {
+        ImGui::PushID(int(i));
+        ImGui::TextColored(errorColor, "%s", reports[i].filename().string().c_str());
+        ImGui::SetItemTooltip(
+            "%s\nWindow > Diagnostics names its frames; player --symbolize does too.",
+            shockwave::diagnostics::redact(reports[i].generic_string()).c_str());
+        ImGui::SameLine();
+        if (gui::button("Mark resolved")) {
+            m_resolveError.clear();
+            if (!shockwave::resolveCrashReport(reports[i], m_resolveError))
+                SW_LOG(LogRelease, Error, "{}", m_resolveError);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("Once it's fixed: moves the report into Crashes/Resolved, out of the gate");
+        ImGui::PopID();
+    }
+    if (reports.size() > 20) ImGui::TextDisabled("... and %zu more", reports.size() - 20);
+    if (!m_inputs.uncleanSession.empty())
+        ImGui::TextColored(warningColor, "Without a report: %s", m_inputs.uncleanSession.c_str());
+    if (!m_resolveError.empty()) ImGui::TextColored(errorColor, "%s", m_resolveError.c_str());
+    if (gui::button("Refresh") || changed) shockwave::crashReleaseInputs(project, m_inputs);
 }
 
 // Where the game writes (S01, docs/UserPaths.md): the installed per-user folders for the

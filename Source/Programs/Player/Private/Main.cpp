@@ -44,6 +44,7 @@ struct RunDiagnostics {
 
 int main(int argc, char** argv) {
     player::startDiagnostics();
+    player::setCommandLine(argc, argv);
     RunDiagnostics runDiagnostics;
     try {
         std::filesystem::path manifest;
@@ -122,11 +123,18 @@ int main(int argc, char** argv) {
             }
             // Diagnostics (docs/Diagnostics.md).
             if (arg == "--diagnostics" || arg == "--safe-mode" || arg == "--no-crash-handler" ||
-                arg == "--no-log-file") {
+                arg == "--no-log-file" || arg == "--no-recovery-prompt") {
                 (arg == "--diagnostics"        ? diagnostics.info
                  : arg == "--safe-mode"        ? diagnostics.safeMode
                  : arg == "--no-crash-handler" ? diagnostics.noCrashHandler
-                                               : diagnostics.noLogFile) = true;
+                 : arg == "--no-log-file"      ? diagnostics.noLogFile
+                                               : diagnostics.noRecoveryPrompt) = true;
+                continue;
+            }
+            if (arg == "--inject-device-lost" && i + 1 < argc) {
+                diagnostics.injectDeviceLost = int(wholeNumber(argv[++i], 1000000, "--inject-device-lost"));
+                if (diagnostics.injectDeviceLost == 0)
+                    throw player::UsageError("--inject-device-lost takes a frame number from 1");
                 continue;
             }
             if ((arg == "--symbolize" || arg == "--symbols" || arg == "--log-file") && i + 1 < argc) {
@@ -740,6 +748,9 @@ int main(int argc, char** argv) {
                     "                                    cache, ignoring the player's graphics file\n"
                     "player --log-file path | --no-log-file | --no-crash-handler\n"
                     "                                    this run's log file there, none, or no crash reports\n"
+                    "player --no-recovery-prompt         don't offer safe graphics or a restore after a run\n"
+                    "                                    that didn't end cleanly\n"
+                    "player --inject-device-lost N       developer test: the GPU device is lost at frame N\n"
                     "player --user-dir folder            write saves, settings and caches there this run\n"
                     "player --profile id                 the player profile (default: default)\n"
                     "player --import-legacy-saves folder [--preview]\n"
@@ -1131,7 +1142,16 @@ int main(int argc, char** argv) {
                                  tool.flowTest.empty() && !tool.perfRun;
             player::beginRunDiagnostics(project, tool.userPaths ? &*tool.userPaths : nullptr, diagnostics, gameRun);
             runDiagnostics.begun = true;
+            // A last run that died before showing a frame, or lost its GPU: offered safe
+            // graphics now, before a window opens, since a menu may never be reached.
+            if (gameRun && !diagnostics.safeMode && !diagnostics.noRecoveryPrompt && player::needsStartupRecovery() &&
+                player::askSafeModeAtStart())
+                diagnostics.safeMode = true;
         }
+        tool.recoveryPrompt = !diagnostics.noRecoveryPrompt;
+        tool.injectDeviceLostFrame = diagnostics.injectDeviceLost;
+        if (tool.injectDeviceLostFrame && !player::packagedProjectFile().empty())
+            throw player::UsageError("--inject-device-lost is a developer test; a packaged game doesn't take it");
         // Reproducible tools ignore local user preferences. Explicit --graphics still
         // loads (and --check validates) the file, without a window or GPU.
         if (!graphicsFile.empty()) {
@@ -1150,6 +1170,7 @@ int main(int argc, char** argv) {
                     SW_LOG(shockwave::LogEngine, Warning, "Ignoring user graphics settings: {}", error);
             }
         }
+        tool.safeMode = diagnostics.safeMode;
         if (diagnostics.safeMode) {
             // Safe graphics (docs/Diagnostics.md): the lowest tier, windowed, no pipeline
             // cache. The player's own files are neither read nor written; anything given on

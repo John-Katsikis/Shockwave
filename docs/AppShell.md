@@ -50,6 +50,14 @@ What each button does:
 - **Back to the level** dismisses the error. It is only there when the level you were in
   is still playing, for example after a scene that didn't load or a missing spawn.
 
+- **After a run that didn't end cleanly** the menu first opens on its recovery page:
+  when that run started, its level and crash report, with **Safe graphics** (for this
+  session), **Restore last save** (as Continue), **Open logs** and **Main menu**. The
+  player fills it in from the session marker; `--no-recovery-prompt` turns it off
+  ([Diagnostics](Diagnostics.md#what-the-player-is-offered)). A project's own
+  `Content/Shell/menu.rml` shows it with `data-if="page == 'recovery'"` and the commands
+  `safe_graphics`, `restore_save`, `open_logs` and `dismiss_recovery`.
+
 After a level fails to start, nothing plays, so the error screen has only Retry, Main
 menu and Quit. Those still work: the application may travel when nothing plays, even
 though a level may not.

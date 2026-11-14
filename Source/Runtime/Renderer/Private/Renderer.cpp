@@ -1,5 +1,6 @@
 #include <Renderer/Renderer.h>
 
+#include <Core/Diagnostics.h>
 #include <Core/Jobs.h>
 #include <Core/Log.h>
 #include <Core/Plugin.h>
@@ -137,6 +138,16 @@ struct Renderer::State {
     ShadingSettings shadingSettings;
     bool pipelineWarmup = true;
     PipelineNeeds warmNeeds;   // what content has asked for so far
+    bool lost = false;   // the device was lost (or that was injected): nothing is drawn again
+    bool injectLost = false;
+    std::string lostReason;
+    void markLost(std::string reason) {
+        if (lost) return;
+        lost = true;
+        lostReason = std::move(reason);
+        SW_LOG(LogRender, Error, "{}", lostReason);
+        diagnostics::setContext("renderer_state", "device lost");
+    }
     bool warmPending = false;   // something new was asked for since the last frame began
     uint64_t warmedPipelines = 0;
     std::vector<ReflectionProbeDesc> reflectionProbes;   // after the textures they name, on a swap
@@ -620,7 +631,12 @@ size_t Renderer::pendingFrees() const {
 
 void Renderer::flushFrees() {
     std::shared_lock swap(m->swapMutex);
-    m->backend->flushFrees();
+    if (m->lost) return;   // the GPU is gone with everything in it; shutdown frees the rest
+    try {
+        m->backend->flushFrees();
+    } catch (const RendererDeviceLost& lost) {
+        m->markLost(std::string("The GPU device was lost: ") + lost.what());
+    }
 }
 
 // ---- Optimised assets ----
@@ -1058,16 +1074,45 @@ const char* Renderer::presentModeName() const { return m->backend->presentModeNa
 // ---- Engine calls ----
 
 bool Renderer::beginFrame() {
-    m->pumpResidency();
-    if (m->warmPending) {
-        m->warmPending = false;
-        if (m->pipelineWarmup) m->warmedPipelines += m->backend->warmPipelines(m->warmNeeds);
+    if (m->injectLost) {
+        m->injectLost = false;
+        m->markLost("The GPU device was lost (injected for testing: --inject-device-lost)");
     }
-    return m->backend->beginFrame();
+    if (m->lost) return false;   // never submit through a failed device
+    m->pumpResidency();
+    try {
+        if (m->warmPending) {
+            m->warmPending = false;
+            if (m->pipelineWarmup) m->warmedPipelines += m->backend->warmPipelines(m->warmNeeds);
+        }
+        return m->backend->beginFrame();
+    } catch (const RendererDeviceLost& lost) {
+        m->markLost(std::string("The GPU device was lost: ") + lost.what());
+        return false;
+    }
 }
-void Renderer::endFrame() { m->backend->endFrame(); }
-void Renderer::onResize() { m->backend->onResize(); }
-void Renderer::waitIdle() { m->backend->waitIdle(); }
+void Renderer::endFrame() {
+    if (m->lost) return;
+    try {
+        m->backend->endFrame();
+    } catch (const RendererDeviceLost& lost) {
+        m->markLost(std::string("The GPU device was lost: ") + lost.what());
+    }
+}
+bool Renderer::deviceLost() const { return m->lost; }
+const std::string& Renderer::deviceLostReason() const { return m->lostReason; }
+void Renderer::injectDeviceLost() { m->injectLost = true; }
+void Renderer::onResize() {
+    if (!m->lost) m->backend->onResize();
+}
+void Renderer::waitIdle() {
+    if (m->lost) return;
+    try {
+        m->backend->waitIdle();
+    } catch (const RendererDeviceLost& lost) {
+        m->markLost(std::string("The GPU device was lost: ") + lost.what());
+    }
+}
 void Renderer::initGui(std::function<void()> restartPlatform) {
     m->gui = true;
     m->restartGuiPlatform = std::move(restartPlatform);

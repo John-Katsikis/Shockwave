@@ -1000,6 +1000,32 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                 : perf.verdict == PerformanceVerdict::Failed ? GateStatus::Failed
                                                              : GateStatus::Unverified,
                 pending.batch, perf.reason);
+        } else if (id == "crash_recovery" && inputs.crashChecked) {
+            // Unresolved crash reports are fatal errors still to fix; the recovery path itself
+            // (reports, symbols, safe graphics, the last save) is the engine's, proven by its
+            // tests (diagnostics_cli, failure_recovery).
+            if (!inputs.unresolvedCrashes.empty()) {
+                std::string list;
+                for (size_t i = 0; i < inputs.unresolvedCrashes.size() && i < 3; ++i)
+                    list += (i ? "; " : "") + inputs.unresolvedCrashes[i];
+                gate(
+                    pending.id, GateStatus::Failed, pending.batch,
+                    std::to_string(inputs.unresolvedCrashes.size()) + " unresolved crash report" +
+                        (inputs.unresolvedCrashes.size() == 1 ? "" : "s") + " (" + list +
+                        "). Fix them, then move each into Crashes/Resolved (Release readiness: Mark resolved)");
+            } else if (!inputs.crashCaptureSupported) {
+                gate(pending.id, GateStatus::Unverified, pending.batch, "crash capture isn't on for this platform");
+            } else if (!inputs.crashSymbolsKept) {
+                gate(
+                    pending.id, GateStatus::Failed, pending.batch,
+                    "packages are stripped without keeping their symbols (keep_symbols false), so a player's crash "
+                    "report can't be named");
+            } else {
+                gate(
+                    pending.id, GateStatus::Passed, pending.batch,
+                    "no unresolved crash reports; crash capture on and symbols kept beside each package" +
+                        (inputs.uncleanSession.empty() ? std::string() : " (note: " + inputs.uncleanSession + ")"));
+            }
         } else
             gate(
                 pending.id, GateStatus::Unverified, pending.batch,

@@ -3,12 +3,15 @@
 #include <vk_mem_alloc.h>
 #include <volk.h>
 
+#include <Renderer/RenderBackend.h>
+
 #include <stdexcept>
 #include <string>
 
 namespace shockwave::vk {
 
 inline void check(VkResult result, const char* what) {
+    if (result == VK_ERROR_DEVICE_LOST) throw RendererDeviceLost(std::string(what) + " reported VK_ERROR_DEVICE_LOST");
     if (result != VK_SUCCESS) {
         throw std::runtime_error(std::string(what) + " failed (VkResult " + std::to_string(result) + ")");
     }

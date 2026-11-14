@@ -691,6 +691,16 @@ if(UNIX)
     endif()
 endif()
 
+# Child processes without a shell (Core/Process.h): hostile-looking arguments, the
+# environment, folders, timeouts and cancels that end a whole process tree.
+add_executable(process_child ProcessChild.cpp)
+shockwave_warnings(process_child)
+add_executable(process_test ProcessTest.cpp)
+target_link_libraries(process_test PRIVATE Shockwave::Core)
+shockwave_warnings(process_test)
+add_test(NAME process COMMAND process_test $<TARGET_FILE:process_child> ${CMAKE_CURRENT_BINARY_DIR}/ProcessTest)
+set_tests_properties(process PROPERTIES TIMEOUT 120 LABELS unit)
+
 add_executable(test_rewind_buffer RewindBufferTest.cpp)
 target_link_libraries(test_rewind_buffer PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_rewind_buffer)
@@ -773,6 +783,23 @@ add_test(NAME game_flow_vulkan COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/FlowCheck.cmake)
 set_tests_properties(game_flow_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 300 LABELS gpu)
+endif()
+# Recovering from failures (S12, Tests/RecoveryCheck.cmake): a lost GPU device (injected),
+# the recovery page after it and after a crash, safe graphics and the last save.
+if(TARGET game_sample)
+set(recovery_crash "")
+if(TARGET crash_program)
+    set(recovery_crash "-DCRASH=$<TARGET_FILE:crash_program>")
+endif()
+add_test(NAME failure_recovery COMMAND ${CMAKE_COMMAND}
+    -DPLAYER=$<TARGET_FILE:player>
+    ${recovery_crash}
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
+    -DSCENARIOS=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/flow
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/RecoveryCLI
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/RecoveryCheck.cmake)
+set_tests_properties(failure_recovery PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS integration)
 endif()
 # Asset dependencies and residency on the command line (S04, Tests/AssetDependencyCheck.cmake):
 # --asset-dependencies, --check's dependency problems, --load-report and budgets.

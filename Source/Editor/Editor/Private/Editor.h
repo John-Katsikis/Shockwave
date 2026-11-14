@@ -133,6 +133,9 @@ public:
     void onGui() override;
     void onRender(shockwave::Renderer& renderer, double alpha) override;
     bool onQuitRequested() override;
+    // The GPU device was lost (S12): unsaved changes go to the autosave (offered back when
+    // the scene is next opened), then the editor says so and closes.
+    void onRendererLost(const std::string& reason) override;
     void onShutdown() override;
 
 private:

@@ -44,6 +44,14 @@ namespace shockwave {
 class JobSystem;
 class Window;
 
+// Thrown by a backend when the GPU device is lost (VK_ERROR_DEVICE_LOST): it can't draw
+// again in this process. The Renderer catches it at the frame calls and stops drawing
+// (Renderer::deviceLost, docs/Diagnostics.md).
+class RendererDeviceLost : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class RenderBackend {
 public:
     virtual ~RenderBackend() = default;

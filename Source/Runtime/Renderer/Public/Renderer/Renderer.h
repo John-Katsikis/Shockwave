@@ -362,6 +362,15 @@ public:
     // draw into (minimized window, swapchain being rebuilt).
     bool beginFrame();
     void endFrame();
+    // The GPU device was lost (a driver reset, a hang, the GPU removed): nothing is drawn
+    // or submitted again, beginFrame returns false, and the engine tells the application
+    // (Application::onRendererLost). It can't be undone in this process; restart it.
+    bool deviceLost() const;
+    const std::string& deviceLostReason() const;
+    // Developer fault injection: behaves from the next frame as if the device were lost,
+    // the reason saying it was injected. For tests of the recovery path (player
+    // --inject-device-lost), never reachable from a shipped game's own UI.
+    void injectDeviceLost();
     void onResize();
     void waitIdle();
     // After ImGui::CreateContext and the SDL3 backend. A renderer's GUI shutdown takes down

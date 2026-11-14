@@ -253,6 +253,11 @@ void Player::onUpdate(double dt) {
 
 void Player::onFrame(double dt) {
     m_frameDt = dt;
+    // Developer fault injection (--inject-device-lost N): the recovery path, on cue.
+    if (m_tool.injectDeviceLostFrame > 0 && ++m_framesSeen == m_tool.injectDeviceLostFrame) {
+        SW_LOG(shockwave::LogEngine, Warning, "Injecting a lost GPU device at frame {}", m_framesSeen);
+        engine().renderer().injectDeviceLost();
+    }
     // The shell first: its pause key and buttons come before the level's frame and UI,
     // which wait while one of its screens shows.
     if (m_shell) {

@@ -2,6 +2,7 @@
 // A cancelled package and one with no engine to ship; the cook report the editor shows.
 // The whole packaging run is checked through the real CLI in PackageCheck.cmake and
 // PackageReleaseCheck.cmake.
+#include <Core/SafePath.h>
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Projects/Project.h>
@@ -11,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 using namespace shockwave;
 namespace fs = std::filesystem;
@@ -166,6 +168,65 @@ int main() {
         write(cookManifestPath(root, packagePlatform()), "swcook 1\nnot a manifest\n");
         report = cookReport(root, packagePlatform(), false);
         check(!report.cooked && !report.error.empty(), "a damaged cook is reported, not trusted");
+    }
+
+    // Paths from a cook (S12): each asset ID stays inside the game folder on every platform,
+    // and none differs from another only by case.
+    {
+        std::string why;
+        for (const char* good : {"Content/a.png", "Config/Input.swinput", "Content/Ünï code/x y.png", "a"})
+            check(checkRelativePath(good, why), "a plain relative path is fine");
+        for (const char* bad :
+             {"", "/etc/passwd", "../outside.png", "Content/../../x", "Content/./a", "a//b", "a/", "C:/Windows/x",
+              "Content\\a.png", "Content/con.txt", "Content/LPT1", "Content/a.", "Content/a ", "Content/new\nline"})
+            check(!checkRelativePath(bad, why) && !why.empty(), "an escaping or unportable path is refused");
+        check(pathCaseKey("Content/A.PNG") == pathCaseKey("content/a.png"), "case keys ignore ASCII case");
+
+        auto parses = [&](const std::vector<std::string>& ids, std::string& message) {
+            CookManifest m;
+            m.target = packagePlatform();
+            m.levels = {{"one", "Scenes/one.swscene", 1}};
+            for (const std::string& id : ids) m.assets.push_back({id, "texture", 1, 0, 0, {"one"}});
+            m.computeIds();
+            CookManifest out;
+            return parseCookManifest(cookManifestText(m), out, message);
+        };
+        std::string message;
+        check(parses({"Content/a.png", "Content/b.png"}, message), "a plain cook parses");
+        check(
+            !parses({"Content/../../secret.txt"}, message) && contains(message, "leaves its folder"),
+            "a cook can't name a file outside the game");
+        check(
+            !parses({"/home/someone/.ssh/id_rsa"}, message) && contains(message, "absolute"),
+            "a cook can't name an absolute path");
+        check(
+            !parses({"Content/Rock.png", "Content/rock.png"}, message) && contains(message, "only by case"),
+            "a cook can't hold two files that collide where case is ignored");
+    }
+
+    // A staging folder the packager didn't make is never deleted.
+    {
+        PackageSettings settings;
+        settings.output = root / "Saved" / "Out";
+        settings.build = false;
+        const fs::path partial = settings.output / (packageFolderName(project, settings) + ".partial");
+        write(partial / "someone's notes.txt", "not the packager's\n");
+        PackageOptions options;
+        options.engineFolder = root / "Engine";
+        options.buildFolder = fs::path();
+        const PackageResult result = packageProject(project, settings, options);
+        if (!contains(result.error, "wasn't made by the packager"))
+            std::fprintf(stderr, "  got: %s\n", result.error.c_str());
+        check(
+            !result.ok && contains(result.error, "wasn't made by the packager"), "an unmarked staging folder stops it");
+        check(fs::exists(partial / "someone's notes.txt"), "an unmarked staging folder is left alone");
+        // One the packager made (an interrupted run's) is replaced.
+        fs::remove_all(partial);
+        write(partial / "shockwave-staging.txt", "Being written by Shockwave's packager; safe to delete.\n");
+        write(partial / "half.txt", "from an interrupted run\n");
+        const PackageResult again = packageProject(project, settings, options);
+        check(!again.ok && contains(again.error, "There's no player at"), "a marked staging folder is taken over");
+        check(!fs::exists(partial), "and cleaned up when packaging fails");
     }
 
     fs::remove_all(root);

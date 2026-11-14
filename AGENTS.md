@@ -137,6 +137,11 @@ build/bin/player --project <file.swproject> --diagnostics [--json -]
 ```
 
 Never add a way for a shipped program to crash on request: tests crash `crash_program`.
+`--inject-device-lost N` tests the lost-GPU path instead (a package refuses it).
+
+Start programs with `shockwave::runProcess` (Core/Process.h): an argument vector, never a
+command string through a shell. Check paths read from data files with
+`shockwave::checkRelativePath` (Core/SafePath.h) before using them.
 
 ## Levels
 

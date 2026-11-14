@@ -64,6 +64,10 @@ public:
     // The user closed the window. Return false to keep running (to ask about unsaved
     // work, say), then call engine().quit() when ready.
     virtual bool onQuitRequested() { return true; }
+    // The renderer's GPU device was lost (Renderer::deviceLost): nothing more is drawn
+    // this run. Once, after the frame it happened in. The default logs and quits; the
+    // player offers a restart (docs/Diagnostics.md).
+    virtual void onRendererLost(const std::string& reason);
     virtual void onShutdown() {}
 
 protected:
@@ -221,6 +225,8 @@ private:
     std::atomic<float> m_masterVolume{1};
     std::array<std::atomic<float>, kVolumeCategories> m_categoryVolume{1, 1, 1, 1};
     bool m_running = false;
+    bool m_reportedDeviceLost = false;
+    bool m_presentedFrame = false;
     double m_fps = 0.0;
     double m_interpolationAlpha = 1.0;
     FrameLimiter m_limiter;

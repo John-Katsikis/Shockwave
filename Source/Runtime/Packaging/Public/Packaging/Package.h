@@ -18,6 +18,7 @@
 
 #include <Core/Log.h>
 #include <Projects/Project.h>
+#include <Projects/ReleaseSettings.h>
 
 #include <atomic>
 #include <cstdint>
@@ -68,6 +69,14 @@ std::filesystem::path packageSettingsPath(const Project& project);
 bool loadPackageSettings(const Project& project, PackageSettings& settings, std::string& error);
 // Writes the settings file (through a temporary file, like saveProject).
 bool savePackageSettings(const Project& project, const PackageSettings& settings, std::string& error);
+// Fills the crash_recovery inputs (S12, docs/Diagnostics.md): this platform's crash capture,
+// whether packages keep their symbols, and the game's unresolved crash reports, in the
+// project's Saved/Crashes and (when inputs.userPathsRoot is set) the installed game's
+// Crashes folder. Call after the user_paths inputs.
+void crashReleaseInputs(const Project& project, ReleaseInputs& inputs);
+// Marks a crash report resolved: moves it into Resolved/ beside it. False, with why.
+bool resolveCrashReport(const std::filesystem::path& report, std::string& error);
+
 // Problems a package with these settings would have (bad names, an output folder inside
 // Content). Empty when it's fine. `player --check` reports these too.
 std::vector<std::string> validatePackageSettings(const Project& project, const PackageSettings& settings);

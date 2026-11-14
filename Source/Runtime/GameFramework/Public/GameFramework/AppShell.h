@@ -116,6 +116,22 @@ public:
         // When the gamepad in use is unplugged during a level: pause (offline) and say so,
         // until it's back or the player carries on with another device.
         bool pauseOnControllerLoss = true;
+        // The last run didn't end cleanly (S12, docs/Diagnostics.md): the main menu opens on
+        // a page that says so, offering Safe graphics, Open logs and Restore last save (the
+        // newest save that loads, as Continue picks). Nothing is deleted or reset. Unset:
+        // no such page.
+        struct Recovery {
+            std::string started;   // when that run started ("2026-11-11T23:04:57Z")
+            std::string level;   // the level it was in; "" when none
+            std::string report;   // its crash report's file name; "" when it left none
+            bool deviceLost = false;   // it stopped because the GPU device was lost
+            // Safe graphics for this session (the player's own settings stay as they are).
+            // False, with why, when it can't. Unset: the button is off.
+            std::function<bool(std::string& why)> safeGraphics;
+            // Shows the folder of log files and crash reports. Unset: the button is off.
+            std::function<bool(std::string& why)> openLogs;
+        };
+        std::optional<Recovery> recovery;
     };
 
     // engine: where to draw and read input; null in tests (documents still load and
@@ -150,6 +166,8 @@ public:
     //   pause:   resume, restart_checkpoint, restart_level, settings, main_menu, quit
     //   loading: cancel_travel
     //   error:   retry, main_menu, dismiss (when the level still plays), quit
+    //   recovery (the menu after an unclean exit): safe_graphics, open_logs, restore_save,
+    //            dismiss_recovery
     bool command(std::string_view command, std::string_view argument = {}, std::string* why = nullptr);
     // Clicks a button of the screen showing, by its id, as the mouse would: what its
     // onclick says runs. False when the screen has no such element.
@@ -162,7 +180,8 @@ public:
     // phase, progress (0..1), percent, can_cancel, error_code, error_message, error_level,
     // can_dismiss, can_new_game, new_game_reason, can_continue, continue_reason,
     // can_restart_checkpoint, checkpoint_reason, checkpoint_state, can_level_select, levels, error_detail,
-    // credits, message (the last refusal); the Settings page's can_settings, settings_reason,
+    // credits, message (the last refusal); the recovery page's recovery_text,
+    // recovery_report, can_safe_graphics, safe_graphics_on, can_open_logs; the Settings page's can_settings, settings_reason,
     // settings_tab, settings_tabs [{id, label}], settings_rows [{key, label, value, tooltip,
     // can_change, reason}], settings_changed, display_pending, display_countdown,
     // settings_bindings [{action, label, keyboard, gamepad, conflict}], listening,
@@ -274,6 +293,8 @@ private:
     bool m_mouseWasCaptured = false;
     uint64_t m_captureEpoch = 0;
     bool m_releasedMouse = false;
+    bool m_recoveryPending = false;   // Setup::recovery's page still to show (or showing)
+    bool m_safeGraphicsOn = false;
 };
 
 }   // namespace shockwave
