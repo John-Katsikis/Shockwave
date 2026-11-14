@@ -62,6 +62,12 @@ list(FILTER P EXCLUDE REGEX "(-symbols|\\.tar\\.gz)$")
 if(NOT IS_DIRECTORY "${P}")
     message(FATAL_ERROR "no release package in ${TEMP}/out")
 endif()
+# This machine's platform, as packages and contracts name it; the contract names it too.
+string(REGEX REPLACE ".*ReactorRun-1\\.0\\.0-" "" platform "${P}")
+string(REPLACE "_" "-" platform_file "${platform}")
+file(READ "${G}/Config/Release.swrelease" contract)
+string(REPLACE "platform linux-x86_64" "platform ${platform}" contract "${contract}")
+file(WRITE "${G}/Config/Release.swrelease" "${contract}")
 file(STRINGS "${P}/Binaries/shockwave-package.txt" executable REGEX "^executable ")
 if(NOT executable STREQUAL "executable \"ReactorRun\"")
     message(FATAL_ERROR "the package's marker doesn't name its program: ${executable}")
@@ -98,7 +104,7 @@ file(SHA256 "${P}.tar.gz" archive_file)
 if(NOT archive STREQUAL archive_file)
     message(FATAL_ERROR "archive_sha256 ${archive} isn't the archive's (${archive_file})")
 endif()
-set(RECORD "${G}/Release/Installs/test-machine-linux-x86-64.swinstall")
+set(RECORD "${G}/Release/Installs/test-machine-${platform_file}.swinstall")
 if(NOT EXISTS "${RECORD}")
     message(FATAL_ERROR "no install record at ${RECORD}")
 endif()
@@ -108,7 +114,7 @@ if(NOT result STREQUAL "result passed")
 endif()
 # The gate reads it: the install is proven, the graphics aren't (the null renderer).
 run(0 "${PLAYER}" --project "${G}" --release-info)
-expect_text("gate platform:linux-x86_64 unverified \\(S13\\): Release/Installs/test-machine-linux-x86-64.swinstall doesn't qualify linux-x86_64: it played on the null renderer"
+expect_text("gate platform:${platform} unverified \\(S13\\): Release/Installs/test-machine-${platform_file}.swinstall doesn't qualify ${platform}: it played on the null renderer"
     "the platform gate")
 
 # ---- The contract's acceptance scenario plays when none is given ----
@@ -126,7 +132,7 @@ run(1 "${PLAYER}" --verify-install "${B}" --flow-test "${FLOWS}/resume-quit.json
 expect_text("failed +check .*--check: exit code 1" "the broken package's check")
 expect_text("verify-install failed" "the broken package's verdict")
 run(0 "${PLAYER}" --project "${G}" --release-info)
-expect_text("gate platform:linux-x86_64 failed \\(S13\\): Release/Installs/broken-machine-linux-x86-64.swinstall: step \"check\" failed"
+expect_text("gate platform:${platform} failed \\(S13\\): Release/Installs/broken-machine-${platform_file}.swinstall: step \"check\" failed"
     "the gate after a failed install")
 
 # ---- What it refuses ----
