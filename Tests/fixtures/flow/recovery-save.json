@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "a save before the run that goes wrong",
+  "timeout": 30,
+  "steps": [
+    {"assert_value": "flow.page", "equals": "main"},
+    {"click": "new_game"},
+    {"wait_phase": "succeeded"},
+    {"assert_level": "a"},
+    {"save": "before-trouble"},
+    {"quit": true}
+  ]
+}

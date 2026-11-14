@@ -3,6 +3,7 @@
 #include "Editor.h"
 
 #include <Assets/BuiltinAssets.h>
+#include <Core/Process.h>
 #include <GameFramework/GameNetwork.h>
 #include <Multiplayer/Replication.h>
 #include <UI/Gui.h>
@@ -12,11 +13,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <utility>
-
-#if defined(_WIN32)
-#define popen _popen
-#define pclose _pclose
-#endif
 
 namespace editor {
 
@@ -161,25 +157,21 @@ void Editor::buildGameCode() {
     log("Building " + m_build.target + "...");
     // CMake's output goes to the Console as it arrives; the reload happens on the main
     // thread once it's done (pollGameCode).
-    const std::string command =
-        "cmake --build \"" + std::string(SHOCKWAVE_BUILD_DIR) + "\" --target " + m_build.target + " 2>&1";
+    shockwave::ProcessOptions command;
+    command.executable = "cmake";
+    command.arguments = {"--build", SHOCKWAVE_BUILD_DIR, "--target", m_build.target};
+    command.onLine = [](std::string_view text) {
+        if (text.find("error") != std::string_view::npos)
+            SW_LOG(shockwave::LogGame, Error, "{}", text);
+        else if (text.find("warning") != std::string_view::npos)
+            SW_LOG(shockwave::LogGame, Warning, "{}", text);
+        else
+            SW_LOG(shockwave::LogGame, Info, "{}", text);
+    };
     m_build.thread = std::thread([this, command] {
-        int status = -1;
-        if (FILE* pipe = popen(command.c_str(), "r")) {
-            char line[1024];
-            while (std::fgets(line, sizeof(line), pipe)) {
-                std::string text = line;
-                while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
-                const bool problem = text.find("error") != std::string::npos;
-                if (problem)
-                    SW_LOG(shockwave::LogGame, Error, "{}", text);
-                else if (text.find("warning") != std::string::npos)
-                    SW_LOG(shockwave::LogGame, Warning, "{}", text);
-                else
-                    SW_LOG(shockwave::LogGame, Info, "{}", text);
-            }
-            status = pclose(pipe);
-        }
+        const shockwave::ProcessResult result = shockwave::runProcess(command);
+        if (!result.started) SW_LOG(shockwave::LogGame, Error, "Couldn't run CMake: {}", result.error);
+        const int status = result.started ? result.exitCode : -1;
         m_build.exitCode = status;
         m_build.finished = true;
     });

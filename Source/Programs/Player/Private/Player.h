@@ -146,6 +146,13 @@ struct Tool {
     bool instantTravel = false;
     // --app-shell off|all|menu pause ...: the project's app_shell, overridden (docs/AppShell.md).
     std::string appShell;
+    // Recovery (S12, docs/Diagnostics.md): after a run that didn't end cleanly the main menu
+    // first offers Safe graphics, Open logs and Restore last save. --no-recovery-prompt: off.
+    bool recoveryPrompt = true;
+    bool safeMode = false;   // --safe-mode, or chosen when the game started
+    // --inject-device-lost N: at frame N the renderer behaves as if the GPU device were lost
+    // (developer fault injection; refused in a package).
+    int injectDeviceLostFrame = 0;
     // --flow-test scenario.json [--json report]: run the scenario through the shell and the
     // levels, write the report, exit 1 at the first failed step (docs/FlowTest.md).
     fs::path flowTest;
@@ -223,6 +230,8 @@ struct DiagnosticsCommand {
     bool safeMode = false;   // --safe-mode
     bool noCrashHandler = false;   // --no-crash-handler
     bool noLogFile = false;   // --no-log-file
+    bool noRecoveryPrompt = false;   // --no-recovery-prompt
+    int injectDeviceLost = 0;   // --inject-device-lost N
     fs::path logFile;   // --log-file path: this run's log there (any run, tools too)
 };
 // Starts the log ring and the context every run has. First thing in main().
@@ -234,6 +243,16 @@ void beginRunDiagnostics(
     bool gameRun);
 // A clean exit: the session marker goes, the log file closes.
 void endRunDiagnostics();
+// This run's own command line, for a restart (setCommandLine is the first thing in main).
+void setCommandLine(int argc, char** argv);
+// The last run didn't end cleanly before it ever showed a frame, or its GPU device was
+// lost: asks, in a system dialog before any window opens, whether to start with safe
+// graphics. False without a display, or when the answer is to start normally.
+bool needsStartupRecovery();
+bool askSafeModeAtStart();
+// Starts this program again, as it was started, with --safe-mode when `safe`; this run's
+// session marker goes first, so the new run doesn't warn about this one.
+bool restartPlayer(bool safe, std::string& error);
 int diagnosticsInfo(
     const shockwave::Project& project, const shockwave::UserPaths* paths, const DiagnosticsCommand& command,
     const fs::path& json);
@@ -363,6 +382,11 @@ public:
     void onFrame(double dt) override;
     void onRender(shockwave::Renderer& renderer, double alpha) override;
     void onShutdown() override;
+    // The menu's recovery page after a run that didn't end cleanly (PlayerDiagnostics.cpp).
+    std::optional<shockwave::AppShell::Setup::Recovery> recovery();
+    // The GPU device was lost (PlayerDiagnostics.cpp): stop, keep the last save as it is,
+    // and offer a restart with safe graphics.
+    void onRendererLost(const std::string& reason) override;
 
 private:
     // Asks for frame N, then reports and quits once the renderer has written it.
@@ -578,6 +602,7 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    int m_framesSeen = 0;   // for --inject-device-lost
     // What levels hold resident and the graph that says what they need (docs/AssetResidency.md);
     // before m_levels, which holds a lease on it.
     // On demand, what loads and unloads m_assets for it; before it, so leases can use it.

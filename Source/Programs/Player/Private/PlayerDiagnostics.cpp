@@ -4,13 +4,17 @@
 
 #include <Core/Diagnostics.h>
 #include <Core/Log.h>
+#include <Core/Process.h>
 #include <Engine/ReleaseTier.h>
 #include <Packaging/Package.h>
 #include <Platform/UserPaths.h>
 #include <Projects/Diagnostic.h>
 #include <Projects/ReleaseSettings.h>
 
+#include <SDL3/SDL.h>
+
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 
 namespace player {
@@ -19,7 +23,51 @@ namespace diag = shockwave::diagnostics;
 
 namespace {
 
+std::vector<std::string> g_commandLine;   // this run's arguments, for a restart
+
 std::string str(const std::string& text) { return shockwave::diagnosticJsonString(text); }
+
+std::string contextOf(const diag::PreviousSession& session, std::string_view key) {
+    for (const auto& [k, value] : session.context)
+        if (k == key) return value;
+    return {};
+}
+
+// A dialog can be shown: not a headless run (tests, CI, a server) or a machine without a
+// display.
+bool displayAvailable() {
+    const char* driver = std::getenv("SDL_VIDEO_DRIVER");
+    if (driver && (std::string_view(driver) == "offscreen" || std::string_view(driver) == "dummy")) return false;
+#if defined(__linux__)
+    const char* x11 = std::getenv("DISPLAY");
+    const char* wayland = std::getenv("WAYLAND_DISPLAY");
+    if ((!x11 || !*x11) && (!wayland || !*wayland)) return false;
+#endif
+    return true;
+}
+
+// A system dialog with these buttons (the first is the default); the index pressed, or -1.
+int ask(const std::string& title, const std::string& message, const std::vector<const char*>& choices) {
+    if (!displayAvailable()) return -1;
+    std::vector<SDL_MessageBoxButtonData> buttons;
+    for (size_t i = 0; i < choices.size(); ++i) {
+        SDL_MessageBoxButtonData b{};
+        b.flags = i == 0 ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT
+                         : (i + 1 == choices.size() ? SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT : 0);
+        b.buttonID = int(i);
+        b.text = choices[i];
+        buttons.push_back(b);
+    }
+    SDL_MessageBoxData data{};
+    data.flags = SDL_MESSAGEBOX_WARNING | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT;
+    data.title = title.c_str();
+    data.message = message.c_str();
+    data.numbuttons = int(buttons.size());
+    data.buttons = buttons.data();
+    int pressed = -1;
+    if (!SDL_ShowMessageBox(&data, &pressed)) return -1;
+    return pressed;
+}
 
 std::string shown(const fs::path& path) { return diag::redact(path.generic_string()); }
 
@@ -90,13 +138,12 @@ void beginRunDiagnostics(
         return;
     }
     if (previous.found && !previous.stillRunning) {
-        std::string level;
-        for (const auto& [key, value] : previous.context)
-            if (key == "level") level = value;
+        const std::string level = contextOf(previous, "level");
         SW_LOG(
             shockwave::LogEngine, Warning,
-            "The last run (started {}{}) didn't end cleanly{}. Start with --safe-mode for safe graphics",
+            "The last run (started {}{}) didn't end cleanly{}{}. Start with --safe-mode for safe graphics",
             previous.startedAt, level.empty() ? std::string() : ", level " + level,
+            contextOf(previous, "renderer_state") == "device lost" ? " (its GPU device was lost)" : "",
             previous.crashReport.empty() ? std::string() : "; its report is " + shown(previous.crashReport));
     }
 }
@@ -104,6 +151,119 @@ void beginRunDiagnostics(
 void endRunDiagnostics() {
     diag::endSession();
     diag::closeLogFile();
+}
+
+void setCommandLine(int argc, char** argv) { g_commandLine.assign(argv + 1, argv + argc); }
+
+bool needsStartupRecovery() {
+    const diag::PreviousSession& previous = diag::previousSession();
+    if (!previous.found || previous.stillRunning) return false;
+    // It never showed a frame (it may crash in the same place again before any menu could
+    // offer anything), or its GPU device was lost.
+    return contextOf(previous, "first_frame") != "yes" || contextOf(previous, "renderer_state") == "device lost";
+}
+
+bool askSafeModeAtStart() {
+    const diag::PreviousSession& previous = diag::previousSession();
+    const bool lost = contextOf(previous, "renderer_state") == "device lost";
+    const std::string game = contextOf(previous, "project").empty() ? "The game" : contextOf(previous, "project");
+    const std::string message = (lost ? game + "'s graphics device stopped responding last time"
+                                      : game + " stopped before it showed anything last time") +
+                                " (started " + previous.startedAt +
+                                ").\n\nSafe graphics start it with the lowest settings, in a window, "
+                                "without the shader cache. Your own settings and saves stay as they are.";
+    const int choice = ask(game, message, {"Start with safe graphics", "Start normally"});
+    SW_LOG(
+        shockwave::LogEngine, Info, "After the last run: {}",
+        choice == 0   ? "starting with safe graphics"
+        : choice == 1 ? "starting normally"
+                      : "no dialog shown");
+    return choice == 0;
+}
+
+bool restartPlayer(bool safe, std::string& error) {
+    shockwave::ProcessOptions again;
+    again.executable = shockwave::currentExecutable();
+    std::error_code ec;
+    again.workingDirectory = fs::current_path(ec);
+    for (size_t i = 0; i < g_commandLine.size(); ++i) {
+        const std::string& a = g_commandLine[i];
+        if (a == "--safe-mode") continue;
+        if (a == "--inject-device-lost") {   // a test's fault happens once
+            ++i;
+            continue;
+        }
+        again.arguments.push_back(a);
+    }
+    if (safe) again.arguments.push_back("--safe-mode");
+    diag::endSession();   // so the new run doesn't take this one for a crash
+    if (!shockwave::startDetachedProcess(again, error)) return false;
+    SW_LOG(shockwave::LogEngine, Info, "Restarting: {}", shockwave::describeProcess(again));
+    return true;
+}
+
+std::optional<shockwave::AppShell::Setup::Recovery> Player::recovery() {
+    if (!m_tool.recoveryPrompt || !m_tool.userPaths) return std::nullopt;
+    // A game run read the marker as it started; a flow test (which keeps none of its own)
+    // only looks, so scenarios can test this page.
+    diag::PreviousSession previous = diag::previousSession();
+    if (!previous.found && !m_tool.flowTest.empty())
+        previous = diag::inspectSession(m_tool.userPaths->logs(), m_tool.userPaths->crashes(), "player");
+    if (!previous.found || previous.stillRunning) return std::nullopt;
+    shockwave::AppShell::Setup::Recovery r;
+    r.started = previous.startedAt;
+    r.level = contextOf(previous, "level");
+    r.report = previous.crashReport.empty() ? std::string() : previous.crashReport.filename().string();
+    r.deviceLost = contextOf(previous, "renderer_state") == "device lost";
+    if (!m_tool.safeMode)
+        r.safeGraphics = [this](std::string& why) {
+            // For this session: applied, not saved. The player's file changes only if they
+            // apply settings themselves.
+            const shockwave::GraphicsSettings safe = safeGraphics(m_project, engine().graphics().current());
+            if (!engine().graphics().apply(safe, why)) return false;
+            diag::setContext("safe_mode", "yes (from the menu)");
+            SW_LOG(shockwave::LogEngine, Warning, "Safe graphics for this session (chosen after the last run)");
+            return true;
+        };
+    const fs::path logs = m_tool.userPaths->logs();
+    r.openLogs = [logs](std::string& why) {
+        std::error_code ec;
+        if (!fs::is_directory(logs, ec)) {
+            why = "There are no log files yet";
+            return false;
+        }
+        if (!SDL_OpenURL(("file://" + fs::absolute(logs, ec).generic_string()).c_str())) {
+            why = std::string("Couldn't open the folder: ") + SDL_GetError();
+            return false;
+        }
+        return true;
+    };
+    SW_LOG(shockwave::LogEngine, Info, "The menu offers recovery after the last run (started {})", r.started);
+    return r;
+}
+
+void Player::onRendererLost(const std::string& reason) {
+    // Nothing more is simulated or saved: the last save stays the last good one.
+    SW_LOG(
+        shockwave::LogEngine, Error,
+        "{}. The game has stopped; your saves are as they were. Start it again (--safe-mode for safe graphics)",
+        reason);
+    m_exitCode = 1;
+    const std::string game = m_project.name.empty() ? "The game" : m_project.name;
+    const int choice =
+        ask(game,
+            game + "'s graphics device stopped responding (" + reason +
+                "), so it can't go on drawing.\n\nYour saved games are as they were at the last save.",
+            {"Restart with safe graphics", "Restart", "Quit"});
+    if (choice == 0 || choice == 1) {
+        std::string error;
+        if (!restartPlayer(choice == 0, error)) SW_LOG(shockwave::LogEngine, Error, "Couldn't restart: {}", error);
+    } else {
+        // The next start sees this run didn't end cleanly and offers safe graphics.
+        diag::setContext("renderer_state", "device lost");
+        diag::leaveSession();
+    }
+    engine().quit();
 }
 
 shockwave::GraphicsSettings safeGraphics(const shockwave::Project& project, const shockwave::GraphicsSettings& base) {

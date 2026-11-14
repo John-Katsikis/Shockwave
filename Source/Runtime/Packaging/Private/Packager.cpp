@@ -1,9 +1,10 @@
 // packageProject: build, check, copy, verify and archive a game folder for players.
 #include "BinaryInfo.h"
-#include "ChildProcess.h"
 
 #include <Core/Diagnostics.h>
 #include <Core/Plugin.h>
+#include <Core/Process.h>
+#include <Core/SafePath.h>
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 
@@ -28,11 +29,14 @@
 namespace shockwave {
 
 namespace fs = std::filesystem;
-using packaging::shellQuote;
 
 namespace {
 
 constexpr const char* kMarker = "shockwave-package.txt";   // in Binaries/, names the project
+// A tool the packager runs (the player's checks, cook and texture compression, strip, tar)
+// is stopped after this long; the build itself has no limit.
+constexpr double kToolTimeout = 3600;
+constexpr const char* kStagingMarker = "shockwave-staging.txt";   // in <package>.partial/ while it's made
 constexpr const char* kSymbolsMarker = "shockwave-symbols.txt";   // in <package>-symbols/
 
 // Where everything goes inside a package, so other platforms can change it in one place.
@@ -134,8 +138,9 @@ public:
         } catch (const Failure& failure) {
             m_result.error = failure.message;
             std::error_code ec;
-            if (!m_staging.empty()) fs::remove_all(m_staging, ec);
-            if (!m_symbolsStaging.empty()) fs::remove_all(m_symbolsStaging, ec);
+            // Only folders this run made are removed (each holds kStagingMarker).
+            removeStaging(m_staging);
+            removeStaging(m_symbolsStaging);
             log(LogLevel::Error, failure.message);
         }
         m_result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -153,6 +158,27 @@ private:
     };
 
     [[noreturn]] void fail(std::string message) { throw Failure{std::move(message)}; }
+
+    // A staging folder is made fresh by the packager and marked, and only a marked one is
+    // ever deleted: a folder that happens to have the same name stays, and packaging stops.
+    void makeStaging(const fs::path& folder) {
+        std::error_code ec;
+        if (fs::is_symlink(folder, ec)) fail(folder.string() + " is a link; the packager won't write through it");
+        if (fs::exists(folder, ec)) {
+            if (!fs::is_regular_file(folder / kStagingMarker, ec))
+                fail(folder.string() + " exists and wasn't made by the packager, so it won't be deleted. Move it away");
+            fs::remove_all(folder, ec);   // an interrupted run's
+            if (ec) fail("Can't remove the unfinished " + folder.string() + ": " + ec.message());
+        }
+        fs::create_directory(folder, ec);
+        if (ec) fail("Can't create " + folder.string() + ": " + ec.message());
+        writeFile(folder / kStagingMarker, "Being written by Shockwave's packager; safe to delete.\n");
+    }
+    static void removeStaging(const fs::path& folder) {
+        std::error_code ec;
+        if (!folder.empty() && !fs::is_symlink(folder, ec) && fs::is_regular_file(folder / kStagingMarker, ec))
+            fs::remove_all(folder, ec);
+    }
     void log(LogLevel level, std::string_view text) {
         if (level == LogLevel::Warning) m_result.warnings.emplace_back(text);
         if (m_options.log) m_options.log(level, text);
@@ -163,9 +189,48 @@ private:
     void checkCancel() {
         if (m_options.cancel && m_options.cancel->load()) fail("Packaging was cancelled");
     }
-    // Runs a command, sending its output to the log; returns the exit code.
-    int run(const std::string& command, LogLevel level = LogLevel::Info) {
-        return packaging::runCommand(command, [&](std::string_view line) { log(level, line); });
+    // Runs a program with these arguments (never through a shell, so no project name is
+    // ever parsed as a command), each output line to `line`; returns its exit code, or -1
+    // when it didn't start or was ended (the log says why). Cancelling packaging ends it
+    // and whatever it started.
+    int
+    run(fs::path program, std::vector<std::string> arguments, const std::function<void(std::string_view)>& line,
+        double timeoutSeconds, bool headless = false) {
+        ProcessOptions options;
+        options.executable = std::move(program);
+        options.arguments = std::move(arguments);
+        options.onLine = line;
+        options.timeoutSeconds = timeoutSeconds;
+        options.cancel = m_options.cancel;
+        // Tools run without a window or sound device, so packaging works on a headless
+        // machine (CI, an AI agent) too, and find the engine's libraries their own way.
+        if (headless) {
+            options.environment.put("SDL_VIDEO_DRIVER", "offscreen");
+            options.environment.put("SDL_AUDIO_DRIVER", "dummy");
+#if !defined(_WIN32)
+            options.environment.remove("LD_LIBRARY_PATH");
+#endif
+        }
+        const ProcessResult result = runProcess(options);
+        if (!result.started) {
+            log(LogLevel::Error, "Couldn't run " + describeProcess(options) + ": " + result.error);
+            return -1;
+        }
+        if (result.cancelled) checkCancel();
+        if (result.timedOut) {
+            log(LogLevel::Error, describeProcess(options) + " took longer than " + std::to_string(int(timeoutSeconds)) +
+                                     " s and was stopped");
+            return -1;
+        }
+        return result.exitCode;
+    }
+    int run(fs::path program, std::vector<std::string> arguments, LogLevel level, double timeoutSeconds) {
+        return run(
+            std::move(program), std::move(arguments), [&](std::string_view line) { log(level, line); }, timeoutSeconds);
+    }
+    static std::string arg(const fs::path& path) {
+        const std::u8string text = path.u8string();
+        return std::string(text.begin(), text.end());
     }
 
     void package() {
@@ -204,7 +269,7 @@ private:
             fail(m_final.string() + " already exists and isn't a Shockwave package, so it won't be replaced");
         fs::create_directories(output, ec);
         if (ec) fail("Can't create " + output.string() + ": " + ec.message());
-        fs::remove_all(m_staging, ec);
+        makeStaging(m_staging);
 
         log(LogLevel::Info,
             "Packaging " + m_settings.displayName(m_project) + " " + m_settings.version + " for " + packagePlatform());
@@ -257,7 +322,7 @@ private:
             // The player depends on every plugin and game module, so this builds all of
             // what ships.
             log(LogLevel::Info, "Building the player and game code in " + folder.string());
-            const int code = run("cmake --build " + shellQuote(folder) + " --target player");
+            const int code = run("cmake", {"--build", arg(folder), "--target", "player"}, LogLevel::Info, 0);
             if (code != 0) fail("The build failed (exit code " + std::to_string(code) + "); the errors are above");
         }
         checkCancel();
@@ -273,9 +338,9 @@ private:
             fail("There's no player at " + m_player.string() + " to package. Build it first");
         log(LogLevel::Info, "Checking the project");
         std::vector<std::string> lines;
-        const int code = packaging::runCommand(
-            headless() + shellQuote(m_player) + " --check " + shellQuote(m_project.file),
-            [&](std::string_view line) { lines.emplace_back(line); });
+        const int code = run(
+            m_player, {"--check", arg(m_project.file)}, [&](std::string_view line) { lines.emplace_back(line); },
+            kToolTimeout, true);
         for (const std::string& line : lines) {
             const bool fine = line.rfind("ok ", 0) == 0 || line.rfind("0 problems", 0) == 0;
             log(fine || code == 0 ? LogLevel::Info : LogLevel::Error, line);
@@ -290,9 +355,9 @@ private:
     void cook() {
         log(LogLevel::Info, "Cooking for release");
         std::vector<std::string> lines;
-        const int code = packaging::runCommand(
-            headless() + shellQuote(m_player) + " --cook --release " + shellQuote(m_project.file),
-            [&](std::string_view line) { lines.emplace_back(line); });
+        const int code = run(
+            m_player, {"--cook", "--release", arg(m_project.file)},
+            [&](std::string_view line) { lines.emplace_back(line); }, kToolTimeout, true);
         for (const std::string& line : lines) log(code == 0 ? LogLevel::Info : LogLevel::Error, line);
         if (code != 0) fail("The release cook failed (listed above); fix it, then package again");
         m_result.cook = cookManifestPath(m_project.root, packagePlatform());
@@ -306,22 +371,12 @@ private:
     void compressTextures() {
         if (m_project.textureCompression == "off") return;
         log(LogLevel::Info, "Compressing textures");
-        const int code = packaging::runCommand(
-            headless() + shellQuote(m_player) + " --optimise " + shellQuote(m_project.file),
-            [&](std::string_view line) { log(LogLevel::Info, line); });
+        const int code = run(
+            m_player, {"--optimise", arg(m_project.file)}, [&](std::string_view line) { log(LogLevel::Info, line); },
+            kToolTimeout, true);
         // Not fatal: players' machines compress what's missing on first run.
         if (code != 0) log(LogLevel::Warning, "Some textures couldn't be compressed; players' machines will do those");
         checkCancel();
-    }
-
-    // Tools run without a window or sound device, so packaging works on a headless
-    // machine (CI, an AI agent) too.
-    static std::string headless() {
-#if defined(_WIN32)
-        return "";
-#else
-        return "env -u LD_LIBRARY_PATH SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy ";
-#endif
     }
 
     // ---- Copy ---------------------------------------------------------------------------
@@ -333,6 +388,7 @@ private:
         gatherGame(items, m_staging / kLayout.game);
         if (m_settings.cppRuntime) gatherCppRuntime(items, m_staging / kLayout.cppRuntime);
 
+        checkNames(items);
         uintmax_t total = 0;
         std::set<fs::path> folders;
         for (const CopyItem& item : items) {
@@ -412,19 +468,20 @@ private:
     // size); the symbols plugins are loaded by stay.
     void strip(const fs::path& binaries) {
 #if defined(__linux__)
-        std::string files;
+        std::vector<std::string> files;
         std::error_code ec;
         for (const auto& entry : fs::recursive_directory_iterator(binaries, ec)) {
             if (!entry.is_regular_file(ec) || entry.is_symlink(ec)) continue;
             if (entry.path().parent_path().filename() == "cpp-runtime") continue;   // the system's, already stripped
-            if (packaging::readBinaryInfo(entry.path()).binary) files += " " + shellQuote(entry.path());
+            if (packaging::readBinaryInfo(entry.path()).binary) files.push_back(arg(entry.path()));
         }
         if (files.empty()) return;
         if (m_settings.keepSymbols) keepSymbols(binaries);
         log(LogLevel::Info, "Stripping symbols");
         std::vector<std::string> lines;
-        const int code = packaging::runCommand(
-            "strip --strip-unneeded" + files, [&](std::string_view line) { lines.emplace_back(line); });
+        files.insert(files.begin(), "--strip-unneeded");
+        const int code =
+            run("strip", std::move(files), [&](std::string_view line) { lines.emplace_back(line); }, kToolTimeout);
         if (code != 0)
             log(LogLevel::Warning,
                 "Couldn't strip symbols (is binutils installed?), so the package is bigger than it needs to be" +
@@ -439,7 +496,7 @@ private:
     void keepSymbols(const fs::path& binaries) {
         std::error_code ec;
         m_symbolsStaging = m_final.string() + "-symbols.partial";
-        fs::remove_all(m_symbolsStaging, ec);
+        makeStaging(m_symbolsStaging);
         size_t kept = 0;
         for (const auto& entry : fs::recursive_directory_iterator(binaries, ec)) {
             if (!entry.is_regular_file(ec) || entry.is_symlink(ec)) continue;
@@ -476,6 +533,7 @@ private:
             return;
         }
         fs::remove_all(final, ec);
+        fs::remove(m_symbolsStaging / kStagingMarker, ec);
         fs::rename(m_symbolsStaging, final, ec);
         if (ec) {
             log(LogLevel::Warning, "Couldn't move the symbols into place: " + ec.message());
@@ -483,6 +541,21 @@ private:
         }
         m_symbolsStaging.clear();
         m_result.symbols = final;
+    }
+
+    // Two files whose names differ only by case would overwrite each other where players
+    // unpack the game on Windows or macOS.
+    void checkNames(const std::vector<CopyItem>& items) {
+        std::map<std::string, std::string> seen;
+        for (const CopyItem& item : items) {
+            const std::u8string text = item.to.lexically_relative(m_staging).generic_u8string();
+            const std::string rel(text.begin(), text.end());
+            const auto [at, added] = seen.emplace(pathCaseKey(rel), rel);
+            if (!added && at->second != rel)
+                fail(
+                    "The package would hold both " + at->second + " and " + rel +
+                    ", which are the same file on Windows and macOS. Rename one");
+        }
     }
 
     void add(std::vector<CopyItem>& items, const fs::path& from, const fs::path& to) {
@@ -569,6 +642,29 @@ private:
             const std::string relText = rel.generic_string();
             if (excluded(relText, it->path().filename().string()) || it->path() == output) {
                 if (it->is_directory(ec)) it.disable_recursion_pending();
+                continue;
+            }
+            if (it->is_symlink(ec)) {
+                // Followed deliberately: a link to a file inside the project ships as that
+                // file; one that leads out of the project (or nowhere) stops packaging,
+                // rather than shipping something from elsewhere on this machine.
+                const fs::path target = fs::weakly_canonical(it->path(), ec);
+                const fs::path root = fs::weakly_canonical(m_project.root, ec);
+                const fs::path inside = target.lexically_relative(root);
+                if (fs::is_directory(target, ec)) {
+                    log(LogLevel::Warning, relText + " is a link to a folder; it isn't packaged");
+                    continue;
+                }
+                if (inside.empty() || *inside.begin() == ".." || !fs::is_regular_file(target, ec))
+                    fail(
+                        relText + " is a link to " + fs::read_symlink(it->path(), ec).string() +
+                        ", outside the project or missing; the package won't ship it. Copy the file in instead");
+                if (m_options.release && !m_cook.asset(relText)) {
+                    ++m_result.leftOut;
+                    continue;
+                }
+                items.push_back({target, to / rel, fs::file_size(target, ec), false});
+                ++content;
                 continue;
             }
             if (it->is_regular_file(ec)) {
@@ -850,9 +946,9 @@ private:
         // Run it: the packaged player finds its project and code from inside the folder.
         log(LogLevel::Info, "Running the packaged game's own checks");
         std::vector<std::string> lines;
-        const int code = packaging::runCommand(
-            headless() + shellQuote(binaries / m_executable) + " --check",
-            [&](std::string_view line) { lines.emplace_back(line); });
+        const int code = run(
+            binaries / m_executable, {"--check"}, [&](std::string_view line) { lines.emplace_back(line); },
+            kToolTimeout, true);
         if (code != 0) {
             for (const std::string& line : lines) log(LogLevel::Error, line);
             fail("The packaged game didn't pass its own checks (exit code " + std::to_string(code) + ")");
@@ -896,6 +992,7 @@ private:
         // Only now does the new package replace the old one.
         fs::remove_all(m_final, ec);
         if (ec) fail("Can't remove the previous package " + m_final.string() + ": " + ec.message());
+        fs::remove(m_staging / kStagingMarker, ec);
         fs::rename(m_staging, m_final, ec);
         if (ec) fail("Can't move the package into place: " + ec.message());
         m_staging.clear();
@@ -913,9 +1010,8 @@ private:
             const fs::path partial = archive.string() + ".partial";
             log(LogLevel::Info, "Archiving to " + archive.filename().string());
             const int code =
-                run("tar -czf " + shellQuote(partial) + " -C " + shellQuote(m_final.parent_path()) + " " +
-                        shellQuote(m_final.filename()),
-                    LogLevel::Warning);
+                run("tar", {"-czf", arg(partial), "-C", arg(m_final.parent_path()), arg(m_final.filename())},
+                    LogLevel::Warning, kToolTimeout);
             if (code != 0) {
                 fs::remove(partial, ec);
                 fail("Making the archive failed (tar exit code " + std::to_string(code) + "); the folder is ready");

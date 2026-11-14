@@ -90,6 +90,8 @@ releaseInputs(const shockwave::Project& project, const std::map<std::string, sho
         inputs.userPathsApplicationId = request.applicationId;
         inputs.userPathsProblem = error;
     }
+    // Crash recovery (S12): crash capture, kept symbols and unresolved crash reports.
+    shockwave::crashReleaseInputs(project, inputs);
     return inputs;
 }
 
