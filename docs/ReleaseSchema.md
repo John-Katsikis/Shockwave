@@ -64,7 +64,7 @@ ticked by hand. A release is qualified only when every gate that applies has pas
 | `release_tier` | S10 | `Config/ReleaseTier.swtier` names the fallback preset and the effects the art direction needs, and the presets and project defaults provide them (docs/ReleaseTier.md) |
 | `online_lifecycle` | S11 | evidence of a full online match lifecycle with map rotation, on the real service (online only) |
 | `crash_recovery` | S12 | evidence of local crash reports, symbols and a safe restart that keeps player data |
-| `platform:<name>` | S13 | a clean-machine install, play-through and update on that platform |
+| `platform:<name>` | S13 | an install record (`player --verify-install --install-record`) from that platform: a release package of the current, optimised build installed read-only at a path with spaces and non-ASCII letters, played with a real GPU, updated and reinstalled, every step passed |
 
 Gates that later batches measure stay `unverified` until their evidence exists.
 
@@ -96,6 +96,7 @@ Codes are stable; tools can match them. Messages may change.
 | `ReleaseDevelopmentAppId` | warning | online over Steam AppID 480, Valve's test app |
 | `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |
 | `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |
+| `InstallUnreadable` | warning | an install record in `Release/Installs` doesn't read |
 | `ReleaseTierUnreadable` | error | `Config/ReleaseTier.swtier` can't be opened |
 | `ReleaseTierSyntax` | error | the tier file has an unknown word, setting or value, or a line is incomplete |
 | `ReleaseTierFallbackTooLow` | error | the fallback preset draws a mandatory effect below its minimum |

@@ -198,7 +198,12 @@ fields, gates or codes, regenerate the schema:
 ```sh
 build/bin/player --release-schema docs/ReleaseSchema.md
 build/bin/player --project <file.swproject> --release-info [--json out.json]
+build/bin/player --verify-install <package> --flow-test <scenario> --renderer null [--json out.json]
 ```
+
+`--verify-install` installs a package read-only at an awkward path and plays it with a
+clean environment; `--install-record "<machine>" --project <game>` keeps the evidence
+the platform gates read (`docs/Release.md#platforms`).
 
 ## Networking
 

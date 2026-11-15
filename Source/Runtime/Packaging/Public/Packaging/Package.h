@@ -168,4 +168,21 @@ PackageResult packageProject(const Project& project, const PackageSettings& sett
 // so the player runs that one wherever it's started from. Nothing in a normal build.
 std::optional<std::filesystem::path> packagedProject();
 
+// What Binaries/shockwave-package.txt says about a package (docs/Packaging.md): which
+// project it runs, its name, version, platform and build, and the program players start.
+struct PackageInfo {
+    std::string project;   // relative to Binaries/, like "../Game/Space.swproject"
+    std::string name, version, platform, engine, buildType, created;
+    std::string executable;   // the program's file name in Binaries/ (without .exe); "" from older packagers
+    bool release = false;
+    std::string contentId, buildId;   // a release's cook ("" otherwise)
+    std::string minimumGlibc, minimumCppRuntime;
+};
+// Reads `package`/Binaries/shockwave-package.txt. False, with why, when it's missing or a
+// line doesn't read; unknown keys are kept out of the way (a newer packager may add some).
+bool readPackageInfo(const std::filesystem::path& package, PackageInfo& out, std::string& error);
+// The file a player of this package starts: the launcher at the top of the folder on Linux
+// and macOS, Binaries/<executable>.exe on Windows. Empty when the info doesn't name one.
+std::filesystem::path packageEntryPoint(const std::filesystem::path& package, const PackageInfo& info);
+
 }   // namespace shockwave

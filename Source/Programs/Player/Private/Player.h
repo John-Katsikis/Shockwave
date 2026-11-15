@@ -30,6 +30,7 @@
 #include <Projects/LevelCatalog.h>
 #include <Projects/Project.h>
 #include <Projects/ReleaseSettings.h>
+#include <Renderer/GpuSelection.h>
 
 #include <array>
 #include <map>
@@ -257,6 +258,19 @@ int diagnosticsInfo(
     const shockwave::Project& project, const shockwave::UserPaths* paths, const DiagnosticsCommand& command,
     const fs::path& json);
 int symbolizeReport(const DiagnosticsCommand& command, const fs::path& json);   // no project
+// player --verify-install (PlayerInstall.cpp, S13, docs/Release.md#platforms): installs a
+// package read-only at an awkward path, plays scenarios in it with a clean environment and
+// keeps the evidence (--install-record) for the platform gates.
+struct InstallCommand {
+    fs::path package;   // --verify-install folder
+    std::vector<fs::path> scenarios;   // --flow-test, in order; or the contract's acceptance scenario
+    std::string machine;   // --install-record "machine": writes a .swinstall
+    fs::path recordFolder;   // --output, or the project's Release/Installs
+    fs::path workFolder;   // --install-dir: where to install (a temporary folder otherwise)
+    bool keep = false;   // --keep-install
+    bool verbose = false;   // --verbose: the game's own output too
+};
+int verifyInstall(const InstallCommand& command, const std::string& renderer, const fs::path& json);   // no project
 // Safe graphics: the lowest tier, windowed, no pipeline cache (applied by main()).
 shockwave::GraphicsSettings safeGraphics(const shockwave::Project& project, const shockwave::GraphicsSettings& base);
 
@@ -283,6 +297,8 @@ int releaseSchema(const fs::path& file);
 // The game's build now, as a cook names it (16 hex digits): a package's Cook.swcook, or the
 // project's latest cook for this platform. "" without one. Performance records name it.
 std::string currentBuildId(const shockwave::Project& project);
+// A GPU's kind as records name it: "dedicated", "integrated", "virtual", "software", "other".
+const char* gpuRecordKind(shockwave::GpuKind kind);
 // --cook-info file [--verify folder] [--json out]: a cook manifest, and its files checked.
 int cookInfo(const fs::path& file, const fs::path& verifyRoot, const fs::path& json);
 int levelSchema(const fs::path& file);
@@ -529,6 +545,7 @@ private:
     void startFlowTest();
     void driveFlowTest();
     void endFlowTest();
+    std::string runJson();   // the flow report's "run": build, renderer, GPU
     // --perf-run (PlayerPerformance.cpp): each frame files the last frame's sample under
     // loading, warm-up or a level's play; at the end prints the report and writes the
     // JSON and the record.

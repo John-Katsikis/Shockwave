@@ -111,11 +111,15 @@ measured:
   record from real hardware, on an optimised build of the current cook, counts.
 - release_tier (S10, [ReleaseTier.md](ReleaseTier.md)): `Config/ReleaseTier.swtier` names a
   fallback preset and the mandatory effects, and the presets and project defaults provide them.
+- crash_recovery (S12, [Diagnostics.md](Diagnostics.md)): no unresolved crash reports, and
+  packages keep their symbols.
+- each `platform:<name>` (S13, [below](#platforms)): the install records in
+  `Release/Installs`, from `player --verify-install --install-record`.
 
 The gates for later batches stay `unverified` until their evidence exists. That covers
-level travel, saves, settings, cooking, online lifecycle, crash recovery and each
-platform. So for now no project qualifies, and the
-report says exactly why.
+level travel, saves, settings, cooking and the online lifecycle. A platform stays
+`unverified` until a record also proves an update and a reinstall, which S13 part 2 adds.
+So for now no project qualifies, and the report says exactly why.
 
 Exit codes follow the plan's convention:
 
@@ -126,6 +130,55 @@ Exit codes follow the plan's convention:
 The JSON report (format 1) carries every gate and every diagnostic. Each diagnostic has a
 stable `code` (listed in ReleaseSchema.md), a `severity`, a `file`, a `line`, an `object`
 (the key) and a `message`. Unknown values are `null`, never a made-up 0.
+
+## Platforms
+
+Each platform the contract names has its own gate, and a compile pass doesn't count: the
+evidence is the game installed on that platform and played there. `player --verify-install`
+gathers it:
+
+```sh
+build/bin/player --verify-install Saved/Packages/SpaceAce-1.2.0-linux-x86_64 \
+    --flow-test Tests/flow/save-and-quit.json --flow-test Tests/flow/continue.json \
+    --install-record "Yianni's desktop" --project Games/SpaceAce
+```
+
+It installs the package the hard way, then plays it:
+
+1. **install**: hashes every file in the package (and its `.tar.gz`, when there is one),
+   copies it into a read-only folder whose path has spaces and non-ASCII letters, and checks
+   the copy is exact.
+2. **check**: starts the program the package's marker names (only that program, never
+   anything a report or file suggests) from another folder, with a minimal environment: a
+   fresh home folder, `PATH=/usr/bin:/bin`, no `LD_LIBRARY_PATH` and none of the engine's
+   settings. Only display, audio and Vulkan driver variables pass through. The game's own
+   `--check` must pass.
+3. **scenario**: plays each `--flow-test` scenario in order with the same player data, so
+   one can save and quit and the next continue. Without any, it plays the contract's
+   `acceptance_scenario`. Each report must come from this package's build.
+4. **user data**: the player's saves and settings landed in the fresh home's per-user
+   folders, and the install folder is still byte for byte as it was. As root, where the
+   system doesn't enforce read-only, this check is what proves it.
+5. **update** and **reinstall** come with S13 part 2; until then they're recorded as skipped.
+
+`--renderer null` plays without a GPU (CI does this). `--install-dir folder` installs there
+instead of a temporary folder; it must be empty or one this tool made, and it's removed
+afterwards unless you add `--keep-install`. `--verbose` shows the game's own output and
+`--json report.json` writes every step. The exit code is 0 when every step passed.
+
+`--install-record "<machine>"` keeps what it saw in
+`Release/Installs/<machine>-<platform>.swinstall` (or in `--output folder`): the machine
+(OS, distribution, C library, CPU), how the game drew (renderer, GPU and driver, from the
+game's own report), the package (version, build type, the cook's build and content IDs,
+the SHA-256 of its files and archive) and every step with its result. Unknown keys are
+errors, and a record whose steps failed can't say it passed.
+
+A platform's gate passes on a record from a release package of the current, optimised
+build, installed the hard way, played with a real GPU (not the null or a software renderer),
+with every step passed, an update and a reinstall included. When the newest record of the
+current build failed, the gate fails and names the step. Otherwise it stays `unverified`
+and says what's missing. A record on one machine never stands in for another platform or
+architecture.
 
 ## In the editor
 
@@ -139,6 +192,10 @@ budgets** button instead of those rows. Nothing is written until you press **Sav
 The window follows the file: when a tool or another editor changes it, and nothing is being
 edited, it shows the new one.
 
+Its **Platforms** section lists each platform the contract names with the install records
+behind its gate: the machine, the package and its hashes, and what the record proves or
+lacks. Hover a row to see every step.
+
 **Help > Shipping implementation guide** opens the plan itself.
 
 ## Code
@@ -147,7 +204,12 @@ edited, it shows the new one.
   gates. Projects depends only on Core. The caller reads the other settings into
   `ReleaseInputs`; Player and the editor both do this.
 - `Projects/Diagnostic.h`: the machine-readable diagnostic with a stable code.
+- `Projects/InstallRecord.h`: install records and the platform gates; the player's
+  `PlayerInstall.cpp` is `--verify-install`.
 - Tests:
   - `release` (`Tests/ReleaseTest.cpp`) covers parsing, ranges, rules and gates;
   - `release_cli` (`Tests/ReleaseCheck.cmake`) covers `--check`, `--release-info` and
-    `--release-schema` on a copy of Arena.
+    `--release-schema` on a copy of Arena;
+  - `install_records` (`Tests/InstallRecordTest.cpp`) covers records and the platform gates;
+  - `installed_game_flow` (`Tests/InstalledGameCheck.cmake`) verifies a release package of
+    Reactor Run installed the hard way.

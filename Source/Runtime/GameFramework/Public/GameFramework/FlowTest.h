@@ -127,7 +127,9 @@ public:
     // Why it failed (empty while running or once passed).
     const std::string& message() const { return m_message; }
     size_t step() const { return m_step; }   // the step running, or the one that failed
-    std::string reportJson() const;
+    // The report. `run`, when given, is a JSON object about the program that ran (its build,
+    // renderer and GPU), written as "run" near the top.
+    std::string reportJson(std::string_view run = {}) const;
 
 private:
     struct Record {

@@ -4,6 +4,9 @@
 #include <GameFramework/SaveGame.h>
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
+#include <Packaging/Package.h>
+#include <Renderer/GpuSelection.h>
+#include <Renderer/Renderer.h>
 
 #include <cstdio>
 #include <fstream>
@@ -174,12 +177,39 @@ void Player::driveFlowTest() {
     engine().quit();
 }
 
+// What ran, for the report: a verifier (player --verify-install) checks it's the package it
+// installed, and records the renderer and GPU the game really used.
+std::string Player::runJson() {
+    auto q = [](std::string_view text) {
+        std::string out = "\"";
+        for (const char c : text) {
+            if (c == '"' || c == '\\') out += '\\';
+            if (static_cast<unsigned char>(c) >= 0x20) out += c;
+        }
+        return out + "\"";
+    };
+    shockwave::Renderer& renderer = engine().renderer();
+    std::string kind = "none", driver;
+    if (const shockwave::GpuChoice* choice = renderer.gpuChoice())
+        if (const shockwave::GpuCandidate* gpu = choice->chosenGpu()) {
+            kind = gpuRecordKind(gpu->kind);
+            driver = gpu->driver;
+        }
+    const fs::path packaged = packagedProjectFile();
+    return std::string("{\"packaged\": ") + (packaged.empty() ? "false" : "true") +
+           ", \"package_project\": " + q(packaged.empty() ? std::string() : packaged.filename().string()) +
+           ", \"build_id\": " + q(currentBuildId(m_project)) +
+           ", \"build_type\": " + q(shockwave::engineBuildConfig()) + ", \"renderer\": " + q(renderer.backendName()) +
+           ", \"gpu\": " + q(renderer.gpuName() ? renderer.gpuName() : "") + ", \"gpu_kind\": " + q(kind) +
+           ", \"gpu_driver\": " + q(driver) + "}";
+}
+
 void Player::endFlowTest() {
     if (!m_flowTest) return;
     const bool passed = m_flowTest->state() == shockwave::FlowTest::State::Passed;
     std::string message = m_flowTest->message();
     if (m_flowTest->state() == shockwave::FlowTest::State::Running) message = "the player stopped before it finished";
-    const std::string report = m_flowTest->reportJson();
+    const std::string report = m_flowTest->reportJson(runJson());
     if (m_perf) {
         // The perf run's own report goes to --json instead; the flow's failure still fails it.
         endPerformance(passed);

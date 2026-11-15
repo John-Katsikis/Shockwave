@@ -737,8 +737,9 @@ FlowTest::State FlowTest::frame(double frameDt) {
     return m_state;
 }
 
-std::string FlowTest::reportJson() const {
+std::string FlowTest::reportJson(std::string_view run) const {
     std::string out = "{\n  \"format\": 1,\n  \"mode\": \"flow_test\",\n";
+    if (!run.empty()) out += "  \"run\": " + std::string(run) + ",\n";
     out += "  \"scenario\": " + quote(m_scenario.name) + ",\n";
     out += std::string("  \"ok\": ") + (m_state == State::Passed ? "true" : "false") + ",\n";
     out += std::string("  \"state\": ") +

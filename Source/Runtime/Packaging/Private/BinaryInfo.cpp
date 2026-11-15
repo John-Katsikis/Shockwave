@@ -67,6 +67,27 @@ std::string gccForGlibcxx(const std::string& glibcxx) {
     return {};
 }
 
+unsigned hostElfMachine() {
+#if defined(__x86_64__) || defined(_M_X64)
+    return 62;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    return 183;
+#else
+    return 0;
+#endif
+}
+
+std::string elfMachineName(unsigned machine) {
+    switch (machine) {
+    case 3: return "i386";
+    case 40: return "ARM (32-bit)";
+    case 62: return "x86-64";
+    case 183: return "AArch64";
+    case 243: return "RISC-V";
+    default: return "machine " + std::to_string(machine);
+    }
+}
+
 BinaryInfo readBinaryInfo(const std::filesystem::path& file) {
     BinaryInfo info;
     std::ifstream in(file, std::ios::binary);
@@ -77,6 +98,15 @@ BinaryInfo readBinaryInfo(const std::filesystem::path& file) {
                                               "ELF",
                                               4) != 0)
         return info;
+    info.elf = true;
+    info.elfClass = magic[4];
+    info.byteOrder = magic[5];
+    unsigned char machine[2] = {};
+    in.seekg(0x12);
+    if (in.read(reinterpret_cast<char*>(machine), 2))
+        info.machine =
+            info.byteOrder == 2 ? unsigned(machine[0]) << 8 | machine[1] : unsigned(machine[1]) << 8 | machine[0];
+    in.clear();
     if (magic[4] != 2 || magic[5] != 1) return info;   // 64-bit little-endian only
     in.seekg(0);
     const std::vector<char> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());

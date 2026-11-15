@@ -73,6 +73,12 @@ releaseInputs(const shockwave::Project& project, const std::map<std::string, sho
     inputs.performanceFiles = std::move(records.files);
     inputs.performanceProblems = std::move(records.problems);
     inputs.currentBuildId = currentBuildId(project);
+    // Install records (S13): Release/Installs/*.swinstall, the evidence for the platform gates.
+    shockwave::InstallRecords installs = shockwave::readInstallRecords(project);
+    inputs.installChecked = true;
+    inputs.installRecords = std::move(installs.records);
+    inputs.installFiles = std::move(installs.files);
+    inputs.installProblems = std::move(installs.problems);
     // The graphics release tier (S10): Config/ReleaseTier.swtier against the presets.
     shockwave::releaseTierInputs(project, inputs);
 
