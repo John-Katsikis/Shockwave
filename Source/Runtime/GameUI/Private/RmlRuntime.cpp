@@ -89,7 +89,11 @@ class FileInterface final : public Rml::FileInterface {
 public:
     Rml::FileHandle Open(const Rml::String& path) override {
         const fs::path file = resolve(path);
-        std::FILE* handle = std::fopen(file.string().c_str(), "rb");
+#if defined(_WIN32)
+        std::FILE* handle = _wfopen(file.c_str(), L"rb");   // any letters in the folder's name
+#else
+        std::FILE* handle = std::fopen(file.c_str(), "rb");
+#endif
         if (handle)
             if (Capture* c = capture(); c && c->opened) c->opened->insert(file);
         return reinterpret_cast<Rml::FileHandle>(handle);
