@@ -552,7 +552,8 @@ void ReleaseWindow::drawPlatforms() {
             ImGui::TableNextColumn();
             const std::vector<std::string> problems = shockwave::installProblems(r, m_inputs.currentBuildId);
             if (problems.empty())
-                ImGui::TextColored(gateColor(GateStatus::Passed), "installed, played, updated and reinstalled");
+                ImGui::TextColored(
+                    gateColor(GateStatus::Passed), "installed, played, updated, downgraded and reinstalled");
             else
                 ImGui::TextWrapped("%s%s", problems.front().c_str(), problems.size() > 1 ? " (and more)" : "");
             if (ImGui::IsItemHovered() && !r.steps.empty()) {

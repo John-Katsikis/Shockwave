@@ -140,10 +140,14 @@ gathers it:
 ```sh
 build/bin/player --verify-install Saved/Packages/SpaceAce-1.2.0-linux-x86_64 \
     --flow-test Tests/flow/save-and-quit.json --flow-test Tests/flow/continue.json \
+    --update-from Saved/Packages/SpaceAce-1.1.0-linux-x86_64 \
     --install-record "Yianni's desktop" --project Games/SpaceAce
 ```
 
-It installs the package the hard way, then plays it:
+It installs the package the hard way, then plays it. With `--update-from <older package>`
+(same platform, at least two scenarios), it first installs and plays the older version the
+same way (**install previous**, then the first scenario on it, so there's a save to carry),
+then installs this one over it:
 
 1. **install**: hashes every file in the package (and its `.tar.gz`, when there is one),
    copies it into a read-only folder whose path has spaces and non-ASCII letters, and checks
@@ -159,7 +163,18 @@ It installs the package the hard way, then plays it:
 4. **user data**: the player's saves and settings landed in the fresh home's per-user
    folders, and the install folder is still byte for byte as it was. As root, where the
    system doesn't enforce read-only, this check is what proves it.
-5. **update** and **reinstall** come with S13 part 2; until then they're recorded as skipped.
+5. **update**: every save the older version left is still there and the newer version
+   continued it. A save the newer version wrote at a higher save schema must have its old
+   file kept beside it, byte for byte (see [Save games](SaveGames.md#updates)). The two
+   packages must be different builds. Without `--update-from` this step and the next are
+   recorded as skipped.
+6. **downgrade**: the older version is put back and runs `--check` and `--saves` over the
+   newer data. It must not change or remove a single save file, and when the save schema
+   rose it must say those saves are from a newer version. Continue then uses the copies kept
+   from before the update.
+7. **reinstall**: the install folder is removed and the package installed again at another
+   path. The game must still find every save (by its application ID, not where it was
+   installed) and load each one.
 
 `--renderer null` plays without a GPU (CI does this). `--install-dir folder` installs there
 instead of a temporary folder; it must be empty or one this tool made, and it's removed
@@ -175,7 +190,7 @@ errors, and a record whose steps failed can't say it passed.
 
 A platform's gate passes on a record from a release package of the current, optimised
 build, installed the hard way, played with a real GPU (not the null or a software renderer),
-with every step passed, an update and a reinstall included. When the newest record of the
+with every step passed, an update, a downgrade and a reinstall included. When the newest record of the
 current build failed, the gate fails and names the step. Otherwise it stays `unverified`
 and says what's missing. A record on one machine never stands in for another platform or
 architecture.

@@ -699,6 +699,37 @@ std::vector<SaveInfo> listSaveGames(const fs::path& folder, bool broken) {
     return saves;
 }
 
+fs::path schemaCopyPath(const fs::path& file, int schema) { return file.string() + ".schema" + std::to_string(schema); }
+
+std::optional<fs::path> olderSchemaCopy(const fs::path& file, int readsUpTo) {
+    std::error_code ec;
+    for (int schema = readsUpTo; schema >= 1; --schema) {
+        const fs::path copy = schemaCopyPath(file, schema);
+        if (fs::is_regular_file(copy, ec)) return copy;
+    }
+    return std::nullopt;
+}
+
+namespace {
+
+// A save written by a newer version of the game, and the copy of the slot kept from before
+// that version first wrote it (an older schema this game reads), as the slot to load.
+std::optional<SaveInfo> fallbackFor(const SaveInfo& save, const SaveIdentity& identity, std::string& note) {
+    if (save.schema <= identity.schema || save.file.empty()) return std::nullopt;
+    const std::optional<fs::path> copy = olderSchemaCopy(save.file, identity.schema);
+    if (!copy) return std::nullopt;
+    SaveInfo older;
+    std::string error;
+    if (!readSaveInfo(*copy, older, error)) return std::nullopt;
+    older.slot = save.slot;
+    if (!checkSaveCompatible(older, identity, error)) return std::nullopt;
+    note = "\"" + save.slot + "\" was saved by a newer version of the game (save schema " +
+           std::to_string(save.schema) + "); using the copy kept from before that version wrote it";
+    return older;
+}
+
+}   // namespace
+
 std::optional<SaveInfo> newestCompatibleSave(const fs::path& folder, const SaveIdentity& identity, std::string* why) {
     std::error_code ec;
     if (folder.empty() || !fs::is_directory(folder, ec)) return std::nullopt;
@@ -710,6 +741,12 @@ std::optional<SaveInfo> newestCompatibleSave(const fs::path& folder, const SaveI
             if (why) *why = passed;
             return save;
         }
+        // After a downgrade: the slot as it was before the newer version wrote it.
+        if (std::string note; save.problem.empty())
+            if (std::optional<SaveInfo> older = fallbackFor(save, identity, note)) {
+                if (why) *why = note;
+                return older;
+            }
         if (passed.empty()) passed = "\"" + save.slot + "\" can't be loaded: " + error;
     }
     if (why) *why = passed;
@@ -726,7 +763,23 @@ bool readSaveRestore(
         return readSaveGame(in, from.string(), assets, into.world, into.info, why, warnings);
     };
     SaveRestore result;
-    if (!read(file, result, error)) {
+    // A slot a newer version of the game wrote: the copy kept from before it did, if there is one.
+    fs::path from = file;
+    std::string fallbackNote;
+    {
+        SaveInfo header;
+        std::string ignored;
+        if (readSaveInfo(file, header, ignored) && header.schema > identity.schema)
+            if (const std::optional<fs::path> copy = olderSchemaCopy(file, identity.schema)) {
+                const std::string note =
+                    "\"" + file.stem().string() + "\" was saved by a newer version of the game (save schema " +
+                    std::to_string(header.schema) + "); loaded the copy kept from before that version wrote it";
+                SW_LOG(LogGame, Warning, "Save games: {}", note);
+                fallbackNote = note;
+                from = *copy;
+            }
+    }
+    if (!read(from, result, error)) {
         // A damaged slot falls back to the backup its last write kept, saying so.
         const fs::path backup = file.string() + ".bak";
         std::error_code ec;
@@ -741,6 +794,7 @@ bool readSaveRestore(
         result = std::move(older);
         error.clear();
     }
+    if (warnings && !fallbackNote.empty()) warnings->push_back(fallbackNote);   // the read starts its own list
     result.info.slot = file.stem().string();
     result.info.file = file;
     if (!checkSaveCompatible(result.info, identity, error) || !migrateSave(result.info, identity, error)) return false;
@@ -795,6 +849,38 @@ bool writeOne(SaveJobs& shared, SaveJobs::Write& job) {
     std::ostringstream text;
     writeSaveGame(text, *job.snapshot, *job.assets, info);
     std::string error;
+    if (readable && disk.schema > info.schema) {
+        // A newer version of the game wrote this slot: an older one never writes over it.
+        error = coded(
+            SaveError::NewerSchema, "slot \"" + info.slot +
+                                        "\" was saved by a newer version of the game (save schema " +
+                                        std::to_string(disk.schema) + "); this version (schema " +
+                                        std::to_string(info.schema) + ") leaves it as it is");
+        SW_LOG(LogGame, Warning, "Save games: {}", error);
+        std::lock_guard lock(shared.mutex);
+        shared.lastError = error;
+        return false;
+    }
+    if (readable && disk.schema < info.schema) {
+        // The first write by a newer schema: the slot as the older version left it is kept
+        // (once), so going back to that version still has it.
+        const fs::path copy = schemaCopyPath(info.file, disk.schema);
+        if (!fs::exists(copy, ec)) {
+            fs::copy_file(info.file, copy, ec);
+            if (ec) {
+                error = coded(
+                    SaveError::WriteFailed, "couldn't keep a copy of slot \"" + info.slot + "\" from save schema " +
+                                                std::to_string(disk.schema) + " first: " + ec.message());
+                SW_LOG(LogGame, Warning, "Save games: {}", error);
+                std::lock_guard lock(shared.mutex);
+                shared.lastError = error;
+                return false;
+            }
+            SW_LOG(
+                LogGame, Info, "Kept {} (save schema {}) before the first schema {} save", copy.string(), disk.schema,
+                info.schema);
+        }
+    }
     if (readable && expected && disk.revision != *expected) {
         // Someone else saved the slot since: keep both, overwrite neither.
         const fs::path aside = info.file.string() + ".conflict";
@@ -1095,6 +1181,8 @@ bool SaveGames::remove(std::string_view slot) {
     std::error_code ec;
     const bool removed = fs::remove(fileFor(slot), ec);
     fs::remove(fileFor(slot).string() + ".bak", ec);
+    for (int schema = 1; schema <= std::max(m_identity.schema, 1); ++schema)
+        fs::remove(schemaCopyPath(fileFor(slot), schema), ec);
     std::lock_guard lock(m_shared->mutex);
     m_shared->revisions.erase(std::string(slot));
     return removed;

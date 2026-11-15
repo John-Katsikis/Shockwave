@@ -7,12 +7,28 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <string>
 #include <limits>
 #include <memory>
 
 namespace shockwave {
 namespace {
+// File names for C APIs. SDL takes UTF-8 everywhere; on Windows a narrow path() string is
+// the ANSI code page instead, so a folder with non-ASCII letters wouldn't open.
+std::string utf8(const std::filesystem::path& path) {
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+std::FILE* openForReading(const std::filesystem::path& path) {
+#if defined(_WIN32)
+    return _wfopen(path.c_str(), L"rb");
+#else
+    return std::fopen(path.c_str(), "rb");
+#endif
+}
 std::string extension(const std::filesystem::path& path) {
     auto value = path.extension().string();
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -45,7 +61,7 @@ bool loadAudioClip(const std::filesystem::path& path, AudioClip& clip, std::stri
     if (extension(path) == ".wav") {
         Uint8* buffer = nullptr;
         Uint32 length = 0;
-        if (!SDL_LoadWAV(path.string().c_str(), &src, &buffer, &length)) {
+        if (!SDL_LoadWAV(utf8(path).c_str(), &src, &buffer, &length)) {
             error = SDL_GetError();
             return false;
         }
@@ -58,7 +74,12 @@ bool loadAudioClip(const std::filesystem::path& path, AudioClip& clip, std::stri
         bytes = int(length);
     } else if (extension(path) == ".ogg") {
         int code = 0;
-        auto* vorbis = stb_vorbis_open_filename(path.string().c_str(), &code, nullptr);
+        std::FILE* file = openForReading(path);
+        if (!file) {
+            error = "can't open it";
+            return false;
+        }
+        auto* vorbis = stb_vorbis_open_file(file, 1, &code, nullptr);   // closes the file when done
         if (!vorbis) {
             error = "invalid Ogg Vorbis clip (decoder error " + std::to_string(code) + ")";
             return false;

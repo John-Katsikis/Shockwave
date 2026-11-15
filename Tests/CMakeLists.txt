@@ -1,17 +1,22 @@
+# Every test here needs a TIMEOUT and a label (checked at the end of this folder).
+cmake_language(DEFER CALL shockwave_check_tests)
 add_executable(ecs_test EcsTest.cpp)
 target_link_libraries(ecs_test PRIVATE Shockwave::Physics)
 shockwave_warnings(ecs_test)
 add_test(NAME ecs COMMAND ecs_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(ecs PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(prefab_test PrefabTest.cpp)
 target_link_libraries(prefab_test PRIVATE Shockwave::Engine)
 shockwave_warnings(prefab_test)
 add_test(NAME prefab COMMAND prefab_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(prefab PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(ui_theme_test UiThemeTest.cpp)
 target_link_libraries(ui_theme_test PRIVATE Shockwave::UI)
 add_test(NAME ui_theme COMMAND ui_theme_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(ui_theme PROPERTIES TIMEOUT 60 LABELS unit)
 
 # Packaging: settings files, and a whole package made and run through the CLI.
 # Tests labelled gpu need a Vulkan driver; `ctest -LE gpu` runs the rest.
@@ -19,6 +24,7 @@ add_executable(package_test PackageTest.cpp)
 target_link_libraries(package_test PRIVATE Shockwave::Packaging)
 shockwave_warnings(package_test)
 add_test(NAME package COMMAND package_test)
+set_tests_properties(package PROPERTIES TIMEOUT 60 LABELS unit)
 if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_sample)
     add_test(NAME package_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
@@ -115,16 +121,18 @@ add_executable(project_test ProjectTest.cpp)
 target_link_libraries(project_test PRIVATE Shockwave::GameFramework)
 add_test(NAME project COMMAND project_test ${CMAKE_SOURCE_DIR}/Templates/Blank
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(project PROPERTIES TIMEOUT 60 LABELS unit)
 add_test(NAME project_create_cli COMMAND ${CMAKE_COMMAND}
     -DPLAYER=$<TARGET_FILE:player>
     -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/ProjectCreateCLI
     -P ${CMAKE_CURRENT_SOURCE_DIR}/ProjectCreateCheck.cmake)
+set_tests_properties(project_create_cli PROPERTIES TIMEOUT 120 LABELS integration)
 
 add_executable(save_game_test SaveGameTest.cpp)
 target_link_libraries(save_game_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(save_game_test)
 add_test(NAME save_games COMMAND save_game_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-set_tests_properties(save_games PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+set_tests_properties(save_games PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS unit)
 # Level lifetime (S03): LevelHost travel, counted lifecycles, failures, stale requests and
 # refs, redirect cycles and editor-style Play cycles, without a window.
 add_executable(level_lifetime_test LevelLifetimeTest.cpp)
@@ -195,8 +203,12 @@ if(SHOCKWAVE_MODULAR AND NOT WIN32 AND TARGET game_shippingdemo)
         -DLIBRARY_SUFFIX=${CMAKE_SHARED_LIBRARY_SUFFIX}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/PackageReleaseCheck.cmake)
     set_tests_properties(package_release PROPERTIES TIMEOUT 300 LABELS integration)
-    # An installed package played the hard way (S13, docs/Release.md#platforms): read-only
-    # at an awkward path, a clean environment, save then continue, and the record it keeps.
+endif()
+# An installed package played the hard way (S13, docs/Release.md#platforms): read-only at an
+# awkward path, a clean environment, save then continue, an update from an older version and
+# back, a reinstall, and the record it keeps. Also on Windows (one program, no archive), as
+# CI evidence that the Windows package installs and plays on the null renderer.
+if(TARGET game_shippingdemo AND (SHOCKWAVE_MODULAR OR WIN32))
     add_test(NAME installed_game_flow COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
@@ -255,11 +267,13 @@ add_executable(circuit_test CircuitTest.cpp)
 target_link_libraries(circuit_test PRIVATE Shockwave::Circuits)
 shockwave_warnings(circuit_test)
 add_test(NAME circuits COMMAND circuit_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(circuits PROPERTIES TIMEOUT 120 LABELS unit)
 
 add_executable(model_test ModelTest.cpp)
 target_link_libraries(model_test PRIVATE Shockwave::Engine)
 add_test(NAME model_import COMMAND model_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(model_import PROPERTIES TIMEOUT 120 LABELS unit)
 
 # Explicitly invoked only: needs a real Vulkan GPU/display.
 add_executable(model_gpu_smoke ModelGpuSmoke.cpp)
@@ -269,19 +283,19 @@ add_executable(physics_test PhysicsTest.cpp)
 target_link_libraries(physics_test PRIVATE Shockwave::GameFramework)
 add_test(NAME physics COMMAND physics_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-set_tests_properties(physics PROPERTIES TIMEOUT 60)
+set_tests_properties(physics PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(input_test InputTest.cpp)
 target_link_libraries(input_test PRIVATE Shockwave::Input)
 shockwave_warnings(input_test)
 add_test(NAME input COMMAND input_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-set_tests_properties(input PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy")
+set_tests_properties(input PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=dummy" LABELS unit TIMEOUT 60)
 
 add_executable(audio_test AudioTest.cpp)
 target_link_libraries(audio_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(audio_test)
 add_test(NAME audio COMMAND audio_test ${CMAKE_SOURCE_DIR})
-set_tests_properties(audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+set_tests_properties(audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
 # Spatial audio twice: with Steam Audio (when this build ships libphonon) and with the
 # library hidden, which must fall back to simple panning.
 add_executable(spatial_audio_test SpatialAudioTest.cpp)
@@ -289,10 +303,10 @@ target_link_libraries(spatial_audio_test PRIVATE Shockwave::Audio)
 shockwave_warnings(spatial_audio_test)
 if(SHOCKWAVE_STEAM_AUDIO AND steamaudio_library AND EXISTS ${steamaudio_library})
     add_test(NAME spatial_audio COMMAND spatial_audio_test steam)
-    set_tests_properties(spatial_audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    set_tests_properties(spatial_audio PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS unit)
 endif()
 add_test(NAME spatial_audio_fallback COMMAND spatial_audio_test simple)
-set_tests_properties(spatial_audio_fallback PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SHOCKWAVE_PHONON=none" TIMEOUT 60)
+set_tests_properties(spatial_audio_fallback PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SHOCKWAVE_PHONON=none" TIMEOUT 60 LABELS unit)
 find_program(SHOCKWAVE_XVFB_RUN xvfb-run)
 if(SHOCKWAVE_XVFB_RUN AND TARGET game_sample)
     add_test(NAME audio_cli_check COMMAND ${CMAKE_COMMAND}
@@ -301,24 +315,26 @@ if(SHOCKWAVE_XVFB_RUN AND TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/AudioCLI
         -DXVFB=${SHOCKWAVE_XVFB_RUN}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/AudioCheck.cmake)
-    set_tests_properties(audio_cli_check PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    set_tests_properties(audio_cli_check PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS integration)
     add_test(NAME save_games_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Sample/Sample.swproject
         -DXVFB=${SHOCKWAVE_XVFB_RUN}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/SaveGameCheck.cmake)
-    set_tests_properties(save_games_cli PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
+    set_tests_properties(save_games_cli PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS integration)
 endif()
 
 add_executable(render_graph_test RenderGraphTest.cpp)
 target_link_libraries(render_graph_test PRIVATE Shockwave::RHI)
 shockwave_warnings(render_graph_test)
 add_test(NAME render_graph COMMAND render_graph_test)
+set_tests_properties(render_graph PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(gpu_selection_test GpuSelectionTest.cpp)
 target_link_libraries(gpu_selection_test PRIVATE Shockwave::Renderer)
 shockwave_warnings(gpu_selection_test)
 add_test(NAME gpu_selection COMMAND gpu_selection_test)
+set_tests_properties(gpu_selection PROPERTIES TIMEOUT 60 LABELS unit)
 
 add_executable(frame_pacing_test FramePacingTest.cpp)
 target_link_libraries(frame_pacing_test PRIVATE Shockwave::Projects)
@@ -327,13 +343,14 @@ add_test(NAME frame_pacing COMMAND frame_pacing_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 # It measures real sleeps, which shared macOS CI machines stretch by several milliseconds;
 # CI runs tests labelled timing there without failing the build.
-set_tests_properties(frame_pacing PROPERTIES LABELS timing)
+set_tests_properties(frame_pacing PROPERTIES LABELS timing TIMEOUT 120)
 
 # Mesh optimisation and texture compression without a GPU (docs/Optimisation.md).
 add_executable(optimisation_test OptimisationTest.cpp)
 target_link_libraries(optimisation_test PRIVATE Shockwave::Assets Shockwave::Projects)
 shockwave_warnings(optimisation_test)
 add_test(NAME optimisation COMMAND optimisation_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(optimisation PROPERTIES TIMEOUT 120 LABELS unit)
 
 # Plugins: renderer swapping and game code hot reload (modular builds only, where they
 # are libraries).
@@ -353,6 +370,7 @@ if(SHOCKWAVE_MODULAR)
     target_link_libraries(hot_reload_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(hot_reload_test)
     add_test(NAME hot_reload COMMAND hot_reload_test $<TARGET_FILE:reload_module_v1> $<TARGET_FILE:reload_module_v2>)
+    set_tests_properties(hot_reload PROPERTIES TIMEOUT 120 LABELS integration)
 
     add_executable(renderer_swap_test RendererSwapTest.cpp)
     target_link_libraries(renderer_swap_test PRIVATE Shockwave::Engine)
@@ -369,23 +387,26 @@ add_executable(game_ui_test GameUITest.cpp)
 target_link_libraries(game_ui_test PRIVATE Shockwave::GameUI)
 shockwave_warnings(game_ui_test)
 add_test(NAME game_ui COMMAND game_ui_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(game_ui PROPERTIES TIMEOUT 120 LABELS unit)
 
 # Navigation (Recast & Detour) without a GPU: baking, paths, rebakes, files and agents.
 add_executable(navigation_test NavigationTest.cpp)
 target_link_libraries(navigation_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(navigation_test)
 add_test(NAME navigation COMMAND navigation_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-set_tests_properties(navigation PROPERTIES TIMEOUT 60)
+set_tests_properties(navigation PROPERTIES TIMEOUT 60 LABELS unit)
 add_executable(effects_test EffectsTest.cpp)
 target_link_libraries(effects_test PRIVATE Shockwave::Effects)
 shockwave_warnings(effects_test)
 add_test(NAME effects COMMAND effects_test ${CMAKE_SOURCE_DIR} WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(effects PROPERTIES TIMEOUT 120 LABELS unit)
 # Skeletal animation (ozz-animation) without a GPU: import, play, loop, cross-fade,
 # joints and the Animator checks, on the sample's Fox.
 add_executable(animation_test AnimationTest.cpp)
 target_link_libraries(animation_test PRIVATE Shockwave::Animation)
 shockwave_warnings(animation_test)
 add_test(NAME animation COMMAND animation_test ${CMAKE_SOURCE_DIR})
+set_tests_properties(animation PROPERTIES TIMEOUT 120 LABELS unit)
 
 if(TARGET game_sample)
 add_test(NAME circuits_cli COMMAND ${CMAKE_COMMAND}
@@ -402,14 +423,14 @@ target_link_libraries(graphics_test PRIVATE Shockwave::Engine)
 shockwave_warnings(graphics_test)
 shockwave_link_plugins(graphics_test)
 add_test(NAME graphics COMMAND graphics_test)
-set_tests_properties(graphics PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+set_tests_properties(graphics PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
 # Texture quality and material samplers (A01, G02): headless, then on Vulkan (gpu).
 add_executable(texture_quality_test TextureQualityTest.cpp)
 target_link_libraries(texture_quality_test PRIVATE Shockwave::Engine)
 shockwave_warnings(texture_quality_test)
 shockwave_link_plugins(texture_quality_test)
 add_test(NAME texture_quality COMMAND texture_quality_test null)
-set_tests_properties(texture_quality PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+set_tests_properties(texture_quality PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
 add_test(NAME texture_quality_vulkan COMMAND texture_quality_test vulkan)
 set_tests_properties(texture_quality_vulkan PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 60 LABELS gpu)
@@ -419,71 +440,83 @@ add_executable(screen_space_test ScreenSpaceTest.cpp)
 target_link_libraries(screen_space_test PRIVATE Shockwave::Engine)
 shockwave_warnings(screen_space_test)
 add_test(NAME screen_space COMMAND screen_space_test)
+set_tests_properties(screen_space PROPERTIES TIMEOUT 60 LABELS unit)
 # Baked lighting (G05, G06): the files, binding identities, the CPU baker and probe
 # sampling. No GPU: these run anywhere.
 add_executable(lighting_format_test LightingFormatTest.cpp)
 target_link_libraries(lighting_format_test PRIVATE Shockwave::Assets)
 shockwave_warnings(lighting_format_test)
 add_test(NAME lighting_format COMMAND lighting_format_test)
+set_tests_properties(lighting_format PROPERTIES TIMEOUT 60 LABELS unit)
 add_executable(lighting_identity_test LightingIdentityTest.cpp)
 target_link_libraries(lighting_identity_test PRIVATE Shockwave::Engine)
 shockwave_warnings(lighting_identity_test)
 add_test(NAME lighting_identity COMMAND lighting_identity_test)
+set_tests_properties(lighting_identity PROPERTIES TIMEOUT 60 LABELS unit)
 add_executable(lighting_bake_test LightingBakeTest.cpp)
 target_link_libraries(lighting_bake_test PRIVATE Shockwave::Lighting)
 shockwave_warnings(lighting_bake_test)
 add_test(NAME lighting_bake COMMAND lighting_bake_test)
-set_tests_properties(lighting_bake PROPERTIES TIMEOUT 300)
+set_tests_properties(lighting_bake PROPERTIES TIMEOUT 300 LABELS unit)
 add_executable(diffuse_probe_test DiffuseProbeTest.cpp)
 target_link_libraries(diffuse_probe_test PRIVATE Shockwave::Assets)
 shockwave_warnings(diffuse_probe_test)
 add_test(NAME diffuse_probes COMMAND diffuse_probe_test)
+set_tests_properties(diffuse_probes PROPERTIES TIMEOUT 120 LABELS unit)
 # Reflection probes (G07): cube faces, box projection, selection, blending, the cube file,
 # capture resampling, the prefilter and the manifest. No GPU.
 add_executable(reflection_probe_test ReflectionProbeTest.cpp)
 target_link_libraries(reflection_probe_test PRIVATE Shockwave::Assets)
 shockwave_warnings(reflection_probe_test)
 add_test(NAME reflection_probes COMMAND reflection_probe_test)
+set_tests_properties(reflection_probes PROPERTIES TIMEOUT 120 LABELS unit)
 # Decals (G08, A03): box projection, fades, composition, budget pruning, the component,
 # impact marks and their lifetimes, and the decals_quality setting. No GPU.
 add_executable(decal_test DecalTest.cpp)
 target_link_libraries(decal_test PRIVATE Shockwave::Engine)
 shockwave_warnings(decal_test)
 add_test(NAME decals COMMAND decal_test)
+set_tests_properties(decals PROPERTIES TIMEOUT 60 LABELS unit)
 # Motion vectors and TAA (G09, G10): jitter, reprojection, history resets and the resolve's
 # maths. No GPU.
 add_executable(temporal_test TemporalTest.cpp)
 target_link_libraries(temporal_test PRIVATE Shockwave::Engine)
 shockwave_warnings(temporal_test)
 add_test(NAME temporal COMMAND temporal_test)
+set_tests_properties(temporal PROPERTIES TIMEOUT 60 LABELS unit)
 # Clustered lighting (G11): the grid and its budget, depth slices, cluster boxes against
 # jittered pixels, the light sphere test and the light_culling setting. No GPU.
 add_executable(cluster_test ClusterTest.cpp)
 target_link_libraries(cluster_test PRIVATE Shockwave::Engine)
 shockwave_warnings(cluster_test)
 add_test(NAME clusters COMMAND cluster_test)
+set_tests_properties(clusters PROPERTIES TIMEOUT 60 LABELS unit)
 # Particles (A04): the soft particle fade and the particle settings.
 add_executable(particle_test ParticleTest.cpp)
 target_link_libraries(particle_test PRIVATE Shockwave::Engine)
 shockwave_warnings(particle_test)
 add_test(NAME particles COMMAND particle_test)
+set_tests_properties(particles PROPERTIES TIMEOUT 60 LABELS unit)
 # Colour, exposure and fog (A05, A06): white balance, LUTs, metering, adaptation, the fog
 # closed forms, phase and composition, froxel grids.
 add_executable(postprocess_test PostProcessTest.cpp)
 target_link_libraries(postprocess_test PRIVATE Shockwave::Engine)
 shockwave_warnings(postprocess_test)
 add_test(NAME postprocess COMMAND postprocess_test)
+set_tests_properties(postprocess PROPERTIES TIMEOUT 60 LABELS unit)
 # Character and specialized shading (A07-A09): clearcoat energy, Snell and Fresnel,
 # absorption, anisotropic GGX, the skin kernel.
 add_executable(shading_test ShadingTest.cpp)
 target_link_libraries(shading_test PRIVATE Shockwave::Engine)
 shockwave_warnings(shading_test)
 add_test(NAME shading COMMAND shading_test)
+set_tests_properties(shading PROPERTIES TIMEOUT 60 LABELS unit)
 # Occlusion culling (G12): the hierarchical depth, projected bounds, conservative tests.
 add_executable(culling_test CullingTest.cpp)
 target_link_libraries(culling_test PRIVATE Shockwave::Engine)
 shockwave_warnings(culling_test)
 add_test(NAME culling COMMAND culling_test)
+set_tests_properties(culling PROPERTIES TIMEOUT 60 LABELS unit)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -491,14 +524,14 @@ target_link_libraries(material_test PRIVATE Shockwave::Engine)
 shockwave_warnings(material_test)
 shockwave_link_plugins(material_test)
 add_test(NAME materials COMMAND material_test)
-set_tests_properties(materials PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30)
+set_tests_properties(materials PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
 if(TARGET game_arena)
     add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_SOURCE_DIR}/Games/Arena/Arena.swproject
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsCLI
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsCheck.cmake)
-    set_tests_properties(graphics_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    set_tests_properties(graphics_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS integration)
 endif()
 
 # The renderer's fixture project (Tests/fixtures/graphics, docs/GraphicsVerification.md):
@@ -507,14 +540,14 @@ if(TARGET game_sample)
     add_test(NAME graphics_fixtures COMMAND player --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject
         --check)
     set_tests_properties(graphics_fixtures PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
-                         TIMEOUT 120)
+                         TIMEOUT 120 LABELS integration)
     add_test(NAME graphics_materials_info COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/MaterialInfo
         -P ${CMAKE_CURRENT_SOURCE_DIR}/MaterialInfoCheck.cmake)
     set_tests_properties(graphics_materials_info PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS integration)
     add_test(NAME graphics_fixtures_render COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
@@ -607,7 +640,7 @@ if(TARGET game_sample)
             --project ${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Graphics.swproject --no-user-graphics --renderer null
             --graphics-report)
         set_tests_properties(graphics_report_null PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy"
-                             TIMEOUT 120 PASS_REGULAR_EXPRESSION "renderer: null.*settings \\(requested -> effective\\)")
+                             TIMEOUT 120 PASS_REGULAR_EXPRESSION "renderer: null.*settings \\(requested -> effective\\)" LABELS integration)
     endif()
 endif()
 
@@ -617,47 +650,47 @@ add_executable(network_wire_test NetworkWireTest.cpp)
 target_link_libraries(network_wire_test PRIVATE Shockwave::Network)
 shockwave_warnings(network_wire_test)
 add_test(NAME network_wire COMMAND network_wire_test ${CMAKE_SOURCE_DIR}/docs/NetworkProtocol.md)
-set_tests_properties(network_wire PROPERTIES TIMEOUT 120)
+set_tests_properties(network_wire PROPERTIES TIMEOUT 120 LABELS unit)
 
 add_executable(network_transport_test NetworkTransportTest.cpp)
 target_link_libraries(network_transport_test PRIVATE Shockwave::Network)
 shockwave_warnings(network_transport_test)
 add_test(NAME network_transport COMMAND network_transport_test)
-set_tests_properties(network_transport PROPERTIES TIMEOUT 120)
+set_tests_properties(network_transport PROPERTIES TIMEOUT 120 LABELS unit)
 
 add_executable(network_capture_test NetworkCaptureTest.cpp)
 target_link_libraries(network_capture_test PRIVATE Shockwave::Network)
 shockwave_warnings(network_capture_test)
 add_test(NAME network_capture COMMAND network_capture_test)
-set_tests_properties(network_capture PROPERTIES TIMEOUT 60)
+set_tests_properties(network_capture PROPERTIES TIMEOUT 60 LABELS unit)
 
 # Batch 2: network settings, manifest, digests, the replication registry and its codec.
 add_executable(network_settings_test NetworkSettingsTest.cpp)
 target_link_libraries(network_settings_test PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(network_settings_test)
 add_test(NAME network_settings COMMAND network_settings_test)
-set_tests_properties(network_settings PROPERTIES TIMEOUT 60)
+set_tests_properties(network_settings PROPERTIES TIMEOUT 60 LABELS unit)
 
 # Session integration: real PlaySessions going online over the loopback hub.
 add_executable(network_session_test NetworkSessionTest.cpp)
 target_link_libraries(network_session_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(network_session_test)
 add_test(NAME network_session COMMAND network_session_test)
-set_tests_properties(network_session PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
+set_tests_properties(network_session PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300 LABELS integration)
 
 # Map rotation (shipping plan S11): controlled session restart with lobby continuity.
 add_executable(network_map_rotation_test NetworkMapRotationTest.cpp)
 target_link_libraries(network_map_rotation_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(network_map_rotation_test)
 add_test(NAME network_map_rotation COMMAND network_map_rotation_test)
-set_tests_properties(network_map_rotation PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300)
+set_tests_properties(network_map_rotation PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy;SDL_VIDEO_DRIVER=dummy" TIMEOUT 300 LABELS integration)
 
 # Replication without prediction: baselines, keys, spawns, snapshots, budgets, bad data.
 add_executable(network_replication_test NetworkReplicationTest.cpp)
 target_link_libraries(network_replication_test PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(network_replication_test)
 add_test(NAME network_replication COMMAND network_replication_test)
-set_tests_properties(network_replication PROPERTIES TIMEOUT 300)
+set_tests_properties(network_replication PROPERTIES TIMEOUT 300 LABELS unit)
 
 # Prediction and presentation: Physics' network API, the input sampler, the prediction
 # net-test on every fault preset.
@@ -665,21 +698,21 @@ add_executable(network_prediction_test NetworkPredictionTest.cpp)
 target_link_libraries(network_prediction_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(network_prediction_test)
 add_test(NAME network_prediction COMMAND network_prediction_test)
-set_tests_properties(network_prediction PROPERTIES TIMEOUT 300)
+set_tests_properties(network_prediction PROPERTIES TIMEOUT 300 LABELS unit)
 
 # Batch 8: lag-compensated shots, game events, presentation dedup and network circuits.
 add_executable(network_combat_test NetworkCombatTest.cpp)
 target_link_libraries(network_combat_test PRIVATE Shockwave::GameFramework)
 shockwave_warnings(network_combat_test)
 add_test(NAME network_combat COMMAND network_combat_test)
-set_tests_properties(network_combat PROPERTIES TIMEOUT 300)
+set_tests_properties(network_combat PROPERTIES TIMEOUT 300 LABELS unit)
 
 # Delta snapshots, interpolation, rewind history.
 add_executable(test_snapshot_delta SnapshotDeltaTest.cpp)
 target_link_libraries(test_snapshot_delta PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_snapshot_delta)
 add_test(NAME test_snapshot_delta COMMAND test_snapshot_delta)
-set_tests_properties(test_snapshot_delta PROPERTIES TIMEOUT 120)
+set_tests_properties(test_snapshot_delta PROPERTIES TIMEOUT 120 LABELS unit)
 
 # Diagnostics (S12, docs/Diagnostics.md): the log ring, context, redaction, log files, the
 # session marker and symbolization; then real crashes in a child program.
@@ -720,13 +753,13 @@ add_executable(test_rewind_buffer RewindBufferTest.cpp)
 target_link_libraries(test_rewind_buffer PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_rewind_buffer)
 add_test(NAME test_rewind_buffer COMMAND test_rewind_buffer)
-set_tests_properties(test_rewind_buffer PROPERTIES TIMEOUT 120)
+set_tests_properties(test_rewind_buffer PROPERTIES TIMEOUT 120 LABELS unit)
 
 add_executable(test_replication_allocations ReplicationAllocationTest.cpp)
 target_link_libraries(test_replication_allocations PRIVATE Shockwave::Multiplayer)
 shockwave_warnings(test_replication_allocations)
 add_test(NAME test_replication_allocations COMMAND test_replication_allocations)
-set_tests_properties(test_replication_allocations PROPERTIES TIMEOUT 120)
+set_tests_properties(test_replication_allocations PROPERTIES TIMEOUT 120 LABELS unit)
 
 # Batch 3: Steam services and the Steam Datagram Relay transport, against MockSteamApi, so
 # they run without the Steamworks SDK, a Steam client or an AppID.
@@ -737,7 +770,7 @@ if(SHOCKWAVE_STEAMWORKS)
     target_compile_definitions(test_steam_services PRIVATE SHOCKWAVE_TEST_STEAM_SDK=1)
 endif()
 add_test(NAME test_steam_services COMMAND test_steam_services)
-set_tests_properties(test_steam_services PROPERTIES TIMEOUT 60)
+set_tests_properties(test_steam_services PROPERTIES TIMEOUT 60 LABELS online_mock)
 
 # Batch 9: hosting, finding, joining, inviting and leaving (OnlineMatch) over the Steam
 # mock with real sessions, and a packet capture of one.
@@ -745,13 +778,13 @@ add_executable(online_match_test OnlineMatchTest.cpp)
 target_link_libraries(online_match_test PRIVATE Shockwave::Multiplayer Shockwave::SteamServices)
 shockwave_warnings(online_match_test)
 add_test(NAME online_match COMMAND online_match_test)
-set_tests_properties(online_match PROPERTIES TIMEOUT 120)
+set_tests_properties(online_match PROPERTIES TIMEOUT 120 LABELS online_mock)
 
 add_executable(test_sdr_transport_mock SdrTransportMockTest.cpp)
 target_link_libraries(test_sdr_transport_mock PRIVATE Shockwave::SteamServices)
 shockwave_warnings(test_sdr_transport_mock)
 add_test(NAME test_sdr_transport_mock COMMAND test_sdr_transport_mock)
-set_tests_properties(test_sdr_transport_mock PROPERTIES TIMEOUT 120)
+set_tests_properties(test_sdr_transport_mock PROPERTIES TIMEOUT 120 LABELS online_mock)
 
 # The real Steam, by hand (-DSHOCKWAVE_STEAM_TESTS=ON with the SDK): Steam running and
 # signed in, a project whose Config/Network.swnetwork has the test AppID, and its

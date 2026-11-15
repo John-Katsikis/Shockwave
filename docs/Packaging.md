@@ -8,9 +8,11 @@ Packages are made for the platform you package on. Linux is the platform package
 tested on: CI packages and plays one in every run, and
 [`player --verify-install`](Release.md#platforms) proves one on a given machine. The packager
 also has macOS code (the package ships MoltenVK, so players need nothing installed, and
-runs on the macOS version it was built on or newer) and Windows code (no launcher or
-archive yet), but no macOS or Windows package has been verified, so neither is a supported
-target until that platform has its own install record.
+runs on the macOS version it was built on or newer) and Windows code (players start
+`Binaries/<game>.exe`; no archive yet). CI packages, installs, updates and reinstalls one
+on both on every push, on the null renderer ([Testing](Testing.md#ci)). That proves the
+install, not the graphics, so neither is a supported target until that platform has an
+install record from a real machine with a real GPU.
 
 ## Package your game
 
@@ -197,8 +199,10 @@ do.
 
 ## Limits
 
-- Packages are for the platform you package on. Only Linux packages are verified so far
-  (see the top of this page).
+- Packages are for the platform you package on. Only Linux packages are verified so far;
+  macOS and Windows packages pass CI's install checks without a GPU (see the top of this
+  page).
+- Windows packages have no archive: zip the folder by hand.
 - There's no icon or desktop menu entry yet.
 - Packages use the modular build: the engine as shared libraries next to the program.
   A build with `SHOCKWAVE_MODULAR=OFF` packages too, as one program.

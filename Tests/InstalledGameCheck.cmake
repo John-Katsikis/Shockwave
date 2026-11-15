@@ -6,7 +6,10 @@
 # passes its own --check, saves and quits, then continues in a second run; its data lands in
 # the fresh home and the install folder stays unchanged. The record it keeps reads back,
 # and the platform gate says what it proves (not the graphics, on the null renderer). The
-# contract's acceptance scenario plays by default. A broken package fails its check and
+# contract's acceptance scenario plays by default. With --update-from, 1.0.0 is installed,
+# played and saved first, then 1.1.0 (a newer save schema) replaces it and continues; 1.0.0
+# put back refuses the newer saves and overwrites nothing; a reinstall elsewhere still
+# finds them. After that only the renderer keeps the gate unverified. A broken package fails its check and
 # fails the gate. A folder that isn't a package, or a work folder the tool didn't make, is
 # refused and left alone.
 foreach(var PLAYER PROJECT TEMP LIBRARY_SUFFIX)
@@ -14,8 +17,14 @@ foreach(var PLAYER PROJECT TEMP LIBRARY_SUFFIX)
         message(FATAL_ERROR "InstalledGameCheck.cmake needs -D${var}=...")
     endif()
 endforeach()
-if(EXISTS "${TEMP}")
+if(EXISTS "${TEMP}" AND NOT CMAKE_HOST_WIN32)
     execute_process(COMMAND chmod -R u+w "${TEMP}")
+endif()
+# Windows packages have no archive yet (docs/Packaging.md#limits).
+if(CMAKE_HOST_WIN32)
+    set(ARCHIVES OFF)
+else()
+    set(ARCHIVES ON)
 endif()
 file(REMOVE_RECURSE "${TEMP}")
 set(G "${TEMP}/Spaced Ünïcode/Reactor Run")
@@ -82,7 +91,7 @@ expect_text("passed +install .*read-only folder with spaces and non-ASCII letter
 expect_text("passed +check " "the installed game's --check")
 expect_text("passed +scenario resume-quit.json .*passed +scenario resume-continue.json .*null renderer" "both scenarios")
 expect_text("passed +user data .*the install folder is unchanged" "the player's data")
-expect_text("skipped +update" "updates, for part 2")
+expect_text("skipped +update .*needs --update-from" "no update without --update-from")
 expect_text("verify-install passed" "the verdict")
 if(EXISTS "${WORK}")
     message(FATAL_ERROR "--verify-install left its work folder behind: ${WORK}")
@@ -95,14 +104,21 @@ string(JSON hash GET "${json}" package_sha256)
 string(JSON archive GET "${json}" archive_sha256)
 string(LENGTH "${hash}" hash_length)
 string(LENGTH "${archive}" archive_length)
-if(NOT ok OR NOT steps EQUAL 7 OR NOT first STREQUAL "install" OR NOT hash_length EQUAL 64 OR
-   NOT archive_length EQUAL 64)
+if(ARCHIVES)
+    set(archive_expected 64)
+else()
+    set(archive_expected 0)
+endif()
+if(NOT ok OR NOT steps EQUAL 8 OR NOT first STREQUAL "install" OR NOT hash_length EQUAL 64 OR
+   NOT archive_length EQUAL archive_expected)
     message(FATAL_ERROR "the verify-install report: ${json}")
 endif()
 # The archive's hash is the archive's.
-file(SHA256 "${P}.tar.gz" archive_file)
-if(NOT archive STREQUAL archive_file)
-    message(FATAL_ERROR "archive_sha256 ${archive} isn't the archive's (${archive_file})")
+if(ARCHIVES)
+    file(SHA256 "${P}.tar.gz" archive_file)
+    if(NOT archive STREQUAL archive_file)
+        message(FATAL_ERROR "archive_sha256 ${archive} isn't the archive's (${archive_file})")
+    endif()
 endif()
 set(RECORD "${G}/Release/Installs/test-machine-${platform_file}.swinstall")
 if(NOT EXISTS "${RECORD}")
@@ -121,12 +137,68 @@ expect_text("gate platform:${platform} unverified \\(S13\\): Release/Installs/te
 run(0 "${PLAYER}" --verify-install "${P}" --project "${G}" --renderer null)
 expect_text("passed +scenario resume-quit.json" "the acceptance scenario")
 
+# ---- An update: 1.0.0 played and saved, replaced by 1.1.0 with changed content and a newer
+# save schema; it continues the old save and keeps the old file; 1.0.0 put back explains
+# and overwrites nothing; removed and installed elsewhere, the saves are still found ----
+set(G2 "${TEMP}/Spaced Ünïcode/Reactor Run 2")
+file(COPY "${G}/" DESTINATION "${G2}" PATTERN "Release" EXCLUDE PATTERN "Saved" EXCLUDE)
+foreach(edit "ShippingDemo.swproject|save_schema 1|save_schema 2"
+             "Config/Package.swpackage|version \"1.0.0\"|version \"1.1.0\""
+             "Config/Release.swrelease|release_version \"1.0.0\"|release_version \"1.1.0\"")
+    string(REPLACE "|" ";" parts "${edit}")
+    list(GET parts 0 file)
+    list(GET parts 1 from)
+    list(GET parts 2 to)
+    file(READ "${G2}/${file}" text)
+    string(FIND "${text}" "${from}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "the update's project: no '${from}' in ${file}")
+    endif()
+    string(REPLACE "${from}" "${to}" text "${text}")
+    file(WRITE "${G2}/${file}" "${text}")
+endforeach()
+file(APPEND "${G2}/Content/Shell/credits.txt" "Thanks for playing version 1.1\n")
+run(0 "${PLAYER}" --project "${G2}" --package --release --no-build --no-archive --output "${TEMP}/out2")
+set(P2 "${TEMP}/out2/ReactorRun-1.1.0-${platform}")
+if(NOT IS_DIRECTORY "${P2}")
+    message(FATAL_ERROR "no 1.1.0 release package at ${P2}")
+endif()
+run(0 "${PLAYER}" --verify-install "${P2}" --update-from "${P}" --flow-test "${FLOWS}/resume-quit.json"
+    --flow-test "${FLOWS}/resume-continue.json" --renderer null --install-record "Update machine" --project "${G2}")
+expect_text("passed +install previous .*version 1\\.0\\.0" "the previous version's install")
+expect_text("passed +scenario resume-quit.json \\(previous version\\)" "the previous version's play")
+expect_text("passed +update .*from 1\\.0\\.0 .*save schema 1\\) to 1\\.1\\.0 .*save schema 2\\): [1-9][0-9]* saves? carried over.*kept as it was"
+    "the update")
+expect_text("passed +downgrade .*version 1\\.0\\.0 started over .*left every file as it was.*newer version"
+    "the downgrade")
+expect_text("passed +reinstall .*removed, installed again .*every one loads" "the reinstall")
+expect_text("verify-install passed" "the update's verdict")
+set(RECORD2 "${G2}/Release/Installs/update-machine-${platform_file}.swinstall")
+file(STRINGS "${RECORD2}" result REGEX "^result |^step \"(update|downgrade|reinstall)\" ")
+list(LENGTH result result_lines)
+list(FILTER result EXCLUDE REGEX "passed")
+if(NOT result_lines EQUAL 4 OR result)
+    message(FATAL_ERROR "the update's record: ${result}")
+endif()
+file(STRINGS "${RECORD2}" previous REGEX "^previous_version ")
+if(NOT previous STREQUAL "previous_version \"1.0.0\"")
+    message(FATAL_ERROR "the update's record doesn't name the version it updated from: ${previous}")
+endif()
+# Every step passed; what the gate still wants is a real GPU.
+run(0 "${PLAYER}" --project "${G2}" --release-info)
+expect_text("gate platform:${platform} unverified \\(S13\\): Release/Installs/update-machine-${platform_file}.swinstall doesn't qualify ${platform}: it played on the null renderer"
+    "the platform gate after an update")
+# An update needs a save to carry: one scenario isn't enough.
+run(2 "${PLAYER}" --verify-install "${P2}" --update-from "${P}" --flow-test "${FLOWS}/resume-quit.json")
+expect_text("give at least two" "an update with one scenario")
+
 # ---- A broken package fails, and so does the gate ----
 execute_process(COMMAND ${CMAKE_COMMAND} -E sleep 1)   # a newer record
 set(B "${TEMP}/broken/ReactorRun-1.0.0-broken")
 file(COPY "${P}/" DESTINATION "${B}")
+# Its game modules gone (a modular build) and a level's scene missing (every build).
 file(GLOB modules "${B}/Binaries/modules/*${LIBRARY_SUFFIX}")
-file(REMOVE ${modules})
+file(REMOVE ${modules} "${B}/Game/Scenes/ending.swscene")
 run(1 "${PLAYER}" --verify-install "${B}" --flow-test "${FLOWS}/resume-quit.json" --renderer null
     --install-record "Broken machine" --project "${G}")
 expect_text("failed +check .*--check: exit code 1" "the broken package's check")

@@ -11,6 +11,7 @@
 #include "Player.h"
 
 #include <Core/Process.h>
+#include <GameFramework/SaveGame.h>
 #include <Network/Sha256.h>
 #include <Packaging/Package.h>
 #include <Platform/SystemInfo.h>
@@ -22,6 +23,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 #if defined(__linux__)
@@ -272,11 +274,50 @@ bool runningAsRoot() {
 #endif
 }
 
+// Every save file in the player's folders (slots, their backups and the copies kept across
+// updates): path -> its SHA-256, and the save schema each slot's header names.
+struct SaveFile {
+    std::string sha256;
+    int schema = 0;   // 0 for a backup or copy, or a file that doesn't read
+};
+std::map<fs::path, SaveFile> saveFiles(const fs::path& home) {
+    std::map<fs::path, SaveFile> out;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(home, ec); !ec && it != fs::recursive_directory_iterator();
+         it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const std::string name = utf8(it->path().filename());
+        if (name.find(".swsave") == std::string::npos || name.find(".tmp") != std::string::npos) continue;
+        SaveFile f;
+        f.sha256 = fileSha256(it->path());
+        if (it->path().extension() == ".swsave") {
+            shockwave::SaveInfo header;
+            std::string ignored;
+            if (shockwave::readSaveInfo(it->path(), header, ignored)) f.schema = header.schema;
+        }
+        out.emplace(it->path(), f);
+    }
+    return out;
+}
+int highestSchema(const std::map<fs::path, SaveFile>& saves) {
+    int schema = 0;
+    for (const auto& [path, f] : saves) schema = std::max(schema, f.schema);
+    return schema;
+}
+size_t slotCount(const std::map<fs::path, SaveFile>& saves) {
+    size_t n = 0;
+    for (const auto& [path, f] : saves)
+        if (path.extension() == ".swsave") ++n;
+    return n;
+}
+
 struct Verifier {
     const InstallCommand& command;
     shockwave::InstallRecord record;
     fs::path work, installRoot, installed, home, temp, cwd, reports, scenarios;
-    shockwave::PackageInfo info;
+    shockwave::PackageInfo info;   // the package being verified
+    shockwave::PackageInfo previous;   // --update-from: the version installed first
+    const shockwave::PackageInfo* running = &info;   // the one installed now
     std::string installDigest;
 
     void step(std::string name, shockwave::InstallStepResult result, double seconds, std::string detail) {
@@ -293,7 +334,7 @@ struct Verifier {
     // Runs the installed game's entry point, the way a player would start it.
     shockwave::ProcessResult launch(std::vector<std::string> arguments, double timeout, std::deque<std::string>& tail) {
         shockwave::ProcessOptions options;
-        options.executable = shockwave::packageEntryPoint(installed, info);
+        options.executable = shockwave::packageEntryPoint(installed, *running);
         options.arguments = std::move(arguments);
         options.workingDirectory = cwd;
         options.environment = cleanEnvironment(home, temp);
@@ -344,6 +385,28 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
             utf8(package).c_str());
         return 1;
     }
+    // --update-from: the version players have now, updated to this one.
+    const bool updating = !command.updateFrom.empty();
+    const fs::path previousPackage = updating ? fs::absolute(command.updateFrom, ec).lexically_normal() : fs::path();
+    if (updating) {
+        if (!shockwave::readPackageInfo(previousPackage, v.previous, error)) {
+            std::fprintf(stderr, "error: %s: %s\n", utf8(previousPackage).c_str(), error.c_str());
+            return 1;
+        }
+        if (v.previous.platform != v.info.platform ||
+            shockwave::packageEntryPoint(previousPackage, v.previous).empty()) {
+            std::fprintf(
+                stderr, "error: %s isn't a %s package this tool can start\n", utf8(previousPackage).c_str(),
+                v.info.platform.c_str());
+            return 1;
+        }
+        if (command.scenarios.size() < 2) {
+            std::fprintf(
+                stderr, "error: --update-from plays the first --flow-test on the previous version and the rest after "
+                        "the update: give at least two (save, then continue)\n");
+            return 2;
+        }
+    }
     std::vector<fs::path> scenarioFiles = command.scenarios;
     if (scenarioFiles.empty()) {
         std::fprintf(
@@ -386,7 +449,8 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
     fs::create_directories(v.work, ec);
     std::ofstream(v.work / kWorkMarker) << "Made by player --verify-install; it removes this folder.\n";
     v.installRoot = v.work / pathOf("Installed Gämes 名前");
-    v.installed = v.installRoot / package.filename();
+    // One folder for every version, as an update in place would use.
+    v.installed = v.installRoot / pathOf(v.info.name.empty() ? utf8(package.filename()) : v.info.name);
     v.home = v.work / pathOf("home ü");
     v.temp = v.work / "tmp";
     v.cwd = v.work / pathOf("another folder");
@@ -420,59 +484,73 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
         "machine:        %s; %s%s\n", r.machine.empty() ? "(unnamed)" : r.machine.c_str(), r.os.c_str(),
         r.distribution.empty() ? "" : ("; " + r.distribution).c_str());
 
-    // ---- install: an exact copy, read-only, at an awkward path ----
-    {
-        const auto t = Clock::now();
-        const Digest source = folderDigest(package);
-        if (!source.error.empty()) {
-            v.step("install", shockwave::InstallStepResult::Failed, since(t), source.error);
-        } else {
-            r.packageSha256 = source.sha256;
-            r.files = source.files;
-            r.bytes = source.bytes;
-            if (const fs::path archive = pathOf(utf8(package) + ".tar.gz"); fs::is_regular_file(archive, ec))
-                r.archiveSha256 = fileSha256(archive);
-            fs::copy(package, v.installed, fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
-            const Digest copy = ec ? Digest{} : folderDigest(v.installed);
-            if (ec || copy.sha256 != source.sha256) {
-                v.step(
-                    "install", shockwave::InstallStepResult::Failed, since(t),
-                    ec ? "couldn't copy the package: " + ec.message() : "the copy doesn't match the package");
-            } else {
-                setWritable(v.installed, false);
-                v.installDigest = copy.sha256;
-                r.readOnly = true;
-                r.spacesInPath = r.unicodePath = r.otherFolder = r.cleanEnvironment = true;
-                std::ostringstream detail;
-                detail << "copied " << source.files << " files (" << (source.bytes >> 20)
-                       << " MiB) to a read-only folder with spaces and non-ASCII letters in its path; started from "
-                          "another folder with a minimal environment";
-                if (runningAsRoot())
-                    detail << " (as root, so the system doesn't enforce read-only: the folder is checked "
-                              "unchanged afterwards instead)";
-                v.step("install", shockwave::InstallStepResult::Passed, since(t), detail.str());
-            }
+    // Installs `source` at `to`, replacing whatever is there (a full-package update), as an
+    // exact read-only copy. False, with why.
+    auto installCopy = [&](const fs::path& source, const fs::path& to, const Digest& expected, std::string& why) {
+        std::error_code e;
+        if (fs::exists(to, e)) {
+            setWritable(to, true);
+            fs::remove_all(to, e);
         }
-    }
-
-    // ---- check: the installed game finds its project, code and plugins ----
-    if (!v.failed()) {
-        const auto t = Clock::now();
+        fs::create_directories(to.parent_path(), e);
+        fs::copy(source, to, fs::copy_options::recursive | fs::copy_options::copy_symlinks, e);
+        if (e) {
+            why = "couldn't copy the package: " + e.message();
+            return false;
+        }
+        const Digest copy = folderDigest(to);
+        if (copy.sha256 != expected.sha256) {
+            why = "the copy doesn't match the package";
+            return false;
+        }
+        setWritable(to, false);
+        v.installDigest = copy.sha256;
+        return true;
+    };
+    // Starts the installed game with a tool option; its lines come back in `lines`.
+    auto runTool = [&](std::vector<std::string> args, std::vector<std::string>& lines, std::string& why) {
         std::deque<std::string> tail;
-        const shockwave::ProcessResult result = v.launch({"--check"}, 300, tail);
-        if (result.ok())
-            v.step("check", shockwave::InstallStepResult::Passed, since(t), "its own --check passed");
-        else {
+        shockwave::ProcessOptions options;
+        options.executable = shockwave::packageEntryPoint(v.installed, *v.running);
+        options.arguments = std::move(args);
+        options.workingDirectory = v.cwd;
+        options.environment = cleanEnvironment(v.home, v.temp);
+        options.timeoutSeconds = 300;
+        options.onLine = [&](std::string_view line) {
+            if (command.verbose) std::printf("  | %.*s\n", int(line.size()), line.data());
+            lines.emplace_back(line);
+            tail.emplace_back(line);
+            if (tail.size() > 30) tail.pop_front();
+        };
+        const shockwave::ProcessResult result = shockwave::runProcess(options);
+        if (!result.ok()) {
             Verifier::printTail(tail);
-            v.step("check", shockwave::InstallStepResult::Failed, since(t), "--check: " + Verifier::why(result, tail));
+            why = Verifier::why(result, tail);
+            return false;
         }
+        return true;
+    };
+    auto contains = [](const std::vector<std::string>& lines, std::string_view text) {
+        return std::any_of(
+            lines.begin(), lines.end(), [&](const std::string& l) { return l.find(text) != std::string::npos; });
+    };
+    const Digest current = folderDigest(package);
+    if (current.error.empty()) {
+        r.packageSha256 = current.sha256;
+        r.files = current.files;
+        r.bytes = current.bytes;
+        if (const fs::path archive = pathOf(utf8(package) + ".tar.gz"); fs::is_regular_file(archive, ec))
+            r.archiveSha256 = fileSha256(archive);
     }
+    const std::string hardWay = "a read-only folder with spaces and non-ASCII letters in its path; started from "
+                                "another folder with a minimal environment";
+    const std::string rootNote = runningAsRoot() ? " (as root, so the system doesn't enforce read-only: the folder "
+                                                   "is checked unchanged afterwards instead)"
+                                                 : "";
 
-    // ---- scenarios, in order, sharing the player's data ----
-    for (size_t i = 0; i < scenarioFiles.size() && !v.failed(); ++i) {
+    // Plays scenario i on whatever is installed now, as the step `name`.
+    auto playScenario = [&](size_t i, const std::string& name, const shockwave::PackageInfo& expected) {
         const auto t = Clock::now();
-        const std::string name = "scenario " + utf8(scenarioFiles[i].filename());
-        // The scenario's own copy, so nothing is read from the engine checkout.
         const fs::path copy = v.scenarios / (std::to_string(i + 1) + "-" + utf8(scenarioFiles[i].filename()));
         fs::copy_file(scenarioFiles[i], copy, fs::copy_options::overwrite_existing, ec);
         const fs::path report = v.reports / (std::to_string(i + 1) + ".json");
@@ -494,26 +572,93 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
                 name, shockwave::InstallStepResult::Failed, since(t),
                 json.empty() ? "no report: " + Verifier::why(result, tail)
                              : "the flow test failed" + (message.empty() ? std::string() : ": " + message));
-            continue;
+            return;
         }
-        // The game that ran is this package, as built.
+        // The game that ran is the package installed, as built.
         const std::string ranBuild = reportString(json, "build_id");
-        if (reportString(json, "package_project").empty() || ranBuild != v.info.buildId) {
+        if (reportString(json, "package_project").empty() || ranBuild != expected.buildId) {
             v.step(
                 name, shockwave::InstallStepResult::Failed, since(t),
-                "the report doesn't come from this package (build \"" + ranBuild + "\", expected \"" + v.info.buildId +
-                    "\")");
-            continue;
+                "the report doesn't come from the installed package (build \"" + ranBuild + "\", expected \"" +
+                    expected.buildId + "\")");
+            return;
         }
-        r.renderer = reportString(json, "renderer");
-        r.gpu = reportString(json, "gpu");
-        r.gpuKind = reportString(json, "gpu_kind");
-        r.gpuDriver = reportString(json, "gpu_driver");
+        if (&expected == &v.info) {
+            r.renderer = reportString(json, "renderer");
+            r.gpu = reportString(json, "gpu");
+            r.gpuKind = reportString(json, "gpu_kind");
+            r.gpuDriver = reportString(json, "gpu_driver");
+        }
+        const std::string drew = reportString(json, "renderer"), gpu = reportString(json, "gpu");
         v.step(
             name, shockwave::InstallStepResult::Passed, since(t),
-            std::to_string(parsed[i].steps.size()) + " steps on the " + (r.renderer.empty() ? "?" : r.renderer) +
-                " renderer" + (r.gpu.empty() ? std::string() : " (" + r.gpu + ")"));
+            std::to_string(parsed[i].steps.size()) + " steps on the " + (drew.empty() ? "?" : drew) + " renderer" +
+                (gpu.empty() ? std::string() : " (" + gpu + ")"));
+    };
+
+    // ---- With --update-from: the older version first, played, then updated in place ----
+    size_t firstScenario = 0;
+    std::map<fs::path, SaveFile> beforeUpdate;
+    if (updating) {
+        const auto t = Clock::now();
+        const Digest older = folderDigest(previousPackage);
+        std::string why;
+        v.running = &v.previous;
+        if (!older.error.empty() || !installCopy(previousPackage, v.installed, older, why)) {
+            v.step(
+                "install previous", shockwave::InstallStepResult::Failed, since(t),
+                older.error.empty() ? why : older.error);
+        } else {
+            r.previousPackage = utf8(previousPackage.filename());
+            r.previousVersion = v.previous.version;
+            r.previousBuildId = v.previous.buildId;
+            r.previousSha256 = older.sha256;
+            v.step(
+                "install previous", shockwave::InstallStepResult::Passed, since(t),
+                "version " + v.previous.version + " (" + std::to_string(older.files) + " files) in " + hardWay);
+            playScenario(0, "scenario " + utf8(scenarioFiles[0].filename()) + " (previous version)", v.previous);
+        }
+        beforeUpdate = saveFiles(v.home);
+        firstScenario = 1;
     }
+
+    // ---- install: an exact copy, read-only, at an awkward path ----
+    if (!v.failed()) {
+        const auto t = Clock::now();
+        std::string why;
+        v.running = &v.info;
+        if (!current.error.empty()) {
+            v.step("install", shockwave::InstallStepResult::Failed, since(t), current.error);
+        } else if (!installCopy(package, v.installed, current, why)) {
+            v.step("install", shockwave::InstallStepResult::Failed, since(t), why);
+        } else {
+            r.readOnly = true;
+            r.spacesInPath = r.unicodePath = r.otherFolder = r.cleanEnvironment = true;
+            std::ostringstream detail;
+            if (updating)
+                detail << "replaced version " << v.previous.version << " with " << v.info.version << " in place (a "
+                       << "full-package update): ";
+            else
+                detail << "copied ";
+            detail << current.files << " files (" << (current.bytes >> 20) << " MiB) to " << hardWay << rootNote;
+            v.step("install", shockwave::InstallStepResult::Passed, since(t), detail.str());
+        }
+    }
+
+    // ---- check: the installed game finds its project, code and plugins ----
+    if (!v.failed()) {
+        const auto t = Clock::now();
+        std::vector<std::string> lines;
+        std::string why;
+        if (runTool({"--check"}, lines, why))
+            v.step("check", shockwave::InstallStepResult::Passed, since(t), "its own --check passed");
+        else
+            v.step("check", shockwave::InstallStepResult::Failed, since(t), "--check: " + why);
+    }
+
+    // ---- scenarios, in order, sharing the player's data ----
+    for (size_t i = firstScenario; i < scenarioFiles.size() && !v.failed(); ++i)
+        playScenario(i, "scenario " + utf8(scenarioFiles[i].filename()), v.info);
 
     // ---- user data: in the player's own folders; the install untouched ----
     if (!v.failed()) {
@@ -536,9 +681,121 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
                 "user data", shockwave::InstallStepResult::Passed, since(t),
                 std::to_string(written) + " files in the player's per-user folders; the install folder is unchanged");
     }
-    // S13 part 2 brings these; skipped says so in the record rather than leaving it to guess.
-    v.step("update", shockwave::InstallStepResult::Skipped, 0, "not verified yet (S13 part 2)");
-    v.step("reinstall", shockwave::InstallStepResult::Skipped, 0, "not verified yet (S13 part 2)");
+
+    // ---- update: what the older version saved carried over ----
+    if (!updating) {
+        v.step("update", shockwave::InstallStepResult::Skipped, 0, "needs --update-from <the previous package>");
+        v.step("downgrade", shockwave::InstallStepResult::Skipped, 0, "needs --update-from <the previous package>");
+    } else if (!v.failed()) {
+        const auto t = Clock::now();
+        const std::map<fs::path, SaveFile> afterUpdate = saveFiles(v.home);
+        const int oldSchema = highestSchema(beforeUpdate), newSchema = highestSchema(afterUpdate);
+        std::string problem;
+        size_t carried = 0, kept = 0;
+        for (const auto& [path, before] : beforeUpdate) {
+            if (path.extension() != ".swsave") continue;
+            const auto now = afterUpdate.find(path);
+            if (now == afterUpdate.end()) {
+                problem = utf8(path.filename()) + " from version " + v.previous.version + " is gone after the update";
+                break;
+            }
+            ++carried;
+            if (now->second.schema > before.schema) {
+                // Rewritten by the newer schema: the file as it was must be kept beside it.
+                const auto copy = afterUpdate.find(shockwave::schemaCopyPath(path, before.schema));
+                if (copy == afterUpdate.end() || copy->second.sha256 != before.sha256) {
+                    problem = utf8(path.filename()) + " was rewritten at save schema " +
+                              std::to_string(now->second.schema) + " without keeping the schema " +
+                              std::to_string(before.schema) + " file";
+                    break;
+                }
+                ++kept;
+            }
+        }
+        if (problem.empty() && carried == 0)
+            problem = "version " + v.previous.version + " saved nothing for the update to carry over";
+        if (problem.empty() && v.previous.buildId == v.info.buildId && !v.info.buildId.empty())
+            problem = "the previous package is the same build; an update needs changed content";
+        std::ostringstream detail;
+        detail << "from " << v.previous.version << " (build " << v.previous.buildId << ", save schema " << oldSchema
+               << ") to " << v.info.version << " (build " << v.info.buildId << ", save schema " << newSchema
+               << "): " << carried << " save" << (carried == 1 ? "" : "s") << " carried over and continued";
+        if (kept) detail << "; " << kept << " kept as it was before the newer schema wrote it";
+        v.step(
+            "update", problem.empty() ? shockwave::InstallStepResult::Passed : shockwave::InstallStepResult::Failed,
+            since(t), problem.empty() ? detail.str() : problem);
+    }
+
+    // ---- downgrade: the older version back; it explains, and writes over nothing ----
+    if (updating && !v.failed()) {
+        const auto t = Clock::now();
+        const std::map<fs::path, SaveFile> before = saveFiles(v.home);
+        const int newSchema = highestSchema(before), oldSchema = highestSchema(beforeUpdate);
+        std::string why;
+        v.running = &v.previous;
+        std::vector<std::string> check, saves;
+        const Digest older = folderDigest(previousPackage);
+        bool ok = installCopy(previousPackage, v.installed, older, why) && runTool({"--check"}, check, why) &&
+                  runTool({"--saves"}, saves, why);
+        if (!ok) why = "version " + v.previous.version + ": " + why;
+        const std::map<fs::path, SaveFile> after = saveFiles(v.home);
+        if (ok)
+            for (const auto& [path, f] : before) {
+                const auto now = after.find(path);
+                if (now == after.end() || now->second.sha256 != f.sha256) {
+                    ok = false;
+                    why = "version " + v.previous.version + " changed or removed " + utf8(path.filename());
+                    break;
+                }
+            }
+        if (ok && newSchema > oldSchema && !contains(saves, "newer version")) {
+            ok = false;
+            why = "version " + v.previous.version + " didn't say the newer saves are from a newer version";
+        }
+        std::ostringstream detail;
+        detail << "version " << v.previous.version << " started over " << slotCount(before) << " save"
+               << (slotCount(before) == 1 ? "" : "s") << " and left every file as it was";
+        if (newSchema > oldSchema)
+            detail << "; it says the save schema " << newSchema << " saves are from a newer version, and Continue "
+                   << "uses the copies kept from before the update";
+        else
+            detail << " (the update kept save schema " << newSchema << ", so it reads them)";
+        v.step(
+            "downgrade", ok ? shockwave::InstallStepResult::Passed : shockwave::InstallStepResult::Failed, since(t),
+            ok ? detail.str() : why);
+    }
+
+    // ---- reinstall: removed, installed again elsewhere; the player's data is still theirs ----
+    if (!v.failed()) {
+        const auto t = Clock::now();
+        const std::map<fs::path, SaveFile> before = saveFiles(v.home);
+        setWritable(v.installed, true);
+        fs::remove_all(v.installed, ec);
+        v.installed = v.work / pathOf("Moved Gämes 2") / v.installed.filename();
+        v.running = &v.info;
+        std::string why;
+        std::vector<std::string> check, saves;
+        bool ok = installCopy(package, v.installed, current, why) && runTool({"--check"}, check, why) &&
+                  runTool({"--saves"}, saves, why);
+        const size_t slots = slotCount(before);
+        if (ok && slots && contains(saves, "can't load")) {
+            ok = false;
+            why = "after reinstalling, a save doesn't load: " + [&] {
+                for (const std::string& l : saves)
+                    if (l.find("can't load") != std::string::npos) return l;
+                return std::string();
+            }();
+        }
+        if (ok && slots && contains(saves, "No save games")) {
+            ok = false;
+            why = "after reinstalling, the game doesn't find the player's saves";
+        }
+        v.step(
+            "reinstall", ok ? shockwave::InstallStepResult::Passed : shockwave::InstallStepResult::Failed, since(t),
+            ok ? "removed, installed again at another path; it finds the player's " + std::to_string(slots) + " save" +
+                     (slots == 1 ? "" : "s") + " by its application ID and every one loads"
+               : why);
+    }
     r.passed = !v.failed();
 
     // ---- What it showed ----

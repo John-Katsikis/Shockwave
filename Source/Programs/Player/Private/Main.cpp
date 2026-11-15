@@ -123,13 +123,17 @@ int main(int argc, char** argv) {
                 continue;
             }
             // Installed-game verification (S13, docs/Release.md#platforms).
-            if ((arg == "--verify-install" || arg == "--install-record" || arg == "--install-dir") && i + 1 < argc) {
+            if ((arg == "--verify-install" || arg == "--install-record" || arg == "--install-dir" ||
+                 arg == "--update-from") &&
+                i + 1 < argc) {
                 const std::string value = argv[++i];
                 if (value.empty()) throw player::UsageError(arg + " takes a value");
                 if (arg == "--verify-install")
                     install.package = value;
                 else if (arg == "--install-record")
                     install.machine = value;
+                else if (arg == "--update-from")
+                    install.updateFrom = value;
                 else
                     install.workFolder = value;
                 continue;
@@ -763,6 +767,7 @@ int main(int argc, char** argv) {
                     "                                    name a crash report's frames (symbols kept beside a\n"
                     "                                    package: <package>-symbols)\n"
                     "player --verify-install package --flow-test scenario.json [--flow-test next.json]...\n"
+                    "       [--update-from previous-package]   (plays the first scenario on it, then updates)\n"
                     "       [--renderer null] [--install-record \"machine\" [--project p | --output folder]]\n"
                     "       [--install-dir folder] [--keep-install] [--verbose] [--json report]\n"
                     "                                    install a package read-only at a path with spaces and\n"
@@ -986,9 +991,11 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--laps and --perf-record go with --perf-run");
             if (tool.coldCache && !tool.perfRun && tool.benchmarkSeconds <= 0)
                 throw player::UsageError("--cold-cache goes with --perf-run or --benchmark");
-            if ((!install.machine.empty() || !install.workFolder.empty() || install.keep || install.verbose) &&
+            if ((!install.machine.empty() || !install.workFolder.empty() || !install.updateFrom.empty() ||
+                 install.keep || install.verbose) &&
                 install.package.empty())
-                throw player::UsageError("--install-record, --install-dir, --keep-install and --verbose go with "
+                throw player::UsageError("--install-record, --install-dir, --update-from, --keep-install and --verbose "
+                                         "go with "
                                          "--verify-install");
             if (!install.package.empty() && !output.empty()) {
                 if (install.machine.empty()) throw player::UsageError("--output goes with --install-record here");

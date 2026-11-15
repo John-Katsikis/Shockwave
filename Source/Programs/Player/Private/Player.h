@@ -267,6 +267,7 @@ struct InstallCommand {
     std::string machine;   // --install-record "machine": writes a .swinstall
     fs::path recordFolder;   // --output, or the project's Release/Installs
     fs::path workFolder;   // --install-dir: where to install (a temporary folder otherwise)
+    fs::path updateFrom;   // --update-from: the previous package, installed and played first
     bool keep = false;   // --keep-install
     bool verbose = false;   // --verbose: the game's own output too
 };

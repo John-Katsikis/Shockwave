@@ -1,0 +1,59 @@
+# Tests every CI build must define (S14, docs/Testing.md#ci). cmake/CTestGate.cmake reads
+# this with -DREQUIRE_FILE and -DPLATFORM: a name listed here that the build doesn't define
+# stops the job, so a test can't vanish behind a changed condition. A name alone is required
+# everywhere; platforms after it limit it to those (linux, macos, windows).
+
+# The shipping plan's inventory (docs/ShippingImplementation.md section 22.1).
+level_catalog
+level_check_cli
+level_lifetime
+asset_dependencies
+asset_residency
+level_travel
+game_flow
+game_flow_cli
+save_travel
+save_migration
+save_durability
+player_preferences
+shipping_demo
+shipping_demo_flow
+cook_dependencies
+cook_reproducibility
+network_map_rotation
+diagnostics
+diagnostics_cli linux macos
+process
+failure_recovery
+installed_game_flow
+release
+install_records
+
+# Kept from before the plan.
+ecs
+prefab
+project
+project_create_cli
+save_games
+save_games_cli linux
+circuits
+circuits_cli
+physics
+audio
+input
+game_ui
+navigation
+effects
+animation
+graphics
+graphics_cli
+optimisation
+package
+package_cli linux macos
+package_release linux macos
+hot_reload linux macos
+network_wire
+network_session
+network_replication
+network_prediction
+network_combat

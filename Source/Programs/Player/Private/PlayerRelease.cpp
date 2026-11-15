@@ -44,6 +44,15 @@ releaseInputs(const shockwave::Project& project, const std::map<std::string, sho
     std::string error;
     inputs.packageFile = project.relative(shockwave::packageSettingsPath(project));
     if (shockwave::loadPackageSettings(project, package, error)) inputs.packageVersion = package.version;
+    // A packaged game: its package settings stay behind, so the version is the one it was
+    // packaged as (Binaries/shockwave-package.txt), not the settings' default.
+    if (const fs::path packaged = packagedProjectFile(); !packaged.empty()) {
+        shockwave::PackageInfo info;
+        if (shockwave::readPackageInfo(packaged.parent_path().parent_path(), info, error)) {
+            inputs.packageVersion = info.version;
+            inputs.packageFile = "Binaries/shockwave-package.txt";
+        }
+    }
 
     const fs::path network = net::networkSettingsPath(project);
     inputs.networkFile = project.relative(network);

@@ -163,6 +163,13 @@ bool readSaveGame(
 // Only the header, and the checksum: for lists of saves. False if the file isn't a save
 // game, or is damaged.
 bool readSaveInfo(const std::filesystem::path& file, SaveInfo& info, std::string& error);
+// Updates (docs/SaveGames.md#updates): the first time a newer save schema writes a slot,
+// the file as the older version left it is kept beside it as <slot>.swsave.schema<N>, and
+// an older version never writes over a newer one (NewerSchema). Going back to the older
+// version, Continue and loading use that copy. These name it and find the newest one a
+// game reading up to `readsUpTo` can use.
+std::filesystem::path schemaCopyPath(const std::filesystem::path& file, int schema);
+std::optional<std::filesystem::path> olderSchemaCopy(const std::filesystem::path& file, int readsUpTo);
 // Every .swsave in folder, newest first. Files that aren't save games, or are damaged,
 // are left out; with broken, they're listed too, with SaveInfo::problem saying why.
 std::vector<SaveInfo> listSaveGames(const std::filesystem::path& folder, bool broken = false);

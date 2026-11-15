@@ -69,6 +69,9 @@ struct InstallRecord {
     std::string packageSha256;   // every file's path and bytes, in path order (installPackageDigest)
     std::string archiveSha256;   // the .tar.gz beside it, "" when there was none
     uint64_t files = 0, bytes = 0;
+    // An update (--update-from): the package installed first and played, then replaced by
+    // this one. Empty without one (older records don't have these keys).
+    std::string previousPackage, previousVersion, previousBuildId, previousSha256;
     // How it was installed: read-only, at a path with spaces and non-ASCII letters, started
     // from another folder, with only a minimal environment (no LD_LIBRARY_PATH, a fresh home).
     bool readOnly = false, spacesInPath = false, unicodePath = false, otherFolder = false, cleanEnvironment = false;
@@ -103,9 +106,11 @@ InstallRecords readInstallRecords(const Project& project);
 
 // ---- The gate ---------------------------------------------------------------------------
 
-// The steps a record needs, all passed, before it qualifies a platform. Part 2 of S13
-// verifies updates and reinstalls; until a record has them, the gate stays unverified.
-std::span<const char* const> requiredInstallSteps();   // "install", "check", "user data", "update", "reinstall"
+// The steps a record needs, all passed, before it qualifies a platform: an update from a
+// previous package (--update-from), the previous version started again over the newer data,
+// and a reinstall, besides the install itself.
+std::span<const char* const>
+requiredInstallSteps();   // "install", "check", "user data", "update", "downgrade", "reinstall"
 
 // Why one record doesn't qualify its platform: every problem, in a stable order; empty
 // when it does. `currentBuildId` is the game's build now ("" unknown): another build's

@@ -53,8 +53,12 @@ InstallRecord full() {
     r.packageSha256 = std::string(64, 'a');
     r.files = 10;
     r.bytes = 1000;
+    r.previousPackage = "Game-0.9.0-linux-x86_64";
+    r.previousVersion = "0.9.0";
+    r.previousBuildId = "00000000000000a9";
+    r.previousSha256 = std::string(64, 'c');
     r.readOnly = r.spacesInPath = r.unicodePath = r.otherFolder = r.cleanEnvironment = true;
-    for (const char* name : {"install", "check", "scenario run.json", "user data", "update", "reinstall"})
+    for (const char* name : {"install", "check", "scenario run.json", "user data", "update", "downgrade", "reinstall"})
         r.steps.push_back({name, InstallStepResult::Passed, 1.5, std::string("did ") + name});
     r.passed = true;
     return r;
@@ -67,6 +71,21 @@ void testRecords() {
     Diagnostic error;
     CHECK(parseInstall(text, "a.swinstall", back, error));
     CHECK(back == r);
+
+    // The update's keys are optional: an older record without them still reads.
+    {
+        InstallRecord noUpdate = r;
+        noUpdate.previousPackage = noUpdate.previousVersion = noUpdate.previousBuildId = noUpdate.previousSha256 = "";
+        std::string older;   // as part 1 wrote them: no previous_ lines at all
+        const std::string all = installText(noUpdate);
+        for (size_t at = 0, end; at < all.size(); at = end + 1) {
+            end = all.find('\n', at);
+            const std::string line = all.substr(at, end - at + 1);
+            if (line.rfind("previous_", 0) != 0) older += line;
+        }
+        CHECK(parseInstall(older, "a.swinstall", back, error) && back == noUpdate);
+        CHECK(contains(text, "previous_version \"0.9.0\""));
+    }
 
     // Strict: an unknown key, a missing one, a step that doesn't read.
     CHECK(
@@ -154,6 +173,10 @@ void testGate() {
     r = full();
     r.steps[4].result = InstallStepResult::Skipped;   // update
     problem(r, "no \"update\" step");
+    problem(r, "--update-from");
+    r = full();
+    r.steps[5].result = InstallStepResult::Skipped;   // downgrade
+    problem(r, "no \"downgrade\" step");
     r = full();
     r.steps.erase(r.steps.begin() + 2);   // the scenario
     problem(r, "no scenario");

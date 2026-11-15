@@ -1,5 +1,15 @@
 name: Build
 
+# Pull requests and pushes (docs/Testing.md#ci): build, every test this machine can run,
+# generated references, the shipping demo and Arena checked unchanged, and the shipping
+# demo packaged, installed and updated on Linux, macOS and Windows (CI-only evidence: the
+# null renderer proves the install, not the graphics). Sanitizers, repeats and long
+# sessions run nightly (nightly.yml).
+#
+# Every test run goes through cmake/CTestGate.cmake: a filter that selects no tests, fewer
+# than expected or misses a required one fails the job, and Tests/RequiredTests.txt names
+# what each platform's build must define.
+
 on: [push, pull_request]
 
 permissions:
@@ -8,7 +18,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       SDL_AUDIO_DRIVER: dummy
       CMAKE_GENERATOR: Ninja
@@ -34,23 +44,50 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build -j
+      # All of them here, the GPU ones too (Mesa's software Vulkan).
       - name: Test
-        run: ctest --test-dir build --output-on-failure
-      - name: Validate sample project
-        run: xvfb-run -a build/bin/player --check Games/Sample/Sample.swproject
+        run: >
+          cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=124
+          -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=linux
+          -P cmake/CTestGate.cmake
+      - name: Check the sample, the shipping demo and Arena, unchanged
+        run: |
+          xvfb-run -a build/bin/player --check Games/Sample/Sample.swproject
+          xvfb-run -a build/bin/player --check Games/ShippingDemo/ShippingDemo.swproject
+          xvfb-run -a build/bin/player --check Games/Arena/Arena.swproject
+          git diff --exit-code Games/
       - name: Verify generated documentation
         run: |
           xvfb-run -a build/bin/player --schema docs/SceneSchema.md
           xvfb-run -a build/bin/player --input-schema docs/InputSchema.md
+          xvfb-run -a build/bin/player --node-schema docs/CircuitNodes.md
+          xvfb-run -a build/bin/player --graphics-schema docs/GraphicsSchema.md
+          xvfb-run -a build/bin/player --lighting-schema docs/LightingSchema.md
+          xvfb-run -a build/bin/player --material-schema docs/MaterialSchema.md
+          xvfb-run -a build/bin/player --postprocess-schema docs/PostProcessSchema.md
+          xvfb-run -a build/bin/player --level-schema docs/LevelSchema.md
+          xvfb-run -a build/bin/player --preferences-schema docs/PreferencesSchema.md
+          xvfb-run -a build/bin/player --release-schema docs/ReleaseSchema.md
+          xvfb-run -a build/bin/player --project Games/Arena/Arena.swproject --network-schema docs/NetworkSchema.md
           git diff --exit-code docs/
+      - name: Keep the install records (CI-only evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-records-linux
+          path: |
+            build/Tests/InstalledGame/**/Release/Installs/*.swinstall
+            build/Tests/InstalledGame/verify.json
+          if-no-files-found: warn
 
   # macOS (Apple silicon) and Windows: build everything and run the tests that need no
-  # GPU. Hosted runners may have no usable Vulkan driver, so the GPU tests and the sample
-  # check run too but only report (continue-on-error). On macOS the frame pacing test
-  # (label timing) only reports as well: shared runners oversleep.
+  # GPU; installed_game_flow packages, installs and updates the shipping demo there. Hosted
+  # runners may have no usable Vulkan driver, so the GPU tests and the sample check after
+  # them are advisory: they run and report, but don't decide the job. On macOS the frame
+  # pacing test (label timing) is advisory as well: shared runners oversleep.
   macos:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       SDL_AUDIO_DRIVER: dummy
       CMAKE_GENERATOR: Ninja
@@ -69,8 +106,21 @@ jobs:
       - name: Build
         run: cmake --build build -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure -LE "gpu|timing"
-      - name: GPU and timing tests, and sample check
+        run: >
+          cmake -DBUILD=build -DNAME="macOS tests" -DEXCLUDE_LABELS="gpu|timing" -DEXPECT=90
+          -DREQUIRE="installed_game_flow;package_release"
+          -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=macos
+          -P cmake/CTestGate.cmake
+      - name: Keep the install records (CI-only evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-records-macos
+          path: |
+            build/Tests/InstalledGame/**/Release/Installs/*.swinstall
+            build/Tests/InstalledGame/verify.json
+          if-no-files-found: warn
+      - name: GPU and timing tests, and sample check (advisory)
         continue-on-error: true
         run: |
           ctest --test-dir build --output-on-failure -L "gpu|timing"
@@ -78,9 +128,14 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       SDL_AUDIO_DRIVER: dummy
+    # Git's bash, not PowerShell: PowerShell splits "-DREQUIRE_FILE=Tests/RequiredTests.txt"
+    # at the dot.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Cache FetchContent dependencies
@@ -93,8 +148,21 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure -LE gpu
-      - name: GPU tests and sample check
+        run: >
+          cmake -DBUILD=build -DCONFIG=Release -DNAME="Windows tests" -DEXCLUDE_LABELS=gpu -DEXPECT=60
+          -DREQUIRE="installed_game_flow"
+          -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=windows
+          -P cmake/CTestGate.cmake
+      - name: Keep the install records (CI-only evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-records-windows
+          path: |
+            build/Tests/InstalledGame/**/Release/Installs/*.swinstall
+            build/Tests/InstalledGame/verify.json
+          if-no-files-found: warn
+      - name: GPU tests and sample check (advisory)
         continue-on-error: true
         run: |
           ctest --test-dir build -C Release --output-on-failure -L gpu

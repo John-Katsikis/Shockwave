@@ -1,3 +1,5 @@
+# Every test here needs a TIMEOUT and a label (checked at the end of this folder).
+cmake_language(DEFER CALL shockwave_check_tests)
 # Reactor Run (S07, README.md): the shipping plan's finishable reference game. Every .cpp
 # in Source/ is the module; the tests link the same sources without the module's entry.
 shockwave_game_module(shippingdemo)
@@ -11,7 +13,7 @@ if(BUILD_TESTING)
     target_link_libraries(shipping_demo_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(shipping_demo_test)
     add_test(NAME shipping_demo COMMAND shipping_demo_test ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(shipping_demo PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
+    set_tests_properties(shipping_demo PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS integration)
 endif()
 
 if(BUILD_TESTING)
@@ -29,7 +31,7 @@ if(BUILD_TESTING)
         -DPACKAGE=${DEMO_PACKAGE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/Tests/DemoFlowCheck.cmake)
     set_tests_properties(shipping_demo_flow PROPERTIES
-        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600)
+        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS integration)
 endif()
 
 if(BUILD_TESTING)

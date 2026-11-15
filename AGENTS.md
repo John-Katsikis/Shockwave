@@ -15,6 +15,9 @@ These are the rules for AI coding agents working on Shockwave. Follow all of the
 ## Verify your work
 
 - Build the affected targets and run the relevant CTest checks.
+- Every new test needs a `TIMEOUT` and one of the labels `unit`, `integration`, `gpu`,
+  `timing`, `installed`, `online_mock` or `online_real`; configuring stops otherwise. A test
+  every CI build must have goes in `Tests/RequiredTests.txt` (`docs/Testing.md`).
 - Visually inspect editor UI changes where a display is available.
 - Report any verification limitation honestly.
 
@@ -202,8 +205,9 @@ build/bin/player --verify-install <package> --flow-test <scenario> --renderer nu
 ```
 
 `--verify-install` installs a package read-only at an awkward path and plays it with a
-clean environment; `--install-record "<machine>" --project <game>` keeps the evidence
-the platform gates read (`docs/Release.md#platforms`).
+clean environment; `--update-from <older package>` adds the update, downgrade and reinstall
+steps; `--install-record "<machine>" --project <game>` keeps the evidence the platform
+gates read (`docs/Release.md#platforms`).
 
 ## Networking
 

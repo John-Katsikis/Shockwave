@@ -885,8 +885,15 @@ static void testTiming() {
         "tick, one encode %.1f us), client ingest + interpolation mean %.1f us (worst %.1f)\n",
         kClients, hostTotal / n, hostWorst, encodesPerTick, aloneTotal / n, clientTotal / n, clientWorst);
 #ifdef NDEBUG
-    CHECK(hostTotal / n < 150);
-    CHECK(clientTotal / n < 150);
+    // A sanitizer build (the nightly CI job) runs several times slower: the budget is
+    // stretched there, not dropped.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+    const double budget = 150 * 10;
+#else
+    const double budget = 150;
+#endif
+    CHECK(hostTotal / n < budget);
+    CHECK(clientTotal / n < budget);
 #endif
 }
 
