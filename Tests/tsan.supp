@@ -4,3 +4,7 @@
 # SDL3's HIDAPI libusb backend stops its event thread through a plain int flag
 # (src/hidapi/libusb/hid.c, stop_event_thread); the race is on SDL's shutdown, inside SDL.
 race:stop_event_thread
+
+# libdbus (a system library SDL3 starts for desktop services) takes its own two locks in
+# opposite orders when SDL connects at SDL_Init and closes at SDL_Quit, on the main thread.
+deadlock:libdbus-1.so

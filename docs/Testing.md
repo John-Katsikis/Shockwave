@@ -112,7 +112,7 @@ don't own are switched off narrowly, each with its reason beside it:
 - `Tests/lsan.supp`: SDL3's per-thread error buffer on threads it didn't create (the job
   workers), and what its X11 backend keeps from video init past `SDL_Quit`.
 - `Tests/tsan.supp`: SDL3's HIDAPI libusb backend stopping its event thread through a
-  plain flag.
+  plain flag, and libdbus taking its own two locks in opposite orders at SDL's init and quit.
 
 The flags are set in the top `CMakeLists.txt` (only with `SHOCKWAVE_SANITIZE`). A new entry
 needs a finding traced into that library's code and a reason; a finding in Shockwave's code
