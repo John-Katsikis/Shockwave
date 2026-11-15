@@ -81,6 +81,19 @@ void testFormat() {
     std::string emptyTester = base;
     emptyTester.replace(emptyTester.find("tester \"Tester B\""), 17, "tester \"\"");
     refused(emptyTester, "tester is empty");
+    // A time that wouldn't sort with the others can't win the gate.
+    std::string badTime = base;
+    badTime.replace(badTime.find("2026-11-20T15:00:00Z"), 20, "9999");
+    refused(badTime, "recorded is a UTC time");
+    std::string noPackage = base;
+    const std::string packageLine = "package \"TwoRooms-1.0.0-linux-x86_64\"";
+    noPackage.replace(noPackage.find(packageLine), packageLine.size(), "package \"\"");
+    refused(noPackage, "package is empty");
+    // A platform with a space is quoted, so it reads back.
+    RehearsalRecord spaced = passed();
+    spaced.platform = "linux x86_64";
+    RehearsalRecord spacedBack;
+    CHECK(parses(rehearsalText(spaced), spacedBack, error) && spacedBack == spaced);
     // A rescued rehearsal can't be promoted by hand.
     std::string rescued = base;
     rescued.insert(rescued.find("result "), "intervention \"copied libvulkan by hand\"\n");
@@ -136,6 +149,15 @@ void testFilesAndReport() {
     std::string error;
     const RehearsalRecord r = passed();
     CHECK(writeRehearsal(rehearsalFolder(project) / rehearsalFileName(r), r, error));
+    // Never overwritten, and never a record its reader would refuse.
+    CHECK(!writeRehearsal(rehearsalFolder(project) / rehearsalFileName(r), r, error));
+    CHECK(contains(error, "never overwritten"));
+    RehearsalRecord rescuedPass = passed();
+    rescuedPass.recorded = "2026-11-22T10:00:00Z";
+    rescuedPass.interventions = {"opened a terminal"};
+    CHECK(!writeRehearsal(rehearsalFolder(project) / rehearsalFileName(rescuedPass), rescuedPass, error));
+    CHECK(contains(error, "a developer intervened"));
+    CHECK(!fs::exists(rehearsalFolder(project) / rehearsalFileName(rescuedPass)));
     {
         std::ofstream broken(rehearsalFolder(project) / "zz-broken.swrehearsal");
         broken << "shockwave_rehearsal 1\nwhat\n";

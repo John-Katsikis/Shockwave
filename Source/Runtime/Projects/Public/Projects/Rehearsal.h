@@ -37,7 +37,7 @@ struct Project;
 
 struct RehearsalRecord {
     std::string tester;   // who played: a label is enough ("Tester B"), not a full name
-    std::string recorded;   // UTC, ISO 8601
+    std::string recorded;   // UTC, ISO 8601 to the second: "2026-11-20T15:00:00Z"
     std::string machine;   // which machine and profile, as people know it
     std::string platform;   // the package's: "linux-x86_64"
     std::string package;   // the package's folder name
@@ -60,6 +60,7 @@ std::string rehearsalText(const RehearsalRecord& record);
 // The first problem stops it, into `error` with `shown` and the line. False leaves `out`.
 bool parseRehearsal(std::string_view text, std::string_view shown, RehearsalRecord& out, Diagnostic& error);
 bool readRehearsal(const std::filesystem::path& file, std::string_view shown, RehearsalRecord& out, Diagnostic& error);
+// Refuses a record that wouldn't read back, and an existing file: records are never overwritten.
 bool writeRehearsal(const std::filesystem::path& file, const RehearsalRecord& record, std::string& error);
 
 struct RehearsalRecords {

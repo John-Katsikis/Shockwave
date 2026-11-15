@@ -16,8 +16,19 @@ where the editor offers it, and each step says how.
 The engine's CI follows this page literally every night (`Tests/FollowTutorial.py`), so
 if a step stops working, CI fails rather than the page quietly going stale.
 
-You need a built Shockwave checkout ([Starting projects](StartingProjects.md)). Run the
-commands from the engine folder, in a POSIX shell (on Windows, Git's bash).
+You need a Shockwave checkout and its build tools ([README](../README.md#get-started)).
+Run the commands from the engine folder, in a POSIX shell (on Windows, Git's bash).
+
+## 0. Build the player
+
+The player makes new projects, so build it first. No games yet: yours joins the build
+in step 2. Skip this if you already have `build/bin/player`.
+
+<!-- tutorial: run -->
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Release "-DSHOCKWAVE_GAMES="
+cmake --build build --target player -j4
+```
 
 ## 1. Make the project
 

@@ -78,8 +78,8 @@ Neither is a note about something they found awkward. Record that as a note.
 In **Project > Release readiness**, open **Release rehearsals > Record a rehearsal**. Fill
 in the tester (a label like "Tester B" is enough), the machine, the platform, the package
 and one line per intervention, then press **Save record**. The record goes to
-`Release/Rehearsals/<date>-<tester>-<platform>.swrehearsal`, and records are never
-overwritten.
+`Release/Rehearsals/<date>-<tester>-<platform>.swrehearsal`. Records are never
+overwritten, and nothing writes one its reader would refuse.
 
 The file can be written by hand too:
 
@@ -97,9 +97,10 @@ note "found Continue without help"
 result failed
 ```
 
-Every key but `intervention` and `note` is required. `build_id` is the package cook's
-build ID (`player --cook-info` on its cook manifest). It may be `""` when you don't
-know it. Reading is strict: an unknown key, a repeated key or a missing one makes the file
+Every key but `intervention` and `note` is required, and only `build_id` may be empty.
+`recorded` is the UTC time to the second, written like `2026-11-20T15:00:00Z`, so records
+sort by when they happened. `build_id` is the package cook's build ID (`player --cook-info`
+on its cook manifest), or `""` when you don't know it. Reading is strict: an unknown key, a repeated key or a missing one makes the file
 unreadable, with its line. A record that says `result passed` with an intervention in it
 doesn't read either.
 

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <random>
 #include <sstream>
 
 namespace shockwave {
@@ -75,6 +76,26 @@ std::string slug(std::string_view text) {
     return out;
 }
 
+// A platform is written bare only when it reads back as one word.
+bool plainWord(const std::string& text) {
+    if (text.empty()) return false;
+    for (const char c : text)
+        if (c == ' ' || c == '\t' || c == '"' || c == '#' || c == '\\' || c == '\r' || c == '\n') return false;
+    return true;
+}
+
+// "2026-11-20T15:00:00Z": UTC, to the second, so records sort by time as text.
+bool utcTimestamp(const std::string& t) {
+    if (t.size() != 20) return false;
+    for (size_t i = 0; i < t.size(); ++i) {
+        const char want = i == 4 || i == 7 ? '-' : i == 10 ? 'T' : i == 13 || i == 16 ? ':' : i == 19 ? 'Z' : '0';
+        if (want == '0' ? !(t[i] >= '0' && t[i] <= '9') : t[i] != want) return false;
+    }
+    const int month = std::stoi(t.substr(5, 2)), day = std::stoi(t.substr(8, 2));
+    const int hour = std::stoi(t.substr(11, 2)), minute = std::stoi(t.substr(14, 2)), second = std::stoi(t.substr(17, 2));
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 60;
+}
+
 using R = RehearsalRecord;
 struct TextKey {
     const char* name;
@@ -113,7 +134,7 @@ std::string rehearsalText(const RehearsalRecord& record) {
     for (const TextKey& key : kTextKeys) {
         const std::string& value = record.*key.member;
         out += std::string(key.name) + " " +
-               (key.word && !value.empty() ? oneLine(value) : quoted(oneLine(value))) + "\n";
+               (key.word && plainWord(value) ? value : quoted(oneLine(value))) + "\n";
     }
     for (const std::string& i : record.interventions) out += "intervention " + quoted(oneLine(i)) + "\n";
     for (const std::string& n : record.notes) out += "note " + quoted(oneLine(n)) + "\n";
@@ -174,11 +195,13 @@ bool parseRehearsal(std::string_view text, std::string_view shown, RehearsalReco
     for (size_t i = 0; i < std::size(kTextKeys); ++i)
         if (!seen[i]) return fail(kTextKeys[i].name, std::string("missing ") + kTextKeys[i].name);
     if (!seenResult) return fail("result", "missing result");
-    for (const char* required : {"tester", "recorded", "machine", "platform", "version"}) {
+    for (const char* required : {"tester", "recorded", "machine", "platform", "package", "version"}) {
         const auto key = std::find_if(
             std::begin(kTextKeys), std::end(kTextKeys), [&](const TextKey& k) { return std::string_view(k.name) == required; });
         if ((result.*(key->member)).empty()) return fail(required, std::string(required) + " is empty");
     }
+    if (!utcTimestamp(result.recorded))
+        return fail("recorded", "recorded is a UTC time like 2026-11-20T15:00:00Z, not " + result.recorded);
     // A hand edit can't promote a rehearsal someone had to rescue.
     if (result.passed && !result.interventions.empty())
         return fail(
@@ -201,16 +224,30 @@ bool readRehearsal(const std::filesystem::path& file, std::string_view shown, Re
 }
 
 bool writeRehearsal(const std::filesystem::path& file, const RehearsalRecord& record, std::string& error) {
+    // Only what reads back: the gate must never see a record its reader would refuse.
+    const std::string text = rehearsalText(record);
+    {
+        RehearsalRecord back;
+        Diagnostic problem;
+        if (!parseRehearsal(text, file.filename().string(), back, problem)) {
+            error = file.string() + ": " + problem.message;
+            return false;
+        }
+    }
     std::error_code ec;
+    if (std::filesystem::exists(file, ec)) {
+        error = file.string() + " already exists: rehearsals are never overwritten";
+        return false;
+    }
     if (!file.parent_path().empty()) std::filesystem::create_directories(file.parent_path(), ec);
     if (ec) {
         error = file.string() + ": " + ec.message();
         return false;
     }
-    const std::filesystem::path temp =
-        file.string() + "." + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".tmp";
+    const std::filesystem::path temp = file.string() + "." +
+                                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                                       "-" + std::to_string(std::random_device{}()) + ".tmp";
     {
-        const std::string text = rehearsalText(record);
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
         out.write(text.data(), std::streamsize(text.size()));
         out.close();
@@ -220,6 +257,20 @@ bool writeRehearsal(const std::filesystem::path& file, const RehearsalRecord& re
             return false;
         }
     }
+    // A hard link fails rather than replace a record another writer just made. Where the
+    // file system has no hard links, fall back to a rename after the check above.
+    std::filesystem::create_hard_link(temp, file, ec);
+    if (!ec) {
+        std::filesystem::remove(temp, ec);
+        error.clear();
+        return true;
+    }
+    if (ec == std::errc::file_exists) {
+        error = file.string() + " already exists: rehearsals are never overwritten";
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    ec.clear();
     std::filesystem::rename(temp, file, ec);
     if (ec) {
         error = file.string() + ": " + ec.message();

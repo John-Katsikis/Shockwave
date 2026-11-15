@@ -697,7 +697,7 @@ void ReleaseWindow::drawRehearsals(const shockwave::Project& project) {
     if (!passed)
         ImGui::SetItemTooltip("A rehearsal passes only when the tester finished without any developer help.");
     const bool ready = !m_rehearsal.tester.empty() && !m_rehearsal.machine.empty() && !m_rehearsal.platform.empty() &&
-                       !m_rehearsal.version.empty();
+                       !m_rehearsal.package.empty() && !m_rehearsal.version.empty();
     ImGui::BeginDisabled(!ready);
     if (gui::button("Save record")) {
         shockwave::RehearsalRecord record = m_rehearsal;
@@ -707,10 +707,7 @@ void ReleaseWindow::drawRehearsals(const shockwave::Project& project) {
         record.passed = passed;
         const fs::path file = shockwave::rehearsalFolder(project) / shockwave::rehearsalFileName(record);
         std::string error;
-        if (fs::exists(file)) {
-            m_rehearsalFailed = true;
-            m_rehearsalResult = project.relative(file) + " already exists: rehearsals are never overwritten";
-        } else if (shockwave::writeRehearsal(file, record, error)) {
+        if (shockwave::writeRehearsal(file, record, error)) {
             m_rehearsalFailed = false;
             m_rehearsalResult = "Wrote " + project.relative(file);
             m_rehearsalInterventions.clear();
@@ -723,7 +720,7 @@ void ReleaseWindow::drawRehearsals(const shockwave::Project& project) {
         }
     }
     ImGui::EndDisabled();
-    if (!ready) ImGui::SetItemTooltip("Fill in the tester, machine, platform and version");
+    if (!ready) ImGui::SetItemTooltip("Fill in the tester, machine, platform, package and version");
     if (!m_rehearsalResult.empty())
         ImGui::TextColored(m_rehearsalFailed ? errorColor : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s",
             m_rehearsalResult.c_str());

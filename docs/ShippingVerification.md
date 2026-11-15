@@ -1593,8 +1593,10 @@ Plan section 23. See [ShippingTutorial](ShippingTutorial.md) and
 
 ### Measured
 
-- The tutorial, followed by the script on Linux (GCC, Release): 17 steps, every one
-  passed, ending in `--verify-install` passed.
+- The tutorial, followed by the script on Linux (GCC, Release): every step passed, ending
+  in `--verify-install` passed. Its first CI run found that a clean checkout has no
+  player to make the project with, so the tutorial now builds the player first (step 0),
+  with no games; that step was checked on its own from an empty build folder.
 - `release_rehearsal` (unit) passes.
 
 ### Still unverified
