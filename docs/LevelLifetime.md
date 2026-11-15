@@ -221,6 +221,12 @@ When the game travels:
 Stop puts the authored scene back exactly, with its selection. The undo history never
 sees Play, because edits during Play aren't recorded. The editor camera is the same.
 
+**Window > Runtime flow** (or `editor --runtime-flow`) shows the flow while you play: the
+level and its epoch, the session state and tick, the input layer, the travel in progress
+with its phase and progress, and every travel so far with its result and error code. Its
+**Cancel**, **Restart level** and **Return to menu** buttons go through the same
+`GameFlow` calls as the game, and a refusal is written to the console with its code.
+
 `editor --level-cycles N` is a self-test. It presses Play, travels to the next level and
 presses Stop, N times. Then it checks that the authored scene (as text), the undo
 history, the selection and the camera are unchanged, and exits 1 if they aren't.

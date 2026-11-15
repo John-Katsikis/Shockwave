@@ -2,8 +2,9 @@ name: Nightly
 
 # Slower checks (docs/Testing.md#ci): AddressSanitizer and UndefinedBehaviorSanitizer over
 # the tests that need no GPU, ThreadSanitizer over the threaded parts, travel, saves and
-# cooks repeated, network soaks with a new fault seed each night, and the installed game
-# flow. Every night, on demand, and on a pull request that changes this file or the gate.
+# cooks repeated, network soaks with a new fault seed each night, the installed game flow,
+# and the shipping tutorial followed literally from a clean checkout. Every night, on
+# demand, and on a pull request that changes this file, the gate or the tutorial.
 
 on:
   schedule:
@@ -14,6 +15,8 @@ on:
       - .github/workflows/nightly.yml
       - cmake/CTestGate.cmake
       - Tests/RequiredTests.txt
+      - docs/ShippingTutorial.md
+      - Tests/FollowTutorial.py
 
 permissions:
   contents: read
@@ -135,3 +138,25 @@ jobs:
           cmake -DBUILD=build -DNAME="Network faults x3" -DEXPECT=5 -DREPEAT=until-fail:3
           -DTESTS="^(network_transport|network_session|network_prediction|network_map_rotation|network_arena)$"
           -P cmake/CTestGate.cmake
+
+  # docs/ShippingTutorial.md, followed literally on a clean checkout: a new project outside
+  # the engine, configured and built by the page's own commands, its files written as the
+  # page shows them, then checked, played by a flow test, packaged and installed.
+  tutorial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git pkg-config \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxtst-dev libxss-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl1-mesa-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libdbus-1-dev libibus-1.0-dev \
+            libusb-1.0-0-dev liburing-dev libvulkan1 mesa-vulkan-drivers \
+            glslang-tools xvfb xauth
+      - name: Follow the shipping tutorial
+        run: python3 Tests/FollowTutorial.py docs/ShippingTutorial.md "$RUNNER_TEMP/Two Rooms/TwoRooms"

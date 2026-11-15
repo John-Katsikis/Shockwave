@@ -29,6 +29,7 @@
 #include <Projects/InstallRecord.h>
 #include <Projects/LevelCatalog.h>
 #include <Projects/Performance.h>
+#include <Projects/Rehearsal.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -214,6 +215,13 @@ struct ReleaseInputs {
     std::vector<InstallRecord> installRecords;
     std::vector<std::string> installFiles;
     std::vector<Diagnostic> installProblems;
+    // Release rehearsals (S15, Projects/Rehearsal.h, docs/ReleaseRehearsal.md): checked means
+    // the project's Release/Rehearsals folder was read. The release_rehearsal gate rests on
+    // them; unchecked leaves it unverified.
+    bool rehearsalChecked = false;
+    std::vector<RehearsalRecord> rehearsalRecords;
+    std::vector<std::string> rehearsalFiles;
+    std::vector<Diagnostic> rehearsalProblems;
 };
 
 // Fills the level_catalog inputs: reads the project's catalog and checks its files, and

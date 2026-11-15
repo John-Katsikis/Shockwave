@@ -281,6 +281,9 @@ problem with its file and line.
 
 ## Where to go next
 
+- [From an empty folder to a packaged game](ShippingTutorial.md): the next tutorial. It starts a project outside
+  the engine with `player --new-project` and takes it all the way to a release package:
+  a menu, two levels, a door, a checkpoint, saves and a test that plays it.
 - [The Shockwave Book](Book/README.md): a longer, gentle guide that builds a whole game
   and explains how every part of the engine works.
 - [Projects](Projects.md): everything about game code, including GameInstance, systems

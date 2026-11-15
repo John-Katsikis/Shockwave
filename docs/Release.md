@@ -114,12 +114,15 @@ measured:
 - crash_recovery (S12, [Diagnostics.md](Diagnostics.md)): no unresolved crash reports, and
   packages keep their symbols.
 - each `platform:<name>` (S13, [below](#platforms)): the install records in
-  `Release/Installs`, from `player --verify-install --install-record`.
+  `Release/Installs`, from `player --verify-install --install-record`. A record has to
+  prove an update and a reinstall too, on a real GPU.
+- release_rehearsal (S15, [ReleaseRehearsal.md](ReleaseRehearsal.md)): the newest rehearsal
+  record in `Release/Rehearsals` for this version, a named platform and the current build.
+  A new tester on a clean machine played the package with no developer intervention.
 
-The gates for later batches stay `unverified` until their evidence exists. That covers
-level travel, saves, settings, cooking and the online lifecycle. A platform stays
-`unverified` until a record also proves an update and a reinstall, which S13 part 2 adds.
-So for now no project qualifies, and the report says exactly why.
+Level travel, saves, settings, cooking and the online lifecycle stay `unverified` with
+"no evidence yet": the tests prove them for the engine, but no record ties them to your
+game yet. So for now no project qualifies, and the report says exactly why.
 
 Exit codes follow the plan's convention:
 
@@ -211,6 +214,11 @@ Its **Platforms** section lists each platform the contract names with the instal
 behind its gate: the machine, the package and its hashes, and what the record proves or
 lacks. Hover a row to see every step.
 
+Its **Release rehearsals** section lists the rehearsal records with each result, and
+**Record a rehearsal** writes a new one: the tester, the machine, the platform, the package,
+one line per intervention and one per note. The record is passed only when the tester
+played to the end and nobody intervened. An existing record is never overwritten.
+
 **Help > Shipping implementation guide** opens the plan itself.
 
 ## Code
@@ -221,6 +229,7 @@ lacks. Hover a row to see every step.
 - `Projects/Diagnostic.h`: the machine-readable diagnostic with a stable code.
 - `Projects/InstallRecord.h`: install records and the platform gates; the player's
   `PlayerInstall.cpp` is `--verify-install`.
+- `Projects/Rehearsal.h`: rehearsal records and the `release_rehearsal` gate.
 - Tests:
   - `release` (`Tests/ReleaseTest.cpp`) covers parsing, ranges, rules and gates;
   - `release_cli` (`Tests/ReleaseCheck.cmake`) covers `--check`, `--release-info` and
@@ -228,3 +237,4 @@ lacks. Hover a row to see every step.
   - `install_records` (`Tests/InstallRecordTest.cpp`) covers records and the platform gates;
   - `installed_game_flow` (`Tests/InstalledGameCheck.cmake`) verifies a release package of
     Reactor Run installed the hard way.
+  - `release_rehearsal` (`Tests/RehearsalTest.cpp`) covers rehearsal records and their gate.

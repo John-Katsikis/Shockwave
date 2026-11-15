@@ -32,6 +32,7 @@
 //   --release              show Project > Release readiness on startup
 //   --levels               show Project > Levels on startup
 //   --residency            show Window > Resource residency on startup
+//   --runtime-flow         show Window > Runtime flow on startup
 //   --player-settings      show Window > Player Settings on startup
 //   --package-release      package the game for release from Build > Package game, then exit (tests)
 //   --preview-language fr  preview the game's text in a language (Player Settings)
@@ -93,6 +94,8 @@ int main(int argc, char** argv) {
                 options.showLevels = true;
             else if (arg == "--residency")
                 options.showResidency = true;
+            else if (arg == "--runtime-flow")
+                options.showRuntimeFlow = true;
             else if (arg == "--diagnostics")
                 options.showDiagnostics = true;
             else if (arg == "--no-crash-handler")
@@ -140,7 +143,7 @@ int main(int argc, char** argv) {
                           "       [--theme file] [--uncapped] [--renderer name] [--gpu name|number] [--prefs file]\n"
                           "       [--play] [--select N] [--circuit path] [--level-cycles N] [--level-authoring]\n"
                           "       [--graphics-guide] [--graphics-guide-path] [--network] [--lighting] [--release]\n"
-                          "       [--levels] [--residency] [--diagnostics] [--no-crash-handler] [--frames N]");
+                          "       [--levels] [--residency] [--runtime-flow] [--diagnostics] [--no-crash-handler] [--frames N]");
                 return 0;
             } else if (!arg.empty() && arg[0] != '-')
                 options.path = arg;

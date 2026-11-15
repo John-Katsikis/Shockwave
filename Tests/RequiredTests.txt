@@ -28,6 +28,7 @@ failure_recovery
 installed_game_flow
 release
 install_records
+release_rehearsal
 
 # Kept from before the plan.
 ecs

@@ -79,7 +79,7 @@ test there when CI must never lose it.
   release gate ([Release](Release.md#platforms)).
 
 `.github/workflows/nightly.yml` runs every night, on demand (Actions > Nightly > Run
-workflow), and on a pull request that changes it or the gate:
+workflow), and on a pull request that changes it, the gate or the shipping tutorial:
 
 - **asan-ubsan**: a RelWithDebInfo build with `-DSHOCKWAVE_SANITIZE=address,undefined` runs
   every test without a GPU, a stopwatch or a package (a sanitized program needs the
@@ -93,10 +93,16 @@ workflow), and on a pull request that changes it or the gate:
   three times; every network fault preset for two minutes of play with that night's seed
   (`arena_network_test Games/Arena --soak all 120 --seed N` replays a failure); the network
   fault tests three times.
+- **tutorial**: follows [the shipping tutorial](ShippingTutorial.md) word for word into a
+  new folder outside the checkout, with only that game registered:
+  `python3 Tests/FollowTutorial.py docs/ShippingTutorial.md /new/folder/TwoRooms`. Every
+  file it writes and command it runs comes from the Markdown, and each expected output is
+  checked, ending with `--verify-install` of the release package.
 
 Release candidates need more than CI can give: real GPUs on each supported hardware tier,
-real Steam, and the platform records from real machines. Those are recorded evidence in
-`Release/`, gathered as [Release](Release.md) describes.
+real Steam, the platform records from real machines, and a [rehearsal](ReleaseRehearsal.md)
+with a new tester. Those are recorded evidence in `Release/`, gathered as
+[Release](Release.md) describes.
 
 ## Third-party code
 

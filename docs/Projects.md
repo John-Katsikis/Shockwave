@@ -445,7 +445,10 @@ ticks run. `--frames N` stops after N frames, which keeps smoke tests short.
 
 Menus and HUDs, save games and packaging have their own guides:
 [Game UI](GameUI.md), [Save games](SaveGames.md) and [Packaging your game](Packaging.md).
-A few things about how projects run:
+So do levels and travel ([Levels](Levels.md), [Level lifetime](LevelLifetime.md)), the
+menus around the game ([Application shell](AppShell.md)) and what a release promises
+([Release](Release.md)). [From an empty folder to a packaged game](ShippingTutorial.md)
+puts them together in one small game. A few things about how projects run:
 
 - The player renders through the scene's primary Camera entity. Play in the editor
   looks through the same camera, and F8 switches to the editor camera.

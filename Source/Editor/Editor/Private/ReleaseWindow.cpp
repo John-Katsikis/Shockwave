@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <fstream>
 #include <cmath>
+#include <ctime>
 
 namespace editor {
 
@@ -102,6 +103,12 @@ shockwave::ReleaseInputs releaseInputs(const shockwave::Project& project) {
     inputs.installRecords = std::move(installs.records);
     inputs.installFiles = std::move(installs.files);
     inputs.installProblems = std::move(installs.problems);
+    // Release rehearsals (S15): Release/Rehearsals/*.swrehearsal, the release_rehearsal gate.
+    shockwave::RehearsalRecords rehearsals = shockwave::readRehearsalRecords(project);
+    inputs.rehearsalChecked = true;
+    inputs.rehearsalRecords = std::move(rehearsals.records);
+    inputs.rehearsalFiles = std::move(rehearsals.files);
+    inputs.rehearsalProblems = std::move(rehearsals.problems);
     if (const std::vector<std::string> targets = shockwave::cookTargets(); !targets.empty()) {
         shockwave::CookManifest cook;
         const fs::path manifest = shockwave::cookManifestPath(project.root, targets.front());
@@ -273,6 +280,7 @@ void ReleaseWindow::draw(const shockwave::Project& project, bool playing) {
     drawPerformance();
     drawPlatforms();
     drawFatalErrors(project);
+    drawRehearsals(project);
     drawPlayerData(project, m_present ? m_edit.applicationId : shockwave::fallbackApplicationId(project));
     ImGui::End();
 }
@@ -577,6 +585,149 @@ void ReleaseWindow::drawPlatforms() {
         }
     }
     ImGui::EndTable();
+}
+
+namespace {
+
+std::vector<std::string> nonEmptyLines(const std::string& text) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\r' || line.back() == '\t')) line.pop_back();
+        size_t first = line.find_first_not_of(" \t");
+        if (first != std::string::npos) lines.push_back(line.substr(first));
+        start = end + 1;
+    }
+    return lines;
+}
+
+std::string utcNow() {
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &now);
+#else
+    gmtime_r(&now, &utc);
+#endif
+    char text[32];
+    std::strftime(text, sizeof(text), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return text;
+}
+
+}   // namespace
+
+// Release rehearsals (S15, docs/ReleaseRehearsal.md): a new tester, a clean machine, only
+// the package and the player instructions. The form writes what happened, every developer
+// intervention included, to Release/Rehearsals; the release_rehearsal gate reads it.
+void ReleaseWindow::drawRehearsals(const shockwave::Project& project) {
+    ImGui::SeparatorText("Release rehearsals");
+    const ImVec4 errorColor = gui::semanticColor(gui::currentTheme().error);
+    const auto& records = m_inputs.rehearsalRecords;
+    if (records.empty()) {
+        ImGui::TextWrapped("No rehearsal yet. Give a new tester only the package and the player instructions, on a "
+                           "clean machine and profile, and write down every time you had to help "
+                           "(docs/ReleaseRehearsal.md).");
+    } else if (ImGui::BeginTable("rehearsals", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
+        ImGui::TableSetupColumn("Recorded");
+        ImGui::TableSetupColumn("Tester");
+        ImGui::TableSetupColumn("Package");
+        ImGui::TableSetupColumn("Result", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+        for (size_t i = records.size(); i-- > 0;) {
+            const shockwave::RehearsalRecord& r = records[i];
+            ImGui::PushID(int(i));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(r.recorded.c_str());
+            if (i < m_inputs.rehearsalFiles.size()) ImGui::SetItemTooltip("%s", m_inputs.rehearsalFiles[i].c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(r.tester.c_str());
+            ImGui::SetItemTooltip("%s", r.machine.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s (%s), build %s", r.version.c_str(), r.platform.c_str(),
+                r.buildId.empty() ? "-" : r.buildId.c_str());
+            ImGui::TableNextColumn();
+            if (r.passed)
+                ImGui::TextColored(gateColor(GateStatus::Passed), "passed, no intervention");
+            else if (r.interventions.empty())
+                ImGui::TextColored(gateColor(GateStatus::Failed), "didn't finish");
+            else
+                ImGui::TextColored(gateColor(GateStatus::Failed), "%zu intervention%s", r.interventions.size(),
+                    r.interventions.size() == 1 ? "" : "s");
+            if (ImGui::IsItemHovered() && (!r.interventions.empty() || !r.notes.empty())) {
+                ImGui::BeginTooltip();
+                for (const std::string& s : r.interventions) ImGui::BulletText("intervention: %s", s.c_str());
+                for (const std::string& s : r.notes) ImGui::BulletText("note: %s", s.c_str());
+                ImGui::EndTooltip();
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    if (!ImGui::TreeNode("Record a rehearsal")) return;
+    if (m_rehearsal.version.empty()) m_rehearsal.version = m_edit.releaseVersion;
+    if (m_rehearsal.buildId.empty()) m_rehearsal.buildId = m_inputs.currentBuildId;
+    if (m_rehearsal.platform.empty() && !m_edit.platforms.empty()) m_rehearsal.platform = m_edit.platforms.front();
+    ImGui::InputText("Tester", &m_rehearsal.tester);
+    ImGui::SetItemTooltip("Who played: a label is enough (\"Tester B\"). Someone who hasn't seen the game.");
+    ImGui::InputText("Machine", &m_rehearsal.machine);
+    ImGui::SetItemTooltip("Which machine and profile: a clean one, without the engine or a build on it.");
+    if (ImGui::BeginCombo("Platform", m_rehearsal.platform.c_str())) {
+        for (const std::string& p : m_edit.platforms)
+            if (ImGui::Selectable(p.c_str(), p == m_rehearsal.platform)) m_rehearsal.platform = p;
+        ImGui::EndCombo();
+    }
+    ImGui::InputText("Package", &m_rehearsal.package);
+    ImGui::SetItemTooltip("The package folder the tester was given (TwoRooms-1.0.0-linux-x86_64).");
+    ImGui::InputText("Version", &m_rehearsal.version);
+    ImGui::InputText("Build ID", &m_rehearsal.buildId);
+    ImGui::SetItemTooltip("The package's cook build ID. Filled in from this project's cook.");
+    ImGui::InputTextMultiline("Interventions", &m_rehearsalInterventions, ImVec2(-1, 70));
+    ImGui::SetItemTooltip("One per line: every time a developer stepped in. Setting a path, copying a library, "
+                          "editing a save, a debug console, or explaining what the instructions should have said.");
+    ImGui::InputTextMultiline("Notes", &m_rehearsalNotes, ImVec2(-1, 50));
+    ImGui::Checkbox("Played it to the end", &m_rehearsalFinished);
+    const std::vector<std::string> interventions = nonEmptyLines(m_rehearsalInterventions);
+    const bool passed = m_rehearsalFinished && interventions.empty();
+    ImGui::Text("Result: %s", passed ? "passed" : "failed");
+    if (!passed)
+        ImGui::SetItemTooltip("A rehearsal passes only when the tester finished without any developer help.");
+    const bool ready = !m_rehearsal.tester.empty() && !m_rehearsal.machine.empty() && !m_rehearsal.platform.empty() &&
+                       !m_rehearsal.version.empty();
+    ImGui::BeginDisabled(!ready);
+    if (gui::button("Save record")) {
+        shockwave::RehearsalRecord record = m_rehearsal;
+        record.recorded = utcNow();
+        record.interventions = interventions;
+        record.notes = nonEmptyLines(m_rehearsalNotes);
+        record.passed = passed;
+        const fs::path file = shockwave::rehearsalFolder(project) / shockwave::rehearsalFileName(record);
+        std::string error;
+        if (fs::exists(file)) {
+            m_rehearsalFailed = true;
+            m_rehearsalResult = project.relative(file) + " already exists: rehearsals are never overwritten";
+        } else if (shockwave::writeRehearsal(file, record, error)) {
+            m_rehearsalFailed = false;
+            m_rehearsalResult = "Wrote " + project.relative(file);
+            m_rehearsalInterventions.clear();
+            m_rehearsalNotes.clear();
+            m_rehearsal.tester.clear();
+            m_inputs = releaseInputs(project);
+        } else {
+            m_rehearsalFailed = true;
+            m_rehearsalResult = error;
+        }
+    }
+    ImGui::EndDisabled();
+    if (!ready) ImGui::SetItemTooltip("Fill in the tester, machine, platform and version");
+    if (!m_rehearsalResult.empty())
+        ImGui::TextColored(m_rehearsalFailed ? errorColor : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s",
+            m_rehearsalResult.c_str());
+    ImGui::TreePop();
 }
 
 // What crashed (S12, docs/Diagnostics.md): each crash report from the game's runs, from
