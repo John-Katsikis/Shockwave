@@ -1519,6 +1519,13 @@ Plan section 22. See [Testing](Testing.md).
   for two minutes on that night's seed (`arena_network_test --seed`), fault tests three
   times.
 - **`SHOCKWAVE_SANITIZE`**: `address,undefined` or `thread` builds for GCC and Clang.
+- **Found by the first sanitizer run**: the model loader compiled Assimp's rapidjson headers
+  without Assimp's settings (`RAPIDJSON_NOMEMBERITERATORCLASS`, `RAPIDJSON_HAS_STDSTRING`),
+  so two incompatible copies of the same inline functions existed and Assimp's glTF code
+  could be linked to ours (a wrong `this`, reported as a global overflow). Assets now uses
+  the same settings. Every other finding was in third-party code and is listed, with its
+  reason, in [Testing](Testing.md#third-party-code). Locally the asan-ubsan set (95 tests)
+  then passed.
 
 ### Inventory
 

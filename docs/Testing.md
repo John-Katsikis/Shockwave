@@ -103,14 +103,14 @@ real Steam, and the platform records from real machines. Those are recorded evid
 The sanitizers check Shockwave's own code fully. A few findings in dependencies we build but
 don't own are switched off narrowly, each with its reason beside it:
 
-- **Assimp** is built without sanitizers: its glTF importer reads a string literal as a JSON
-  value (`glTFCommon::FindObject`), an overflow ASan reports on every glTF load.
 - **basisu** reads bits through deliberately unaligned pointers (`-fno-sanitize=alignment`).
 - **Recast/Detour** hash with int overflow on purpose (`-fno-sanitize=signed-integer-overflow`).
+- **SDL3** copies zero display modes from a null array when a display has none
+  (`-fno-sanitize=nonnull-attribute`).
 - **Jolt** frees jobs after an acquire fence, which TSan can't see; TSan builds define
   `JPH_TSAN_ENABLED` so Jolt uses its acq_rel path instead.
 - `Tests/lsan.supp`: SDL3's per-thread error buffer on threads it didn't create (the job
-  workers).
+  workers), and what its X11 backend keeps from video init past `SDL_Quit`.
 - `Tests/tsan.supp`: SDL3's HIDAPI libusb backend stopping its event thread through a
   plain flag.
 

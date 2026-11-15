@@ -4,3 +4,12 @@
 # SDL3 keeps a per-thread error buffer (SDL_SetError) for threads it didn't create, such as
 # the job workers that load WAV files; it is freed only by SDL_CleanupTLS on that thread.
 leak:SDL_GetErrBuf
+
+# SDL3's X11 backend keeps a few allocations from its video init past SDL_Quit (the X
+# resource database in X11_GetGlobalContentScale, the locale copy in X11_InitIM); seen
+# under Xvfb. Shockwave calls SDL_Quit; nothing of ours runs under X11_VideoInit.
+leak:X11_VideoInit
+
+# libdbus (a system library SDL3 starts for desktop services) keeps buffers it read for the
+# life of the process, by design.
+leak:libdbus-1.so

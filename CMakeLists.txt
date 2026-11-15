@@ -271,13 +271,16 @@ if(MSVC)
     add_compile_options(/utf-8 /bigobj /Zc:__cplusplus /Zc:preprocessor)
 endif()
 # Sanitizer findings in third-party code we don't own (docs/Testing.md#third-party-code):
-# Assimp's glTF importer reads a string literal as a JSON value (an overflow ASan reports on
-# every glTF load); basisu reads bits through deliberately unaligned pointers; Recast's
-# hashes overflow ints on purpose.
-if(SHOCKWAVE_SANITIZE)
-    if(TARGET assimp)
-        target_compile_options(assimp PRIVATE -fno-sanitize=all)
-    endif()
+# basisu reads bits through deliberately unaligned pointers; Recast's hashes overflow ints on
+# purpose; SDL3 copies zero display modes from a null array when a display has none
+# (SDL_GetFullscreenDisplayModes). At the end of configuring, once every target exists
+# (basisu is made in Source/).
+function(shockwave_sanitizer_exemptions)
+    foreach(sdl SDL3-shared SDL3-static)
+        if(TARGET ${sdl})
+            target_compile_options(${sdl} PRIVATE -fno-sanitize=nonnull-attribute)
+        endif()
+    endforeach()
     if(TARGET basisu)
         target_compile_options(basisu PRIVATE -fno-sanitize=alignment)
     endif()
@@ -286,6 +289,9 @@ if(SHOCKWAVE_SANITIZE)
             target_compile_options(${recast} PRIVATE -fno-sanitize=signed-integer-overflow)
         endif()
     endforeach()
+endfunction()
+if(SHOCKWAVE_SANITIZE)
+    cmake_language(DEFER CALL shockwave_sanitizer_exemptions)
 endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
