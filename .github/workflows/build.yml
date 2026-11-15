@@ -131,6 +131,11 @@ jobs:
     timeout-minutes: 75
     env:
       SDL_AUDIO_DRIVER: dummy
+    # Git's bash, not PowerShell: PowerShell splits "-DREQUIRE_FILE=Tests/RequiredTests.txt"
+    # at the dot.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Cache FetchContent dependencies
