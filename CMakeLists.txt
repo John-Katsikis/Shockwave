@@ -18,6 +18,11 @@ if(SHOCKWAVE_SANITIZE)
     endif()
     add_compile_options(-fsanitize=${SHOCKWAVE_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all)
     add_link_options(-fsanitize=${SHOCKWAVE_SANITIZE})
+    # Jolt frees jobs after an acquire fence, which TSan can't see; its TSan mode uses an
+    # acq_rel decrement instead. Its own check misses GCC, so say so (empty, as Jolt does).
+    if(SHOCKWAVE_SANITIZE MATCHES "thread")
+        add_compile_definitions("JPH_TSAN_ENABLED=")
+    endif()
 endif()
 
 # Every test of Shockwave's own has a timeout and a label CI selects by (docs/Testing.md):
@@ -264,6 +269,23 @@ include(cmake/ShockwaveModule.cmake)
 # zlib sets /source-charset, which /utf-8 can't be combined with.
 if(MSVC)
     add_compile_options(/utf-8 /bigobj /Zc:__cplusplus /Zc:preprocessor)
+endif()
+# Sanitizer findings in third-party code we don't own (docs/Testing.md#third-party-code):
+# Assimp's glTF importer reads a string literal as a JSON value (an overflow ASan reports on
+# every glTF load); basisu reads bits through deliberately unaligned pointers; Recast's
+# hashes overflow ints on purpose.
+if(SHOCKWAVE_SANITIZE)
+    if(TARGET assimp)
+        target_compile_options(assimp PRIVATE -fno-sanitize=all)
+    endif()
+    if(TARGET basisu)
+        target_compile_options(basisu PRIVATE -fno-sanitize=alignment)
+    endif()
+    foreach(recast Recast Detour DetourCrowd DetourTileCache DebugUtils)
+        if(TARGET ${recast})
+            target_compile_options(${recast} PRIVATE -fno-sanitize=signed-integer-overflow)
+        endif()
+    endforeach()
 endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).

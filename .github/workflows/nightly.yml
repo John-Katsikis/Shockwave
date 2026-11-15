@@ -32,11 +32,13 @@ jobs:
       matrix:
         include:
           # Everything without a GPU, a stopwatch or a package (a sanitized program needs
-          # the sanitizer's runtime, which packaging rightly refuses to ship).
+          # the sanitizer's runtime, which packaging rightly refuses to ship), and not the
+          # two crash-handler tests: the sanitizer installs its own handlers for the same
+          # signals. The regular jobs run those.
           - name: asan-ubsan
             sanitize: address,undefined
             exclude_labels: gpu|timing|installed
-            exclude_tests: ^package|^cook_|network_arena_soak
+            exclude_tests: ^package|^cook_|network_arena_soak|^diagnostics_cli$|^failure_recovery$
             expect: 95
           # The parts that run on several threads: jobs, streaming, processes, the
           # transport and sessions, diagnostics.
@@ -48,6 +50,7 @@ jobs:
     env:
       # Leaks are reported too; UBSan stops on the first problem.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+      LSAN_OPTIONS: suppressions=${{ github.workspace }}/Tests/lsan.supp
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:suppressions=${{ github.workspace }}/Tests/tsan.supp
     steps:

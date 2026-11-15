@@ -1,0 +1,6 @@
+# LeakSanitizer suppressions for the nightly asan-ubsan job (docs/Testing.md#third-party-code).
+# Only allocations third-party code keeps on purpose; name the library and why.
+
+# SDL3 keeps a per-thread error buffer (SDL_SetError) for threads it didn't create, such as
+# the job workers that load WAV files; it is freed only by SDL_CleanupTLS on that thread.
+leak:SDL_GetErrBuf

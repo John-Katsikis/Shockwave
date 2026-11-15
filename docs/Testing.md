@@ -83,10 +83,12 @@ workflow), and on a pull request that changes it or the gate:
 
 - **asan-ubsan**: a RelWithDebInfo build with `-DSHOCKWAVE_SANITIZE=address,undefined` runs
   every test without a GPU, a stopwatch or a package (a sanitized program needs the
-  sanitizer's runtime, which packaging rightly refuses to ship). Leaks count.
+  sanitizer's runtime, which packaging rightly refuses to ship). Leaks count. The two
+  crash-handler tests (`diagnostics_cli`, `failure_recovery`) sit this one out: the
+  sanitizer installs its own handlers for the same signals. The regular jobs run them.
 - **tsan**: `-DSHOCKWAVE_SANITIZE=thread` over the parts that run on several threads: jobs,
   streaming, level lifetime and travel, processes, the transport and sessions, diagnostics.
-  `Tests/tsan.supp` may suppress races inside third-party code only, each with a reason.
+  See [Third-party code](#third-party-code) for what it doesn't check.
 - **repeated**: travel, Stop and saves five times over; the cooks and the installed game
   three times; every network fault preset for two minutes of play with that night's seed
   (`arena_network_test Games/Arena --soak all 120 --seed N` replays a failure); the network
@@ -96,13 +98,37 @@ Release candidates need more than CI can give: real GPUs on each supported hardw
 real Steam, and the platform records from real machines. Those are recorded evidence in
 `Release/`, gathered as [Release](Release.md) describes.
 
+## Third-party code
+
+The sanitizers check Shockwave's own code fully. A few findings in dependencies we build but
+don't own are switched off narrowly, each with its reason beside it:
+
+- **Assimp** is built without sanitizers: its glTF importer reads a string literal as a JSON
+  value (`glTFCommon::FindObject`), an overflow ASan reports on every glTF load.
+- **basisu** reads bits through deliberately unaligned pointers (`-fno-sanitize=alignment`).
+- **Recast/Detour** hash with int overflow on purpose (`-fno-sanitize=signed-integer-overflow`).
+- **Jolt** frees jobs after an acquire fence, which TSan can't see; TSan builds define
+  `JPH_TSAN_ENABLED` so Jolt uses its acq_rel path instead.
+- `Tests/lsan.supp`: SDL3's per-thread error buffer on threads it didn't create (the job
+  workers).
+- `Tests/tsan.supp`: SDL3's HIDAPI libusb backend stopping its event thread through a
+  plain flag.
+
+The flags are set in the top `CMakeLists.txt` (only with `SHOCKWAVE_SANITIZE`). A new entry
+needs a finding traced into that library's code and a reason; a finding in Shockwave's code
+gets fixed, not suppressed.
+
+Time budgets inside otherwise functional tests (`test_snapshot_delta`'s per-tick cost) are
+stretched ten times in sanitizer builds, not dropped.
+
 ## Sanitizer builds at home
 
 ```sh
 cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DSHOCKWAVE_SANITIZE=address,undefined -DSHOCKWAVE_TEST_TIMEOUT_SCALE=5
 cmake --build build-asan
-ctest --test-dir build-asan -LE "gpu|timing|installed" -E "^package|^cook_"
+LSAN_OPTIONS=suppressions=$PWD/Tests/lsan.supp ctest --test-dir build-asan \
+    -LE "gpu|timing|installed" -E "^package|^cook_|^diagnostics_cli$|^failure_recovery$"
 ```
 
 GCC and Clang only. For `thread`, newer kernels may need `sudo sysctl vm.mmap_rnd_bits=28`.
