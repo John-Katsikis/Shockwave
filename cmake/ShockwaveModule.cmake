@@ -20,6 +20,16 @@ function(shockwave_warnings target)
     endif()
 endfunction()
 
+# Windows programs run with UTF-8 as their ANSI code page (cmake/Windows/utf8.manifest).
+# Paths go through std::string all over the engine and its libraries; without this, a folder
+# with a non-ASCII name (C:/Users/Zoë, an install under "Spiele/Ünïcode") makes
+# path::string() throw and fopen miss. Every program that opens files a user named gets it.
+function(shockwave_utf8_program target)
+    if(WIN32)
+        target_sources(${target} PRIVATE ${PROJECT_SOURCE_DIR}/cmake/Windows/utf8.manifest)
+    endif()
+endfunction()
+
 function(shockwave_module name)
     cmake_parse_arguments(ARG "STATIC" "" "PUBLIC_DEPS;PRIVATE_DEPS;SOURCES;NO_WARNINGS" ${ARGN})
     file(GLOB_RECURSE private_sources CONFIGURE_DEPENDS

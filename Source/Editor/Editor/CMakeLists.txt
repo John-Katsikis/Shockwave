@@ -8,6 +8,7 @@ target_link_libraries(editor PRIVATE Shockwave::GameFramework imguizmo imgui_nod
 target_compile_definitions(editor PRIVATE SHOCKWAVE_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     SHOCKWAVE_BUILD_DIR="${CMAKE_BINARY_DIR}")
 shockwave_warnings(editor)
+shockwave_utf8_program(editor)
 shockwave_link_plugins(editor)
 target_link_libraries(editor PRIVATE Shockwave::Packaging Shockwave::SteamServices Shockwave::Lighting)
 

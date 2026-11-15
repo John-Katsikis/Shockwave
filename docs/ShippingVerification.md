@@ -1526,6 +1526,12 @@ Plan section 22. See [Testing](Testing.md).
   the same settings. Every other finding was in third-party code and is listed, with its
   reason, in [Testing](Testing.md#third-party-code). Locally the asan-ubsan set (95 tests)
   then passed.
+- **Found by the Windows installed game**: installed under a folder with non-ASCII letters,
+  the game couldn't open its sounds and UI files, then stopped at `--check`. Paths pass
+  through `std::string` all over the engine and its libraries, and Windows reads those in
+  the old ANSI code page. The player, editor and sandbox now carry a manifest that makes
+  UTF-8 their code page (`cmake/Windows/utf8.manifest`, Windows 10 1903 and later), and the
+  audio and UI loaders open files by wide name as well.
 
 ### Inventory
 

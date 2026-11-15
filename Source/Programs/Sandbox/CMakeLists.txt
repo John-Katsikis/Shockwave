@@ -2,3 +2,4 @@
 add_executable(sandbox Private/Main.cpp)
 target_link_libraries(sandbox PRIVATE Shockwave::Engine)
 shockwave_warnings(sandbox)
+shockwave_utf8_program(sandbox)
