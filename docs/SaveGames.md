@@ -211,8 +211,24 @@ bool migrateSave(int fromSchema, SaveInfo& save, std::string& error) const overr
 
 It runs once per step, oldest first: a schema 1 save in a schema 3 game calls it with 1,
 then with 2. It runs on a job worker with the save on its own, so change only `save`.
-The file on disk is never changed. A save from a newer schema than the game is refused
-(`NewerSchema`).
+The file on disk is never changed by loading. A save from a newer schema than the game is
+refused (`NewerSchema`).
+
+### Updates
+
+An update that raises `save_schema` keeps the player's old saves usable by the old version:
+
+- The first time the newer version saves over a slot written at an older schema, it copies
+  that file beside it first, as `<slot>.swsave.schema<N>` (N being the old schema), once.
+  The newer save goes in the slot as usual.
+- An older version never writes over a save from a newer schema. Saving there fails with
+  `NewerSchema` and leaves the file as it is, so going back a version can't lose progress.
+- An older version that finds a newer save in a slot loads the kept copy instead, if
+  there is one, and says so (Continue and the save list use it too).
+- Deleting a slot deletes its kept copies.
+
+`player --verify-install --update-from <older package>` checks all of this on an installed
+game ([Release](Release.md#platforms)).
 
 Saves from before this (`save_game 1`) still load, in place, as schema 1. They have no
 level, game or campaign, so the campaign you have stays as it is.

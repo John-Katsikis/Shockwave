@@ -1437,9 +1437,98 @@ trust. See [Release](Release.md#platforms) and [Packaging](Packaging.md).
 - **A real GPU**: CI runs use the null renderer, so the Linux gate stays unverified until
   a run on real hardware (Yianni's 3080: `player --verify-install <package>
   --install-record "<machine>" --project <game>`).
-- **Updates and reinstalls**: part 2.
+- **Updates and reinstalls**: part 2 (below).
 - **Windows and macOS packages**: never verified; Packaging.md no longer claims them.
 - **A different distribution**: the install ran on the machine that built the package;
   an older distribution (for example in a container) is still a manual check.
 - **Steam release checks** (launch through Steam, overlay, offline policy) need the real
   service and an AppID.
+
+## S13: Supported platforms, installs and updates, part 2
+
+Plan section 21, steps 6 and 7: an update with changed content and a save schema
+migration, going back a version, and a reinstall, all on the installed game. See
+[Release](Release.md#platforms) and [Save games](SaveGames.md#updates).
+
+### What was built
+
+- **Saves across updates** (`GameFramework/SaveGame.h`): the first time a newer version
+  saves over a slot written at an older schema, the old file is kept beside it once
+  (`<slot>.swsave.schema<N>`). An older version never writes over a newer save
+  (`NewerSchema`, the file left as it is), and loads the kept copy instead, saying so.
+  Deleting a slot deletes its copies.
+- **`--update-from <older package>`**: installs and plays the older version first (the
+  first scenario, so there's a save), replaces it with this package in place and plays the
+  rest. Three steps join the record: **update** (every old save still there and continued;
+  a rewritten save's old bytes kept), **downgrade** (the older version put back changes no
+  save and says the newer ones are from a newer version) and **reinstall** (removed,
+  installed elsewhere, every save found by application ID and loaded). Records gain
+  `previous_package`, `previous_version`, `previous_build_id` and `previous_sha256`
+  (optional, so part 1's records still read).
+- **The platform gate** now needs update, downgrade and reinstall, all passed.
+- **Packaged version**: a packaged game takes its version from the package's marker, so a
+  release package of any version passes its own `--check` (release packages don't ship
+  `Package.swpackage`).
+- **Windows**: `installed_game_flow` runs there too (one program, no archive), so CI
+  installs, updates and reinstalls a Windows package on every push. macOS already ran it.
+
+### Tests
+
+| Test | Label | What it proves |
+| --- | --- | --- |
+| `save_migration` | unit | a schema 1 save rewritten at schema 2 keeps its old bytes once; schema 1 refuses to write over it and loads the copy; schema 2 loads its own |
+| `install_records` | unit | the update keys round-trip and may be missing; the gate wants update and downgrade |
+| `installed_game_flow` | integration, installed | Reactor Run 1.0.0 played and saved, updated to 1.1.0 (changed credits, save schema 2): the save continued and its old file kept; 1.0.0 put back says the saves are newer and changes none; reinstalled at another path, both saves found; the record names 1.0.0; the gate then lacks only a real GPU |
+
+### Still unverified
+
+- **A real GPU** on each platform, as in part 1. With `--update-from` a run on real hardware
+  can now pass a platform gate.
+- **Windows and macOS** stay out of the supported claims: CI's runs use the null renderer
+  on hosted runners. Their records are kept as CI artifacts only.
+- **Windows archives**: packages there are a folder to zip by hand.
+- **Steam release checks**, which need the real service and the game's own AppID:
+  1. The package uses the game's real AppID and the matching runtime library, never 480.
+  2. Launch through the Steam client, and its restart path when started outside Steam.
+  3. Steam not running or unreachable: the game says so and follows the contract's offline
+     policy.
+  4. The overlay opens over the game and input returns after it closes.
+  5. A store-managed update replaces the package and saves carry over as above.
+  6. The release package has no SDK headers, development AppID file or captures.
+
+## S14: Automated acceptance, CI and regression prevention
+
+Plan section 22. See [Testing](Testing.md).
+
+### What was built
+
+- **Labels and timeouts on every test**: `unit`, `integration`, `gpu`, `timing`,
+  `installed`, `online_mock`, `online_real`. Configuring stops on a test without a
+  timeout or a known label. `SHOCKWAVE_TEST_TIMEOUT_SCALE` stretches them for sanitizers.
+- **`cmake/CTestGate.cmake`**: every CI test run lists what its filter selects first and
+  refuses none, fewer than expected, or a missing required test, then runs exactly those
+  and writes the counts to the job summary.
+- **`Tests/RequiredTests.txt`**: the plan's test inventory and the long-standing checks,
+  per platform; a build that stops defining one fails.
+- **Pull request CI** (`build.yml`): all of the above on Linux, macOS and Windows; the
+  sample, shipping demo and Arena checked and unchanged; all eleven generated references
+  regenerated; install records kept as artifacts. GPU tests on hosted macOS and Windows
+  stay advisory, named so.
+- **Nightly CI** (`nightly.yml`): ASan with UBSan (leaks included), a TSan subset, travel
+  and saves five times over, cooks and installs three times, every network fault preset
+  for two minutes on that night's seed (`arena_network_test --seed`), fault tests three
+  times.
+- **`SHOCKWAVE_SANITIZE`**: `address,undefined` or `thread` builds for GCC and Clang.
+
+### Inventory
+
+Every name in the plan's section 22.1 exists, except `shipping_demo_gameplay`, which is
+`shipping_demo` (objectives, death and retry, rewards, the ending). All are in
+`Tests/RequiredTests.txt`.
+
+### Still unverified
+
+- **Release candidate checks** need real hardware and services: a real GPU on each tier,
+  real Steam, controlled crash symbolization on each platform. They stay recorded
+  evidence, not CI.
+- **`online_real`** has no tests yet.

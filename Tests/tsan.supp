@@ -1,0 +1,2 @@
+# ThreadSanitizer suppressions for the nightly tsan job (docs/Testing.md#ci). Only for
+# races inside third-party code we build but do not own; name the library and why.

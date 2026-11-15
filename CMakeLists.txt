@@ -9,6 +9,50 @@ if(NOT shockwave_multi_config AND NOT CMAKE_BUILD_TYPE)
 endif()
 include(CTest)
 
+# Sanitizer builds for the nightly CI job (docs/Testing.md#ci): "address,undefined" or
+# "thread". Set before the dependencies so they're instrumented too (TSan needs that).
+set(SHOCKWAVE_SANITIZE "" CACHE STRING "Build with these sanitizers: address,undefined or thread (GCC/Clang)")
+if(SHOCKWAVE_SANITIZE)
+    if(MSVC)
+        message(FATAL_ERROR "SHOCKWAVE_SANITIZE is for GCC and Clang builds")
+    endif()
+    add_compile_options(-fsanitize=${SHOCKWAVE_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=${SHOCKWAVE_SANITIZE})
+endif()
+
+# Every test of Shockwave's own has a timeout and a label CI selects by (docs/Testing.md):
+# each folder with tests ends by calling this (deferred), and configuring stops when one
+# is missing. SHOCKWAVE_TEST_TIMEOUT_SCALE multiplies every timeout for slow builds.
+set(SHOCKWAVE_TEST_LABELS unit integration gpu timing installed online_mock online_real)
+set(SHOCKWAVE_TEST_TIMEOUT_SCALE 1 CACHE STRING "Multiply every test's timeout (a whole number; sanitizer builds)")
+function(shockwave_check_tests)
+    get_property(tests DIRECTORY PROPERTY TESTS)
+    list(JOIN SHOCKWAVE_TEST_LABELS ", " allowed)
+    set(problems "")
+    foreach(test IN LISTS tests)
+        get_test_property(${test} TIMEOUT timeout)
+        get_test_property(${test} LABELS labels)
+        if(NOT timeout)
+            list(APPEND problems "${test} has no TIMEOUT")
+        elseif(NOT SHOCKWAVE_TEST_TIMEOUT_SCALE EQUAL 1)
+            math(EXPR timeout "${timeout} * ${SHOCKWAVE_TEST_TIMEOUT_SCALE}")
+            set_tests_properties(${test} PROPERTIES TIMEOUT ${timeout})
+        endif()
+        if(NOT labels)
+            list(APPEND problems "${test} has no LABELS (one of: ${allowed})")
+        endif()
+        foreach(label IN LISTS labels)
+            if(NOT label IN_LIST SHOCKWAVE_TEST_LABELS)
+                list(APPEND problems "${test} has the label ${label}, which isn't one of: ${allowed}")
+            endif()
+        endforeach()
+    endforeach()
+    if(problems)
+        list(JOIN problems "\n  " shown)
+        message(FATAL_ERROR "Tests in ${CMAKE_CURRENT_SOURCE_DIR} need a TIMEOUT and a label:\n  ${shown}")
+    endif()
+endfunction()
+
 # Authoring templates ship beside the tools, so creating projects does not depend on cwd.
 file(GLOB_RECURSE project_templates CONFIGURE_DEPENDS LIST_DIRECTORIES false
      RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/Templates" "${CMAKE_CURRENT_SOURCE_DIR}/Templates/*")

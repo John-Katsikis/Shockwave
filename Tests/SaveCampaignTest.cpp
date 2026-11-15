@@ -447,6 +447,61 @@ void testMigration() {
         CHECK(host.session()->saves()->getInt("coins") == 12);
         host.stop();
     }
+
+    // Updates (S13): version 1 saves a slot; version 2 (schema 2) keeps that file once as
+    // slot.swsave.schema1 before its first write; going back to version 1, it never writes
+    // over the schema 2 save, and Continue and load use the kept copy.
+    {
+        const fs::path updates = folder / "updates";
+        World world;
+        JobSystem jobs(1);
+        buildLevel(world, "a");
+        SaveIdentity v1 = identity();
+        v1.schema = 1;
+        SaveIdentity v2 = identity();
+        v2.schema = 2;
+        const fs::path file = updates / "slot.swsave";
+        {
+            SaveGames saves(world, jobs, nullptr, updates);
+            saves.setIdentity(v1);
+            moveCrate(world, 1);
+            CHECK(saves.save("slot"));
+            saves.wait();
+        }
+        const std::string written = readFile(file);
+        {
+            SaveGames saves(world, jobs, nullptr, updates);
+            saves.setIdentity(v2);
+            moveCrate(world, 2);
+            CHECK(saves.save("slot"));
+            saves.wait();
+            moveCrate(world, 3);
+            CHECK(saves.save("slot"));   // later writes leave the copy alone
+            saves.wait();
+        }
+        CHECK(readFile(schemaCopyPath(file, 1)) == written);
+        CHECK(olderSchemaCopy(file, 1) == schemaCopyPath(file, 1) && !olderSchemaCopy(file, 0));
+        const std::string newer = readFile(file);
+        SaveInfo header;
+        CHECK(readSaveInfo(file, header, error) && header.schema == 2);
+        {
+            SaveGames saves(world, jobs, nullptr, updates);
+            saves.setIdentity(v1);
+            CHECK(saves.save("slot"));
+            saves.wait();
+            CHECK(saveErrorOf(saves.lastError()) == SaveError::NewerSchema);
+        }
+        CHECK(readFile(file) == newer);   // never written over
+        std::string why;
+        const std::optional<SaveInfo> resume = newestCompatibleSave(updates, v1, &why);
+        CHECK(
+            resume && resume->slot == "slot" && resume->schema == 1 && why.find("newer version") != std::string::npos);
+        std::vector<std::string> warnings;
+        CHECK(readSaveRestore(file, assets, v1, restore, error, &warnings));
+        CHECK(restore.info.schema == 1 && !warnings.empty() && crateX(restore.world) == 1);
+        // Version 2 itself still loads its own save.
+        CHECK(readSaveRestore(file, assets, v2, restore, error) && crateX(restore.world) == 3);
+    }
     fs::remove_all(folder);
 }
 

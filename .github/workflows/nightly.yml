@@ -1,0 +1,134 @@
+name: Nightly
+
+# Slower checks (docs/Testing.md#ci): AddressSanitizer and UndefinedBehaviorSanitizer over
+# the tests that need no GPU, ThreadSanitizer over the threaded parts, travel, saves and
+# cooks repeated, network soaks with a new fault seed each night, and the installed game
+# flow. Every night, on demand, and on a pull request that changes this file or the gate.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - cmake/CTestGate.cmake
+      - Tests/RequiredTests.txt
+
+permissions:
+  contents: read
+
+env:
+  SDL_AUDIO_DRIVER: dummy
+  CMAKE_GENERATOR: Ninja
+
+jobs:
+  sanitizers:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Everything without a GPU, a stopwatch or a package (a sanitized program needs
+          # the sanitizer's runtime, which packaging rightly refuses to ship).
+          - name: asan-ubsan
+            sanitize: address,undefined
+            exclude_labels: gpu|timing|installed
+            exclude_tests: ^package|^cook_|network_arena_soak
+            expect: 95
+          # The parts that run on several threads: jobs, streaming, processes, the
+          # transport and sessions, diagnostics.
+          - name: tsan
+            sanitize: thread
+            exclude_labels: gpu|timing|installed
+            tests: ^(process|diagnostics|asset_streaming|asset_residency|level_lifetime|level_travel|network_transport|network_session|network_capture|ecs|optimisation)$
+            expect: 11
+    env:
+      # Leaks are reported too; UBSan stops on the first problem.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:suppressions=${{ github.workspace }}/Tests/tsan.supp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git pkg-config \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxtst-dev libxss-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl1-mesa-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libdbus-1-dev libibus-1.0-dev \
+            libusb-1.0-0-dev liburing-dev libvulkan1 mesa-vulkan-drivers \
+            glslang-tools xvfb xauth
+      # TSan's shadow memory doesn't fit the newer kernels' default address randomisation.
+      - name: Allow the sanitizers' memory layout
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('**/CMakeLists.txt', 'cmake/**/*.cmake') }}
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSHOCKWAVE_SANITIZE=${{ matrix.sanitize }}
+          -DSHOCKWAVE_TEST_TIMEOUT_SCALE=5
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: >
+          cmake -DBUILD=build -DNAME="${{ matrix.name }}" -DEXPECT=${{ matrix.expect }}
+          -DEXCLUDE_LABELS="${{ matrix.exclude_labels }}" -DTESTS="${{ matrix.tests }}"
+          -DEXCLUDE_TESTS="${{ matrix.exclude_tests }}" -DPARALLEL=2
+          -P cmake/CTestGate.cmake
+
+  repeated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git pkg-config \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxtst-dev libxss-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev libegl1-mesa-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libdbus-1-dev libibus-1.0-dev \
+            libusb-1.0-0-dev liburing-dev libvulkan1 mesa-vulkan-drivers \
+            glslang-tools xvfb xauth
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('**/CMakeLists.txt', 'cmake/**/*.cmake') }}
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      # Travel, Stop and saves, five times each: an order or timing that fails once in a
+      # few runs shows here.
+      - name: Travel, saves and Stop, repeated
+        run: >
+          cmake -DBUILD=build -DNAME="Travel and saves x5" -DEXPECT=12 -DREPEAT=until-fail:5
+          -DTESTS="^(level_travel|level_lifetime|game_flow|game_flow_cli|save_.*|shipping_demo_flow)$"
+          -P cmake/CTestGate.cmake
+      # The cook from clean and warm (its own test does both), and the installed game
+      # flow with its update, three times.
+      - name: Cooks and the installed game, repeated
+        run: >
+          cmake -DBUILD=build -DNAME="Cooks and installs x3" -DEXPECT=4 -DREPEAT=until-fail:3
+          -DTESTS="^(cook_reproducibility|cook_dependencies|package_release|installed_game_flow)$"
+          -P cmake/CTestGate.cmake
+      # Every fault preset for two minutes of play, with tonight's seed (printed, so a
+      # failure replays with: arena_network_test Games/Arena --soak all 120 --seed N).
+      - name: Network soaks with a new fault seed
+        run: build/bin/arena_network_test Games/Arena --soak all 120 --seed ${{ github.run_number }}
+      - name: Network fault tests, repeated
+        run: >
+          cmake -DBUILD=build -DNAME="Network faults x3" -DEXPECT=5 -DREPEAT=until-fail:3
+          -DTESTS="^(network_transport|network_session|network_prediction|network_map_rotation|network_arena)$"
+          -P cmake/CTestGate.cmake

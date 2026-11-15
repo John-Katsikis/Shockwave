@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -943,19 +944,25 @@ void frameRateIndependence() {
 
 }   // namespace
 
-// arena_network_test [Games/Arena] [--soak clean|cafe|poor|hostile|throttled|all [seconds]]
+// arena_network_test [Games/Arena] [--soak clean|cafe|poor|hostile|throttled|all [seconds]] [--seed n]
 // Without --soak: the twelve-player, cheating, missing-input and frame-rate tests. With it:
 // only the soaks, each preset for `seconds` (default 20) of play, and the 12 s outage.
+// --seed changes the soaks' fault pattern (default 10); the nightly CI job passes its run
+// number, and the seed is printed so a failure can be replayed.
 int main(int argc, char** argv) {
     const fs::path game = argc > 1 && argv[1][0] != '-' ? fs::path(argv[1]) : fs::path("Games/Arena");
     std::string soakName;
     int soakSeconds = 20;
+    uint64_t soakSeed = SoakOptions{}.seed;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--soak" && i + 1 < argc) {
             soakName = argv[++i];
             if (i + 1 < argc && argv[i + 1][0] != '-') soakSeconds = std::max(1, std::atoi(argv[++i]));
+        } else if (std::string(argv[i]) == "--seed" && i + 1 < argc) {
+            soakSeed = std::strtoull(argv[++i], nullptr, 10);
         }
     }
+    if (!soakName.empty()) std::printf("soaks with seed %llu\n", static_cast<unsigned long long>(soakSeed));
     registerTypes();
     net::registerNetworkComponents();
     Assets assets;
@@ -968,11 +975,11 @@ int main(int argc, char** argv) {
             std::vector<SoakOptions> soaks;
             for (const net::FaultPreset& preset : net::faultPresets())
                 if (soakName == "all" || soakName == preset.name)
-                    soaks.push_back({preset.name, preset.profile, soakSeconds});
+                    soaks.push_back({preset.name, preset.profile, soakSeconds, soakSeed});
             if (soakName == "all" || soakName == "throttled") {
                 // cafe, with each direction of each connection held to 64 KiB/s: the plan's
                 // per-peer budget for twelve players.
-                SoakOptions throttled{"throttled", net::findFaultPreset("cafe")->profile, soakSeconds};
+                SoakOptions throttled{"throttled", net::findFaultPreset("cafe")->profile, soakSeconds, soakSeed};
                 throttled.faults.bytesPerSecond = 64 * 1024;
                 soaks.push_back(throttled);
             }

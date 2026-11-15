@@ -52,7 +52,12 @@ struct Key {
     const char* name;
     std::function<std::string(const R&)> write;
     std::function<bool(R&, const std::vector<std::string>&)> read;
+    bool optional = false;   // added after version 1's first records; may be left out
 };
+Key optional(Key key) {
+    key.optional = true;
+    return key;
+}
 
 Key text(const char* name, std::string R::*member) {
     return {
@@ -109,6 +114,10 @@ const std::vector<Key>& keys() {
         word("archive_sha256", &R::archiveSha256),
         whole("files", &R::files),
         whole("bytes", &R::bytes),
+        optional(text("previous_package", &R::previousPackage)),
+        optional(text("previous_version", &R::previousVersion)),
+        optional(text("previous_build_id", &R::previousBuildId)),
+        optional(word("previous_sha256", &R::previousSha256)),
         flag("read_only", &R::readOnly),
         flag("spaces_in_path", &R::spacesInPath),
         flag("unicode_path", &R::unicodePath),
@@ -279,7 +288,7 @@ bool parseInstall(std::string_view text, std::string_view shown, InstallRecord& 
     }
     if (!header) return fail("", "expected shockwave_install 1 as the first line");
     for (size_t i = 0; i < seen.size(); ++i)
-        if (!seen[i]) {
+        if (!seen[i] && !keys()[i].optional) {
             lineNumber = 0;
             return fail(keys()[i].name, std::string("missing ") + keys()[i].name);
         }
@@ -363,7 +372,7 @@ InstallRecords readInstallRecords(const Project& project) {
 // ---- The gate ---------------------------------------------------------------------------
 
 std::span<const char* const> requiredInstallSteps() {
-    static constexpr const char* steps[] = {"install", "check", "user data", "update", "reinstall"};
+    static constexpr const char* steps[] = {"install", "check", "user data", "update", "downgrade", "reinstall"};
     return steps;
 }
 
@@ -398,8 +407,8 @@ std::vector<std::string> installProblems(const InstallRecord& r, std::string_vie
         if (!s || s->result == InstallStepResult::Skipped)
             problems.push_back(
                 std::string("no \"") + name + "\" step" +
-                (std::string_view(name) == "update" || std::string_view(name) == "reinstall"
-                     ? " (updates and reinstalls are verified from S13 part 2)"
+                (std::string_view(name) == "update" || std::string_view(name) == "downgrade"
+                     ? " (verify with --update-from <the previous package>)"
                      : ""));
     }
     return problems;

@@ -1,3 +1,5 @@
+# Every test here needs a TIMEOUT and a label (checked at the end of this folder).
+cmake_language(DEFER CALL shockwave_check_tests)
 shockwave_game_module(arena)
 
 if(BUILD_TESTING)
@@ -6,13 +8,14 @@ if(BUILD_TESTING)
     target_link_libraries(arena_graphics_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(arena_graphics_test)
     add_test(NAME arena_graphics COMMAND arena_graphics_test ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(arena_graphics PROPERTIES TIMEOUT 60 LABELS unit)
     # Batch 9 gate: the online menu through the real document, over the Steam mock.
     add_executable(arena_online_menu_test Tests/OnlineMenuTest.cpp Source/ArenaOnlineMenu.cpp)
     target_include_directories(arena_online_menu_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
     target_link_libraries(arena_online_menu_test PRIVATE Shockwave::GameFramework Shockwave::SteamServices)
     shockwave_warnings(arena_online_menu_test)
     add_test(NAME arena_online_menu COMMAND arena_online_menu_test ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(arena_online_menu PROPERTIES TIMEOUT 120)
+    set_tests_properties(arena_online_menu PROPERTIES TIMEOUT 120 LABELS online_mock)
     # Exercise the arena shooter against real Jolt collision/character simulation, no GPU.
     set(ARENA_GAME_SOURCES Source/ArenaGame.cpp Source/ArenaGraphicsMenu.cpp Source/ArenaOnlineMenu.cpp Source/ArenaPresentation.cpp
         Source/ArenaSimulation.cpp)
@@ -21,7 +24,7 @@ if(BUILD_TESTING)
     target_link_libraries(arena_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(arena_test)
     add_test(NAME arena COMMAND arena_test WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-    set_tests_properties(arena PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    set_tests_properties(arena PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS unit)
     # Batch 6 gate: a host and eleven clients on the multiplayer scene, cheating clients,
     # and frame-rate independent input (Tests/ArenaNetworkTest.cpp).
     add_executable(arena_network_test Tests/ArenaNetworkTest.cpp ${ARENA_GAME_SOURCES} Source/ArenaNetwork.cpp)
@@ -29,12 +32,12 @@ if(BUILD_TESTING)
     target_link_libraries(arena_network_test PRIVATE Shockwave::GameFramework)
     shockwave_warnings(arena_network_test)
     add_test(NAME network_arena COMMAND arena_network_test ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(network_arena PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 300)
+    set_tests_properties(network_arena PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS integration)
     # Batch 10: twelve players on every fault preset and a 64 KiB/s throttle (20 s of play
     # each, with an outage, a leave and a late join), and a 12 s outage. The 30-minute soak
     # is the same program: arena_network_test Games/Arena --soak cafe 1800.
     add_test(NAME network_arena_soak COMMAND arena_network_test ${CMAKE_CURRENT_SOURCE_DIR} --soak all 20)
-    set_tests_properties(network_arena_soak PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 900)
+    set_tests_properties(network_arena_soak PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy" TIMEOUT 900 LABELS integration)
     add_test(NAME arena_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
         -DPROJECT=${CMAKE_CURRENT_SOURCE_DIR}/Arena.swproject
@@ -42,7 +45,7 @@ if(BUILD_TESTING)
         -DMP_SCENE=${CMAKE_CURRENT_SOURCE_DIR}/Scenes/arena-mp.swscene
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/ArenaCLI
         -P ${CMAKE_CURRENT_SOURCE_DIR}/Tests/ArenaCheck.cmake)
-    set_tests_properties(arena_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60)
+    set_tests_properties(arena_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 60 LABELS integration)
     # Multiplayer settings, manifest and schema on a copy of Arena (Tests/NetworkCheck.cmake).
     add_test(NAME network_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
@@ -51,7 +54,7 @@ if(BUILD_TESTING)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/NetworkCLI
         -DSTEAMWORKS=${SHOCKWAVE_STEAMWORKS}
         -P ${CMAKE_SOURCE_DIR}/Tests/NetworkCheck.cmake)
-    set_tests_properties(network_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120)
+    set_tests_properties(network_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS integration)
     # The release contract (S00): --check, --release-info and --release-schema on a copy of
     # Arena, with and without Config/Release.swrelease (Tests/ReleaseCheck.cmake).
     add_test(NAME release_cli COMMAND ${CMAKE_COMMAND}
