@@ -1631,7 +1631,7 @@ Sections 24 and 25 of the plan, which no batch owned. See [Acceptance](Acceptanc
 - **Laps for flow tests**: `player --flow-test <scenario> --laps N [--lap-tolerance MiB]`
   notes memory, entities, physics bodies, resident assets, leases and threads at each lap's
   end and fails when they keep growing. Reactor Run's `round-trip.json` is one lap of menu,
-  training, factory, menu. `ProcessMemory` gains the thread count (Linux, macOS, Windows).
+  training, factory, menu. `processThreads()` counts the process's threads (Linux, macOS, Windows), apart from `processMemory()`, which the performance run reads every few frames.
 - **Failure injection in flow tests**: `{"disk_full": true}`, `{"cancel": "travel"}`, and
   `expect` on `wait_phase`, `save` and `load`. Reactor Run's `failures.json` uses them.
 - **The checklist for people** in [Acceptance.md](Acceptance.md), next to a table of which

@@ -23,10 +23,13 @@ const SystemInfo& systemInfo();
 struct ProcessMemory {
     uint64_t residentBytes = 0;   // memory this process holds right now (RSS / working set)
     uint64_t peakResidentBytes = 0;   // the most it has held since it started; 0 if unknown
-    uint32_t threads = 0;   // the threads it has right now; 0 if unknown
 };
 
 // This process's memory now. Zeros where the system can't say.
 ProcessMemory processMemory();
+
+// The threads this process has now; 0 where the system can't say. Slower than
+// processMemory() on Windows (a snapshot of the system's threads): not for every frame.
+uint32_t processThreads();
 
 }   // namespace shockwave

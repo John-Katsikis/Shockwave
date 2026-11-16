@@ -251,7 +251,7 @@ void Player::sampleLaps() {
         LapMark m;
         const shockwave::ProcessMemory memory = shockwave::processMemory();
         m.residentBytes = memory.residentBytes;
-        m.threads = memory.threads;
+        m.threads = shockwave::processThreads();
         m.entities = m_world.entityCount();
         if (session())
             if (const shockwave::PhysicsWorld* physics = session()->physics()) m.bodies = physics->bodyCount();
