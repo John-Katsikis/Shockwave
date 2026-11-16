@@ -73,6 +73,7 @@ struct EditorOptions {
     bool showRelease = false;   // --release: open Project > Release readiness
     bool showLevels = false;   // --levels: open Project > Levels
     bool showResidency = false;   // --residency: open Window > Resource residency
+    bool showRuntimeFlow = false;   // --runtime-flow: open Window > Runtime flow
     bool showDiagnostics = false;   // --diagnostics: open Window > Diagnostics
     bool showPlayerSettings = false;   // --player-settings: open Window > Player Settings
     // --preview-language / --preview-ui-scale: Player Settings previews to start with.
@@ -558,6 +559,10 @@ private:
     char m_residencyFilter[128] = {};
     shockwave::AssetGraph& assetGraph();
     void drawResidencyWindow();
+    // Window > Runtime flow (RuntimeFlowPanel.cpp, S15): the level playing, its epoch, the
+    // travel under way, the input layer and every travel's result.
+    bool m_showRuntimeFlow = false;
+    void drawRuntimeFlowWindow();
     // Window > Diagnostics (S12, docs/Diagnostics.md): this editor's log and last session,
     // and the project's player crash reports, named frame by frame.
     bool m_showDiagnostics = false;

@@ -83,6 +83,8 @@ Press Ctrl+P to play the scene and Ctrl+P again to stop. Press F1 to see every c
 
 Follow [Tutorial: your first game in Shockwave](docs/Tutorial.md). It walks you through
 making a project, building a scene and writing your first game code.
+When you're ready to ship, [From an empty folder to a packaged game](docs/ShippingTutorial.md)
+takes a project outside the engine to a tested release package.
 
 Then, to understand how the whole engine works, read [The Shockwave Book](docs/Book/README.md).
 
@@ -105,7 +107,8 @@ ctest --test-dir build
 Each item links to the guide that covers it in detail.
 
 - **Ship your game.** Package a project into a folder players can run, with one click
-  or one command. See [Packaging your game](docs/Packaging.md).
+  or one command. See [Packaging your game](docs/Packaging.md), and
+  [Release](docs/Release.md) for what a release must prove before it ships.
 - **Write game code in C++.** A whole game module can be one file. You define components
   as plain structs and add systems that run across every core. See
   [Game projects](docs/Projects.md).

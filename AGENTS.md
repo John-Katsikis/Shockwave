@@ -209,6 +209,13 @@ clean environment; `--update-from <older package>` adds the update, downgrade an
 steps; `--install-record "<machine>" --project <game>` keeps the evidence the platform
 gates read (`docs/Release.md#platforms`).
 
+`docs/ShippingTutorial.md` is followed literally by `Tests/FollowTutorial.py` (nightly CI):
+its `<!-- tutorial: file PATH -->` and `<!-- tutorial: run -->` blocks are the steps, so
+change the tutorial's code and commands only to things that build and run, and run the
+script after changing it. Release rehearsals (`docs/ReleaseRehearsal.md`) are records in
+`Release/Rehearsals/` written by a person who watched a new tester; never write one that
+says `passed` for a rehearsal that didn't happen.
+
 ## Networking
 
 Multiplayer is built in batches from `docs/SteamMultiplayerImplementation.md`; record

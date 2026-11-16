@@ -17,6 +17,7 @@
 #include <Engine/Engine.h>
 #include <Engine/EntityRef.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/Levels.h>
 #include <Engine/Prefab.h>
 #include <Engine/Schedule.h>
 #include <GameFramework/GameModule.h>

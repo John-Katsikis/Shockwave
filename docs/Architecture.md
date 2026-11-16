@@ -22,6 +22,7 @@ The most common changes, and where they belong:
 | A node for circuits | `SW_NODE` in game code, or a built-in in `Source/Runtime/Circuits/Private/CircuitNodes.cpp`. Then regenerate `docs/CircuitNodes.md`. |
 | A new component | A struct in the module that owns the data. Register it with `registerComponent` in engine code, or `SW_COMPONENT` in a game module. Then regenerate `docs/SceneSchema.md`, and add a `player --check` rule if mistakes are likely. |
 | A new engine service | A Subsystem in its own module. |
+| A new level | A scene in the project and an entry in its level catalog (`Config/*.swlevels`). Link it with a `LevelExit`. See [Levels](Levels.md). |
 | A new editor panel | A `*Panel.cpp` in `Source/Editor/Editor/Private`, built from the `shockwave::gui` controls. See [UI](UI.md). |
 | A new render pass | The frame graph in `Source/Plugins/RendererVulkan/Private/RendererFrame.cpp`. Declare which images it uses. |
 | A new renderer | A plugin that implements `RenderBackend` (`Renderer/RenderBackend.h`). `Source/Plugins/RendererNull` is the smallest example. See [Plugins](Plugins.md). |
@@ -126,7 +127,7 @@ module can only see the headers of modules it depends on, directly or through th
 | Renderer | meshes, textures, lights, the frame; forwards to a renderer plugin it can swap | Core, Platform | Renderer |
 | Assets | asset registry, image decode, model import, hot reload | Renderer | AssetRegistry |
 | UI | `shockwave::gui` controls, themes (Dear ImGui) | Core | Slate |
-| Projects | `.swproject` manifest | Core | Projects |
+| Projects | `.swproject` manifest, the level catalog, the release contract and its gates, performance, install and rehearsal records | Core | Projects |
 | Packaging | turns a project into a game folder for players; `Package.swpackage` settings | Projects | Project Launcher, UnrealPak |
 | Engine | World, components, systems, hierarchy, scene files, subsystems, engine loop | everything above | Engine |
 | Audio | SDL3 mixing, spatial sources, session playback | Engine | AudioMixer |
@@ -138,7 +139,7 @@ module can only see the headers of modules it depends on, directly or through th
 | Animation | skeletal animation (ozz-animation): `Animator`, clips, cross-fades, `game.animation()` | Engine | AnimGraph, Animation Blueprint |
 | Lighting | the lighting baker: lightmap unwrap (xatlas), CPU path tracing, diffuse probes, `bakeLighting()` (the scene side, `BakedLightingRuntime`, is in Engine) | Engine | Lightmass, GPU Lightmass |
 | Circuits | visual scripting: `.swcircuit` node graphs compiled to bytecode, the `Circuit` component, the game circuit | Engine | Blueprints (Kismet) |
-| GameFramework | GameModule, GameInstance, GameMode, PlaySession | Engine, Physics, Multiplayer, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
+| GameFramework | GameModule, GameInstance, GameMode, PlaySession, LevelHost and GameFlow (one level at a time, travel tickets), the application shell, save games | Engine, Physics, Multiplayer, Audio, GameUI, Navigation, Effects, Animation, Circuits | Engine's GameFramework |
 
 Vulkan, the graphics API, never reaches game or editor code. Only the Vulkan renderer
 plugin links RHI.

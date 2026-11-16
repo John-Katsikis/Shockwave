@@ -1075,6 +1075,19 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                                                   : GateStatus::Unverified,
             "S13", g.reason);
     }
+    // The release rehearsal (S15): a new tester played the package on a clean machine.
+    if (!inputs.rehearsalChecked) {
+        gate("release_rehearsal", GateStatus::Unverified, "S15", "rehearsal records weren't read (Release/Rehearsals)");
+    } else {
+        const RehearsalGate g = rehearsalGate(
+            s.releaseVersion, s.platforms, inputs.rehearsalRecords, inputs.rehearsalFiles, inputs.currentBuildId);
+        gate(
+            "release_rehearsal",
+            g.verdict == RehearsalVerdict::Passed   ? GateStatus::Passed
+            : g.verdict == RehearsalVerdict::Failed ? GateStatus::Failed
+                                                    : GateStatus::Unverified,
+            "S15", g.reason);
+    }
 }
 
 ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs) {
@@ -1097,6 +1110,7 @@ ReleaseReport releaseReport(const Project& project, const ReleaseInputs& inputs)
             validateRelease(file.settings, &withScenario, report.file, &file, report.diagnostics);
             for (const Diagnostic& problem : inputs.performanceProblems) report.diagnostics.push_back(problem);
             for (const Diagnostic& problem : inputs.installProblems) report.diagnostics.push_back(problem);
+            for (const Diagnostic& problem : inputs.rehearsalProblems) report.diagnostics.push_back(problem);
             for (const Diagnostic& problem : inputs.tierProblems) report.diagnostics.push_back(problem);
             releaseGates(report, withScenario);
             return report;
@@ -1263,7 +1277,10 @@ std::string releaseSchema() {
     }
     out += "| `platform:<name>` | S13 | an install record (`player --verify-install --install-record`) from that "
            "platform: a release package of the current, optimised build installed read-only at a path with spaces and "
-           "non-ASCII letters, played with a real GPU, updated and reinstalled, every step passed |\n\n"
+           "non-ASCII letters, played with a real GPU, updated and reinstalled, every step passed |\n"
+           "| `release_rehearsal` | S15 | the newest rehearsal record (`Release/Rehearsals`) of this version and build, "
+           "on a platform the contract names, passed: a new tester on a clean machine played it with no developer "
+           "intervention (docs/ReleaseRehearsal.md) |\n\n"
            "Gates that later batches measure stay `unverified` until their evidence exists.\n\n"
            "## Diagnostic codes\n\n"
            "Codes are stable; tools can match them. Messages may change.\n\n"
@@ -1292,6 +1309,7 @@ std::string releaseSchema() {
            "| `ReleaseScenarioMissing` | warning | the acceptance scenario's file doesn't exist yet |\n"
            "| `PerformanceUnreadable` | warning | a performance record in `Release/Performance` doesn't read |\n"
            "| `InstallUnreadable` | warning | an install record in `Release/Installs` doesn't read |\n"
+           "| `RehearsalUnreadable` | warning | a rehearsal record in `Release/Rehearsals` doesn't read |\n"
            "| `ReleaseTierUnreadable` | error | `Config/ReleaseTier.swtier` can't be opened |\n"
            "| `ReleaseTierSyntax` | error | the tier file has an unknown word, setting or value, or a line is "
            "incomplete |\n"

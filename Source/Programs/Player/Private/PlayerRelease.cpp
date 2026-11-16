@@ -88,6 +88,12 @@ releaseInputs(const shockwave::Project& project, const std::map<std::string, sho
     inputs.installRecords = std::move(installs.records);
     inputs.installFiles = std::move(installs.files);
     inputs.installProblems = std::move(installs.problems);
+    // Release rehearsals (S15): Release/Rehearsals/*.swrehearsal, the release_rehearsal gate.
+    shockwave::RehearsalRecords rehearsals = shockwave::readRehearsalRecords(project);
+    inputs.rehearsalChecked = true;
+    inputs.rehearsalRecords = std::move(rehearsals.records);
+    inputs.rehearsalFiles = std::move(rehearsals.files);
+    inputs.rehearsalProblems = std::move(rehearsals.problems);
     // The graphics release tier (S10): Config/ReleaseTier.swtier against the presets.
     shockwave::releaseTierInputs(project, inputs);
 

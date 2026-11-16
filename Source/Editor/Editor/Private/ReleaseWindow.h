@@ -33,6 +33,8 @@ private:
     void drawPlatforms();
     // Unresolved crash reports from the game's runs and an unclean last run (S12).
     void drawFatalErrors(const shockwave::Project& project);
+    // Release rehearsals (S15): the records, and a form to write one after a session.
+    void drawRehearsals(const shockwave::Project& project);
 
     std::filesystem::path m_project;   // the project the contract belongs to
     bool m_present = false, m_savedPresent = false;
@@ -47,6 +49,12 @@ private:
     std::string m_importResult;   // what the last Import development saves did
     bool m_importFailed = false;
     std::string m_resolveError;   // Mark resolved failed: why
+    // Record a rehearsal: the form, and how the last save went.
+    shockwave::RehearsalRecord m_rehearsal;
+    std::string m_rehearsalInterventions, m_rehearsalNotes;   // one per line
+    bool m_rehearsalFinished = true;   // the tester played it to the end
+    std::string m_rehearsalResult;
+    bool m_rehearsalFailed = false;
 };
 
 // The project's other settings as the contract's shared rules see them: tick rate, package

@@ -90,8 +90,8 @@ cmake --build build --target player editor -j4
 ```
 
 `SHOCKWAVE_GAMES` replaces the configured list; it does not append to it. Fresh engine
-builds default to Sample and Arena. Existing build caches retain their configured
-list, so add Arena explicitly if upgrading from a Sample-only build. Paths are build
+builds default to Sample, Arena and ShippingDemo (Reactor Run). Existing build caches
+retain their configured list, so add the others explicitly if upgrading from an older build. Paths are build
 configuration, not edits to engine source. Distinct folder names are not required,
 but module IDs must be distinct.
 
@@ -143,8 +143,15 @@ and [development walkthrough](../Games/Arena/Docs/Development.md).
 Put weapons, enemies, scoring, levels, game UI and game tests in your project. Use
 registered components for inspector/schema access, and validate mistakes through
 `player --check`. Put reusable actor groups in `.swprefab` assets and visual scripts
-in `.swcircuit` assets inside Content. Use the existing [packaging](Packaging.md)
-workflow when ready to distribute a game.
+in `.swcircuit` assets inside Content. More than one level goes in the
+[level catalog](Levels.md), and travel between them through `game.flow()`
+([Level lifetime](LevelLifetime.md)).
+
+[From an empty folder to a packaged game](ShippingTutorial.md) takes a new external
+project all the way: two levels, an exit, a checkpoint, a menu, a flow test, the release
+contract, a release package and an install check. CI follows it word for word, so it
+stays true. Before a release, a new tester [rehearses](ReleaseRehearsal.md) the package
+on a clean machine.
 
 Only change shared engine modules when fixing an engine defect or introducing a
 general-purpose capability. For example, the prefab-unload and frame-timing fixes

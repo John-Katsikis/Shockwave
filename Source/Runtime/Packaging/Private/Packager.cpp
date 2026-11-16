@@ -66,6 +66,22 @@ const Layout kLayout;
 // A release package's cook, in Game/: what it ships and the IDs to check it by.
 constexpr const char* kCookFile = "Cook.swcook";
 
+// On Windows a folder can't be renamed or removed while anything holds a file inside it
+// open, and right after the packaged game's own checks something often does for a moment:
+// the exiting process's image, or the virus scanner reading the new program. Try again for
+// a few seconds before giving up. Elsewhere the first answer is final.
+template <typename Op>
+void retryWhileBusy(Op op, std::error_code& ec) {
+    op(ec);
+#ifdef _WIN32
+    for (int wait = 50; ec && ec == std::errc::permission_denied && wait <= 3200; wait *= 2) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(wait));
+        ec.clear();
+        op(ec);
+    }
+#endif
+}
+
 // Libraries every Linux system has, so a package may need them without shipping them.
 bool systemLibrary(const std::string& name) {
     static const std::set<std::string> known = {
@@ -1016,10 +1032,10 @@ private:
         progress(PackageStep::Archive, 0.0f);
         std::error_code ec;
         // Only now does the new package replace the old one.
-        fs::remove_all(m_final, ec);
+        retryWhileBusy([&](std::error_code& e) { fs::remove_all(m_final, e); }, ec);
         if (ec) fail("Can't remove the previous package " + m_final.string() + ": " + ec.message());
         fs::remove(m_staging / kStagingMarker, ec);
-        fs::rename(m_staging, m_final, ec);
+        retryWhileBusy([&](std::error_code& e) { fs::rename(m_staging, m_final, e); }, ec);
         if (ec) fail("Can't move the package into place: " + ec.message());
         m_staging.clear();
         m_result.folder = m_final;

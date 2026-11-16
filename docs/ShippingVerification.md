@@ -19,7 +19,14 @@ section says:
 | S05 offline flow and travel | done: travel tickets, staged travel, spawns, exits, circuit nodes; the application shell's screens, `--flow-test` | [part 1](#s05-travel-tickets-part-1), [part 2](#s05-application-shell-and-flow-tests-part-2) |
 | S06 campaign saves | done: save format 2, campaign travel, migration, durable writes, Continue; checkpoints, finishing a level, things that stay gone | [part 1](#s06-campaign-saves-part-1), [part 2](#s06-checkpoints-and-lasting-progress-part-2) |
 | S07 finishable reference game | done: Reactor Run, real-input flow steps, the whole game by keyboard and mouse and by gamepad, save/quit/continue, from the build and from a package; editor level authoring, failures by kind, game content checks in `--check` | [part 1](#s07-reactor-run-part-1), [part 2](#s07-reactor-run-part-2) |
-| S08-S15 | not started | none |
+| S08 settings, accessibility, localization | done: preferences, the Settings page, localization, input layers, rebinding, editor Player Settings | [part 1](#s08-settings-and-localization-part-1), [part 2](#s08-input-rebinding-and-reliability-part-2) |
+| S09 cook and release package | done: cook manifest, release policy, release packages of only what the cook lists, editor packaging | [part 1](#s09-cooking-and-release-checks-part-1), [part 2](#s09-release-packages-and-the-editor-part-2) |
+| S10 performance and graphics tier | done: budgets, percentiles, performance records, release tier file, native resolution on Low/Medium. Evidence still to gather: a record per advertised hardware tier | [part 1](#s10-measured-performance-part-1) |
+| S11 multiplayer lifecycle | done: map rotation, degradation, kick, 64-player runs on the mock transport. Evidence still to gather: the real Steam service | [part 1](#s11-map-rotation-part-1), [part 2](#s11-scale-degradation-and-match-control-part-2) |
+| S12 diagnostics and recovery | done: logs, crash capture, symbols, safe mode, processes, GPU loss, the recovery page | [part 1](#s12-diagnostics-and-crashes-part-1), [part 2](#s12-diagnostics-and-crashes-part-2) |
+| S13 platforms, installs, updates | done: `--verify-install` with update, downgrade and reinstall, install records, platform gates. Evidence still to gather: a real-GPU install record per platform | [part 1](#s13-supported-platforms-installs-and-updates-part-1), [part 2](#s13-supported-platforms-installs-and-updates-part-2) |
+| S14 CI and regression prevention | done: labels and timeouts, the test gate, required tests, nightly sanitizers, repeats and soaks | [below](#s14-automated-acceptance-ci-and-regression-prevention) |
+| S15 documentation and rehearsal | done: the shipping tutorial, followed by CI; Window > Runtime flow; rehearsal records and their gate. Evidence still to gather: a rehearsal with a new tester | [below](#s15-documentation-and-release-rehearsal) |
 
 ## S00: release contract
 
@@ -1545,3 +1552,55 @@ Every name in the plan's section 22.1 exists, except `shipping_demo_gameplay`, w
   real Steam, controlled crash symbolization on each platform. They stay recorded
   evidence, not CI.
 - **`online_real`** has no tests yet.
+
+## S15: Documentation and release rehearsal
+
+Plan section 23. See [ShippingTutorial](ShippingTutorial.md) and
+[ReleaseRehearsal](ReleaseRehearsal.md).
+
+### What was built
+
+- **The shipping tutorial** ([ShippingTutorial.md](ShippingTutorial.md)): from an empty
+  folder outside the engine, `player --new-project`, a game module, input, a menu and two
+  levels, the level catalog, an exit, an entry, a checkpoint, a flow test, the release
+  contract, a release package and `--verify-install`. It ends with what to know before
+  shipping more: the main thread, lifetimes, persistence scopes, cancelling a load, error
+  codes, inspecting cooked data, level IDs that outlive file moves, save migrations.
+- **The tutorial is followed literally**: `Tests/FollowTutorial.py` takes each file and
+  command from the Markdown, in order, into a new folder, and checks the expected output.
+  The nightly `tutorial` job runs it on a clean checkout with nothing but the tutorial's
+  game in `SHOCKWAVE_GAMES`, and on any pull request that changes the tutorial.
+- **Window > Runtime flow** (`editor --runtime-flow`): the current level and epoch, the
+  session state and tick, the input layer, the active travel ticket with its phase and
+  progress, Cancel, Restart level, Return to menu, and every travel so far with its result
+  and error code.
+- **Release rehearsal records** (`Release/Rehearsals/*.swrehearsal`): written from
+  **Project > Release readiness > Release rehearsals**, read strictly, never overwritten.
+  The `release_rehearsal` gate rests on the newest record of the release version, on a
+  named platform, of the current build. Any intervention fails it.
+- **`Shockwave/Game.h`** includes the level types (`LevelSpawn`, `LevelExit`,
+  `Checkpoint`), which the tutorial's game needed and a game module couldn't reach.
+- **The guides** (Projects, StartingProjects, SaveGames, Packaging, GameUI, Networking,
+  Architecture, Tutorial, Release, LevelLifetime) were read against the code and updated.
+
+### Found by following the tutorial
+
+- An `Entity` has no `operator!`; the tutorial checks `.valid()`.
+- A key held through a loading screen stays barred after the level arrives, until it is
+  released (the input layer changed under it). A flow test that holds a key right after
+  `assert_level` waits for nothing; the tutorial's test waits half a second first and
+  says why.
+
+### Measured
+
+- The tutorial, followed by the script on Linux (GCC, Release): every step passed, ending
+  in `--verify-install` passed. Its first CI run found that a clean checkout has no
+  player to make the project with, so the tutorial now builds the player first (step 0),
+  with no games; that step was checked on its own from an empty build folder.
+- `release_rehearsal` (unit) passes.
+
+### Still unverified
+
+- **A real rehearsal**: no new tester has installed and played a package on a clean
+  machine yet, so `release_rehearsal` is `unverified` for every project.
+- The tutorial is followed on Linux only.

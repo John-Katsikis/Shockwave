@@ -1,10 +1,13 @@
 # Shipping a complete game: implementation specification
 
-Status: **implementation plan, not a claim that these features exist**.
-Baseline inspected: `186ffc3`, 2026-10-27. Re-audit changed files before implementation.
+Status: **every batch S00 to S15 is built; recorded evidence is still to gather**. The
+table below says which, and links each batch's verification record. Until the evidence
+exists this stays a plan: the gates in `player --release-info` say what is measured.
+Baseline inspected: `186ffc3`, 2026-10-27.
 Audience: an implementer who must be able to execute each batch without inventing a
 second engine architecture. Normative words MUST, MUST NOT and SHOULD describe the
-target implementation. Proposed names below are contracts to add, not existing APIs.
+target implementation. Names below were proposed as contracts; most exist now under
+those names, and the verification record notes where one differs.
 
 Open through **Help > Shipping implementation guide**. The shared documentation window
 opens this Markdown in your associated application or copies its path. Command-line
@@ -16,8 +19,28 @@ build/bin/editor --shipping-guide-path
 ```
 
 The second command prints the path and exits without starting the engine. Rebuilding
-`editor` refreshes its bundled documentation for relocated builds. All other new runtime
-commands in this plan remain proposed until their owning batch is implemented.
+`editor` refreshes its bundled documentation for relocated builds. The runtime commands
+this plan proposes exist now; [ShippingVerification.md](ShippingVerification.md) says
+what each batch built, and the guides document them.
+
+| Batch | Built | Evidence still to gather | Record |
+| --- | --- | --- | --- |
+| S00 release contract | yes | | [S00](ShippingVerification.md#s00-release-contract) |
+| S01 writable state | yes | | [S01](ShippingVerification.md#s01-per-user-paths) |
+| S02 level catalog | yes | | [S02](ShippingVerification.md#s02-level-catalog) |
+| S03 level lifetime | yes | | [S03](ShippingVerification.md#s03-level-lifetime) |
+| S04 assets and loading | yes | | [S04](ShippingVerification.md#s04-asset-dependencies-and-residency-part-1) |
+| S05 offline flow and travel | yes | | [S05](ShippingVerification.md#s05-travel-tickets-part-1) |
+| S06 campaign saves | yes | | [S06](ShippingVerification.md#s06-campaign-saves-part-1) |
+| S07 reference game | yes | | [S07](ShippingVerification.md#s07-reactor-run-part-1) |
+| S08 controls and presentation | yes | | [S08](ShippingVerification.md#s08-settings-and-localization-part-1) |
+| S09 cook and package | yes | | [S09](ShippingVerification.md#s09-cooking-and-release-checks-part-1) |
+| S10 performance tier | yes | a performance record per advertised hardware tier | [S10](ShippingVerification.md#s10-measured-performance-part-1) |
+| S11 multiplayer lifecycle | yes | a match over the real Steam service | [S11](ShippingVerification.md#s11-map-rotation-part-1) |
+| S12 diagnostics and recovery | yes | a symbolized crash on each platform | [S12](ShippingVerification.md#s12-diagnostics-and-crashes-part-1) |
+| S13 platforms and installs | yes | a real-GPU install record per platform | [S13](ShippingVerification.md#s13-supported-platforms-installs-and-updates-part-1) |
+| S14 CI and regressions | yes | | [S14](ShippingVerification.md#s14-automated-acceptance-ci-and-regression-prevention) |
+| S15 documentation and rehearsal | yes | a rehearsal with a new tester on a clean machine | [S15](ShippingVerification.md#s15-documentation-and-release-rehearsal) |
 
 ## 0. Outcome and how to use this document
 
@@ -1315,7 +1338,7 @@ Developer-facing routes:
 - Build > Package game: cook/build/verify/install evidence.
 - Project > Release readiness: required vs measured gates and platform support.
 
-These are proposed authoring surfaces except the Help entry added alongside this spec.
+All of these exist now.
 Implement the panels in their batches using shared gui controls/themes, not custom
 colors or rounded panels. New metadata belongs in schemas, not only editor state.
 Do not put shipping game-specific menus in the editor's menu bar.

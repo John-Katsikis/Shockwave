@@ -80,6 +80,12 @@ target_link_libraries(install_record_test PRIVATE Shockwave::Projects Shockwave:
 shockwave_warnings(install_record_test)
 add_test(NAME install_records COMMAND install_record_test)
 set_tests_properties(install_records PROPERTIES TIMEOUT 60 LABELS unit)
+# Release rehearsals and their gate (S15, docs/ReleaseRehearsal.md).
+add_executable(rehearsal_test RehearsalTest.cpp)
+target_link_libraries(rehearsal_test PRIVATE Shockwave::Projects)
+shockwave_warnings(rehearsal_test)
+add_test(NAME release_rehearsal COMMAND rehearsal_test)
+set_tests_properties(release_rehearsal PROPERTIES TIMEOUT 60 LABELS unit)
 set_tests_properties(performance PROPERTIES TIMEOUT 60 LABELS unit)
 # The graphics release tier from the command line (S10 part 2, Tests/ReleaseTierCheck.cmake):
 # --release-tier, --check --release and --graphics-preset fallback on a copy of Reactor Run.

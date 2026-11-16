@@ -209,6 +209,9 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Content", nullptr, &m_showContent);
             ImGui::MenuItem("Console", nullptr, &m_showConsole);
             ImGui::MenuItem("Optimisation", nullptr, &m_showOptimisation);
+            ImGui::MenuItem("Runtime flow", nullptr, &m_showRuntimeFlow);
+            ImGui::SetItemTooltip("During Play: the level playing, its epoch, the travel under way phase by phase,\n"
+                                  "who has the input, and every travel's result and code");
             ImGui::MenuItem("Resource residency", nullptr, &m_showResidency);
             ImGui::MenuItem("Diagnostics", nullptr, &m_showDiagnostics);
             ImGui::MenuItem("Stats", nullptr, &m_showStats);
