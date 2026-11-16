@@ -311,6 +311,102 @@ size_t slotCount(const std::map<fs::path, SaveFile>& saves) {
     return n;
 }
 
+// The player's settings (Preferences.swprefs and the controls beside it) under `home`, as the
+// game hashes them when it starts (profileDigest); "" when it has none yet.
+std::string profileUnder(const fs::path& home) {
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(home, ec); !ec && it != fs::recursive_directory_iterator();
+         it.increment(ec))
+        if (it->path().filename() == "Preferences.swprefs" && it->is_regular_file(ec)) return profileDigest(it->path());
+    return {};
+}
+
+// One scenario that passed: what its report said, and the player's data when it started.
+struct ScenarioRun {
+    std::string file;   // its file name
+    std::string report;   // the flow report (JSON text)
+    bool current = false;   // played by the package being verified (not --update-from's)
+    bool savedBefore = false;   // a save slot existed when it started
+    std::string profileBefore;   // profileUnder(home) when it started
+};
+
+// The level names in a report's "levels_visited", in order.
+std::vector<std::string> visitedLevels(const std::string& report) {
+    std::vector<std::string> out;
+    std::istringstream words(reportString(report, "levels_visited"));
+    for (std::string w; words >> w;) out.push_back(w);
+    return out;
+}
+
+// What the scenarios proved for the release gates (S16, docs/Release.md#evidence), from the
+// game's own reports: only runs of the package being verified prove anything; earlier runs
+// (the previous version's too) count as the state they left behind.
+std::vector<shockwave::InstallProof> scenarioProofs(const std::vector<ScenarioRun>& runs, bool cookedReadOnly) {
+    std::vector<shockwave::InstallProof> proofs;
+    // level_travel: from the menu through two other levels and back to it, in one run.
+    for (const ScenarioRun& run : runs) {
+        if (!run.current) continue;
+        const std::vector<std::string> levels = visitedLevels(run.report);
+        std::string menu = reportString(run.report, "menu_level");
+        if (menu.empty() && !levels.empty()) menu = levels.front();
+        if (menu.empty()) continue;
+        std::string path;
+        bool found = false;
+        for (size_t a = 0; a < levels.size() && !found; ++a) {
+            if (levels[a] != menu) continue;
+            std::vector<std::string> between;
+            for (size_t b = a + 1; b < levels.size(); ++b) {
+                if (levels[b] != menu) {
+                    if (std::find(between.begin(), between.end(), levels[b]) == between.end())
+                        between.push_back(levels[b]);
+                    continue;
+                }
+                if (between.size() >= 2) {
+                    path = menu;
+                    for (size_t c = a + 1; c <= b; ++c) path += " -> " + levels[c];
+                    found = true;
+                }
+                break;
+            }
+        }
+        if (found) {
+            proofs.push_back({"level_travel", path + " (" + run.file + ")"});
+            break;
+        }
+    }
+    // saves: a later process continued from a save an earlier one wrote.
+    for (size_t i = 1; i < runs.size(); ++i) {
+        const std::string continued = reportString(runs[i].report, "continued");
+        if (!runs[i].current || !runs[i].savedBefore || continued.empty()) continue;
+        proofs.push_back(
+            {"saves", runs[i].file + " continued in " + continued + " from the save an earlier run (" +
+                          runs[i - 1].file + ") left"});
+        break;
+    }
+    // player_settings: a later process started with settings an earlier one changed.
+    const std::string first = runs.empty() ? std::string() : runs.front().profileBefore;
+    for (size_t i = 1; i < runs.size(); ++i) {
+        const std::string started = reportString(runs[i].report, "profile_sha256");
+        if (!runs[i].current || started.empty() || started != runs[i].profileBefore || started == first) continue;
+        size_t changer = i - 1;
+        while (changer > 0 && runs[changer].profileBefore == started) --changer;
+        proofs.push_back(
+            {"player_settings", runs[changer].file + " changed the settings and " + runs[i].file +
+                                    " started with them (a new process, the same per-user folder)"});
+        break;
+    }
+    // cooked_package: the release package itself, installed read-only, ran a scenario.
+    if (cookedReadOnly)
+        for (const ScenarioRun& run : runs)
+            if (run.current) {
+                proofs.push_back(
+                    {"cooked_package", "the cooked release package passed its check and played " + run.file +
+                                           " from a read-only install"});
+                break;
+            }
+    return proofs;
+}
+
 struct Verifier {
     const InstallCommand& command;
     shockwave::InstallRecord record;
@@ -549,8 +645,14 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
                                                  : "";
 
     // Plays scenario i on whatever is installed now, as the step `name`.
+    std::vector<ScenarioRun> runs;
     auto playScenario = [&](size_t i, const std::string& name, const shockwave::PackageInfo& expected) {
         const auto t = Clock::now();
+        ScenarioRun run;
+        run.file = utf8(scenarioFiles[i].filename());
+        run.current = &expected == &v.info;
+        run.savedBefore = slotCount(saveFiles(v.home)) > 0;
+        run.profileBefore = profileUnder(v.home);
         const fs::path copy = v.scenarios / (std::to_string(i + 1) + "-" + utf8(scenarioFiles[i].filename()));
         fs::copy_file(scenarioFiles[i], copy, fs::copy_options::overwrite_existing, ec);
         const fs::path report = v.reports / (std::to_string(i + 1) + ".json");
@@ -589,6 +691,8 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
             r.gpuKind = reportString(json, "gpu_kind");
             r.gpuDriver = reportString(json, "gpu_driver");
         }
+        run.report = json;
+        runs.push_back(std::move(run));
         const std::string drew = reportString(json, "renderer"), gpu = reportString(json, "gpu");
         v.step(
             name, shockwave::InstallStepResult::Passed, since(t),
@@ -797,6 +901,13 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
                : why);
     }
     r.passed = !v.failed();
+    {
+        const shockwave::InstallStep* check = r.step("check");
+        const bool cooked = !r.buildId.empty() && !r.contentId.empty() && r.readOnly && check &&
+                            check->result == shockwave::InstallStepResult::Passed;
+        r.proofs = scenarioProofs(runs, cooked);
+        for (const shockwave::InstallProof& p : r.proofs) std::printf("proves   %s: %s\n", p.gate.c_str(), p.detail.c_str());
+    }
 
     // ---- What it showed ----
     if (!command.machine.empty()) {
@@ -825,7 +936,10 @@ int verifyInstall(const InstallCommand& command, const std::string& renderer, co
                    ", \"result\": " + jsonQuote(shockwave::installStepResultName(s.result)) +
                    ", \"seconds\": " + seconds + ", \"detail\": " + jsonQuote(s.detail) + "}";
         }
-        out += "\n  ]\n}\n";
+        out += "\n  ],\n  \"proves\": {";
+        for (size_t i = 0; i < r.proofs.size(); ++i)
+            out += std::string(i ? ",\n    " : "\n    ") + jsonQuote(r.proofs[i].gate) + ": " + jsonQuote(r.proofs[i].detail);
+        out += std::string(r.proofs.empty() ? "" : "\n  ") + "}\n}\n";
         std::ofstream file(json, std::ios::binary);
         file << out;
         file.close();

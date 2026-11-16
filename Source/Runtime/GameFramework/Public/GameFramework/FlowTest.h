@@ -163,6 +163,8 @@ private:
     uint64_t m_ticket = 0;   // the latest travel ticket
     std::vector<Record> m_records;
     std::vector<TravelCompletion> m_completions;
+    std::string m_firstLevel;   // the level playing at the first frame
+    bool m_sawFirstLevel = false;
     GameFlow::Subscription m_subscription;
 };
 

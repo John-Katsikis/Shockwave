@@ -204,6 +204,12 @@ const char* installStepResultName(InstallStepResult result) {
     return "failed";
 }
 
+const InstallProof* InstallRecord::proof(std::string_view gate) const {
+    for (const InstallProof& p : proofs)
+        if (p.gate == gate) return &p;
+    return nullptr;
+}
+
 const InstallStep* InstallRecord::step(std::string_view name) const {
     for (const InstallStep& s : steps)
         if (s.name == name) return &s;
@@ -231,6 +237,8 @@ std::string installText(const InstallRecord& record) {
     for (const InstallStep& s : record.steps)
         out += "step " + quoted(oneLine(s.name)) + " " + installStepResultName(s.result) + " " + number(s.seconds) +
                " " + quoted(oneLine(s.detail)) + "\n";
+    for (const InstallProof& p : record.proofs)
+        out += "proves " + oneLine(p.gate) + " " + quoted(oneLine(p.detail)) + "\n";
     out += std::string("result ") + (record.passed ? "passed" : "failed") + "\n";
     return out;
 }
@@ -276,6 +284,17 @@ bool parseInstall(std::string_view text, std::string_view shown, InstallRecord& 
                 return fail(key, "a step is passed, failed or skipped, not " + values[1]);
             s.detail = values[3];
             result.steps.push_back(std::move(s));
+            continue;
+        }
+        if (key == "proves") {
+            const auto known = evidenceGates();
+            if (values.size() != 2 || values[0].empty())
+                return fail(key, "proves takes a gate and \"what proved it\"");
+            if (std::find(known.begin(), known.end(), values[0]) == known.end() || values[0] == "acceptance_scenario")
+                return fail(key, "no install record proves the gate " + values[0]);
+            for (const InstallProof& p : result.proofs)
+                if (p.gate == values[0]) return fail(key, "the gate " + values[0] + " is proved twice");
+            result.proofs.push_back({values[0], values[1]});
             continue;
         }
         const auto& table = keys();
@@ -455,6 +474,99 @@ InstallGate installGate(
     }
     gate.reason = shown(newestCurrent) + " doesn't qualify " + std::string(platform) + ": " + problems.front();
     return gate;
+}
+
+// ---- Evidence gates (S16) ---------------------------------------------------------------
+
+std::span<const char* const> evidenceGates() {
+    static constexpr const char* gates[] = {
+        "level_travel", "saves", "player_settings", "cooked_package", "acceptance_scenario"};
+    return gates;
+}
+
+namespace {
+
+// What to play for a gate nobody has proved yet.
+std::string evidenceHint(std::string_view gate, std::string_view scenario) {
+    if (gate == "level_travel")
+        return "a scenario that goes from the menu through two levels and back to the menu";
+    if (gate == "saves") return "a scenario that saves and quits, then one that continues from that save";
+    if (gate == "player_settings")
+        return "a scenario that changes a setting, then another that starts with it (the settings persisted)";
+    if (gate == "cooked_package") return "any scenario, on a release package";
+    return "the contract's acceptance scenario (" + std::string(scenario) + ")";
+}
+
+}   // namespace
+
+InstallGate evidenceGate(
+    std::string_view gate, std::string_view acceptanceScenario, std::span<const std::string> platforms,
+    std::span<const InstallRecord> records, std::span<const std::string> files, std::string_view currentBuildId) {
+    InstallGate result;
+    auto shown = [&](int i) { return size_t(i) < files.size() ? files[size_t(i)] : records[size_t(i)].machine; };
+    const std::string scenarioStep =
+        "scenario " + std::filesystem::path(std::string(acceptanceScenario)).filename().generic_string();
+    const std::string hint = evidenceHint(gate, acceptanceScenario);
+    std::string nearest;   // why the newest record that came closest doesn't count
+    std::string nearestRecorded;
+    auto note = [&](const InstallRecord& r, int i, const std::string& why) {
+        if (nearest.empty() || r.recorded > nearestRecorded) {
+            nearest = shown(i) + " doesn't count: " + why;
+            nearestRecorded = r.recorded;
+        }
+    };
+    int best = -1;
+    std::string bestDetail;
+    for (int i = 0; i < int(records.size()); ++i) {
+        const InstallRecord& r = records[size_t(i)];
+        if (!platforms.empty() && std::find(platforms.begin(), platforms.end(), r.platform) == platforms.end())
+            continue;
+        if (r.buildId.empty()) {
+            note(r, i, "a development package; play a release package (player --package --release)");
+            continue;
+        }
+        if (!currentBuildId.empty() && r.buildId != currentBuildId) {
+            note(r, i, "build " + r.buildId + ", not the current build " + std::string(currentBuildId));
+            continue;
+        }
+        if (!optimised(r.buildConfig)) {
+            note(r, i, "a " + (r.buildConfig.empty() ? std::string("unknown") : r.buildConfig) + " build");
+            continue;
+        }
+        if (!r.passed) {
+            note(r, i, "a step failed");
+            continue;
+        }
+        std::string detail;
+        if (gate == "acceptance_scenario") {
+            const InstallStep* s = r.step(scenarioStep);
+            if (s && s->result == InstallStepResult::Passed) detail = scenarioStep.substr(9) + ": " + s->detail;
+        } else if (const InstallProof* p = r.proof(gate)) {
+            detail = p->detail;
+        }
+        if (detail.empty()) {
+            note(r, i, "none of its scenarios proves it; play " + hint);
+            continue;
+        }
+        if (best < 0 || r.recorded > records[size_t(best)].recorded) {
+            best = i;
+            bestDetail = detail;
+        }
+    }
+    if (best >= 0) {
+        const InstallRecord& r = records[size_t(best)];
+        result.verdict = InstallVerdict::Passed;
+        result.record = best;
+        result.reason = r.machine + ", installed " + r.platform + " package on the " +
+                        (r.renderer.empty() ? std::string("unknown") : r.renderer) + " renderer: " + bestDetail + "; " +
+                        shown(best);
+        return result;
+    }
+    result.reason = !nearest.empty() ? nearest
+                                     : "no install record proves it yet: player --verify-install --install-record "
+                                       "with " +
+                                           hint + " (docs/Release.md#evidence)";
+    return result;
 }
 
 }   // namespace shockwave

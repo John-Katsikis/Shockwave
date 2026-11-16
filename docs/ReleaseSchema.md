@@ -55,11 +55,11 @@ ticked by hand. A release is qualified only when every gate that applies has pas
 | `steam_app_id` | S00 | online over Steam with the game's own AppID (not 480) |
 | `user_paths` | S01 | installed, saves, settings, logs and caches go to per-user folders named by `application_id`, outside the game |
 | `level_catalog` | S02 | the level catalog checks out |
-| `level_travel` | S05 | evidence of a real level change (menu, level A, level B, menu) through GameFlow |
-| `acceptance_scenario` | S05 | the acceptance scenario plays the game from start to finish |
-| `saves` | S06 | evidence of versioned saves that continue across levels and survive interrupted writes |
-| `player_settings` | S08 | evidence of display, input, audio, accessibility and language settings that persist |
-| `cooked_package` | S09 | evidence of a release package cooked from every level's dependencies, run read-only |
+| `level_travel` | S05 | evidence of an install record (player --verify-install --install-record) whose scenario changed levels for real: menu, level A, level B, menu |
+| `acceptance_scenario` | S05 | an install record of the current build passed a step that played the contract's `acceptance_scenario` |
+| `saves` | S06 | evidence of an install record where one run saved and quit and a later run continued from that save (the save carried across processes) |
+| `player_settings` | S08 | evidence of an install record where one run changed the settings and a later run started with them (they persisted) |
+| `cooked_package` | S09 | evidence of an install record of a cooked release package, installed read-only, that passed its check and a scenario |
 | `performance` | S10 | evidence of a performance record from named, real hardware on an optimised build that meets every frame, memory and loading budget (player --perf-run --perf-record, docs/Performance.md) |
 | `release_tier` | S10 | `Config/ReleaseTier.swtier` names the fallback preset and the effects the art direction needs, and the presets and project defaults provide them (docs/ReleaseTier.md) |
 | `online_lifecycle` | S11 | evidence of a full online match lifecycle with map rotation, on the real service (online only) |

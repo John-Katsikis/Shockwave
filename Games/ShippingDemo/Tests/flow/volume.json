@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "name": "the music volume turned down and kept: the next run starts with it (the player_settings gate)",
+  "timeout": 60,
+  "steps": [
+    {"assert_level": "menu"},
+    {"click": "settings"},
+    {"assert_value": "flow.page", "equals": "settings"},
+    {"click": "tab-audio"},
+    {"assert_value": "flow.settings_tab", "equals": "audio"},
+    {"click": "prev-music_volume"},
+    {"click": "prev-music_volume"},
+    {"assert_value": "flow.settings_changed", "equals": "true"},
+    {"click": "apply_settings"},
+    {"assert_value": "flow.message", "equals": "Settings saved"},
+    {"assert_value": "flow.settings_changed", "equals": "false"},
+    {"click": "settings_back"},
+    {"assert_value": "flow.page", "equals": "main"},
+    {"quit": true}
+  ]
+}

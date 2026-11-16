@@ -689,6 +689,10 @@ FlowTest::State FlowTest::frame(double frameDt) {
         m_message = "nothing to test: no game flow";
         return m_state;
     }
+    if (!m_sawFirstLevel) {
+        m_firstLevel = m_hooks.flow->currentLevel().level;
+        m_sawFirstLevel = true;
+    }
     follow();
     const auto now = Clock::now();
     if (std::chrono::duration<double>(now - m_started).count() > m_scenario.timeout) {
@@ -795,9 +799,21 @@ std::string FlowTest::reportJson(std::string_view run) const {
                    : c.status == TravelStatus::Cancelled ? "cancelled"
                                                          : "failed") +
                ", \"code\": " + quote(travelErrorName(c.code)) + ", \"message\": " + quote(c.message) +
-               ", \"ms\": " + number(c.durationMs) + "}";
+               ", \"reason\": " + quote(travelReasonName(c.request.reason)) + ", \"ms\": " + number(c.durationMs) +
+               "}";
     }
-    out += m_completions.empty() ? "]\n" : "\n  ]\n";
+    out += m_completions.empty() ? "],\n" : "\n  ],\n";
+    // What the run proved, as words a release check can read without a JSON parser: the
+    // levels it played, in order (the first, then each one a travel arrived in), and the
+    // level a Continue from a save arrived in, if one did.
+    std::string visited = m_firstLevel, continued;
+    for (const TravelCompletion& c : m_completions) {
+        if (c.status != TravelStatus::Succeeded || c.to.empty()) continue;
+        visited += (visited.empty() ? "" : " ") + c.to;
+        if (continued.empty() && c.request.reason == TravelReason::LoadSave) continued = c.to;
+    }
+    out += "  \"levels_visited\": " + quote(visited) + ",\n";
+    out += "  \"continued\": " + quote(continued) + "\n";
     return out + "}\n";
 }
 

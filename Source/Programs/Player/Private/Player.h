@@ -300,6 +300,10 @@ int releaseSchema(const fs::path& file);
 std::string currentBuildId(const shockwave::Project& project);
 // A GPU's kind as records name it: "dedicated", "integrated", "virtual", "software", "other".
 const char* gpuRecordKind(shockwave::GpuKind kind);
+// The player's profile as one hash (S16): Preferences.swprefs and the Controls.swinput
+// beside it, "" when neither exists. A flow report says what the run started with, so
+// --verify-install can tell settings a run changed were read back by the next.
+std::string profileDigest(const fs::path& preferencesFile);
 // --cook-info file [--verify folder] [--json out]: a cook manifest, and its files checked.
 int cookInfo(const fs::path& file, const fs::path& verifyRoot, const fs::path& json);
 int levelSchema(const fs::path& file);
@@ -634,6 +638,7 @@ private:
     shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
+    std::string m_profileAtStart;   // profileDigest when the player started (flow reports)
     std::optional<shockwave::SaveIdentity> m_saveIdentity;   // saveIdentity(), worked out once
     // After m_levels, so they go first: the shell holds a subscription to it.
     std::unique_ptr<shockwave::AppShell> m_shell;

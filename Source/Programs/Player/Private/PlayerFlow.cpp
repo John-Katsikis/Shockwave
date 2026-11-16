@@ -201,7 +201,9 @@ std::string Player::runJson() {
            ", \"build_id\": " + q(currentBuildId(m_project)) +
            ", \"build_type\": " + q(shockwave::engineBuildConfig()) + ", \"renderer\": " + q(renderer.backendName()) +
            ", \"gpu\": " + q(renderer.gpuName() ? renderer.gpuName() : "") + ", \"gpu_kind\": " + q(kind) +
-           ", \"gpu_driver\": " + q(driver) + "}";
+           ", \"gpu_driver\": " + q(driver) +
+           ", \"menu_level\": " + q(m_levels ? m_levels->menuLevel() : std::string()) +
+           ", \"profile_sha256\": " + q(m_profileAtStart) + "}";
 }
 
 void Player::endFlowTest() {

@@ -137,6 +137,8 @@ void Player::onStart() {
     engine().localization().addBuiltin("en", shockwave::AppShell::builtinText());
     for (const std::string& problem : engine().localization().problems())
         SW_LOG(shockwave::LogEngine, Warning, "{}", problem);
+    if (m_tool.mode == Tool::Mode::Play && !m_tool.preferencesFile.empty())
+        m_profileAtStart = profileDigest(m_tool.preferencesFile);
     // The player's preferences (docs/Preferences.md): the project's shipped ones, the
     // profile's and --pref. Tools that don't play keep the engine's own.
     if (m_tool.mode == Tool::Mode::Play &&
