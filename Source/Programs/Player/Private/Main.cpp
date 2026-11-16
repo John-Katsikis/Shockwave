@@ -195,6 +195,21 @@ int main(int argc, char** argv) {
                     cookVerify = value;
                 continue;
             }
+            // S16: the transition timeout and the laps' memory tolerance. Kept out of the long
+            // else-if chain below, which MSVC can't nest any deeper (C1061).
+            if ((arg == "--transition-timeout" || arg == "--lap-tolerance") && i + 1 < argc) {
+                char* end = nullptr;
+                const double value = std::strtod(argv[++i], &end);
+                const bool ok = end && !*end && value >= 0 && value <= 1e6;
+                if (arg == "--transition-timeout") {
+                    if (!ok) throw player::UsageError("--transition-timeout takes seconds (0 turns it off)");
+                    tool.transitionTimeout = value;
+                } else {
+                    if (!ok) throw player::UsageError("--lap-tolerance takes MiB");
+                    tool.lapToleranceMib = value;
+                }
+                continue;
+            }
             // Player preferences (docs/Preferences.md).
             if (arg == "--pref" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -588,16 +603,7 @@ int main(int argc, char** argv) {
                 tool.assetResidency = false;
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
-            } else if (arg == "--lap-tolerance" && i + 1 < argc) {
-                char* end = nullptr;
-                tool.lapToleranceMib = std::strtod(argv[++i], &end);
-                if (!end || *end || !(tool.lapToleranceMib >= 0) || tool.lapToleranceMib > 1e6)
-                    throw player::UsageError("--lap-tolerance takes MiB");
-            } else if (arg == "--transition-timeout" && i + 1 < argc) {
-                char* end = nullptr;
-                tool.transitionTimeout = std::strtod(argv[++i], &end);
-                if (!end || *end || !(tool.transitionTimeout >= 0))
-                    throw player::UsageError("--transition-timeout takes seconds (0 turns it off)");
+
 
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
