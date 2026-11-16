@@ -216,6 +216,13 @@ script after changing it. Release rehearsals (`docs/ReleaseRehearsal.md`) are re
 `Release/Rehearsals/` written by a person who watched a new tester; never write one that
 says `passed` for a rehearsal that didn't happen.
 
+The final acceptance run (S16, `docs/Acceptance.md`): install records' `proves` lines are
+written by `--verify-install` from the game's flow reports and feed the level, save,
+settings, package and acceptance gates; never add one by hand. A new error code in section
+24 of the plan needs a row in `docs/ErrorCatalog.md` (the `error_catalog` test checks it).
+`player --flow-test <scenario> --laps N` measures round trips for leaks
+(`acceptance_round_trips`).
+
 ## Networking
 
 Multiplayer is built in batches from `docs/SteamMultiplayerImplementation.md`; record

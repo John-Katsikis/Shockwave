@@ -15,6 +15,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <sys/resource.h>
@@ -131,6 +132,33 @@ ProcessMemory processMemory() {
     }
 #endif
     return memory;
+}
+
+uint32_t processThreads() {
+    uint32_t threads = 0;
+#if defined(_WIN32)
+    if (HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0); snapshot != INVALID_HANDLE_VALUE) {
+        THREADENTRY32 entry{};
+        entry.dwSize = sizeof entry;
+        const DWORD self = GetCurrentProcessId();
+        for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry))
+            if (entry.th32OwnerProcessID == self) ++threads;
+        CloseHandle(snapshot);
+    }
+#elif defined(__APPLE__)
+    thread_act_array_t list = nullptr;
+    mach_msg_type_number_t count = 0;
+    if (task_threads(mach_task_self(), &list, &count) == KERN_SUCCESS) {
+        threads = count;
+        for (mach_msg_type_number_t i = 0; i < count; ++i) mach_port_deallocate(mach_task_self(), list[i]);
+        vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(list), sizeof(thread_act_t) * count);
+    }
+#else
+    std::ifstream status("/proc/self/status");
+    for (std::string line; std::getline(status, line);)
+        if (line.rfind("Threads:", 0) == 0) threads = uint32_t(std::strtoul(line.c_str() + 8, nullptr, 10));
+#endif
+    return threads;
 }
 
 }   // namespace shockwave

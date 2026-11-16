@@ -5,9 +5,12 @@
 #include <GameUI/UIWorld.h>
 #include <Input/Input.h>
 #include <Packaging/Package.h>
+#include <Physics/Physics.h>
+#include <Platform/SystemInfo.h>
 #include <Renderer/GpuSelection.h>
 #include <Renderer/Renderer.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -104,7 +107,7 @@ void Player::startFlowTest() {
         throw UsageError("--flow-test " + m_tool.flowTest.string() + ": " + error);
     if (scenario.name.empty()) scenario.name = m_tool.flowTest.stem().string();
     size_t lapSteps = scenario.steps.size();
-    if (m_tool.perfRun && m_tool.perfLaps > 1) {
+    if (m_tool.perfLaps > 1) {
         // Laps: the scenario's steps again and again, its final quit only at the end. The
         // scenario has to come back to where it started (docs/Performance.md).
         std::vector<shockwave::FlowStep> lap = scenario.steps;
@@ -122,6 +125,10 @@ void Player::startFlowTest() {
         scenario.timeout = std::min(scenario.timeout * m_tool.perfLaps, shockwave::kMaxFlowTimeout);
     }
     if (m_tool.perfRun) startPerformance(lapSteps);
+    else if (m_tool.perfLaps > 1) {
+        m_lapSteps = std::max<size_t>(lapSteps, 1);
+        m_lapStart = m_levels ? m_levels->currentLevel().level : std::string();
+    }
     shockwave::FlowTest::Hooks hooks;
     hooks.flow = m_levels.get();
     hooks.shell = m_shell.get();
@@ -165,6 +172,13 @@ void Player::startFlowTest() {
     };
     hooks.look = [this](float x, float y) { engine().input().injectMouseMotion({x, y}); };
     hooks.unplug = [this] { engine().input().removeVirtualGamepad(); };
+    // S16: a full disk for saves, as section 25 step 11 asks: every write fails until it's off.
+    hooks.diskFull = [](bool full) {
+        if (full)
+            shockwave::setSaveFaultForTesting([](std::string_view step) { return step == "write"; });
+        else
+            shockwave::setSaveFaultForTesting(nullptr);
+    };
     m_flowTest = std::make_unique<shockwave::FlowTest>(std::move(scenario), std::move(hooks));
     SW_LOG(shockwave::LogGame, Info, "Flow test {}", m_project.relative(fs::absolute(m_tool.flowTest)));
 }
@@ -172,9 +186,32 @@ void Player::startFlowTest() {
 void Player::driveFlowTest() {
     if (!m_flowTest) return;
     if (m_perf) samplePerformance();
-    if (m_flowTest->frame(m_frameDt) == shockwave::FlowTest::State::Running) return;
+    const shockwave::FlowTest::State state = m_flowTest->frame(m_frameDt);
+    if (m_lapSteps) sampleLaps();
+    if (state == shockwave::FlowTest::State::Running) return;
     endFlowTest();
     engine().quit();
+}
+
+// --laps: each lap's watermarks and the verdict, for the flow report's "run".
+std::string Player::lapsJson() const {
+    if (!m_lapSteps) return {};
+    std::string out = ", \"laps\": [";
+    for (size_t i = 0; i < m_lapMarks.size(); ++i) {
+        const LapMark& m = m_lapMarks[i];
+        out += std::string(i ? ", " : "") + "{\"resident_bytes\": " + std::to_string(m.residentBytes) +
+               ", \"entities\": " + std::to_string(m.entities) + ", \"bodies\": " + std::to_string(m.bodies) +
+               ", \"assets\": " + std::to_string(m.assets) + ", \"leases\": " + std::to_string(m.leases) +
+               ", \"threads\": " + std::to_string(m.threads) + "}";
+    }
+    const std::string verdict = lapVerdict();
+    out += "], \"plateau\": " + std::string(verdict.empty() && m_lapMarks.size() >= 3 ? "true" : "false");
+    std::string escaped;
+    for (const char c : verdict) {
+        if (c == '"' || c == '\\') escaped += '\\';
+        escaped += c;
+    }
+    return out + ", \"plateau_problem\": \"" + escaped + "\"";
 }
 
 // What ran, for the report: a verifier (player --verify-install) checks it's the package it
@@ -201,13 +238,90 @@ std::string Player::runJson() {
            ", \"build_id\": " + q(currentBuildId(m_project)) +
            ", \"build_type\": " + q(shockwave::engineBuildConfig()) + ", \"renderer\": " + q(renderer.backendName()) +
            ", \"gpu\": " + q(renderer.gpuName() ? renderer.gpuName() : "") + ", \"gpu_kind\": " + q(kind) +
-           ", \"gpu_driver\": " + q(driver) + "}";
+           ", \"gpu_driver\": " + q(driver) +
+           ", \"menu_level\": " + q(m_levels ? m_levels->menuLevel() : std::string()) +
+           ", \"profile_sha256\": " + q(m_profileAtStart) + lapsJson() + "}";
+}
+
+// As each lap ends (back where it began): what the process holds. Retirement is done by
+// then: the old level's session, bodies and lease went before the new level started.
+void Player::sampleLaps() {
+    const size_t done = std::min<size_t>(m_flowTest->step() / m_lapSteps, m_tool.perfLaps);
+    while (m_lapMarks.size() < done) {
+        LapMark m;
+        const shockwave::ProcessMemory memory = shockwave::processMemory();
+        m.residentBytes = memory.residentBytes;
+        m.threads = shockwave::processThreads();
+        m.entities = m_world.entityCount();
+        if (session())
+            if (const shockwave::PhysicsWorld* physics = session()->physics()) m.bodies = physics->bodyCount();
+        m.assets = m_residency.size();
+        m.leases = m_residency.leases();
+        m.level = m_levels ? m_levels->currentLevel().level : std::string();
+        m_lapMarks.push_back(std::move(m));
+    }
+}
+
+// Section 25 step 10: after the first lap (caches, first uploads, pools growing to size),
+// nothing accumulates. Entities, physics bodies, resident assets and leases come back to
+// the same counts at the end of every lap; threads never exceed the first lap's; resident
+// memory from a tenth of the way in (at least lap 2) to the end grows by no more than the
+// tolerance (--lap-tolerance, default 32 MiB).
+std::string Player::lapVerdict() const {
+    for (size_t i = 0; i < m_lapMarks.size(); ++i)
+        if (m_lapMarks[i].level != m_lapStart)
+            return "lap " + std::to_string(i + 1) + " ended in " + m_lapMarks[i].level + ", not " + m_lapStart +
+                   " where it began: laps have to come back to where they started";
+    if (m_lapMarks.size() < 3) return {};
+    const LapMark& first = m_lapMarks.front();
+    for (size_t i = 1; i < m_lapMarks.size(); ++i) {
+        const LapMark& m = m_lapMarks[i];
+        auto grew = [&](const char* what, uint64_t then, uint64_t now) {
+            return "lap " + std::to_string(i + 1) + " ended with " + std::to_string(now) + " " + what + ", lap 1 with " +
+                   std::to_string(then);
+        };
+        if (m.entities != first.entities) return grew("entities", first.entities, m.entities);
+        if (m.bodies != first.bodies) return grew("physics bodies", first.bodies, m.bodies);
+        if (m.assets != first.assets) return grew("resident assets", first.assets, m.assets);
+        if (m.leases != first.leases) return grew("asset leases", first.leases, m.leases);
+        if (first.threads && m.threads > first.threads) return grew("threads", first.threads, m.threads);
+    }
+    const double tolerance = m_tool.lapToleranceMib >= 0 ? m_tool.lapToleranceMib : 32.0;
+    const size_t from = std::max<size_t>(1, m_lapMarks.size() / 10);
+    const double grown = (double(m_lapMarks.back().residentBytes) - double(m_lapMarks[from].residentBytes)) / 1048576.0;
+    if (m_lapMarks.back().residentBytes && grown > tolerance) {
+        char text[200];
+        std::snprintf(
+            text, sizeof text, "resident memory grew %.1f MiB from lap %zu to lap %zu, more than the %.1f MiB tolerance",
+            grown, from + 1, m_lapMarks.size(), tolerance);
+        return text;
+    }
+    return {};
 }
 
 void Player::endFlowTest() {
     if (!m_flowTest) return;
-    const bool passed = m_flowTest->state() == shockwave::FlowTest::State::Passed;
+    shockwave::setSaveFaultForTesting(nullptr);   // a disk_full step never outlives its test
+    bool passed = m_flowTest->state() == shockwave::FlowTest::State::Passed;
     std::string message = m_flowTest->message();
+    if (m_lapSteps && passed && m_lapMarks.size() < m_tool.perfLaps) {
+        passed = false;
+        message = "only " + std::to_string(m_lapMarks.size()) + " of " + std::to_string(m_tool.perfLaps) +
+                  " laps finished";
+    }
+    if (const std::string verdict = m_lapSteps ? lapVerdict() : std::string(); passed && !verdict.empty()) {
+        passed = false;
+        message = verdict;
+    }
+    if (m_lapSteps && !m_lapMarks.empty()) {
+        const LapMark& a = m_lapMarks.front();
+        const LapMark& z = m_lapMarks.back();
+        std::printf(
+            "laps: %zu; lap 1 ended with %.1f MiB, %zu entities, %u bodies, %zu assets, %u threads; lap %zu with %.1f "
+            "MiB, %zu entities, %u bodies, %zu assets, %u threads\n",
+            m_lapMarks.size(), double(a.residentBytes) / 1048576.0, a.entities, a.bodies, a.assets, a.threads,
+            m_lapMarks.size(), double(z.residentBytes) / 1048576.0, z.entities, z.bodies, z.assets, z.threads);
+    }
     if (m_flowTest->state() == shockwave::FlowTest::State::Running) message = "the player stopped before it finished";
     const std::string report = m_flowTest->reportJson(runJson());
     if (m_perf) {

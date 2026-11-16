@@ -2,6 +2,7 @@
 #include <GameFramework/FlowTest.h>
 
 #include <GameFramework/AppShell.h>
+#include <GameFramework/SaveGame.h>
 
 #include <cctype>
 #include <cmath>
@@ -208,8 +209,14 @@ bool phaseFromName(std::string_view name, TravelPhase& out) {
     return false;
 }
 
+bool saveErrorFromName(std::string_view name) {
+    for (int e = int(SaveError::None) + 1; e <= int(SaveError::Invalid); ++e)
+        if (name == saveErrorName(SaveError(e))) return true;
+    return false;
+}
+
 bool errorFromName(std::string_view name) {
-    for (int e = int(TravelError::None); e <= int(TravelError::RedirectCycle); ++e)
+    for (int e = int(TravelError::None); e <= int(TravelError::LoadTimeout); ++e)
         if (name == travelErrorName(TravelError(e))) return true;
     return false;
 }
@@ -233,6 +240,8 @@ const char* flowStepKindName(FlowStep::Kind kind) {
     case FlowStep::Kind::Wait: return "wait";
     case FlowStep::Kind::Unplug: return "unplug";
     case FlowStep::Kind::WaitValue: return "wait_value";
+    case FlowStep::Kind::Cancel: return "cancel";
+    case FlowStep::Kind::DiskFull: return "disk_full";
     }
     return "quit";
 }
@@ -312,7 +321,9 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                     {"look", FlowStep::Kind::Look},
                     {"wait", FlowStep::Kind::Wait},
                     {"wait_value", FlowStep::Kind::WaitValue},
-                    {"unplug", FlowStep::Kind::Unplug}};
+                    {"unplug", FlowStep::Kind::Unplug},
+                    {"cancel", FlowStep::Kind::Cancel},
+                    {"disk_full", FlowStep::Kind::DiskFull}};
                 FlowStep step;
                 int found = 0;
                 for (const auto& [k, f] : s.fields) {
@@ -325,6 +336,18 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                                 error = where + "quit is written {\"quit\": true}";
                                 return false;
                             }
+                        } else if (step.kind == FlowStep::Kind::DiskFull) {
+                            if (f.type != Json::Type::Bool) {
+                                error = where + "disk_full is written {\"disk_full\": true} or false";
+                                return false;
+                            }
+                            step.target = f.number ? "true" : "false";
+                        } else if (step.kind == FlowStep::Kind::Cancel) {
+                            if (f.type != Json::Type::String || f.text != "travel") {
+                                error = where + "cancel is written {\"cancel\": \"travel\"}";
+                                return false;
+                            }
+                            step.target = f.text;
                         } else if (step.kind == FlowStep::Kind::Look) {
                             if (f.type != Json::Type::Array || f.items.size() != 2 ||
                                 f.items[0].type != Json::Type::Number || f.items[1].type != Json::Type::Number ||
@@ -360,9 +383,11 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                 if (found != 1) {
                     error =
                         where + (found ? "only one of travel, click, press, wait_phase, assert_level, assert_value, "
-                                         "save, load, hold, tap, look, wait, wait_value or quit"
+                                         "save, load, hold, tap, look, wait, wait_value, unplug, cancel, disk_full or "
+                                         "quit"
                                        : "it needs one of travel, click, press, wait_phase, assert_level, "
-                                         "assert_value, save, load, hold, tap, look, wait, wait_value or quit");
+                                         "assert_value, save, load, hold, tap, look, wait, wait_value, unplug, cancel, "
+                                         "disk_full or quit");
                     return false;
                 }
                 const char* kindName = flowStepKindName(step.kind);
@@ -381,11 +406,19 @@ bool parseFlowScenario(std::string_view text, FlowScenario& out, std::string& er
                         ok = seconds(f, where, step.timeout);
                     } else if (k == "spawn" && step.kind == FlowStep::Kind::Travel) {
                         ok = text(step.spawn);
-                    } else if (k == "expect" && step.kind == FlowStep::Kind::Travel) {
+                    } else if (
+                        k == "expect" && (step.kind == FlowStep::Kind::Travel || step.kind == FlowStep::Kind::Cancel ||
+                                          step.kind == FlowStep::Kind::WaitPhase)) {
                         ok = text(step.expect);
                         if (ok && !errorFromName(step.expect)) {
                             error =
                                 where + "expect \"" + step.expect + "\" isn't a travel code (UnknownLevel, Busy, ...)";
+                            ok = false;
+                        }
+                    } else if (k == "expect" && (step.kind == FlowStep::Kind::Save || step.kind == FlowStep::Kind::Load)) {
+                        ok = text(step.expect);
+                        if (ok && !saveErrorFromName(step.expect)) {
+                            error = where + "expect \"" + step.expect + "\" isn't a save error (WriteFailed, Conflict, ...)";
                             ok = false;
                         }
                     } else if (k == "document" && step.kind == FlowStep::Kind::Click) {
@@ -598,7 +631,12 @@ bool FlowTest::run(const FlowStep& step, std::string& failure) {
             failure = "ticket " + std::to_string(m_ticket) + " is unknown";
             return true;
         }
-        if (status->phase == wanted) return true;
+        if (status->phase == wanted) {
+            if (!step.expect.empty() && step.expect != travelErrorName(status->code))
+                failure = "ticket " + std::to_string(m_ticket) + " ended " + travelPhaseName(status->phase) + " with " +
+                          travelErrorName(status->code) + ", not " + step.expect + ": " + status->message;
+            return true;
+        }
         if (travelPhaseTerminal(status->phase)) {
             // A phase passed within one frame still counts once the travel succeeded.
             if (status->phase == TravelPhase::Succeeded && !travelPhaseTerminal(wanted)) return true;
@@ -631,11 +669,34 @@ bool FlowTest::run(const FlowStep& step, std::string& failure) {
         std::string error;
         if (!hook) {
             failure = "this run can't save or load";
-        } else if (!hook(step.target, error)) {
+        } else if (const bool ok = hook(step.target, error); !step.expect.empty()) {
+            if (ok)
+                failure = "it worked, but it should have failed with " + step.expect;
+            else if (step.expect != saveErrorName(saveErrorOf(error)))
+                failure = "it failed with " + std::string(saveErrorName(saveErrorOf(error))) + ", not " + step.expect +
+                          ": " + error;
+        } else if (!ok) {
             failure = error.empty() ? std::string("it failed") : error;
         }
         return true;
     }
+    case FlowStep::Kind::Cancel: {
+        if (!m_ticket) {
+            failure = "no travel has been asked for";
+            return true;
+        }
+        const TravelError code = flow.cancel(m_ticket);
+        const std::string wanted = step.expect.empty() ? "None" : step.expect;
+        if (wanted != travelErrorName(code))
+            failure = std::string("cancel returned ") + travelErrorName(code) + ", not " + wanted;
+        return true;
+    }
+    case FlowStep::Kind::DiskFull:
+        if (!m_hooks.diskFull)
+            failure = "this run can't fill the disk";
+        else
+            m_hooks.diskFull(step.target == "true");
+        return true;
     case FlowStep::Kind::Hold:
     case FlowStep::Kind::Tap: {
         if (!m_hooks.inject) {
@@ -688,6 +749,10 @@ FlowTest::State FlowTest::frame(double frameDt) {
         m_state = State::Failed;
         m_message = "nothing to test: no game flow";
         return m_state;
+    }
+    if (!m_sawFirstLevel) {
+        m_firstLevel = m_hooks.flow->currentLevel().level;
+        m_sawFirstLevel = true;
     }
     follow();
     const auto now = Clock::now();
@@ -795,9 +860,21 @@ std::string FlowTest::reportJson(std::string_view run) const {
                    : c.status == TravelStatus::Cancelled ? "cancelled"
                                                          : "failed") +
                ", \"code\": " + quote(travelErrorName(c.code)) + ", \"message\": " + quote(c.message) +
-               ", \"ms\": " + number(c.durationMs) + "}";
+               ", \"reason\": " + quote(travelReasonName(c.request.reason)) + ", \"ms\": " + number(c.durationMs) +
+               "}";
     }
-    out += m_completions.empty() ? "]\n" : "\n  ]\n";
+    out += m_completions.empty() ? "],\n" : "\n  ],\n";
+    // What the run proved, as words a release check can read without a JSON parser: the
+    // levels it played, in order (the first, then each one a travel arrived in), and the
+    // level a Continue from a save arrived in, if one did.
+    std::string visited = m_firstLevel, continued;
+    for (const TravelCompletion& c : m_completions) {
+        if (c.status != TravelStatus::Succeeded || c.to.empty()) continue;
+        visited += (visited.empty() ? "" : " ") + c.to;
+        if (continued.empty() && c.request.reason == TravelReason::LoadSave) continued = c.to;
+    }
+    out += "  \"levels_visited\": " + quote(visited) + ",\n";
+    out += "  \"continued\": " + quote(continued) + "\n";
     return out + "}\n";
 }
 

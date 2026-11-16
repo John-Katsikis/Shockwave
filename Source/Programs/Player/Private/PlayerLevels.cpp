@@ -5,6 +5,7 @@
 #include <Engine/Levels.h>
 #include <Engine/SceneFile.h>
 #include <Projects/Diagnostic.h>
+#include <Projects/ReleaseSettings.h>
 
 #include <cstdio>
 #include <fstream>
@@ -317,6 +318,20 @@ void Player::startLevels(const std::string& level, shockwave::StartReason reason
                 break;
             }
         m_levels->setMenuLevel(menu);
+        // A level change that takes too long fails as LoadTimeout (S16): the release
+        // contract's transition_timeout_seconds, else 120 s; --transition-timeout 0 turns it off.
+        double timeout = m_tool.transitionTimeout;
+        if (timeout < 0) {
+            timeout = 120;
+            shockwave::ReleaseFile contract;
+            shockwave::Diagnostic problem;
+            std::error_code ec;
+            const std::filesystem::path file = shockwave::releasePath(m_project);
+            if (std::filesystem::exists(file, ec) &&
+                shockwave::readRelease(file, m_project.relative(file), contract, problem))
+                timeout = contract.settings.transitionTimeoutSeconds;
+        }
+        m_levels->setTransitionTimeout(timeout);
         m_levels->setRememberDestroyed(m_project.rememberDestroyed);
         m_levels->onLoadReport = [this](const shockwave::LoadReport& report) { recordLoad(report); };
         m_levels->onResult = [this](const shockwave::TravelResult& result) {

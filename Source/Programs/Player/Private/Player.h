@@ -145,6 +145,7 @@ struct Tool {
     std::string assetLoading;
     // --instant-travel: the project's level_travel as instant (docs/LevelLifetime.md).
     bool instantTravel = false;
+    double transitionTimeout = -1;   // --transition-timeout; -1: the contract's, else 120 s
     // --app-shell off|all|menu pause ...: the project's app_shell, overridden (docs/AppShell.md).
     std::string appShell;
     // Recovery (S12, docs/Diagnostics.md): after a run that didn't end cleanly the main menu
@@ -161,7 +162,8 @@ struct Tool {
     // report]: the scenario in real time, measured; play and loading apart (S10,
     // PlayerPerformance.cpp, docs/Performance.md). Sets flowTest too.
     bool perfRun = false;
-    uint32_t perfLaps = 1;
+    uint32_t perfLaps = 1;   // --laps: with --perf-run or --flow-test
+    double lapToleranceMib = -1;   // --lap-tolerance; -1: the default (docs/Acceptance.md)
     std::string perfRecord;   // the machine's name; writes Release/Performance/<name>.swperf
     fs::path perfRecordFolder;   // --output with --perf-record; empty: the project's Release/Performance
     bool coldCache = false;   // --cold-cache: the pipeline cache was emptied before the run
@@ -300,6 +302,10 @@ int releaseSchema(const fs::path& file);
 std::string currentBuildId(const shockwave::Project& project);
 // A GPU's kind as records name it: "dedicated", "integrated", "virtual", "software", "other".
 const char* gpuRecordKind(shockwave::GpuKind kind);
+// The player's profile as one hash (S16): Preferences.swprefs and the Controls.swinput
+// beside it, "" when neither exists. A flow report says what the run started with, so
+// --verify-install can tell settings a run changed were read back by the next.
+std::string profileDigest(const fs::path& preferencesFile);
 // --cook-info file [--verify folder] [--json out]: a cook manifest, and its files checked.
 int cookInfo(const fs::path& file, const fs::path& verifyRoot, const fs::path& json);
 int levelSchema(const fs::path& file);
@@ -634,6 +640,22 @@ private:
     shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
+    // --flow-test --laps (S16, docs/Acceptance.md): what the process held as each lap ended.
+    struct LapMark {
+        uint64_t residentBytes = 0;
+        size_t entities = 0;
+        uint32_t bodies = 0;
+        size_t assets = 0, leases = 0;
+        uint32_t threads = 0;
+        std::string level;
+    };
+    std::vector<LapMark> m_lapMarks;
+    size_t m_lapSteps = 0;
+    std::string m_lapStart;   // the level playing when the laps began: each has to end there
+    void sampleLaps();
+    std::string lapVerdict() const;   // "" when it plateaued
+    std::string lapsJson() const;
+    std::string m_profileAtStart;   // profileDigest when the player started (flow reports)
     std::optional<shockwave::SaveIdentity> m_saveIdentity;   // saveIdentity(), worked out once
     // After m_levels, so they go first: the shell holds a subscription to it.
     std::unique_ptr<shockwave::AppShell> m_shell;

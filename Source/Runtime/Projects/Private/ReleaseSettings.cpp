@@ -877,10 +877,20 @@ struct PendingGate {
 };
 
 constexpr PendingGate kPendingGates[] = {
-    {"level_travel", "S05", "a real level change (menu, level A, level B, menu) through GameFlow", false},
-    {"saves", "S06", "versioned saves that continue across levels and survive interrupted writes", false},
-    {"player_settings", "S08", "display, input, audio, accessibility and language settings that persist", false},
-    {"cooked_package", "S09", "a release package cooked from every level's dependencies, run read-only", false},
+    {"level_travel", "S05",
+     "an install record (player --verify-install --install-record) whose scenario changed levels for real: menu, "
+     "level A, level B, menu",
+     false},
+    {"saves", "S06",
+     "an install record where one run saved and quit and a later run continued from that save (the save carried "
+     "across processes)",
+     false},
+    {"player_settings", "S08",
+     "an install record where one run changed the settings and a later run started with them (they persisted)",
+     false},
+    {"cooked_package", "S09",
+     "an install record of a cooked release package, installed read-only, that passed its check and a scenario",
+     false},
     {"performance", "S10",
      "a performance record from named, real hardware on an optimised build that meets every frame, memory and "
      "loading budget (player --perf-run --perf-record, docs/Performance.md)",
@@ -985,6 +995,16 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                 std::to_string(inputs.levelCount) + (inputs.levelCount == 1 ? " level" : " levels") + " from entry " +
                     inputs.levelEntry + "; every scene loads and every exit and spawn resolves");
     };
+    // Gates an installed package's scenarios prove (S16): read from the install records.
+    auto isEvidenceGate = [](std::string_view id) {
+        const auto gates = evidenceGates();
+        return std::find(gates.begin(), gates.end(), id) != gates.end();
+    };
+    auto evidence = [&](const char* id, const char* batch) {
+        const InstallGate g = evidenceGate(
+            id, s.acceptanceScenario, s.platforms, inputs.installRecords, inputs.installFiles, inputs.currentBuildId);
+        gate(id, g.verdict == InstallVerdict::Passed ? GateStatus::Passed : GateStatus::Unverified, batch, g.reason);
+    };
     // In batch order, with the catalog (S02) and the acceptance scenario (S05) in their places.
     for (const PendingGate& pending : kPendingGates) {
         const std::string_view id = pending.id;
@@ -1026,7 +1046,9 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
                     "no unresolved crash reports; crash capture on and symbols kept beside each package" +
                         (inputs.uncleanSession.empty() ? std::string() : " (note: " + inputs.uncleanSession + ")"));
             }
-        } else
+        } else if (inputs.installChecked && isEvidenceGate(id))
+            evidence(pending.id, pending.batch);
+        else
             gate(
                 pending.id, GateStatus::Unverified, pending.batch,
                 std::string("no evidence yet: needs ") + pending.needs);
@@ -1053,12 +1075,17 @@ void releaseGates(ReleaseReport& report, const ReleaseInputs& inputs) {
             else
                 gate("release_tier", GateStatus::Passed, "S10", inputs.tierSummary);
         }
-        if (id == "level_travel")
-            gate(
-                "acceptance_scenario", GateStatus::Unverified, "S05",
-                inputs.acceptanceScenarioExists
-                    ? s.acceptanceScenario + " exists; running it (player --flow-test) arrives with S05"
-                    : s.acceptanceScenario + " doesn't exist yet");
+        if (id == "level_travel") {
+            if (!inputs.acceptanceScenarioExists)
+                gate(
+                    "acceptance_scenario", GateStatus::Unverified, "S05", s.acceptanceScenario + " doesn't exist yet");
+            else if (inputs.installChecked)
+                evidence("acceptance_scenario", "S05");
+            else
+                gate(
+                    "acceptance_scenario", GateStatus::Unverified, "S05",
+                    s.acceptanceScenario + " exists; install records weren't read, so nothing shows it played");
+        }
     }
     for (const std::string& platform : s.platforms) {
         if (!inputs.installChecked) {
@@ -1273,7 +1300,8 @@ std::string releaseSchema() {
             out += "| `release_tier` | S10 | `Config/ReleaseTier.swtier` names the fallback preset and the effects the "
                    "art direction needs, and the presets and project defaults provide them (docs/ReleaseTier.md) |\n";
         if (id == "level_travel")
-            out += "| `acceptance_scenario` | S05 | the acceptance scenario plays the game from start to finish |\n";
+            out += "| `acceptance_scenario` | S05 | an install record of the current build passed a step that played the "
+                   "contract's `acceptance_scenario` |\n";
     }
     out += "| `platform:<name>` | S13 | an install record (`player --verify-install --install-record`) from that "
            "platform: a release package of the current, optimised build installed read-only at a path with spaces and "

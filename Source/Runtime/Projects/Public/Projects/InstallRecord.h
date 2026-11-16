@@ -47,6 +47,16 @@ struct InstallStep {
     bool operator==(const InstallStep&) const = default;
 };
 
+// What one of the record's scenarios proved for a release gate (S16): written by the
+// verifier from the game's own flow reports, never by hand. `gate` is the gate's id
+// ("level_travel", "saves", "player_settings", "cooked_package").
+//   proves level_travel "menu -> factory -> ending -> menu (resume-continue.json)"
+struct InstallProof {
+    std::string gate;
+    std::string detail;
+    bool operator==(const InstallProof&) const = default;
+};
+
 struct InstallRecord {
     // The machine: its name as people know it, and what it reported.
     std::string machine;
@@ -76,10 +86,13 @@ struct InstallRecord {
     // from another folder, with only a minimal environment (no LD_LIBRARY_PATH, a fresh home).
     bool readOnly = false, spacesInPath = false, unicodePath = false, otherFolder = false, cleanEnvironment = false;
     std::vector<InstallStep> steps;
+    std::vector<InstallProof> proofs;   // in the order found; older records have none
     bool passed = false;   // every step passed (result passed)
 
     // The step named so, or null.
     const InstallStep* step(std::string_view name) const;
+    // The proof for a gate, or null.
+    const InstallProof* proof(std::string_view gate) const;
     bool operator==(const InstallRecord&) const = default;
 };
 
@@ -129,5 +142,21 @@ struct InstallGate {
 InstallGate installGate(
     std::string_view platform, std::span<const InstallRecord> records, std::span<const std::string> files,
     std::string_view currentBuildId);
+
+// ---- Evidence gates (S16) ---------------------------------------------------------------
+
+// The gates an install record's scenarios can prove, in batch order: "level_travel",
+// "saves", "player_settings", "cooked_package", "acceptance_scenario".
+std::span<const char* const> evidenceGates();
+
+// One of those gates from the records: Passed when a record of a release package of the
+// current, optimised build, on a platform the contract names (any, when `platforms` is
+// empty), passed every step and proves it. These gates check the game's logic, so any
+// renderer counts (the platform gates ask for a real GPU). For "acceptance_scenario" the
+// proof is a passed step "scenario <file name of acceptanceScenario>". Unverified
+// otherwise, saying what to play; never Failed (a failed record fails its platform gate).
+InstallGate evidenceGate(
+    std::string_view gate, std::string_view acceptanceScenario, std::span<const std::string> platforms,
+    std::span<const InstallRecord> records, std::span<const std::string> files, std::string_view currentBuildId);
 
 }   // namespace shockwave

@@ -1604,3 +1604,60 @@ Plan section 23. See [ShippingTutorial](ShippingTutorial.md) and
 - **A real rehearsal**: no new tester has installed and played a package on a clean
   machine yet, so `release_rehearsal` is `unverified` for every project.
 - The tutorial is followed on Linux only.
+
+## S16: Final acceptance run
+
+Sections 24 and 25 of the plan, which no batch owned. See [Acceptance](Acceptance.md),
+[ErrorCatalog](ErrorCatalog.md) and [Release](Release.md#evidence).
+
+### What was built
+
+- **Evidence gates.** Flow reports say which levels a run visited (`levels_visited`), where
+  Continue took it (`continued`), the menu level and a hash of the settings it started
+  with (`profile_sha256`). `--verify-install` turns those into `proves` lines in the
+  install record, and `level_travel`, `saves`, `player_settings`, `cooked_package` and
+  `acceptance_scenario` read them instead of saying "no evidence yet". They take any
+  renderer; the platform gates still ask for a real GPU. Reactor Run gains `volume.json`,
+  which turns the music down so the next run can show it was kept.
+- **LoadTimeout.** `LevelHost::setTransitionTimeout` fails a level change that takes too
+  long: while reading or preparing, and while waiting at the boundary, the current level
+  plays on; while assets load on demand the load is stopped and the error screen shows, as
+  for any failed start. The player takes the contract's `transition_timeout_seconds`, else
+  120 s; `--transition-timeout <s>` overrides it and 0 turns it off.
+- **The error catalog** ([ErrorCatalog.md](ErrorCatalog.md)): each section 24 code, the
+  engine's code, where it's defined and the required test that proves it. `error_catalog`
+  reads the table and fails on a missing code, a name that isn't in its files, or a test
+  that isn't defined or required.
+- **Laps for flow tests**: `player --flow-test <scenario> --laps N [--lap-tolerance MiB]`
+  notes memory, entities, physics bodies, resident assets, leases and threads at each lap's
+  end and fails when they keep growing. Reactor Run's `round-trip.json` is one lap of menu,
+  training, factory, menu. `processThreads()` counts the process's threads (Linux, macOS, Windows), apart from `processMemory()`, which the performance run reads every few frames.
+- **Failure injection in flow tests**: `{"disk_full": true}`, `{"cancel": "travel"}`, and
+  `expect` on `wait_phase`, `save` and `load`. Reactor Run's `failures.json` uses them.
+- **The checklist for people** in [Acceptance.md](Acceptance.md), next to a table of which
+  test runs each of section 25's fifteen steps.
+
+### Tests
+
+| Test | Proves |
+| --- | --- |
+| `installed_game_flow` | volume, resume-quit and resume-continue installed: the record proves all four logic gates and `--release-info` passes them with the acceptance scenario; after an update the settings and acceptance gates stay unverified with the reason |
+| `install_records` | `proves` lines round-trip and read strictly (unknown gates, repeats, a hand-added acceptance proof are errors); the evidence gates pass on a null-renderer record and not on another platform, build, a development package, a Debug build or a failed run |
+| `level_travel` | a slow load fails as LoadTimeout with the level still playing; held at the boundary past the timeout, the same; 0 and negative mean off |
+| `asset_residency` | on demand, a load past the timeout stops, nothing stays loaded, failure() says why |
+| `error_catalog` | every section 24 code has a row whose engine name and test exist |
+| `acceptance_round_trips` | 100 laps of menu, training, factory, menu plateau; a lap that doesn't come back fails; the options refuse what they can't do |
+| `acceptance_failures` | a full disk (WriteFailed, the last save kept, no temporary files), a cancelled change, a missing and a corrupt level (LoadFailed, Main menu recovers, Continue loads the save); `--transition-timeout` makes the player's change fail as LoadTimeout |
+
+### Measured
+
+- 100 round trips on the null renderer (Linux, Release): lap 1 ended with 110.7 MiB
+  resident, lap 100 with 115.2 MiB; from lap 10, 2.0 MiB. Entities, bodies, assets, leases
+  and threads the same at every lap's end. About 21 s.
+
+### Still unverified
+
+- The people's checklist hasn't been played on any platform.
+- The round trips have run on the null renderer here; on a real GPU, run them as
+  Acceptance.md shows.
+- `online_lifecycle` stays "no evidence yet": it needs a match over the real Steam service.

@@ -198,6 +198,75 @@ void testGate() {
     CHECK(gate().verdict == InstallVerdict::Passed && gate().record == 2);
 }
 
+// What the scenarios proved (S16): kept in the record, read back strictly, and the gates
+// that read them.
+void testEvidence() {
+    const std::string build = "00000000000000aa";
+    InstallRecord r = full();
+    r.proofs = {{"level_travel", "menu -> a -> b -> menu (run.json)"}, {"saves", "continued in a"}};
+    InstallRecord back;
+    Diagnostic error;
+    const std::string text = installText(r);
+    CHECK(contains(text, "proves level_travel \"menu -> a -> b -> menu (run.json)\"\nproves saves"));
+    CHECK(parseInstall(text, "a.swinstall", back, error) && back == r && back.proof("saves"));
+    CHECK(!back.proof("player_settings"));
+    auto withLine = [&](const std::string& line) {
+        std::string t = text;
+        t.insert(t.find("result "), line + "\n");
+        return t;
+    };
+    CHECK(!parseInstall(withLine("proves saves \"again\""), "a.swinstall", back, error) &&
+          contains(error.message, "proved twice"));
+    CHECK(!parseInstall(withLine("proves performance \"fast\""), "a.swinstall", back, error) &&
+          contains(error.message, "no install record proves the gate performance"));
+    CHECK(!parseInstall(withLine("proves acceptance_scenario \"x\""), "a.swinstall", back, error));
+    CHECK(!parseInstall(withLine("proves saves"), "a.swinstall", back, error));
+    CHECK(evidenceGates().size() == 5);
+
+    std::vector<InstallRecord> records;
+    std::vector<std::string> files;
+    const std::vector<std::string> platforms = {"linux-x86_64"};
+    auto gate = [&](std::string_view id, std::span<const std::string> on) {
+        return evidenceGate(id, "Tests/flow/run.json", on, records, files, build);
+    };
+    CHECK(gate("level_travel", platforms).verdict == InstallVerdict::Unverified &&
+          contains(gate("level_travel", platforms).reason, "through two levels"));
+    // A null-renderer run proves the logic: these gates don't need a GPU.
+    r.renderer = "null";
+    r.gpuKind = "none";
+    records.push_back(r);
+    files.push_back("Release/Installs/a.swinstall");
+    const InstallGate travel = gate("level_travel", platforms);
+    CHECK(travel.verdict == InstallVerdict::Passed && travel.record == 0 && contains(travel.reason, "null renderer") &&
+          contains(travel.reason, "menu -> a -> b -> menu"));
+    CHECK(gate("saves", platforms).verdict == InstallVerdict::Passed);
+    CHECK(gate("player_settings", platforms).verdict == InstallVerdict::Unverified &&
+          contains(gate("player_settings", platforms).reason, "none of its scenarios proves it"));
+    // The acceptance scenario: a passed step that played the contract's file.
+    CHECK(gate("acceptance_scenario", platforms).verdict == InstallVerdict::Passed);
+    CHECK(evidenceGate("acceptance_scenario", "Tests/flow/other.json", platforms, records, files, build).verdict ==
+          InstallVerdict::Unverified);
+    // Another platform, another build, a development package, a debug build, a failed run: none count.
+    CHECK(gate("level_travel", std::vector<std::string>{"windows-x86_64"}).verdict == InstallVerdict::Unverified);
+    CHECK(gate("level_travel", {}).verdict == InstallVerdict::Passed);
+    auto spoiled = [&](auto change, const std::string& why) {
+        InstallRecord bad = r;
+        change(bad);
+        records = {bad};
+        const InstallGate g = gate("level_travel", platforms);
+        CHECK(g.verdict == InstallVerdict::Unverified && contains(g.reason, why));
+    };
+    spoiled([](InstallRecord& x) { x.buildId = "00000000000000ff"; }, "not the current build");
+    spoiled([](InstallRecord& x) { x.buildId.clear(); }, "development package");
+    spoiled([](InstallRecord& x) { x.buildConfig = "Debug"; }, "a Debug build");
+    spoiled(
+        [](InstallRecord& x) {
+            x.steps[1].result = InstallStepResult::Failed;
+            x.passed = false;
+        },
+        "a step failed");
+}
+
 void testPackageInfo() {
     const fs::path package = fs::temp_directory_path() / "shockwave-install-package-test" / "Game-1.0.0-linux-x86_64";
     std::error_code ec;
@@ -260,6 +329,7 @@ void testArchitecture() {
 int main() {
     testRecords();
     testGate();
+    testEvidence();
     testPackageInfo();
     testArchitecture();
     if (failures) {

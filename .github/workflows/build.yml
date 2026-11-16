@@ -47,7 +47,7 @@ jobs:
       # All of them here, the GPU ones too (Mesa's software Vulkan).
       - name: Test
         run: >
-          cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=124
+          cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=127
           -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=linux
           -P cmake/CTestGate.cmake
       - name: Check the sample, the shipping demo and Arena, unchanged
@@ -107,7 +107,7 @@ jobs:
         run: cmake --build build -j
       - name: Test
         run: >
-          cmake -DBUILD=build -DNAME="macOS tests" -DEXCLUDE_LABELS="gpu|timing" -DEXPECT=90
+          cmake -DBUILD=build -DNAME="macOS tests" -DEXCLUDE_LABELS="gpu|timing" -DEXPECT=93
           -DREQUIRE="installed_game_flow;package_release"
           -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=macos
           -P cmake/CTestGate.cmake
@@ -149,7 +149,7 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: >
-          cmake -DBUILD=build -DCONFIG=Release -DNAME="Windows tests" -DEXCLUDE_LABELS=gpu -DEXPECT=60
+          cmake -DBUILD=build -DCONFIG=Release -DNAME="Windows tests" -DEXCLUDE_LABELS=gpu -DEXPECT=63
           -DREQUIRE="installed_game_flow"
           -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=windows
           -P cmake/CTestGate.cmake

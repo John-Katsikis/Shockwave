@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "name": "menu, training, factory, menu: one lap of the 100 round trips (player --flow-test --laps 100)",
+  "timeout": 60,
+  "steps": [
+    {"travel": "training"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "training"},
+    {"travel": "factory"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "factory"},
+    {"travel": "menu"},
+    {"wait_phase": "succeeded", "timeout": 30},
+    {"assert_level": "menu"},
+    {"quit": true}
+  ]
+}

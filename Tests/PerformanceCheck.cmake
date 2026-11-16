@@ -147,7 +147,9 @@ endif()
 
 # ---- What goes with what ----
 run(2 --laps 2)
-expect_text("--laps and --perf-record go with --perf-run" "--laps alone")
+expect_text("--laps goes with --flow-test or --perf-run" "--laps alone")
+run(2 --perf-record "A machine")
+expect_text("--perf-record goes with --perf-run" "--perf-record alone")
 run(2 --perf-run "${G}/Tests/perf/tour.json" --flow-test "${G}/Tests/perf/tour.json")
 expect_text("--perf-run plays its own scenario" "--perf-run with --flow-test")
 run(2 --perf-run "${G}/Tests/perf/tour.json" --laps 0)

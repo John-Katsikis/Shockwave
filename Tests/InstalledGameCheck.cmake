@@ -84,15 +84,21 @@ endif()
 
 # ---- Installed and played: save and quit, then continue ----
 set(WORK "${TEMP}/work")
-run(0 "${PLAYER}" --verify-install "${P}" --flow-test "${FLOWS}/resume-quit.json"
+run(0 "${PLAYER}" --verify-install "${P}" --flow-test "${FLOWS}/volume.json" --flow-test "${FLOWS}/resume-quit.json"
     --flow-test "${FLOWS}/resume-continue.json" --renderer null --install-record "Test machine" --project "${G}"
     --install-dir "${WORK}" --json "${TEMP}/verify.json")
 expect_text("passed +install .*read-only folder with spaces and non-ASCII letters" "the install step")
 expect_text("passed +check " "the installed game's --check")
-expect_text("passed +scenario resume-quit.json .*passed +scenario resume-continue.json .*null renderer" "both scenarios")
+expect_text("passed +scenario volume.json .*passed +scenario resume-quit.json .*passed +scenario resume-continue.json .*null renderer" "the three scenarios")
 expect_text("passed +user data .*the install folder is unchanged" "the player's data")
 expect_text("skipped +update .*needs --update-from" "no update without --update-from")
 expect_text("verify-install passed" "the verdict")
+# What the scenarios proved (S16): read from the game's own flow reports.
+expect_text("proves +level_travel: menu -> [a-z]+ -> [a-z]+ -> menu \\(resume-" "level travel proved")
+expect_text("proves +saves: resume-continue.json continued in factory" "saves proved")
+expect_text("proves +player_settings: volume.json changed the settings and resume-quit.json started with them"
+    "settings proved")
+expect_text("proves +cooked_package: " "the cooked package proved")
 if(EXISTS "${WORK}")
     message(FATAL_ERROR "--verify-install left its work folder behind: ${WORK}")
 endif()
@@ -109,7 +115,8 @@ if(ARCHIVES)
 else()
     set(archive_expected 0)
 endif()
-if(NOT ok OR NOT steps EQUAL 8 OR NOT first STREQUAL "install" OR NOT hash_length EQUAL 64 OR
+string(JSON proved_travel GET "${json}" proves level_travel)
+if(NOT ok OR NOT steps EQUAL 9 OR NOT proved_travel MATCHES "^menu -> " OR NOT first STREQUAL "install" OR NOT hash_length EQUAL 64 OR
    NOT archive_length EQUAL archive_expected)
     message(FATAL_ERROR "the verify-install report: ${json}")
 endif()
@@ -130,6 +137,10 @@ if(NOT result STREQUAL "result passed")
 endif()
 # The gate reads it: the install is proven, the graphics aren't (the null renderer).
 run(0 "${PLAYER}" --project "${G}" --release-info)
+foreach(g level_travel saves player_settings cooked_package acceptance_scenario)
+    expect_text("gate ${g} passed \\([^)]*\\): Test machine, installed ${platform} package on the null renderer"
+        "the ${g} gate, from the record")
+endforeach()
 expect_text("gate platform:${platform} unverified \\(S13\\): Release/Installs/test-machine-${platform_file}.swinstall doesn't qualify ${platform}: it played on the null renderer"
     "the platform gate")
 
@@ -186,6 +197,15 @@ if(NOT previous STREQUAL "previous_version \"1.0.0\"")
 endif()
 # Every step passed; what the gate still wants is a real GPU.
 run(0 "${PLAYER}" --project "${G2}" --release-info)
+# The newer version continued the older one's save; only the previous version played the
+# acceptance scenario, and nothing changed a setting, so those two aren't proved.
+foreach(g level_travel saves cooked_package)
+    expect_text("gate ${g} passed \\([^)]*\\): Update machine, installed ${platform} package"
+        "the ${g} gate after an update")
+endforeach()
+expect_text("gate player_settings unverified \\([^)]*\\): Release/Installs/update-machine-[^ ]* doesn't count: none of its scenarios proves it"
+    "the settings gate after an update")
+expect_text("gate acceptance_scenario unverified" "the acceptance gate after an update")
 expect_text("gate platform:${platform} unverified \\(S13\\): Release/Installs/update-machine-${platform_file}.swinstall doesn't qualify ${platform}: it played on the null renderer"
     "the platform gate after an update")
 # An update needs a save to carry: one scenario isn't enough.

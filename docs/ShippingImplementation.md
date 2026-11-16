@@ -1,6 +1,7 @@
 # Shipping a complete game: implementation specification
 
-Status: **every batch S00 to S15 is built; recorded evidence is still to gather**. The
+Status: **every batch S00 to S15 is built, and the S16 final acceptance run; recorded
+evidence is still to gather**. The
 table below says which, and links each batch's verification record. Until the evidence
 exists this stays a plan: the gates in `player --release-info` say what is measured.
 Baseline inspected: `186ffc3`, 2026-10-27.
@@ -41,6 +42,7 @@ what each batch built, and the guides document them.
 | S13 platforms and installs | yes | a real-GPU install record per platform | [S13](ShippingVerification.md#s13-supported-platforms-installs-and-updates-part-1) |
 | S14 CI and regressions | yes | | [S14](ShippingVerification.md#s14-automated-acceptance-ci-and-regression-prevention) |
 | S15 documentation and rehearsal | yes | a rehearsal with a new tester on a clean machine | [S15](ShippingVerification.md#s15-documentation-and-release-rehearsal) |
+| S16 final acceptance run (sections 24 and 25) | yes | the people's checklist in [Acceptance.md](Acceptance.md) on each platform | [S16](ShippingVerification.md#s16-final-acceptance-run) |
 
 ## 0. Outcome and how to use this document
 

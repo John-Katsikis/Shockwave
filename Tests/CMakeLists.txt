@@ -223,6 +223,29 @@ if(TARGET game_shippingdemo AND (SHOCKWAVE_MODULAR OR WIN32))
         -P ${CMAKE_CURRENT_SOURCE_DIR}/InstalledGameCheck.cmake)
     set_tests_properties(installed_game_flow PROPERTIES TIMEOUT 300 LABELS "integration;installed")
 endif()
+# The installed-game acceptance sequence's machine-run steps (S16, docs/Acceptance.md):
+# 100 menu-A-B-menu round trips that must plateau, and injected failures that must recover.
+if(TARGET game_shippingdemo)
+    foreach(part round_trips failures)
+        add_test(NAME acceptance_${part} COMMAND ${CMAKE_COMMAND}
+            -DPLAYER=$<TARGET_FILE:player>
+            -DPROJECT=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+            -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/Acceptance-${part}
+            -DPART=${part}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/AcceptanceCheck.cmake)
+        set_tests_properties(acceptance_${part} PROPERTIES TIMEOUT 300 LABELS integration)
+    endforeach()
+endif()
+# The error catalog (S16, docs/ErrorCatalog.md): every code in section 24 of the plan maps to
+# an engine code and a required test this build defines.
+if(TARGET game_shippingdemo AND TARGET game_sample)
+    add_test(NAME error_catalog COMMAND ${CMAKE_COMMAND}
+        -DSOURCE=${CMAKE_SOURCE_DIR}
+        -DCTEST=${CMAKE_CTEST_COMMAND}
+        -DBUILD=${CMAKE_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/ErrorCatalogCheck.cmake)
+    set_tests_properties(error_catalog PROPERTIES TIMEOUT 60 LABELS unit)
+endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)
 add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}

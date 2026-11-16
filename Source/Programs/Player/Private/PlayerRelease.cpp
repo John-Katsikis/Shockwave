@@ -5,6 +5,7 @@
 #include <Engine/GraphicsSettings.h>
 #include <Engine/ReleaseTier.h>
 #include <Multiplayer/NetworkSettings.h>
+#include <Network/Sha256.h>
 #include <Packaging/Cook.h>
 #include <Packaging/Package.h>
 #include <Projects/Project.h>
@@ -12,10 +13,26 @@
 
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 
 namespace player {
 
 namespace net = shockwave::net;
+
+std::string profileDigest(const fs::path& preferencesFile) {
+    std::string bytes;
+    bool any = false;
+    for (const fs::path& file : {preferencesFile, preferencesFile.parent_path() / "Controls.swinput"}) {
+        std::ifstream in(file, std::ios::binary);
+        bytes += file.filename().string() + '\0';
+        if (!in) continue;
+        any = true;
+        std::ostringstream text;
+        text << in.rdbuf();
+        bytes += text.str() + '\0';
+    }
+    return any ? shockwave::net::toHex(shockwave::net::sha256(bytes)) : std::string();
+}
 
 std::string currentBuildId(const shockwave::Project& project) {
     // A package carries its cook beside the game; a project has its latest cook in Saved/.

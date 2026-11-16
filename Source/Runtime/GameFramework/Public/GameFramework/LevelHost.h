@@ -133,6 +133,14 @@ public:
     void setStaged(bool staged) { m_staged = staged; }
     bool staged() const { return m_staged; }
 
+    // How long a travel may take to load, from its request (S16, the release contract's
+    // transition_timeout_seconds). Past it the travel fails as LoadTimeout: before the
+    // boundary the current level plays on; once it has retired (assets loading on demand)
+    // nothing plays and failure() says why, as for any failed start. A level loading in one
+    // call (Hooks::load) is checked when that call returns. 0 (the default) turns it off.
+    void setTransitionTimeout(double seconds) { m_transitionTimeout = seconds > 0 ? seconds : 0; }
+    double transitionTimeout() const { return m_transitionTimeout; }
+
     PlaySession* session() const { return m_session.get(); }
     bool playing() const { return m_session && m_session->active(); }
     // A request is waiting for process(), or prepared and waiting for the frame boundary:
@@ -175,6 +183,10 @@ public:
 
 private:
     using Clock = std::chrono::steady_clock;
+    // The ticket has been loading longer than the transition timeout.
+    bool overdue(uint64_t id) const;
+    std::string timeoutMessage(const std::string& level) const;
+    double m_transitionTimeout = 0;
     struct Pending {
         uint64_t id;
         TravelRequest request;

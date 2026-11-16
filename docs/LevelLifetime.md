@@ -132,6 +132,7 @@ and an unknown one `UnknownTicket`. A cancel never touches another ticket.
 | `LoadFailed`, `BudgetExceeded` | the scene or its closure didn't load or fit (before the boundary: the level plays on) |
 | `StartFailed` | the new level didn't start: nothing plays |
 | `Cancelled`, `RedirectCycle` | cancelled or stopped; levels kept redirecting |
+| `LoadTimeout` | loading took longer than the transition timeout (`LevelHost::setTransitionTimeout`; the player uses the release contract's `transition_timeout_seconds`, else 120 s, and `--transition-timeout <seconds>`, 0 off). Before the boundary the level plays on; while assets load on demand, nothing plays, as for `StartFailed` |
 
 **Completions** are delivered once per ticket, after the change has finished, never in the
 middle of one. They go to `LevelHost::onResult`, to `subscribe()` observers (the token

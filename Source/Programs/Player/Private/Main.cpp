@@ -195,6 +195,21 @@ int main(int argc, char** argv) {
                     cookVerify = value;
                 continue;
             }
+            // S16: the transition timeout and the laps' memory tolerance. Kept out of the long
+            // else-if chain below, which MSVC can't nest any deeper (C1061).
+            if ((arg == "--transition-timeout" || arg == "--lap-tolerance") && i + 1 < argc) {
+                char* end = nullptr;
+                const double value = std::strtod(argv[++i], &end);
+                const bool ok = end && !*end && value >= 0 && value <= 1e6;
+                if (arg == "--transition-timeout") {
+                    if (!ok) throw player::UsageError("--transition-timeout takes seconds (0 turns it off)");
+                    tool.transitionTimeout = value;
+                } else {
+                    if (!ok) throw player::UsageError("--lap-tolerance takes MiB");
+                    tool.lapToleranceMib = value;
+                }
+                continue;
+            }
             // Player preferences (docs/Preferences.md).
             if (arg == "--pref" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -589,6 +604,7 @@ int main(int argc, char** argv) {
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
 
+
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
                 if (tool.assetLoading != "all" && tool.assetLoading != "levels")
@@ -803,12 +819,18 @@ int main(int argc, char** argv) {
                     "player --level-schema file.md       write the level catalog reference (- for stdout)\n"
                     "player --instant-travel             change levels within one frame (level_travel instant):\n"
                     "                                    no frame between preparing a level and the old one ending\n"
+                    "player --transition-timeout <s>     a level change that takes longer fails as LoadTimeout (default: the\n"
+                    "                                    release contract's transition_timeout_seconds, else 120; 0 off)\n"
                     "player --app-shell screens          the menu, pause, loading and error screens: off, all, or\n"
                     "                                    a list in quotes, \"menu pause loading\" (docs/AppShell.md)\n"
                     "player --flow-test scenario.json [--json report]\n"
                     "                                    play through the scenario's clicks, travel and checks in a\n"
                     "                                    hidden window; exit 1 at the first failed step\n"
                     "                                    (docs/FlowTest.md)\n"
+                    "player --flow-test scenario.json --laps N [--lap-tolerance MiB] [--json report]\n"
+                    "                                    its steps N times (it must end where it began), with\n"
+                    "                                    memory, entities, bodies, assets and threads at each lap's\n"
+                    "                                    end; fails when they keep growing (docs/Acceptance.md)\n"
                     "player --perf-run scenario.json [--laps N] [--cold-cache] [--json report]\n"
                     "       [--perf-record \"machine\" [--output folder]]\n"
                     "                                    play the scenario in real time and measure it: frame\n"
@@ -987,8 +1009,11 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--quality goes with --bake-lighting");
             if (tool.assetLoading == "levels" && !tool.assetResidency)
                 throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
-            if ((tool.perfLaps != 1 || !tool.perfRecord.empty()) && !tool.perfRun)
-                throw player::UsageError("--laps and --perf-record go with --perf-run");
+            if (!tool.perfRecord.empty() && !tool.perfRun) throw player::UsageError("--perf-record goes with --perf-run");
+            if (tool.perfLaps != 1 && !tool.perfRun && tool.flowTest.empty())
+                throw player::UsageError("--laps goes with --flow-test or --perf-run");
+            if (tool.lapToleranceMib >= 0 && (tool.perfRun || tool.perfLaps < 3))
+                throw player::UsageError("--lap-tolerance goes with --flow-test and --laps 3 or more");
             if (tool.coldCache && !tool.perfRun && tool.benchmarkSeconds <= 0)
                 throw player::UsageError("--cold-cache goes with --perf-run or --benchmark");
             if ((!install.machine.empty() || !install.workFolder.empty() || !install.updateFrom.empty() ||

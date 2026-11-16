@@ -28,4 +28,8 @@ struct ProcessMemory {
 // This process's memory now. Zeros where the system can't say.
 ProcessMemory processMemory();
 
+// The threads this process has now; 0 where the system can't say. Slower than
+// processMemory() on Windows (a snapshot of the system's threads): not for every frame.
+uint32_t processThreads();
+
 }   // namespace shockwave

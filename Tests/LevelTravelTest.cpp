@@ -8,6 +8,7 @@
 //   - cancel before the boundary, TooLateToCancel after, AlreadyFinished and UnknownTicket;
 //   - two exits touched in one frame travel once, and a one-shot exit is used once;
 //   - Stop while queued, reading and waiting at the boundary;
+//   - a load slower than the transition timeout fails as LoadTimeout (S16);
 //   - every ticket completes exactly once, after the change, and history is bounded.
 #include <Engine/Components.h>
 #include <Engine/Levels.h>
@@ -15,11 +16,13 @@
 #include <GameFramework/LevelHost.h>
 #include <GameFramework/PlaySession.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace shockwave;
@@ -363,6 +366,55 @@ void testStop() {
     CHECK(counts["a"].begun == 3 && counts["a"].ended == 3);
 }
 
+// The transition timeout (S16): a load that takes longer than it fails as LoadTimeout and
+// the current level plays on; 0 turns it off.
+void testTimeout() {
+    World world;
+    JobSystem jobs(1);
+    Instance instance;
+    buildLevel(world, "a");
+    LevelHost host(world, jobs, instance, nullptr, hooks());
+    host.setStaged(true);
+    host.start({"a"});
+    CHECK(host.transitionTimeout() == 0);
+    host.setTransitionTimeout(0.02);
+    duringLoad = [] { std::this_thread::sleep_for(std::chrono::milliseconds(60)); };
+    tick(host);
+    const uint64_t stayed = host.epoch();
+    const TravelTicket slow = host.request(to("b"));
+    host.process();
+    CHECK(host.status(slow.id) && host.status(slow.id)->code == TravelError::LoadTimeout);
+    CHECK(std::string(travelErrorName(TravelError::LoadTimeout)) == "LoadTimeout");
+    CHECK(host.status(slow.id)->message.find("took longer than 0.02 s") != std::string::npos);
+    CHECK(host.playing() && host.epoch() == stayed && host.currentLevel().level == "a");
+    CHECK(host.session()->state() == PlaySession::State::Playing);
+    // Prepared in time, but held at the boundary past it: it fails there, and the paused
+    // level carries on.
+    duringLoad = nullptr;
+    host.setTransitionTimeout(0.05);
+    tick(host);
+    const TravelTicket held = host.request(to("b"));
+    host.process();
+    CHECK(host.status(held.id)->phase == TravelPhase::AwaitingBoundary);
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    host.process();
+    CHECK(host.status(held.id)->code == TravelError::LoadTimeout && host.currentLevel().level == "a");
+    CHECK(host.epoch() == stayed && host.session()->state() == PlaySession::State::Playing);
+    // Off: a slow load arrives.
+    duringLoad = [] { std::this_thread::sleep_for(std::chrono::milliseconds(60)); };
+    host.setTransitionTimeout(0);
+    tick(host);
+    const TravelTicket patient = host.request(to("b"));
+    host.process();
+    host.process();
+    CHECK(host.status(patient.id) && host.status(patient.id)->phase == TravelPhase::Succeeded);
+    CHECK(host.currentLevel().level == "b");
+    duringLoad = nullptr;
+    host.setTransitionTimeout(-5);   // negative means off too
+    CHECK(host.transitionTimeout() == 0);
+    host.stop();
+}
+
 void testInstantAndHistory() {
     World world;
     JobSystem jobs(1);
@@ -416,6 +468,7 @@ void testSubscriptionOutlivesHost() {
 int main() {
     testStaged();
     testStop();
+    testTimeout();
     testInstantAndHistory();
     testSubscriptionOutlivesHost();
     if (failures) {
