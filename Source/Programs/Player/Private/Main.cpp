@@ -588,6 +588,11 @@ int main(int argc, char** argv) {
                 tool.assetResidency = false;
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
+            } else if (arg == "--transition-timeout" && i + 1 < argc) {
+                char* end = nullptr;
+                tool.transitionTimeout = std::strtod(argv[++i], &end);
+                if (!end || *end || !(tool.transitionTimeout >= 0))
+                    throw player::UsageError("--transition-timeout takes seconds (0 turns it off)");
 
             } else if (arg == "--asset-loading" && i + 1 < argc) {
                 tool.assetLoading = argv[++i];
@@ -803,6 +808,8 @@ int main(int argc, char** argv) {
                     "player --level-schema file.md       write the level catalog reference (- for stdout)\n"
                     "player --instant-travel             change levels within one frame (level_travel instant):\n"
                     "                                    no frame between preparing a level and the old one ending\n"
+                    "player --transition-timeout <s>     a level change that takes longer fails as LoadTimeout (default: the\n"
+                    "                                    release contract's transition_timeout_seconds, else 120; 0 off)\n"
                     "player --app-shell screens          the menu, pause, loading and error screens: off, all, or\n"
                     "                                    a list in quotes, \"menu pause loading\" (docs/AppShell.md)\n"
                     "player --flow-test scenario.json [--json report]\n"

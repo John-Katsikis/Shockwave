@@ -12,10 +12,12 @@
 #include <GameFramework/LevelHost.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <map>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace shockwave;
@@ -233,9 +235,11 @@ struct FakeLoader final : AssetResidency::Loader {
     std::set<std::string> live;   // what's loaded now
     std::set<std::string> broken;   // these fail to load
     size_t frees = 0;
+    int slowMs = 0;   // each load takes this long first (the transition timeout)
     bool load(
         const std::vector<std::string>& ids, const std::function<bool()>& cancelled, std::vector<std::string>& loaded,
         std::string& error) override {
+        if (slowMs) std::this_thread::sleep_for(std::chrono::milliseconds(slowMs));
         if (cancelled && cancelled()) {
             error = "cancelled";
             return false;
@@ -370,6 +374,24 @@ void testTravelOnDemand(JobSystem& jobs) {
     CHECK(host.failure().find("AssetLoadFailed: Content/a/floor.png") != std::string::npos);
     CHECK(loader.live.empty() && residency.size() == 0 && !host.lease().valid());
     CHECK(host.loadReports().back().status == TravelStatus::Failed);
+    // Too slow (S16): past the boundary, the transition timeout stops the load; nothing plays,
+    // the failure says why, and nothing stays loaded.
+    loader.broken.clear();
+    host.requestLevel({"b"});   // the error screen's way back
+    host.process();
+    CHECK(host.playing() && host.current().level == "b");
+    host.setTransitionTimeout(0.02);
+    loader.slowMs = 60;
+    results.clear();
+    tick(*host.session());
+    host.requestLevel({"a"});
+    host.process();
+    CHECK(!host.playing() && host.failure().find("took longer than") != std::string::npos);
+    CHECK(!results.empty() && results.back().error.find("took longer than 0.02 s") != std::string::npos);
+    CHECK(host.status(host.results().back().id)->code == TravelError::LoadTimeout);
+    CHECK(!host.lease().valid());
+    loader.slowMs = 0;
+    host.setTransitionTimeout(0);
     host.stop();
 }
 

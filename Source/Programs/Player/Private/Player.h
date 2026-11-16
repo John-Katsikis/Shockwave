@@ -145,6 +145,7 @@ struct Tool {
     std::string assetLoading;
     // --instant-travel: the project's level_travel as instant (docs/LevelLifetime.md).
     bool instantTravel = false;
+    double transitionTimeout = -1;   // --transition-timeout; -1: the contract's, else 120 s
     // --app-shell off|all|menu pause ...: the project's app_shell, overridden (docs/AppShell.md).
     std::string appShell;
     // Recovery (S12, docs/Diagnostics.md): after a run that didn't end cleanly the main menu

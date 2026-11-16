@@ -83,6 +83,7 @@ const char* travelErrorName(TravelError error) {
     case TravelError::Cancelled: return "Cancelled";
     case TravelError::RedirectCycle: return "RedirectCycle";
     case TravelError::RotationAborted: return "RotationAborted";
+    case TravelError::LoadTimeout: return "LoadTimeout";
     }
     return "None";
 }

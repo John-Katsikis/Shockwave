@@ -81,6 +81,7 @@ enum class TravelError {
     Cancelled,   // cancelled, replaced by Stop, or Play ended first
     RedirectCycle,   // levels kept asking for another before playing
     RotationAborted,   // online: the map change was called off (players weren't ready, the host gave up)
+    LoadTimeout,   // loading took longer than the transition timeout (S16, transition_timeout_seconds)
 };
 const char* travelErrorName(TravelError error);   // "None", "Busy", ... as in the enum
 

@@ -209,7 +209,7 @@ bool phaseFromName(std::string_view name, TravelPhase& out) {
 }
 
 bool errorFromName(std::string_view name) {
-    for (int e = int(TravelError::None); e <= int(TravelError::RedirectCycle); ++e)
+    for (int e = int(TravelError::None); e <= int(TravelError::LoadTimeout); ++e)
         if (name == travelErrorName(TravelError(e))) return true;
     return false;
 }

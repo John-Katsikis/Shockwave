@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <exception>
 #include <limits>
@@ -721,6 +722,9 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
         return fail(
             TravelStatus::Failed, TravelError::LoadFailed, error.empty() ? "it didn't load" : error,
             &LoadReport::readMs);
+    if (overdue(next.id))
+        return fail(
+            TravelStatus::Failed, TravelError::LoadTimeout, timeoutMessage(next.request.level), &LoadReport::readMs);
     if (!next.request.spawn.empty() && findLevelSpawn(*out.prepared, next.request.spawn) == kNullEntity)
         return fail(
             TravelStatus::Failed, TravelError::UnknownSpawn,
@@ -731,8 +735,25 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
     setPhase(next.id, TravelPhase::Preparing);
     if (!planAssets(load.request, *out.prepared, out.assets, load, error))
         return fail(TravelStatus::Failed, codeFor(error), error, &LoadReport::prepareMs);
+    if (overdue(next.id))
+        return fail(
+            TravelStatus::Failed, TravelError::LoadTimeout, timeoutMessage(next.request.level),
+            &LoadReport::prepareMs);
     load.prepareMs = msSince(clock);
     return true;
+}
+
+bool LevelHost::overdue(uint64_t id) const {
+    if (m_transitionTimeout <= 0) return false;
+    const auto it = m_accepted.find(id);
+    return it != m_accepted.end() &&
+           std::chrono::duration<double>(Clock::now() - it->second).count() > m_transitionTimeout;
+}
+
+std::string LevelHost::timeoutMessage(const std::string& level) const {
+    char seconds[32];
+    std::snprintf(seconds, sizeof(seconds), "%g", m_transitionTimeout);
+    return "level \"" + level + "\" took longer than " + seconds + " s to load (transition_timeout_seconds)";
 }
 
 bool LevelHost::commit(Candidate candidate) {
@@ -888,9 +909,14 @@ bool LevelHost::travelOnDemand(Candidate& candidate, Clock::time_point& clock) {
     // Upload: what the new level needs that isn't in. Past the point of no return.
     setPhase(next.id, TravelPhase::Uploading);
     std::string error;
-    if (!m_residency->load(m_lease, [this] { return m_stopped; }, error)) {
+    const uint64_t ticket = next.id;
+    if (!m_residency->load(m_lease, [this, ticket] { return m_stopped || overdue(ticket); }, error)) {
         load.uploadMs = msSince(clock);
         if (m_stopped) return cancelled();
+        if (overdue(ticket)) {
+            failStarted(next, load, TravelError::LoadTimeout, timeoutMessage(next.request.level));
+            return false;
+        }
         failStarted(next, load, codeFor(error), "level \"" + next.request.level + "\" didn't load: " + error);
         return false;
     }
