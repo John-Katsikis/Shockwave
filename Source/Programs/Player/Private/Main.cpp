@@ -588,6 +588,11 @@ int main(int argc, char** argv) {
                 tool.assetResidency = false;
             } else if (arg == "--instant-travel") {
                 tool.instantTravel = true;
+            } else if (arg == "--lap-tolerance" && i + 1 < argc) {
+                char* end = nullptr;
+                tool.lapToleranceMib = std::strtod(argv[++i], &end);
+                if (!end || *end || !(tool.lapToleranceMib >= 0) || tool.lapToleranceMib > 1e6)
+                    throw player::UsageError("--lap-tolerance takes MiB");
             } else if (arg == "--transition-timeout" && i + 1 < argc) {
                 char* end = nullptr;
                 tool.transitionTimeout = std::strtod(argv[++i], &end);
@@ -816,6 +821,10 @@ int main(int argc, char** argv) {
                     "                                    play through the scenario's clicks, travel and checks in a\n"
                     "                                    hidden window; exit 1 at the first failed step\n"
                     "                                    (docs/FlowTest.md)\n"
+                    "player --flow-test scenario.json --laps N [--lap-tolerance MiB] [--json report]\n"
+                    "                                    its steps N times (it must end where it began), with\n"
+                    "                                    memory, entities, bodies, assets and threads at each lap's\n"
+                    "                                    end; fails when they keep growing (docs/Acceptance.md)\n"
                     "player --perf-run scenario.json [--laps N] [--cold-cache] [--json report]\n"
                     "       [--perf-record \"machine\" [--output folder]]\n"
                     "                                    play the scenario in real time and measure it: frame\n"
@@ -994,8 +1003,11 @@ int main(int argc, char** argv) {
                 throw player::UsageError("--quality goes with --bake-lighting");
             if (tool.assetLoading == "levels" && !tool.assetResidency)
                 throw player::UsageError("--asset-loading levels needs level leases: drop --no-asset-residency");
-            if ((tool.perfLaps != 1 || !tool.perfRecord.empty()) && !tool.perfRun)
-                throw player::UsageError("--laps and --perf-record go with --perf-run");
+            if (!tool.perfRecord.empty() && !tool.perfRun) throw player::UsageError("--perf-record goes with --perf-run");
+            if (tool.perfLaps != 1 && !tool.perfRun && tool.flowTest.empty())
+                throw player::UsageError("--laps goes with --flow-test or --perf-run");
+            if (tool.lapToleranceMib >= 0 && (tool.perfRun || tool.perfLaps < 3))
+                throw player::UsageError("--lap-tolerance goes with --flow-test and --laps 3 or more");
             if (tool.coldCache && !tool.perfRun && tool.benchmarkSeconds <= 0)
                 throw player::UsageError("--cold-cache goes with --perf-run or --benchmark");
             if ((!install.machine.empty() || !install.workFolder.empty() || !install.updateFrom.empty() ||

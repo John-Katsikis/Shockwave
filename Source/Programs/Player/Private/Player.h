@@ -162,7 +162,8 @@ struct Tool {
     // report]: the scenario in real time, measured; play and loading apart (S10,
     // PlayerPerformance.cpp, docs/Performance.md). Sets flowTest too.
     bool perfRun = false;
-    uint32_t perfLaps = 1;
+    uint32_t perfLaps = 1;   // --laps: with --perf-run or --flow-test
+    double lapToleranceMib = -1;   // --lap-tolerance; -1: the default (docs/Acceptance.md)
     std::string perfRecord;   // the machine's name; writes Release/Performance/<name>.swperf
     fs::path perfRecordFolder;   // --output with --perf-record; empty: the project's Release/Performance
     bool coldCache = false;   // --cold-cache: the pipeline cache was emptied before the run
@@ -639,6 +640,21 @@ private:
     shockwave::AssetResidency::Lease m_sceneAssets;
     // The active runtime level and its session (docs/LevelLifetime.md), in m_world.
     std::unique_ptr<shockwave::LevelHost> m_levels;
+    // --flow-test --laps (S16, docs/Acceptance.md): what the process held as each lap ended.
+    struct LapMark {
+        uint64_t residentBytes = 0;
+        size_t entities = 0;
+        uint32_t bodies = 0;
+        size_t assets = 0, leases = 0;
+        uint32_t threads = 0;
+        std::string level;
+    };
+    std::vector<LapMark> m_lapMarks;
+    size_t m_lapSteps = 0;
+    std::string m_lapStart;   // the level playing when the laps began: each has to end there
+    void sampleLaps();
+    std::string lapVerdict() const;   // "" when it plateaued
+    std::string lapsJson() const;
     std::string m_profileAtStart;   // profileDigest when the player started (flow reports)
     std::optional<shockwave::SaveIdentity> m_saveIdentity;   // saveIdentity(), worked out once
     // After m_levels, so they go first: the shell holds a subscription to it.

@@ -388,7 +388,20 @@ void testTimeout() {
     CHECK(host.status(slow.id)->message.find("took longer than 0.02 s") != std::string::npos);
     CHECK(host.playing() && host.epoch() == stayed && host.currentLevel().level == "a");
     CHECK(host.session()->state() == PlaySession::State::Playing);
-    // Off: the same slow load arrives.
+    // Prepared in time, but held at the boundary past it: it fails there, and the paused
+    // level carries on.
+    duringLoad = nullptr;
+    host.setTransitionTimeout(0.05);
+    tick(host);
+    const TravelTicket held = host.request(to("b"));
+    host.process();
+    CHECK(host.status(held.id)->phase == TravelPhase::AwaitingBoundary);
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    host.process();
+    CHECK(host.status(held.id)->code == TravelError::LoadTimeout && host.currentLevel().level == "a");
+    CHECK(host.epoch() == stayed && host.session()->state() == PlaySession::State::Playing);
+    // Off: a slow load arrives.
+    duringLoad = [] { std::this_thread::sleep_for(std::chrono::milliseconds(60)); };
     host.setTransitionTimeout(0);
     tick(host);
     const TravelTicket patient = host.request(to("b"));

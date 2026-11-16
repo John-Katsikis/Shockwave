@@ -67,13 +67,18 @@ struct FlowStep {
         Look,
         Wait,
         WaitValue,
-        Unplug
+        Unplug,
+        Cancel,   // S16: cancel the last travel asked for
+        DiskFull   // S16: every save write fails (on) or works again (off)
     };
     Kind kind = Kind::Quit;
     std::string target;   // the level, element, phase, value name or slot
     std::string spawn;   // travel
     std::string document;   // click: a level document's name; empty: the shell's screen
-    std::string expect;   // travel: the refusal code it should get ("UnknownLevel"); empty: accepted
+    // travel: the refusal code it should get ("UnknownLevel"); cancel: the code cancel
+    // returns ("TooLateToCancel"); wait_phase: the code the ticket ended with ("LoadFailed");
+    // save, load: the save error it should fail with ("WriteFailed"). Empty: it works.
+    std::string expect;
     std::string equals;   // assert_value, wait_value, hold until
     std::string until;   // hold: the value it holds until (with equals)
     InputBinding binding;   // hold, tap
@@ -112,6 +117,8 @@ public:
         std::function<void(float x, float y)> look;
         // {"unplug": "gamepad"}: the virtual gamepad goes, as pulling its cable would.
         std::function<void()> unplug;
+        // {"disk_full": true}: every save write fails as a full disk would, until false.
+        std::function<void(bool full)> diskFull;
     };
     enum class State { Running, Passed, Failed };
 

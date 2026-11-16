@@ -701,6 +701,10 @@ bool LevelHost::prepare(const Pending& next, Candidate& out) {
         const World unread;
         if (!planAssets(load.request, unread, out.assets, load, error))
             return fail(TravelStatus::Failed, codeFor(error), error, &LoadReport::prepareMs);
+        if (overdue(next.id))
+            return fail(
+                TravelStatus::Failed, TravelError::LoadTimeout, timeoutMessage(next.request.level),
+                &LoadReport::prepareMs);
         load.prepareMs = msSince(clock);
         return true;
     }
@@ -764,6 +768,15 @@ bool LevelHost::commit(Candidate candidate) {
             m_nextNetwork = network->nextStart();
             m_nextServices = m_session->networkServices();
         }
+    // Past the timeout while it waited at the boundary: the current level plays on.
+    if (candidate.next.id != m_rotationTicket && overdue(candidate.next.id)) {
+        resume(candidate);
+        candidate.load.status = TravelStatus::Failed;
+        candidate.load.error = timeoutMessage(candidate.next.request.level);
+        report(candidate.load);
+        finish(candidate.next.id, TravelStatus::Failed, TravelError::LoadTimeout, candidate.load.error);
+        return true;
+    }
     m_inFlight = candidate.next.id;
     Reset clear{m_inFlight};
     auto clock = Clock::now();

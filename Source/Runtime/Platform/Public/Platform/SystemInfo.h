@@ -23,6 +23,7 @@ const SystemInfo& systemInfo();
 struct ProcessMemory {
     uint64_t residentBytes = 0;   // memory this process holds right now (RSS / working set)
     uint64_t peakResidentBytes = 0;   // the most it has held since it started; 0 if unknown
+    uint32_t threads = 0;   // the threads it has right now; 0 if unknown
 };
 
 // This process's memory now. Zeros where the system can't say.

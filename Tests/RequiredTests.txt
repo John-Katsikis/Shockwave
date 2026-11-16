@@ -29,6 +29,9 @@ installed_game_flow
 release
 install_records
 release_rehearsal
+error_catalog
+acceptance_round_trips
+acceptance_failures
 
 # Kept from before the plan.
 ecs
