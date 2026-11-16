@@ -56,6 +56,10 @@ Use `--app-shell all` when the project doesn't turn on the screens the scenario 
 | `{"assert_level": "a"}` | the level playing now is `a` |
 | `{"assert_value": "flow.screen", "equals": "pause"}` | a value of the shell's `flow` model, or of the level's `game` model (`game.score`), as text |
 | `{"save": "slot"}`, `{"load": "slot"}` | saves or loads a slot of the level playing, waiting for the file |
+| `{"save": "slot", "expect": "WriteFailed"}` | a save or load that must fail with that save error (`saveErrorName`) |
+| `{"wait_phase": "failed", "expect": "LoadFailed"}` | the ticket must end in that phase with that code |
+| `{"cancel": "travel"}` | cancels the latest ticket; `"expect": "TooLateToCancel"` when that's the answer it must get |
+| `{"disk_full": true}` | every save write fails as a full disk would, until `{"disk_full": false}` or the end of the run (S16) |
 | `{"hold": "key W", "until": "game.near", "equals": "Console"}` | holds a key, mouse button, gamepad button or stick until a value is that, then lets go |
 | `{"hold": "pad_axis left_y +", "value": 0.8, "seconds": 1.5}` | holds it, this far (0 to 1), for that many seconds of game time |
 | `{"tap": "key E"}` | presses it for one frame, then lets go |
@@ -99,6 +103,17 @@ Steps run in order:
   what opens them.
 - An assertion doesn't wait.
 - The latest ticket is the last one a step, a click or the level itself started.
+
+## Laps
+
+`player --flow-test scenario.json --laps N` (2 to 100) plays the steps N times, the final
+`quit` once at the end. Each lap has to come back to the level it started in. As each lap
+ends the player notes resident memory, entities, physics bodies, resident assets, asset
+leases and threads; the report's `run` gains `laps` (one object per lap), `plateau` and
+`plateau_problem`. With 3 laps or more the run fails when the counts differ from lap 1's,
+threads grow past lap 1's, or memory from a tenth of the way in to the end grows by more
+than `--lap-tolerance` MiB (default 32). This is section 25 step 10 of the shipping plan:
+see [Acceptance.md](Acceptance.md).
 
 ## The report
 

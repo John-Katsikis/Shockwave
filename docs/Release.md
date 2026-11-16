@@ -120,9 +120,12 @@ measured:
   record in `Release/Rehearsals` for this version, a named platform and the current build.
   A new tester on a clean machine played the package with no developer intervention.
 
-Level travel, saves, settings, cooking and the online lifecycle stay `unverified` with
-"no evidence yet": the tests prove them for the engine, but no record ties them to your
-game yet. So for now no project qualifies, and the report says exactly why.
+- level_travel, saves, player_settings, cooked_package and acceptance_scenario (S16,
+  [below](#evidence)): what the scenarios in an install record proved.
+
+The online lifecycle stays `unverified` with "no evidence yet": the tests prove it for the
+engine, but no record ties it to your game yet, so an online release doesn't qualify, and
+the report says exactly why.
 
 Exit codes follow the plan's convention:
 
@@ -197,6 +200,45 @@ with every step passed, an update, a downgrade and a reinstall included. When th
 current build failed, the gate fails and names the step. Otherwise it stays `unverified`
 and says what's missing. A record on one machine never stands in for another platform or
 architecture.
+
+## Evidence
+
+`player --verify-install` plays scenarios in the installed game, one process each, sharing
+the player's per-user folders. Their flow reports say which levels each run visited, where
+Continue took it, the menu level and a hash of the settings it started with. From those the
+verifier writes `proves` lines into the install record:
+
+```text
+proves level_travel "menu -> factory -> ending -> menu (resume-continue.json)"
+proves saves "resume-continue.json continued in factory from the save an earlier run (resume-quit.json) left"
+proves player_settings "volume.json changed the settings and resume-quit.json started with them (...)"
+proves cooked_package "the cooked release package passed its check and played volume.json from a read-only install"
+```
+
+| Gate | Proved when |
+| --- | --- |
+| `level_travel` | one run went from the menu through two other levels and back to the menu |
+| `saves` | a later run continued (TravelReason LoadSave) from a save an earlier run left |
+| `player_settings` | a later run started with settings an earlier run changed: the hash it reported matches the file on disk, and differs from the one before the first run |
+| `cooked_package` | the release package (with a build and content ID), installed read-only, passed its check and played a scenario |
+| `acceptance_scenario` | a step played the contract's `acceptance_scenario` and passed (checked from the steps, not a `proves` line) |
+
+Only runs of the package being verified prove anything: the previous version's runs under
+`--update-from` count as the state they left behind. A gate passes on the newest record of
+a release package of the current, optimised build, on a platform the contract names, that
+passed every step. These gates check the game's logic, so the null renderer counts; the
+platform gates are the ones that ask for a real GPU. Nothing is ticked by hand, and a
+`proves` line can't be added to a record whose steps don't support it: the record is
+re-read strictly, unknown gates and repeats are errors.
+
+For Reactor Run, three scenarios prove all five:
+
+```sh
+build/bin/player --verify-install <package> --project Games/ShippingDemo --install-record "My PC" \
+  --flow-test Games/ShippingDemo/Tests/flow/volume.json \
+  --flow-test Games/ShippingDemo/Tests/flow/resume-quit.json \
+  --flow-test Games/ShippingDemo/Tests/flow/resume-continue.json
+```
 
 ## In the editor
 
