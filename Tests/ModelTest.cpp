@@ -171,9 +171,11 @@ void missingTextures(const fs::path& root, const fs::path& temporary) {
         for (const auto& p : m.dependencies) tracked |= p.filename() == "wood.png";
         check(tracked, "the texture found nearby is a dependency");
     }
-    {   // with different letter case, beside the model
+    {   // with different letter case, one folder down (beside the model, a case-insensitive
+        // file system would just open it)
         const fs::path dir = setup("Wood.PNG");
-        fs::copy_file(root / "checker.png", dir / "Models/wood.png");
+        fs::create_directories(dir / "Models/maps");
+        fs::copy_file(root / "checker.png", dir / "Models/maps/wood.png");
         ModelData m;
         check(load(dir / "Models/quad.obj", m) && usedNearby(m, "wood.png"), "texture found with other letter case");
     }
