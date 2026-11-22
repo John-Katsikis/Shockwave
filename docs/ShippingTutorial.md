@@ -58,8 +58,9 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release "-DSHOCKWAVE_GAMES=$GAME"
 cmake --build build --target player editor game_two_rooms -j4
 ```
 
-`SHOCKWAVE_GAMES` replaces the list of games in this build. To keep the bundled ones,
-list them too, separated by semicolons ([Starting projects](StartingProjects.md#register-and-build)).
+`SHOCKWAVE_GAMES` replaces the list of games in this build, so this one builds only
+yours. To keep the bundled ones too, use `-DSHOCKWAVE_EXTRA_GAMES=$GAME` instead
+([Starting projects](StartingProjects.md#register-and-build)).
 
 ## 3. Controls
 

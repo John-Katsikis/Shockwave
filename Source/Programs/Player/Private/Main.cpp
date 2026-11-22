@@ -1155,7 +1155,7 @@ int main(int argc, char** argv) {
                              std::filesystem::path(base) / "templates" / "Blank", created, error))
                 throw std::runtime_error(error.empty() ? "can't locate project templates" : error);
             std::printf("project %s\nmodule %s\n", created.file.string().c_str(), created.gameModule.c_str());
-            std::puts("Add this folder to SHOCKWAVE_GAMES, then build player/editor before Play. See the project's "
+            std::puts("Add this folder to SHOCKWAVE_EXTRA_GAMES, then build player/editor before Play. See the project's "
                       "README.md.");
             return 0;
         }

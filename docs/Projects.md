@@ -73,7 +73,7 @@ The same starter is available without opening the editor:
 ./build/bin/player --new-project /absolute/path/to/MyGame --name "My Game"
 ```
 
-Register the new folder in `SHOCKWAVE_GAMES` and build its module before Play.
+Register the new folder in `SHOCKWAVE_EXTRA_GAMES` and build its module before Play.
 [Starting projects](StartingProjects.md) gives the complete workflow, including
 projects outside the engine repository and the distinction between Sample and Arena.
 
@@ -275,11 +275,12 @@ shockwave_game_module(my_game)
 Every `.cpp` under the folder's `Source/` is built. New files are picked up on the next
 build without touching CMake. To list the files yourself instead, pass `SOURCES`.
 
-Add the folder to `SHOCKWAVE_GAMES` when you configure. It's a `;`-separated list, and
-the sample is in it by default:
+Add the folder to `SHOCKWAVE_EXTRA_GAMES` when you configure. It's a `;`-separated list
+of games built as well as the built-in ones (`SHOCKWAVE_GAMES` is the whole list, for a
+build of only the games you name):
 
 ```sh
-cmake -S . -B build "-DSHOCKWAVE_GAMES=$PWD/Games/Sample;/absolute/path/to/MyGame" \
+cmake -S . -B build "-DSHOCKWAVE_EXTRA_GAMES=/absolute/path/to/MyGame" \
       -DSHOCKWAVE_GAME_PROJECT=/absolute/path/to/MyGame.swproject
 cmake --build build -j
 ```

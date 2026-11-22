@@ -50,11 +50,10 @@ under `/mnt/STORAGE_/Asset Library/` are only read. The project tracks the impor
 preparation script, scene/prefab text, UI, and procedural studio environment. It does not
 redistribute the asset packs or assume they have an open-source license.
 
-Register this optional game alongside the games you want to build. `SHOCKWAVE_GAMES`
-replaces the selected list; it does not append to it:
+Register this optional game as an extra one; the built-in games stay in the build:
 
 ```sh
-cmake -S . -B build '-DSHOCKWAVE_GAMES=Games/Sample;Games/Arena;Games/RenderLab'
+cmake -S . -B build -DSHOCKWAVE_EXTRA_GAMES=Games/RenderLab
 cmake --build build --target renderlab_import -j
 python Games/RenderLab/Tools/PrepareAssets.py --library '/mnt/STORAGE_/Asset Library/'
 cmake --build build --target player editor -j
