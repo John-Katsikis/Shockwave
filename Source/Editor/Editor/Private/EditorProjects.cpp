@@ -139,7 +139,7 @@ bool Editor::createNewProject(const fs::path& folder, const std::string& name) {
     }
     m_hubError.clear();
     log("Created project " + project.name + " in " + folder.string());
-    log("Register this folder in SHOCKWAVE_GAMES and build game_" + module +
+    log("Register this folder in SHOCKWAVE_EXTRA_GAMES and build game_" + module +
         " before Play. Setup instructions are in the project's README.md.");
     return openProject(project.file);
 }

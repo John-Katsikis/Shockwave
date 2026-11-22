@@ -324,7 +324,7 @@ See [Arena shooter test](Games/Arena/README.md) for controls, editing and automa
 
 To start your own independent game, use the editor's **New project** action or
 `./build/bin/player --new-project /absolute/path/to/MyGame --name "My Game"`.
-Then register its folder in `SHOCKWAVE_GAMES` and build. No engine source edits are
+Then register its folder in `SHOCKWAVE_EXTRA_GAMES` and build. No engine source edits are
 needed; see [Starting projects](docs/StartingProjects.md).
 
 To hand your game to players, package it: Build > Package game in the editor, or

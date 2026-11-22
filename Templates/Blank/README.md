@@ -11,14 +11,16 @@ Before the first Play, register this folder in the engine build. From your Shock
 checkout, replace the example game path below with this folder's absolute path:
 
 ```sh
-cmake -S . -B build "-DSHOCKWAVE_GAMES=/absolute/path/to/YourGame"
+cmake -S . -B build "-DSHOCKWAVE_EXTRA_GAMES=/absolute/path/to/YourGame"
 cmake --build build --target player editor -j4
 ./build/bin/player --project /absolute/path/to/YourGame --check
 ./build/bin/editor /absolute/path/to/YourGame
 ```
 
-`SHOCKWAVE_GAMES` is a semicolon-separated list. Keep the folders for other games you
-want built in that list. This changes build configuration, not engine source files.
+`SHOCKWAVE_EXTRA_GAMES` adds games to the built-in ones; it's a semicolon-separated list,
+and setting it again replaces the extras it held, so list all of yours. (`SHOCKWAVE_GAMES`
+is the whole list, built-in games included, for a build of only the games you name.)
+This changes build configuration, not engine source files.
 Building player/editor also builds the registered game modules. Subsequent C++ edits
 can use **Build > Build and reload game code** in a modular editor. With static
 modules (including the default Windows build), rebuild and relaunch player/editor.

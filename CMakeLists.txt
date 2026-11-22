@@ -295,20 +295,51 @@ if(SHOCKWAVE_SANITIZE)
 endif()
 add_subdirectory(Source)
 # Game folders to build: each has a CMakeLists.txt calling shockwave_game_module(<id>).
-# Add your own game's folder here (a ;-separated list). The editor opens any project
-# whose module is built.
-set(SHOCKWAVE_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample;${CMAKE_CURRENT_SOURCE_DIR}/Games/Arena;${CMAKE_CURRENT_SOURCE_DIR}/Games/ShippingDemo"
+# SHOCKWAVE_GAMES is the whole list (it stays in the cache, so a build folder keeps it);
+# SHOCKWAVE_EXTRA_GAMES adds folders to it. Relative folders are read from the engine
+# folder. The editor opens any project whose module is built.
+set(SHOCKWAVE_DEFAULT_GAMES "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample;${CMAKE_CURRENT_SOURCE_DIR}/Games/Arena;${CMAKE_CURRENT_SOURCE_DIR}/Games/ShippingDemo")
+set(SHOCKWAVE_GAMES "${SHOCKWAVE_DEFAULT_GAMES}"
     CACHE STRING "Game module folders to build (absolute paths, separated by semicolons)")
+set(SHOCKWAVE_EXTRA_GAMES ""
+    CACHE STRING "More game folders to build as well as SHOCKWAVE_GAMES (absolute paths, separated by semicolons)")
 # The project the player runs when it's given none.
 set(SHOCKWAVE_GAME_PROJECT "${CMAKE_CURRENT_SOURCE_DIR}/Games/Sample/Sample.swproject"
     CACHE FILEPATH "The .swproject the player runs by default")
-foreach(game ${SHOCKWAVE_GAMES})
+set(shockwave_games "")
+foreach(game IN LISTS SHOCKWAVE_GAMES SHOCKWAVE_EXTRA_GAMES)
+    if(game STREQUAL "")
+        continue()
+    endif()
+    get_filename_component(game "${game}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    list(APPEND shockwave_games "${game}")
+endforeach()
+list(REMOVE_DUPLICATES shockwave_games)
+# A build folder configured before a built-in game existed keeps its old list; say so
+# rather than skip the new game quietly.
+foreach(game IN LISTS SHOCKWAVE_DEFAULT_GAMES)
+    if(NOT game IN_LIST shockwave_games)
+        message(WARNING "Shockwave: the built-in game ${game} is not being built, because "
+            "SHOCKWAVE_GAMES leaves it out (it keeps the value this build folder was first "
+            "given). Add it with -DSHOCKWAVE_EXTRA_GAMES=${game}, or reset the list with "
+            "-USHOCKWAVE_GAMES.")
+    endif()
+endforeach()
+set(shockwave_game_names "")
+foreach(game IN LISTS shockwave_games)
     get_filename_component(game_name ${game} NAME)
+    list(APPEND shockwave_game_names "${game_name}")
     # Two external projects can share a folder name; don't collide in the build tree.
     string(SHA256 game_hash "${game}")
     string(SUBSTRING "${game_hash}" 0 12 game_hash)
     add_subdirectory("${game}" "${CMAKE_BINARY_DIR}/Games/${game_name}-${game_hash}")
 endforeach()
+if(shockwave_game_names)
+    list(JOIN shockwave_game_names ", " shockwave_game_names)
+    message(STATUS "Shockwave games: ${shockwave_game_names}")
+else()
+    message(STATUS "Shockwave games: none")
+endif()
 add_subdirectory(Source/Editor)
 add_subdirectory(Source/Programs)
 

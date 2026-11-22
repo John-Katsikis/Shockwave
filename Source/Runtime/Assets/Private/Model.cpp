@@ -1,4 +1,5 @@
 #include <Assets/Model.h>
+#include <Assets/Image.h>
 
 #include <assimp/DefaultIOSystem.h>
 #include <assimp/GltfMaterial.h>
@@ -19,6 +20,7 @@
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -40,6 +42,62 @@ std::string toUtf8(const fs::path& p) {
 void dependency(std::vector<fs::path>& list, const fs::path& path) {
     const auto p = fs::absolute(path).lexically_normal();
     if (std::find(list.begin(), list.end(), p) == list.end()) list.push_back(p);
+}
+// A texture a model names but that isn't where the file says (an artist's own folder,
+// say): look for its file name next to the model, one folder down, in the model's parent
+// folder and one folder down from that, in that order and regardless of letter case.
+// Failing that, the same places again for the name with another image extension (a .png
+// where the file says .tga). Never deeper, never above the parent; unreadable folders
+// are skipped.
+std::string lowercase(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+bool absoluteTexturePath(const std::string& p) {
+    return (!p.empty() && (p[0] == '/' || p[0] == '\\')) ||
+           (p.size() >= 2 && std::isalpha(static_cast<unsigned char>(p[0])) && p[1] == ':');
+}
+std::string textureFileName(const std::string& savedPath) {
+    const size_t slash = savedPath.find_last_of("/\\");
+    return slash == std::string::npos ? savedPath : savedPath.substr(slash + 1);
+}
+std::optional<fs::path> findTextureNearby(const fs::path& modelFolder, const std::string& savedPath) {
+    const std::string name = lowercase(textureFileName(savedPath));
+    if (name.empty()) return std::nullopt;
+    const std::string stem = lowercase(toUtf8(fromUtf8(name.c_str()).stem()));
+    auto subfolders = [](const fs::path& folder) {
+        std::vector<fs::path> list;
+        std::error_code ec;
+        for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+            if (std::error_code typeError; it->is_directory(typeError)) list.push_back(it->path());
+        std::sort(list.begin(), list.end());
+        return list;
+    };
+    std::vector<fs::path> places{modelFolder};
+    for (auto& folder : subfolders(modelFolder)) places.push_back(std::move(folder));
+    const fs::path parent = modelFolder.parent_path();
+    if (!parent.empty() && parent != modelFolder) {
+        places.push_back(parent);
+        for (auto& folder : subfolders(parent))
+            if (folder != modelFolder) places.push_back(std::move(folder));
+    }
+    auto search = [&](bool sameExtension) -> std::optional<fs::path> {
+        for (const fs::path& folder : places) {
+            std::vector<fs::path> matches;
+            std::error_code ec;
+            for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+                if (std::error_code typeError; !it->is_regular_file(typeError)) continue;
+                const fs::path& file = it->path();
+                const bool match = sameExtension ? lowercase(toUtf8(file.filename())) == name
+                                                 : lowercase(toUtf8(file.stem())) == stem && isImageFile(file);
+                if (match) matches.push_back(file);
+            }
+            if (!matches.empty()) return *std::min_element(matches.begin(), matches.end());
+        }
+        return std::nullopt;
+    };
+    if (auto found = search(true)) return found;
+    return search(false);
 }
 class TrackingIO final : public Assimp::IOSystem {
 public:
@@ -493,6 +551,9 @@ bool loadModel(
                 std::string(importer.GetErrorString()) +
                 (blend ? ". " + blendDiagnostic + "; export glTF/GLB from Blender as an alternative" : ""));
         std::unordered_map<std::string, int> textureCache;
+        // Missing textures are searched for next to the model the person imported (not
+        // next to a .blend's temporary conversion).
+        const fs::path modelFolder = fs::absolute(path).lexically_normal().parent_path();
         // Colour maps are sRGB, data maps linear; an image used both ways is read twice.
         auto texture = [&](const aiMaterial& material, aiTextureType type, bool srgb) -> int {
             aiString source;
@@ -523,10 +584,41 @@ bool loadModel(
             } else {
                 std::string portable = key;
                 std::replace(portable.begin(), portable.end(), '\\', '/');
-                const fs::path file = (importedPath.parent_path() / fromUtf8(portable.c_str())).lexically_normal();
+                // An absolute path is the artist's own folder: only its file name helps.
+                const bool absolute = absoluteTexturePath(key);
+                fs::path file = absolute
+                    ? modelFolder / fromUtf8(textureFileName(key).c_str())
+                    : (importedPath.parent_path() / fromUtf8(portable.c_str())).lexically_normal();
+                std::error_code ec;
+                if (absolute || !fs::is_regular_file(file, ec)) {
+                    if (auto found = findTextureNearby(modelFolder, key)) {
+                        std::error_code relError;
+                        fs::path shown = fs::relative(*found, modelFolder, relError);
+                        if (relError || shown.empty()) shown = *found;
+                        model.warnings.push_back(
+                            "texture \"" + key + "\" isn't where the file says; using " + toUtf8(shown.generic_u8string()));
+                        file = found->lexically_normal();
+                    } else {
+                        // Putting the file there later re-imports the model. A .blend's
+                        // conversion sits in a temporary folder: expect it beside the .blend.
+                        if (convertedBlend && !absolute)
+                            file = (modelFolder / fromUtf8(portable.c_str())).lexically_normal();
+                        dependency(model.dependencies, file);
+                        // Read as colour and as data, it's still one missing file.
+                        if (std::find(model.missingTextures.begin(), model.missingTextures.end(), key) ==
+                            model.missingTextures.end()) {
+                            model.missingTextures.push_back(key);
+                            model.warnings.push_back(
+                                "texture \"" + key + "\" is missing; the material is imported without it");
+                        }
+                        textureCache.emplace(cacheKey, -1);
+                        return -1;
+                    }
+                }
                 dependency(model.dependencies, file);
                 const std::u8string generic = file.generic_u8string();
                 tex.source.assign(generic.begin(), generic.end());
+                // A file that's there but won't decode is still an error.
                 if (!loadImage(file, tex.image, reason))
                     throw std::runtime_error("texture " + file.string() + ": " + reason);
             }

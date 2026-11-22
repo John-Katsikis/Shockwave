@@ -159,10 +159,10 @@ namespace.
 
 ## Build and play
 
-Tell CMake about the new game (the sample stays in the list), then build:
+Tell CMake about the new game (the built-in games stay in the build), then build:
 
 ```sh
-cmake -B build "-DSHOCKWAVE_GAMES=$PWD/Games/Sample;$PWD/Games/OrbHunt"
+cmake -B build "-DSHOCKWAVE_EXTRA_GAMES=$PWD/Games/OrbHunt"
 cmake --build build -j
 ```
 

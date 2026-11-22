@@ -138,6 +138,77 @@ void scenes(const fs::path& file) {
     check(loadScene(loaded, empty, file.string(), error, {}, &warnings), error.c_str());
     check(warnings.size() == 1, "missing model produces scene warning");
 }
+// F1: a texture that isn't where the model's file says is looked for nearby by name.
+void missingTextures(const fs::path& root, const fs::path& temporary) {
+    int n = 0;
+    // A folder with Models/quad.obj naming `map`; returns the model's path.
+    auto setup = [&](const std::string& map) {
+        const fs::path dir = temporary / ("nearby-" + std::to_string(n++));
+        fs::create_directories(dir / "Models");
+        fs::copy_file(root / "quad.obj", dir / "Models/quad.obj");
+        std::ofstream(dir / "Models/quad.mtl") << "newmtl Paint\nKd 0.8 0.2 0.1\nmap_Kd " << map << "\n";
+        return dir;
+    };
+    auto load = [](const fs::path& model, ModelData& m) {
+        std::string error;
+        const bool ok = loadModel(model, m, error);
+        if (!ok) std::fprintf(stderr, "  %s\n", error.c_str());
+        return ok;
+    };
+    auto usedNearby = [](const ModelData& m, const char* name) {
+        bool warned = false;
+        for (const auto& w : m.warnings) warned |= w.find("isn't where the file says") != std::string::npos;
+        return m.missingTextures.empty() && m.textures.size() == 1 && warned &&
+               fs::path(m.textures[0].source).filename() == name;
+    };
+    {   // in a sibling Textures/ folder
+        const fs::path dir = setup("../art/wood.png");
+        fs::create_directories(dir / "Textures");
+        fs::copy_file(root / "checker.png", dir / "Textures/wood.png");
+        ModelData m;
+        check(load(dir / "Models/quad.obj", m) && usedNearby(m, "wood.png"), "texture found in a sibling folder");
+        bool tracked = false;
+        for (const auto& p : m.dependencies) tracked |= p.filename() == "wood.png";
+        check(tracked, "the texture found nearby is a dependency");
+    }
+    {   // with different letter case, one folder down (beside the model, a case-insensitive
+        // file system would just open it)
+        const fs::path dir = setup("Wood.PNG");
+        fs::create_directories(dir / "Models/maps");
+        fs::copy_file(root / "checker.png", dir / "Models/maps/wood.png");
+        ModelData m;
+        check(load(dir / "Models/quad.obj", m) && usedNearby(m, "wood.png"), "texture found with other letter case");
+    }
+    {   // as a .png where the file says .tga
+        const fs::path dir = setup("textures/wood.tga");
+        fs::create_directories(dir / "Models/maps");
+        fs::copy_file(root / "checker.png", dir / "Models/maps/wood.png");
+        ModelData m;
+        check(load(dir / "Models/quad.obj", m) && usedNearby(m, "wood.png"), "texture found with another extension");
+    }
+    {   // an artist's absolute Windows path, found by name
+        const fs::path dir = setup("C:\\Users\\artist\\wood.png");
+        fs::copy_file(root / "checker.png", dir / "wood.png");
+        ModelData m;
+        check(load(dir / "Models/quad.obj", m) && usedNearby(m, "wood.png"), "absolute Windows path found by name");
+    }
+    {   // never deeper than one folder
+        const fs::path dir = setup("wood.png");
+        fs::create_directories(dir / "Models/a/b");
+        fs::copy_file(root / "checker.png", dir / "Models/a/b/wood.png");
+        ModelData m;
+        check(
+            load(dir / "Models/quad.obj", m) && m.missingTextures.size() == 1 && m.textures.empty(),
+            "two folders down isn't searched");
+    }
+    {   // a file that's there but won't decode still fails the import
+        const fs::path dir = setup("wood.png");
+        std::ofstream(dir / "Models/wood.png") << "not an image";
+        ModelData m;
+        std::string error;
+        check(!loadModel(dir / "Models/quad.obj", m, error) && !error.empty(), "a corrupt texture still fails");
+    }
+}
 }   // namespace
 int main(int argc, char** argv) {
     if (argc < 2) return 2;
@@ -172,14 +243,23 @@ int main(int argc, char** argv) {
     for (const auto& p : attempted) bin |= p.filename() == "parts.bin";
     check(bin, "failed dependency retained for retry");
     fs::copy_file(root / "parts.bin", temporary / "parts.bin");
+    // A texture that isn't anywhere: the model imports without it and says so.
+    ModelData partial;
+    check(loadModel(temporary / "broken.gltf", partial, error, &attempted), error.c_str());
     check(
-        !loadModel(temporary / "broken.gltf", unchanged, error, &attempted),
-        "missing texture fails without publishing partial model");
+        partial.missingTextures.size() == 1 && partial.missingTextures[0].ends_with("checker.png") &&
+            partial.textures.empty(),
+        "missing texture imports without it");
+    bool missingWarning = false;
+    for (const auto& w : partial.warnings) missingWarning |= w.find("is missing") != std::string::npos;
+    check(missingWarning, "missing texture is a warning");
     bool png = false;
     for (const auto& p : attempted) png |= p.filename() == "checker.png";
     check(png, "missing texture tracked");
     fs::copy_file(root / "checker.png", temporary / "checker.png");
     check(loadModel(temporary / "broken.gltf", unchanged, error), "repaired dependencies import successfully");
+    check(unchanged.missingTextures.empty() && unchanged.textures.size() == 1, "repaired texture is used");
+    missingTextures(root, temporary);
     scenes(temporary / "model.swscene");
     // Additional upstream format probes are opt-in and never needed by CTest.
     for (int i = 2; i < argc; ++i) {

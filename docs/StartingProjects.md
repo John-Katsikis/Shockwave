@@ -70,29 +70,37 @@ Play becomes available. It no longer inherits the currently open game's module.
 
 ## Register and build
 
-The current source-build workflow shares an engine build directory. Supply project
-folders through the `SHOCKWAVE_GAMES` CMake cache setting; it is a semicolon-separated
-list. Paths with spaces work when the complete argument is quoted.
+The current source-build workflow shares an engine build directory. Two CMake cache
+settings choose the games it builds, each a semicolon-separated list of folders
+(absolute, or relative to the engine checkout). Paths with spaces work when the complete
+argument is quoted.
 
-To build just your game, from the engine checkout:
+- `SHOCKWAVE_EXTRA_GAMES` adds games to the built-in ones (Sample, Arena and
+  ShippingDemo, Reactor Run). This is the one to use for your own game.
+- `SHOCKWAVE_GAMES` is the whole list, built-in games included. Set it to build only
+  the games you name.
+
+To add your game, from the engine checkout:
+
+```sh
+cmake -S . -B build "-DSHOCKWAVE_EXTRA_GAMES=/absolute/path/to/MyGame"
+cmake --build build --target player editor -j4
+```
+
+Player/editor depend on the registered game modules, so this also builds your game.
+To build just your game and none of the bundled ones:
 
 ```sh
 cmake -S . -B build "-DSHOCKWAVE_GAMES=/absolute/path/to/MyGame"
 cmake --build build --target player editor -j4
 ```
 
-Player/editor depend on the registered game modules, so this also builds your game.
-To keep both bundled examples available as well (POSIX shell):
-
-```sh
-cmake -S . -B build "-DSHOCKWAVE_GAMES=$PWD/Games/Sample;$PWD/Games/Arena;/absolute/path/to/MyGame"
-cmake --build build --target player editor -j4
-```
-
-`SHOCKWAVE_GAMES` replaces the configured list; it does not append to it. Fresh engine
-builds default to Sample, Arena and ShippingDemo (Reactor Run). Existing build caches
-retain their configured list, so add the others explicitly if upgrading from an older build. Paths are build
-configuration, not edits to engine source. Distinct folder names are not required,
+Both settings replace their own configured list; they don't append to it, so list all of
+your extra games each time you set `SHOCKWAVE_EXTRA_GAMES`. CMake remembers both in the
+build folder. When a built-in game isn't in the build (a new one added to the engine
+after the build folder chose its `SHOCKWAVE_GAMES`, say), configuring warns and names
+the fix; the last configure line, `Shockwave games: ...`, lists what's built. Paths are
+build configuration, not edits to engine source. Distinct folder names are not required,
 but module IDs must be distinct.
 
 For a dedicated optimized build, use `-DCMAKE_BUILD_TYPE=Release` with a single-config

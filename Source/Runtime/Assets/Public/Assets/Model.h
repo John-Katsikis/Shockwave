@@ -110,6 +110,9 @@ struct ModelData {
     Bounds bounds;
     std::vector<std::filesystem::path> dependencies;
     std::vector<std::string> warnings;
+    // Texture paths the file named that weren't found anywhere; the materials were
+    // imported without them. --check and the cook refuse a release with any.
+    std::vector<std::string> missingTextures;
     uint64_t triangles = 0;
 };
 // The clip called name, or null. Names are case-sensitive, as in the file.

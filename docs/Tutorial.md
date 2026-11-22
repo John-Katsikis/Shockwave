@@ -208,10 +208,10 @@ later, they're picked up automatically.
 
 ## 6. Build and play
 
-Tell the build about your game (the sample stays in the list), then build:
+Tell the build about your game (the built-in games stay in the build), then build:
 
 ```sh
-cmake -B build "-DSHOCKWAVE_GAMES=Games/Sample;Games/MyGame"
+cmake -B build -DSHOCKWAVE_EXTRA_GAMES=Games/MyGame
 cmake --build build -j
 ```
 
