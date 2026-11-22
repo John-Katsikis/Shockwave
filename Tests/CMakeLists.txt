@@ -885,6 +885,7 @@ add_test(NAME asset_dependencies_cli COMMAND ${CMAKE_COMMAND}
     -DPLAYER=$<TARGET_FILE:player>
     -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/levels
     -DTEXTURE=${CMAKE_SOURCE_DIR}/Games/Sample/Content/textures/bricks.png
+    -DMODELS=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models
     -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/AssetDependencyCLI
     -P ${CMAKE_CURRENT_SOURCE_DIR}/AssetDependencyCheck.cmake)
 set_tests_properties(asset_dependencies_cli PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"

@@ -7,7 +7,8 @@
 #   - --no-asset-residency turns leases off; a budget too small fails with BudgetExceeded;
 #   - --asset-loading levels imports level b's material and texture on demand, and unloads
 #     them at the end with no GPU frees left pending.
-#   -DPLAYER=player -DFIXTURE=Tests/fixtures/levels -DTEXTURE=a .png -DTEMP=dir
+#   - a model whose texture is missing fails --check and the cook; found nearby, it cooks.
+#   -DPLAYER=player -DFIXTURE=Tests/fixtures/levels -DTEXTURE=a .png -DMODELS=Tests/fixtures/models -DTEMP=dir
 cmake_policy(SET CMP0054 NEW)
 file(REMOVE_RECURSE "${TEMP}")
 file(MAKE_DIRECTORY "${TEMP}")
@@ -80,6 +81,32 @@ run(1 "AssetCycle" --check --renderer null)
 run(1 "\"code\": \"AssetCycle\"" --asset-dependencies --renderer null --json -)
 file(WRITE "${root}/Content/materials/sand.swmaterial" "swmaterial 1\ntexture base_color \"textures/${texture}\"\n")
 file(REMOVE "${root}/Content/materials/dune.swmaterial")
+run(0 "ok asset dependencies" --check --renderer null)
+
+# ---- A model whose texture isn't where its file says (F1, docs/Assets.md) ----
+# The editor imports it without the texture, but --check and the cook refuse it; found
+# by name in a nearby folder, it's used and cooked.
+file(MAKE_DIRECTORY "${root}/Content/models")
+file(COPY "${MODELS}/quad.obj" DESTINATION "${root}/Content/models")
+file(WRITE "${root}/Content/models/quad.mtl" "newmtl Paint\nKd 0.8 0.2 0.1\nmap_Kd C:\\art\\wood.png\n")
+file(WRITE "${root}/Content/materials/sand.swmaterial" "swmaterial 1\nparent \"models/quad.obj\" \"Paint\"\n")
+run(1 "Content/models/quad.obj: .*wood.png.* doesn't exist \\(AssetMissing\\)" --check --renderer null)
+run(1 "Cook failed" --cook)
+file(MAKE_DIRECTORY "${root}/Content/Textures")
+file(COPY_FILE "${MODELS}/checker.png" "${root}/Content/Textures/WOOD.png")
+run(0 "ok asset dependencies" --check --renderer null)
+run(0 "Cooked" --cook)
+if(NOT EXISTS "${root}/Saved/Cook")
+    message(FATAL_ERROR "the cook wrote no manifest")
+endif()
+file(GLOB manifests "${root}/Saved/Cook/*/Cook.swcook")
+list(GET manifests 0 manifest)
+file(READ "${manifest}" cooked)
+if(NOT cooked MATCHES "\"Content/Textures/WOOD.png\" \"texture\"")
+    message(FATAL_ERROR "the texture found nearby isn't in the cook:\n${cooked}")
+endif()
+file(WRITE "${root}/Content/materials/sand.swmaterial" "swmaterial 1\ntexture base_color \"textures/${texture}\"\n")
+file(REMOVE_RECURSE "${root}/Content/models" "${root}/Content/Textures" "${root}/Saved/Cook")
 run(0 "ok asset dependencies" --check --renderer null)
 
 # ---- --load-report, --no-asset-residency, budgets ----

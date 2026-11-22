@@ -46,12 +46,26 @@ public:
             folder->find("parts.gltf")->error.empty() && engine().assets().model(h) != original,
             "repaired buffer didn't reload");
         original = engine().assets().model(h);
+        // A missing texture: the model imports without it and says so (F1).
         fs::remove(temp.root / "checker.png");
         folder->refresh();
-        require(engine().assets().model(h) == original, "missing texture published partial model");
+        {
+            const auto* parts = folder->find("parts.gltf");
+            const auto withoutTexture = engine().assets().model(h);
+            bool warned = false;
+            for (const auto& w : parts->warnings) warned |= w.find("is missing") != std::string::npos;
+            require(
+                parts->error.empty() && withoutTexture != original && withoutTexture->data.textures.empty() &&
+                    withoutTexture->data.missingTextures.size() == 1 && warned,
+                "missing texture didn't import the model without it");
+            original = withoutTexture;
+        }
         fs::copy_file(m_source / "Tests/fixtures/models/checker.png", temp.root / "checker.png");
         folder->refresh();
-        require(folder->find("parts.gltf")->error.empty(), "texture repair didn't reload");
+        require(
+            folder->find("parts.gltf")->error.empty() && engine().assets().model(h) != original &&
+                engine().assets().model(h)->data.textures.size() == 1,
+            "texture repair didn't reload");
         const auto obj = engine().assets().findModel("quad.obj");
         auto oldObj = engine().assets().model(obj);
         std::ofstream(temp.root / "quad.mtl") << "newmtl Paint\nKd 0.8 0.2 0.1\nmap_Kd checker.png\n";

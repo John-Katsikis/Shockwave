@@ -284,6 +284,12 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         drawModelAnimationNotes(e);
         drawModelMaterials(e);
         ImGui::SeparatorText("Imported materials");
+        // Textures the model's file names but the importer couldn't find (docs/Assets.md).
+        for (const std::string& missing : asset->data.missingTextures) {
+            ImGui::PushStyleColor(ImGuiCol_Text, gui::semanticColor(gui::currentTheme().warning));
+            ImGui::TextWrapped("Texture \"%s\" is missing; its material is drawn without it", missing.c_str());
+            ImGui::PopStyleColor();
+        }
         for (size_t i = 0; i < asset->data.materials.size(); ++i) {
             const auto& material = asset->data.materials[i];
             ImGui::PushID(static_cast<int>(i));

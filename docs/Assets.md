@@ -217,6 +217,34 @@ example after you install or set up Blender.
 If you delete a file from disk while the editor runs, the model keeps its last working
 copy. When you reopen the project, though, the file must exist.
 
+## When a texture isn't where the model says
+
+Downloaded models often name textures by the artist's own folders
+(`C:\Users\artist\wood.png`) or by a layout that didn't come with the download. The
+importer doesn't give up on the model for that. It looks for the texture by its file
+name, ignoring letter case, in this order, and uses the first match:
+
+1. the model's own folder;
+2. each folder directly inside it, in name order;
+3. the folder above the model's;
+4. each folder directly inside that one, in name order.
+
+If none of those holds the exact name, it searches the same four places again for the
+name with any image extension the engine reads (`wood.png` where the file says
+`wood.tga`). It never looks deeper than one folder, or above the model's parent folder.
+An absolute path in the file is only used for its file name.
+
+A texture found this way is used, and the import warns `texture "<path>" isn't where the
+file says; using <where it was found>`. Move the file there, or fix the path in the
+model, to silence it. A texture found nowhere is left out: the material is imported
+without it, and the warning says `texture "<path>" is missing`. The warnings show on the
+model's tile in the Content panel and in the Inspector. Putting the file where the model
+says imports the model again.
+
+A file that's there but isn't a readable image still fails the import, as before. A
+missing texture doesn't stop you working in the editor, but `player --check` and the cook
+refuse it (`AssetMissing`), so a release can't ship a model without its textures.
+
 ## Use models from game code
 
 Scene files save models by name, not by GPU ID. `ModelRenderer` is registered with the
