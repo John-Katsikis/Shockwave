@@ -599,7 +599,10 @@ bool loadModel(
                             "texture \"" + key + "\" isn't where the file says; using " + toUtf8(shown.generic_u8string()));
                         file = found->lexically_normal();
                     } else {
-                        // Putting the file there later re-imports the model.
+                        // Putting the file there later re-imports the model. A .blend's
+                        // conversion sits in a temporary folder: expect it beside the .blend.
+                        if (convertedBlend && !absolute)
+                            file = (modelFolder / fromUtf8(portable.c_str())).lexically_normal();
                         dependency(model.dependencies, file);
                         // Read as colour and as data, it's still one missing file.
                         if (std::find(model.missingTextures.begin(), model.missingTextures.end(), key) ==
