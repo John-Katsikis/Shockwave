@@ -251,6 +251,19 @@ build/bin/player --project <file.swproject> --check
 build/bin/player --project <file.swproject> --network-info [--json out.json]
 ```
 
+## Player command line
+
+Every `player` flag is a row in the table in `Source/Programs/Player/Private/PlayerFlags.h`,
+added by `PlayerFlagsProject.cpp`, `PlayerFlagsGraphics.cpp`, `PlayerFlagsRelease.cpp` or
+`PlayerFlagsNetwork.cpp`: its names, how many values it takes and a function that applies
+it. Add a flag as a row there, its value in `ParseState`, a line in `PlayerHelp.cpp`, and a
+wrong value as `throw player::UsageError("...")` (exit 2). Checks across flags (modes that
+can't combine) stay in `main()` after the loop. `player_cli` (Tests/PlayerCliCheck.cmake)
+replays `Tests/fixtures/cli/cases.txt` and compares exit codes and messages with the
+recordings beside it; add a case for a new flag and record it with
+`cmake -DPLAYER=build/bin/player -DSOURCE=$PWD -DTEMP=/tmp/cli -DRECORD=ON -DONLY=<id> -P Tests/PlayerCliCheck.cmake`.
+Re-record an existing case only for a change you mean to make.
+
 ## Engine and editor UI
 
 - Follow `docs/UI.md` when adding or changing engine or editor UI.
