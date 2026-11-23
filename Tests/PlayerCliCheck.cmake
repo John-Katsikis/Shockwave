@@ -19,13 +19,16 @@ if(RECORD)
 endif()
 
 # What changes from machine to machine: the folders, the engine's log lines (thread
-# counts, timings) and a display server's complaints. A long output is kept as its hash.
+# counts, timings), a display server's complaints and the build configuration
+# (--release-info's "build Release"). A long output is kept as its hash.
 function(normalise text casetemp out)
     string(REPLACE "\r\n" "\n" text "${text}")
     string(REPLACE "${casetemp}" "<TEMP>" text "${text}")
     string(REPLACE "${SOURCE}" "<SOURCE>" text "${text}")
     string(REGEX REPLACE "(^|\n)Log[A-Za-z]+: [^\n]*" "" text "${text}")
     string(REGEX REPLACE "(^|\n)error: XDG_RUNTIME_DIR[^\n]*" "" text "${text}")
+    string(REGEX REPLACE "(^|\n)build (Debug|Release|RelWithDebInfo|MinSizeRel)?(\n|$)" "\\1build <CONFIG>\\3"
+                         text "${text}")
     string(REGEX REPLACE "^\n+" "" text "${text}")
     string(LENGTH "${text}" length)
     if(length GREATER 16000)

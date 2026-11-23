@@ -1,4 +1,4 @@
 release none: no Config/Release.swrelease (a development project; release qualification needs one)
-build Release
+build <CONFIG>
 gate release_contract unverified (S00): no Config/Release.swrelease: a development project, with nothing to qualify yet
 qualified no: 0 passed, 0 failed, 1 unverified, 0 not applicable
