@@ -1,0 +1,19 @@
+ok Scenes/ending.swscene (6 entities)
+ok Scenes/factory.swscene (54 entities)
+ok Scenes/menu.swscene (6 entities)
+ok Scenes/training.swscene (41 entities)
+ok Config/Levels.swlevels (4 levels)
+ok Content/Prefabs/Ammo pickup.swprefab (2 entities)
+ok Content/Prefabs/Console.swprefab (3 entities)
+ok Content/Prefabs/Enemy.swprefab (5 entities)
+ok Content/Prefabs/Health pickup.swprefab (3 entities)
+ok Content/Prefabs/Player.swprefab (1 entities)
+ok Content/Prefabs/Target.swprefab (3 entities)
+ok Content/Circuits/TrainingExit.swcircuit (entity circuit, 4 nodes)
+ok asset dependencies (32 assets)
+ok Config/Input.swinput (20 bindings)
+ok Config/Package.swpackage
+warning: Content/Localization/fr.swstrings: 12 keys not translated yet (hud.progress_count, ...); they show in en
+ok Content/Localization (2 languages, 133 keys)
+ok Config/ReleaseTier.swtier
+0 problems in 4 scenes

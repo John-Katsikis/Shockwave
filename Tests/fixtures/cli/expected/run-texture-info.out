@@ -1,0 +1,4 @@
+{"asset": "<SOURCE>/Games/ShippingDemo/Content/UI/factory-badge.png",
+ "textures": [
+  {"source": "<SOURCE>/Games/ShippingDemo/Content/UI/factory-badge.png", "format": "RGBA8", "color_space": "srgb", "width": 64, "height": 64, "levels": 7, "levels_from": "generated on the GPU", "source_hash": "406f7db3e4a7eaa5", "follows_texture_quality": true, "quality": {"ultra": {"first_mip": 0, "width": 64, "height": 64, "bytes": 21844}, "high": {"first_mip": 1, "width": 32, "height": 32, "bytes": 5460}, "medium": {"first_mip": 1, "width": 32, "height": 32, "bytes": 5460}, "low": {"first_mip": 1, "width": 32, "height": 32, "bytes": 5460}}}
+ ]}

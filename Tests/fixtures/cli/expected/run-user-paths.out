@@ -1,0 +1,9 @@
+source override
+application_id shockwave.shippingdemo
+profile default
+root <TEMP>/user
+config   <TEMP>/user/profiles/default/Config  (not made yet)
+saves    <TEMP>/user/profiles/default/Saves  (not made yet)
+logs     <TEMP>/user/Logs  (not made yet)
+cache    <TEMP>/user/Cache  (not made yet)
+crashes  <TEMP>/user/Crashes  (not made yet)

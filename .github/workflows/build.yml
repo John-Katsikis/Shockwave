@@ -47,7 +47,7 @@ jobs:
       # All of them here, the GPU ones too (Mesa's software Vulkan).
       - name: Test
         run: >
-          cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=127
+          cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=128
           -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=linux
           -P cmake/CTestGate.cmake
       - name: Check the sample, the shipping demo and Arena, unchanged

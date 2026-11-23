@@ -1,0 +1,183 @@
+player --package [--release] [--output folder] [--no-build] [--no-archive] [--dev-package]
+                                    make a game folder for players (docs/Packaging.md)
+player [project.swproject] [--project path] [--scene file.swscene] [--frames N]
+player --new-project folder [--name display-name] [--module module_id]
+                                    create an independent C++ starter in an empty folder
+       [--size WxH] [--view lit|unlit|normals|lighting|cascades|ao|indirect|reflections|decals|motion|reactive|clusters|navmesh] [--print-frame]
+       [--graphics file.swgraphics] [--no-user-graphics] [--render-scale 0.25..2]
+       [--graphics-info [--json file]] [--graphics-schema file|-]
+       [--graphics-preset low|medium|high|ultra|fallback] [--graphics-set key=value]...
+       [--anti-aliasing none|fxaa|taa]
+                                    any setting in docs/GraphicsSchema.md, for this run
+       [--shadows off|low|medium|high|ultra] [--fps N] [--low-latency] [--vsync on|off]
+       [--renderer vulkan|null] [--gpu name|number] [--game-module file.so]
+       [--no-pipeline-cache] [--clear-pipeline-cache]
+                                    don't keep compiled pipelines this run; or delete
+                                    the saved ones first (docs/Drawing.md)
+player --gpus [--json file]          list the GPUs, which one renders and why, and any
+                                    warnings (like rendering on a GPU the screen isn't on)
+player --renderers                  list the renderer plugins that can be loaded
+player --screenshot out.png [--scene file] [--frames N] [--size WxH] [--view ...]
+                                    play N frames (default 30), save the last, quit
+       [--camera name] [--fixed-step]
+                                    look through a named Camera entity; advance exactly
+                                    one tick per frame so motion is reproducible
+player --image-stats file.png [--region x,y,w,h] [--json file]
+player --image-diff reference.png candidate.png [--tolerance rmse] [--region x,y,w,h] [--json file]
+                                    compare two screenshots; exit 1 over the tolerance
+player --material-info model.glb|file.swmaterial [--json file]
+                                    each material slot's UV set, transform and sampler;
+                                    for a .swmaterial, also its parents, values, features,
+                                    what material_quality low leaves out, and warnings
+player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)
+player --effect-info file.efkefc [--json file]
+                                    each part of a particle effect and how it's drawn:
+                                    supported, approximated or unsupported (docs/Effects.md)
+player --postprocess-schema file|- write the .swpostprocess reference (docs/PostProcessSchema.md)
+player --postprocess-info file.swpostprocess [--json file]
+                                    a grading, exposure and fog profile with its parents
+                                    applied, and its LUT (docs/PostProcess.md)
+player --lut-export-neutral 17|33|65 file.cube|-
+                                    an identity LUT to grade in another tool
+player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]
+                                    bake lightmaps and probe volumes (docs/Lighting.md)
+player --capture-reflections [--scene file.swscene] [--size WxH]
+                                    capture reflection probes on the GPU (docs/Lighting.md)
+player --lighting-info [--scene file.swscene] [--json file]
+                                    the scene's bake: state, why it's out of date, sizes
+player --lighting-assign-ids [--scene file.swscene] [--output new.swscene]
+                                    give bake participants missing or duplicate ids
+player --lighting-schema file|-     write the baked lighting reference (docs/LightingSchema.md)
+player --lighting-export payload --output file.json
+player --lighting-import file.json --output payload
+                                    a lightmap .ktx2, .swbake or .swprobe as JSON, and back
+player --texture-info texture.png|model.glb [--json file]
+                                    levels and GPU bytes at each texture_quality
+       [--ui-preview] [--ui-nav down,down,confirm]
+                                    show UI preview values; step through menus first
+player --graphics-report [--frames N] [--json file]
+                                    play N frames (default 10) hidden, then print what
+                                    the GPU supports, each graphics setting as asked for
+                                    and as running (with why), and GPU memory by category
+player --benchmark [seconds] [--json file]
+                                    run the scene for that long (default 10) and report
+                                    frame times, 1%/0.1% lows and GPU time per pass
+player --optimise [--json file]     compress every texture into the cache now and report
+                                    texture memory and mesh levels of detail
+player --lod-colors                 tint each level of detail its own colour
+player --check [scene.swscene...]   validate the project and scenes; exit 1 on any problem
+player --bake-navmesh [scene.swscene...]
+                                    bake and save each scene's navigation mesh; print its
+                                    tiles, polygons, bake time and crowd cost per tick
+player --schema file.md             write the scene format reference (- for stdout)
+player --node-schema file.md        write the circuit node reference (- for stdout)
+player --circuit file --run-circuit [--circuit-ticks N] [--send-message name] [--break-node name] [--circuit-steps N]
+player --circuit file --dump        compile a .swcircuit and print its bytecode
+player --saves [--json file]        list the project's save games (Saved/SaveGames)
+player --save-info file.swsave [--json file]
+                                    a save's envelope, and whether this game can load it
+player --save-migrate file.swsave --output new.swsave
+                                    a copy at this game's save format and schema
+player --save slot [--frames N]     play N frames (default 30), save to the slot, quit
+player --load slot|file.swsave      start Play from a save game (add --screenshot to see it)
+player --check file.swsave          check a save game; --check alone checks them all
+player --input-schema file.md       write the input bindings reference (- for stdout)
+player --animations [model...]      list models' skeletons and animation clips
+player --audio-volume 0..1          master playback volume (default 1)
+player --audio-hrtf on|off          headphone (HRTF) or speaker spatial audio
+player --audio-mix out.wav [--seconds N] [--scene file]
+                                    play the scene N seconds (default 3) with no audio
+                                    device, write the mix and print per-channel levels
+player --user-paths [--json file]   the per-user folders this run writes to
+player --diagnostics [--json file]  logs, crash reports and whether the last run ended
+                                    cleanly (docs/Diagnostics.md)
+player --symbolize report.crash.txt [--symbols folder]... [--json file]
+                                    name a crash report's frames (symbols kept beside a
+                                    package: <package>-symbols)
+player --verify-install package --flow-test scenario.json [--flow-test next.json]...
+       [--update-from previous-package]   (plays the first scenario on it, then updates)
+       [--renderer null] [--install-record "machine" [--project p | --output folder]]
+       [--install-dir folder] [--keep-install] [--verbose] [--json report]
+                                    install a package read-only at a path with spaces and
+                                    non-ASCII letters, play the scenarios in it with a clean
+                                    environment; --install-record keeps the evidence for
+                                    the platform gates (docs/Release.md#platforms)
+player --safe-mode                  play with the lowest graphics, windowed, no pipeline
+                                    cache, ignoring the player's graphics file
+player --log-file path | --no-log-file | --no-crash-handler
+                                    this run's log file there, none, or no crash reports
+player --no-recovery-prompt         don't offer safe graphics or a restore after a run
+                                    that didn't end cleanly
+player --inject-device-lost N       developer test: the GPU device is lost at frame N
+player --user-dir folder            write saves, settings and caches there this run
+player --profile id                 the player profile (default: default)
+player --import-legacy-saves folder [--preview]
+                                    copy old save games into the profile, never over
+                                    a slot it already has (docs/UserPaths.md)
+player --release-info [--json file] the release contract and each release gate: passed,
+                                    failed or unverified (docs/Release.md)
+player --release-schema file.md     write the release contract reference (- for stdout)
+player --release-tier [--json file] the graphics release tier: the fallback preset and what
+                                    each effect is at every preset (docs/ReleaseTier.md)
+player --cook [--release] [--target t] [--json report] [--output file]
+                                    work out everything a release needs, from every level,
+                                    and write Saved/Cook/<target>/Cook.swcook (docs/Cooking.md)
+player --cook-info file [--verify folder] [--json out]
+                                    a cook manifest; --verify checks the files against it
+player --check --release            the checks, then the release policy (docs/Cooking.md)
+player --levels [--json file]       the level catalog and the links between levels
+                                    (docs/Levels.md); exit 1 on a broken link
+player --level id                   play from this catalog level instead of the startup scene
+player --level-schema file.md       write the level catalog reference (- for stdout)
+player --instant-travel             change levels within one frame (level_travel instant):
+                                    no frame between preparing a level and the old one ending
+player --transition-timeout <s>     a level change that takes longer fails as LoadTimeout (default: the
+                                    release contract's transition_timeout_seconds, else 120; 0 off)
+player --app-shell screens          the menu, pause, loading and error screens: off, all, or
+                                    a list in quotes, "menu pause loading" (docs/AppShell.md)
+player --flow-test scenario.json [--json report]
+                                    play through the scenario's clicks, travel and checks in a
+                                    hidden window; exit 1 at the first failed step
+                                    (docs/FlowTest.md)
+player --flow-test scenario.json --laps N [--lap-tolerance MiB] [--json report]
+                                    its steps N times (it must end where it began), with
+                                    memory, entities, bodies, assets and threads at each lap's
+                                    end; fails when they keep growing (docs/Acceptance.md)
+player --perf-run scenario.json [--laps N] [--cold-cache] [--json report]
+       [--perf-record "machine" [--output folder]]
+                                    play the scenario in real time and measure it: frame
+                                    percentiles per level, loading apart, memory over laps;
+                                    --perf-record keeps it in Release/Performance as evidence
+                                    for the performance gate (docs/Performance.md)
+player --network-info [--json file] the project's multiplayer settings, digests and
+                                    problems; opens no socket (docs/Networking.md)
+player --network-schema file.md     write the multiplayer reference (- for stdout)
+player --steam-status [client|server]
+                                    start Steam for the project's steam_app_id, print
+                                    sign-in and relay status, shut it down
+player --net-test [--scenario handshake|rejections|stop-start|replication|prediction|
+       map_rotation|match] [--seed N] [--preset clean|cafe|poor|hostile] [--clients N]
+       [--rotations N] [--net-set key=value]... [--json file]
+                                    run network sessions over an in-process loopback
+                                    network; no Steam, sockets or window. match measures
+                                    a whole match (--net-set max_players=64 for 63 clients)
+player --net-preview [clean|cafe|poor|hostile]
+                                    play the scene as a client of a host in this
+                                    process over a simulated network (default poor),
+                                    to see prediction and interpolation
+player --host [--scene file.swscene] [--net-capture file.swnetcap]
+                                    host a friends-only Steam match of the match scene
+player --join-lobby ID              join a Steam lobby's match (+connect_lobby ID too)
+player --host --dev-direct-join     developer: host with no lobby, for direct joins
+player --join-steam STEAMID --dev-direct-join
+                                    developer: join such a host by its Steam ID
+player --net-dump file.swnetcap [--json file]
+                                    decode a packet capture (no project needed)
+player --net-encode file.json --output file.swnetcap
+                                    encode a decoded capture back
+player --network-manifest --output file.swnetmanifest
+                                    write a candidate manifest and its digests
+player --assign-network-keys --scene file.swscene --output new.swscene [--seed N]
+                                    fill missing or duplicate network keys
+player --devices [seconds]          list controllers; then print each input pressed
+                                    as binding text, for that many seconds

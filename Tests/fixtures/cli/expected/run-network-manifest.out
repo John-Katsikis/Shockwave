@@ -1,0 +1,5 @@
+manifest Config/NetworkManifest.swnetmanifest: 2 scenes, 1 prefabs
+candidate adds nothing: every network scene and prefab is listed
+schema digest cc716dee85c0cef123cd6695dcbcf22cd8bb0cda38d9e0c179b255223c944742
+content digest 1d101dce8268fd08e8c4de9ee1d13f7b4a93d38e554a426b5bf831993dfead52 (13 files, 60179 bytes)
+Wrote <TEMP>/m.swnetmanifest

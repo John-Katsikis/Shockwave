@@ -246,6 +246,18 @@ if(TARGET game_shippingdemo AND TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/ErrorCatalogCheck.cmake)
     set_tests_properties(error_catalog PROPERTIES TIMEOUT 60 LABELS unit)
 endif()
+# The player's command line as recorded (E2, Tests/PlayerCliCheck.cmake): every flag's
+# missing and wrong values, the modes that conflict and a run of each tool that needs no
+# GPU give the exit code and messages in Tests/fixtures/cli/expected. Linux only: the
+# recordings hold Linux paths and renderer plugin names.
+if(UNIX AND NOT APPLE AND TARGET game_shippingdemo AND TARGET game_sample AND TARGET game_arena)
+    add_test(NAME player_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DSOURCE=${CMAKE_SOURCE_DIR}
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/PlayerCli
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/PlayerCliCheck.cmake)
+    set_tests_properties(player_cli PROPERTIES TIMEOUT 600 LABELS integration)
+endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)
 add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}

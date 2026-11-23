@@ -1,0 +1,23 @@
+# shipped: none
+# profile: <SOURCE>/Games/ShippingDemo/Saved/Config/Preferences.swprefs
+window_mode windowed   # default
+window_width 0   # default
+window_height 0   # default
+master_volume 1   # default
+effects_volume 1   # default
+music_volume 1   # default
+ui_volume 1   # default
+voice_volume 1   # default
+mute_when_unfocused false   # default
+look_sensitivity 1   # default
+invert_look_y false   # default
+stick_dead_zone 0.15   # default
+toggle_hold false   # default
+ui_scale 1   # default
+high_contrast false   # default
+subtitles true   # default
+subtitle_scale 1   # default
+reduce_flashes false   # default
+camera_shake 1   # default
+field_of_view 0   # default
+language ""   # default
