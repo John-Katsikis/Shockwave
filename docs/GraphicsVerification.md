@@ -887,7 +887,8 @@ Contact shadows (V4), screen-space reflections (V1), motion blur (V3) and depth 
   views), the report's four setting rows with fallback reasons and four memory
   categories, the Graphics preferences in the editor, the depth of field fields in the
   Post-process window, and a `--check` error for a focus distance nearer than a camera's
-  near plane. The memory budget can turn reflections and then contact shadows off.
+  near plane. The memory budget can turn reflections, contact shadows and depth of
+  field off (docs/GraphicsBudget.md).
 
 New fixtures (written by hand): `contact-shadows` (a fence and cubes on a floor),
 `ssr-floor` (red, green and blue pillars on a metallic floor, glossy on the left, rough

@@ -43,6 +43,7 @@ const std::vector<MemoryBudgetStep>& memoryBudgetSteps() {
         {"reflections_quality", "off", C::ScreenReflections},
         {"fog_quality", "analytic", C::Fog},
         {"contact_shadows", "off", C::ContactShadows},
+        {"depth_of_field", "false", C::DepthOfField},
         {"ambient_occlusion", "low", C::AmbientOcclusion},
         {"ambient_occlusion", "off", C::AmbientOcclusion},
         {"reflection_probes", "false", C::ReflectionProbes},
