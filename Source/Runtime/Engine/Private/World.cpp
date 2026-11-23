@@ -39,6 +39,15 @@ World& World::operator=(const World& other) {
     return *this;
 }
 
+size_t World::bytes() const {
+    size_t total = m_generations.capacity() * sizeof(uint32_t) + m_alive.capacity() * sizeof(uint8_t) +
+                   m_free.size() * sizeof(uint32_t) + m_pools.capacity() * sizeof(m_pools[0]);
+    for (const auto& pool : m_pools) {
+        if (pool) total += pool->bytes();
+    }
+    return total;
+}
+
 Entity World::create() {
     uint32_t index;
     if (m_free.size() > kMinFreeBeforeReuse) {

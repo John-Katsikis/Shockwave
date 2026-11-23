@@ -935,3 +935,8 @@ set_tests_properties(editor_package_release PROPERTIES ENVIRONMENT "SDL_VIDEO_DR
                      TIMEOUT 300 LABELS gpu)
 endif()
 endif()
+
+# Undo memory on a 10,000-entity scene (E1): a measurement run by hand, not a ctest.
+add_executable(undo_memory UndoMemory.cpp)
+target_link_libraries(undo_memory PRIVATE Shockwave::Engine)
+shockwave_warnings(undo_memory)

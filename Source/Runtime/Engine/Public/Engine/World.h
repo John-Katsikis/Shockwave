@@ -49,6 +49,9 @@ public:
     virtual std::unique_ptr<PoolBase> clone() const = 0;
     virtual void remove(uint32_t index) = 0;
     virtual void copy(uint32_t fromIndex, Entity to) = 0;
+    // Memory the pool's arrays hold: their capacity times their element sizes. Heap memory
+    // a component owns itself (a string's characters) isn't counted.
+    virtual size_t bytes() const = 0;
 
     bool has(uint32_t index) const { return index < m_sparse.size() && m_sparse[index] != kNone; }
     size_t size() const { return m_entities.size(); }
@@ -107,6 +110,10 @@ public:
     }
 
     std::unique_ptr<PoolBase> clone() const override { return std::make_unique<Pool<T>>(*this); }
+    size_t bytes() const override {
+        return m_sparse.capacity() * sizeof(uint32_t) + m_entities.capacity() * sizeof(Entity) +
+               m_data.capacity() * sizeof(T);
+    }
 
 private:
     std::vector<T> m_data;
@@ -154,6 +161,9 @@ public:
     Entity clone(Entity e);
     void clear();
     size_t entityCount() const { return m_count; }
+    // Memory the entity table and component pools hold (PoolBase::bytes), for the editor's
+    // undo figures. A component's own heap memory isn't counted.
+    size_t bytes() const;
     // A world with the same entities (same handles, same free list) and no components.
     World withoutComponents() const;
     // A world where exactly these entities are alive, with these very handles, and no
