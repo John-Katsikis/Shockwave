@@ -58,6 +58,7 @@ public:
     void setAnisotropy(uint32_t anisotropy) override { m_anisotropy = anisotropy; }
     void setMaterialQuality(MaterialQuality quality) override { m_material = quality; }
     void setAmbientOcclusion(AmbientOcclusion ao) override { m_ao = ao; }
+    void setScreenEffectsSettings(const ScreenEffectsSettings& settings) override { m_screen = settings; }
     void setRenderScale(float scale) override { m_scale = scale; }
     void setViewport(uint32_t width, uint32_t height) override {
         m_viewportWidth = width;
@@ -105,6 +106,11 @@ public:
             {"material_quality", materialQualityName(m_material), "low", m_material == MaterialQuality::Low ? "" : why,
              ""},
             {"ambient_occlusion", ambientOcclusionName(m_ao), "off", m_ao == AmbientOcclusion::Off ? "" : why, ""},
+            {"contact_shadows", contactShadowsName(m_screen.contactShadows), "off",
+             m_screen.contactShadows == ContactShadows::Off ? "" : why, ""},
+            {"reflections_quality", screenReflectionsName(m_screen.reflections), "off",
+             m_screen.reflections == ScreenReflections::Off ? "" : why, ""},
+            {"motion_blur", std::to_string(m_screen.motionBlur), "0", m_screen.motionBlur > 0.0f ? why : "", ""},
         };
     }
 
@@ -160,6 +166,7 @@ private:
     uint32_t m_anisotropy = 16;
     MaterialQuality m_material = MaterialQuality::High;
     AmbientOcclusion m_ao = AmbientOcclusion::Off;
+    ScreenEffectsSettings m_screen;
     BloomQuality m_bloom = BloomQuality::High;
     bool m_vsync = true, m_lowLatency = false;
     float m_scale = 1.0f;

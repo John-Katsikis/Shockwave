@@ -16,7 +16,11 @@ bool budgetedMemoryCategory(GpuMemoryCategory category) {
     case GpuMemoryCategory::Hzb:
     case GpuMemoryCategory::Fog:
     case GpuMemoryCategory::Transmission:
-    case GpuMemoryCategory::Skin: return true;
+    case GpuMemoryCategory::Skin:
+    case GpuMemoryCategory::ContactShadows:
+    case GpuMemoryCategory::ScreenReflections:
+    case GpuMemoryCategory::MotionBlur:
+    case GpuMemoryCategory::DepthOfField: return true;
     default: return false;
     }
 }
@@ -36,7 +40,9 @@ const std::vector<MemoryBudgetStep>& memoryBudgetSteps() {
         {"anti_aliasing", "fxaa", C::TemporalHistory},
         {"skin_quality", "off", C::Skin},
         {"transmission_quality", "off", C::Transmission},
+        {"reflections_quality", "off", C::ScreenReflections},
         {"fog_quality", "analytic", C::Fog},
+        {"contact_shadows", "off", C::ContactShadows},
         {"ambient_occlusion", "low", C::AmbientOcclusion},
         {"ambient_occlusion", "off", C::AmbientOcclusion},
         {"reflection_probes", "false", C::ReflectionProbes},

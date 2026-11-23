@@ -33,5 +33,8 @@ A `.swpostprocess` file starts with `swpostprocess 1`, may name a `parent "other
 | `fog_start` | fog | 0 to 100000 | 0 | m | Clear air between the camera and where the fog begins. |
 | `fog_sky_distance` | fog | 1 to 1000000 | 1000 | m | How far away the sky counts as. |
 | `fog_volumetric_distance` | fog | 1 to 1000 | 64 | m | How far the lit fog volume reaches with fog_quality low, medium or high; the closed form past it. |
+| `dof_focus_distance` | depth_of_field | 0.1 to 10000 | 10 | m | How far from the camera things are sharpest. |
+| `dof_focus_range` | depth_of_field | 0 to 10000 | 2 | m | How far in front of and behind the focus distance things stay sharp. |
+| `dof_blur` | depth_of_field | 0 to 24 | 0 | px | The largest blur, in pixels at 1080 lines (scaled with the resolution), reached a focus distance (at least 1 m) past the sharp range. 0: no depth of field. |
 
 White points are checked as a whole (x > 0, y > 0, x + y < 1, at most 4x in any cone response); so are auto exposure (min below max, percentiles in order) and fog (no negative density, anisotropy within 0.9).

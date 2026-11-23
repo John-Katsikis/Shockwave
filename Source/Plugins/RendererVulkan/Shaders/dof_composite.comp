@@ -1,0 +1,29 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Depth of field, 3 of 3 (V2): at full resolution, the sharp scene mixed with the gathered
+// blur by the pixel's own blur radius, in place.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 1) uniform sampler2D depthTexture;
+layout(set = 0, binding = 2) uniform sampler2D blurTexture;   // the gather, linear
+layout(set = 0, binding = 5, rgba16f) uniform image2D scene;
+
+#include "screen_effects.glsl"
+#include "dof.glsl"
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, ivec2(pc.size)))) return;
+    float t = smoothstep(0.5, 2.0, abs(cocAtTexel(pixel)));
+    if (t <= 0.0) return;
+    vec4 sharp = imageLoad(scene, pixel);
+    vec3 blurred = textureLod(blurTexture, (vec2(pixel) + 0.5) / vec2(pc.size), 0.0).rgb;
+    imageStore(scene, pixel, vec4(mix(sharp.rgb, blurred, t), sharp.a));
+}

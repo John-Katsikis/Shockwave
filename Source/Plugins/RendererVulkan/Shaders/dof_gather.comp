@@ -1,0 +1,57 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Depth of field, 2 of 3 (V2): at half resolution, kDofGatherSamples (the texel and rings of
+// 7 and 14) out to the texel's own blur. A sample counts only where its own blur reaches
+// this far, so sharp things don't smear over blurred ones. Alpha keeps the texel's blur.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 3) uniform sampler2D halfTexture;   // the downsample: colour, signed blur
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D target;
+
+layout(push_constant, scalar) uniform PushConstants {
+    mat4 matrix;
+    FrameBuffer frame;
+    uvec2 size;
+    vec4 params;
+    vec4 params2;
+    uint mode;
+    uint steps;
+    uint flags;
+    uint pad;
+} pc;
+
+void main() {
+    ivec2 halfTexel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(pc.size);
+    if (any(greaterThanEqual(halfTexel, size))) return;
+    vec4 centre = texelFetch(halfTexture, halfTexel, 0);
+    float radius = abs(centre.a) * 0.5;   // half-resolution pixels
+    if (radius < 0.5) {
+        imageStore(target, halfTexel, centre);
+        return;
+    }
+    vec3 sum = centre.rgb;
+    float weight = 1.0;
+    const float kGolden = 2.39996323;
+    for (int ring = 1; ring <= 2; ++ring) {
+        int count = ring * 7;
+        float r = radius * float(ring) / 2.0;
+        for (int i = 0; i < count; ++i) {
+            float angle = (float(i) + 0.5 * float(ring - 1)) * 6.2831853 / float(count) + kGolden * float(ring);
+            vec2 offset = r * vec2(cos(angle), sin(angle));
+            ivec2 q = clamp(halfTexel + ivec2(round(offset)), ivec2(0), size - 1);
+            vec4 s = texelFetch(halfTexture, q, 0);
+            float reach = clamp(abs(s.a) * 0.5 - length(offset) + 1.0, 0.0, 1.0);
+            sum += s.rgb * reach;
+            weight += reach;
+        }
+    }
+    imageStore(target, halfTexel, vec4(sum / weight, centre.a));
+}

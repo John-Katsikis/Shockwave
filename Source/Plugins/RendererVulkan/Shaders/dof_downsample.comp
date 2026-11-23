@@ -1,0 +1,39 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Depth of field, 1 of 3 (V2): the scene at half resolution, with each texel's signed blur
+// (full-resolution pixels) in alpha: the nearest of its four pixels', so edges in front
+// keep their own.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D sceneTexture;
+layout(set = 0, binding = 1) uniform sampler2D depthTexture;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D target;
+
+#include "screen_effects.glsl"
+#include "dof.glsl"
+
+void main() {
+    ivec2 halfTexel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(halfTexel, ivec2(pc.size)))) return;
+    ivec2 full = ivec2(pc.frame.renderSize);
+    vec3 color = vec3(0.0);
+    float nearest = -1.0;
+    ivec2 nearestTexel = 2 * halfTexel;
+    for (int i = 0; i < 4; ++i) {
+        ivec2 q = min(2 * halfTexel + ivec2(i & 1, i >> 1), full - 1);
+        color += texelFetch(sceneTexture, q, 0).rgb;
+        float d = texelFetch(depthTexture, q, 0).r;
+        if (d > nearest) {
+            nearest = d;
+            nearestTexel = q;
+        }
+    }
+    imageStore(target, halfTexel, vec4(color * 0.25, cocAtTexel(nearestTexel)));
+}

@@ -1,4 +1,4 @@
-Config/ReleaseTier.swtier: fallback low; 1 mandatory, 20 optional
+Config/ReleaseTier.swtier: fallback low; 1 mandatory, 23 optional
 
 setting                use        minimum  fallback  low       medium    high      ultra    
 shadow_quality         mandatory  low      low       low       medium    high      ultra    
@@ -13,12 +13,15 @@ particle_distortion    optional   -        false     false     true      true   
 particle_lighting      optional   -        simple    simple    scene     scene     scene    
 particle_motion_vectors optional   -        false     false     true      true      true     
 color_grading          optional   -        true      true      true      true      true     
+depth_of_field         optional   -        true      true      true      true      true     
 auto_exposure          optional   -        true      true      true      true      true     
 fog_quality            optional   -        analytic  analytic  low       medium    high     
 clearcoat              optional   -        true      true      true      true      true     
 transmission_quality   optional   -        low       low       medium    medium    high     
 skin_quality           optional   -        off       off       low       high      high     
 hair_quality           optional   -        low       low       high      high      high     
+contact_shadows        optional   -        off       off       off       on        on       
+reflections_quality    optional   -        off       off       off       medium    high     
 texture_quality        optional   -        low       low       medium    high      ultra    
 material_quality       optional   -        low       low       high      high      high     
 anisotropy             optional   -        4         4         8         16        16       

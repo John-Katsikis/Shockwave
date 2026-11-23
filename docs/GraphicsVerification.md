@@ -864,6 +864,65 @@ the one in section 6.9 of docs/Graphics/06-Verification.md.
 
 No batch needs an upscaler, and none uses Lumen- or Nanite-style systems.
 
+## V1 to V4: screen effects
+
+Contact shadows (V4), screen-space reflections (V1), motion blur (V3) and depth of field
+(V2), each switchable off: `contact_shadows off`, `reflections_quality off`,
+`motion_blur 0`, `depth_of_field false`.
+
+- **Contract.** `Renderer/ContactShadows.h`, `ScreenReflections.h`, `MotionBlur.h` and
+  `DepthOfField.h` hold the constants and the CPU twins of the shaders (`ScreenEffects.cpp`).
+  `screen_effects_test` ray-traces boxes into a reverse-Z depth buffer and checks them:
+  a box shadows the floor behind it towards the sun and nothing in front; reflections hit
+  a wall at the right place, miss the sky, fade with roughness and confidence; motion blur
+  is zero for still pixels, capped, and scales with the setting; the circle of confusion
+  is zero in the sharp range, grows past it and reaches `dof_blur`.
+- **Frame.** Contact shadows and reflections need the surface prepass (on whenever either
+  is, or depth of field). The new passes are *contact shadows* and *screen reflections*
+  after AO, *reflection history copy* after particles, *motion blur* and *motion blur
+  copy* after the TAA resolve, and *depth of field downsample*, *gather* and *composite*
+  before exposure. Each target is made only while its effect runs, and freed once the
+  frames using it finish after it's switched off. Plugin ABI 24; `FrameData` is 496 bytes.
+- **Tools.** `--view contact_shadows` and `--view screen_reflections` (and the editor's
+  views), the report's four setting rows with fallback reasons and four memory
+  categories, the Graphics preferences in the editor, the depth of field fields in the
+  Post-process window, and a `--check` error for a focus distance nearer than a camera's
+  near plane. The memory budget can turn reflections and then contact shadows off.
+
+New fixtures (written by hand): `contact-shadows` (a fence and cubes on a floor),
+`ssr-floor` (red, green and blue pillars on a metallic floor, glossy on the left, rough
+on the right), `motion-blur` (a cube spinning at 720 degrees a second) and
+`postprocess-dof` / `postprocess-dof-none` (posts at 2, 10 and 40 m, focus 10 m). None
+are in `capture.py`'s baseline set.
+
+**Measured** on llvmpipe at 320x180 (`graphics_screen_effects_render`), every effect off
+renders exactly the scene without the setting (RMSE 0) and two `--fixed-step` runs with
+it on render the same pixels:
+
+- Contact shadows change 1.0% of the image (RMSE 6.8), only darkening; 57,600 bytes.
+  Without sun shadows they stay off with a reason and the image is unchanged.
+- Reflections (high, 64 steps) redden the glossy floor under the red pillar from a mean
+  red of 100 to 149 (RMSE 49 there) and leave the rough half alone (RMSE 0.06). A wall
+  whose reflection is off screen keeps its probe's (RMSE 0.03); 277,248 bytes.
+- Motion blur 1 smears the cube's edges (1.5% of its region changed, RMSE 2.8) and
+  leaves the still floor (RMSE 0.02); 460,800 bytes. Without TAA it stays at 0 with a
+  reason and no memory.
+- Depth of field leaves the post in focus within RMSE 0.9 and blurs the far post (RMSE
+  2.6) and the near one (RMSE 2.2); 235,520 bytes.
+
+Frame times weren't measured on a real GPU. `graphics_fixtures_render` now renders the
+five new scenes too, about 860 s alone, so its timeout is 1200 s.
+
+Result: `capture.py --compare` with the default settings found every baseline image
+identical (RMSE 0): every new setting defaults to off, and no baseline entry was re-recorded.
+
+Not done: motion blur isn't limited to Play in the editor viewport (the renderer has no
+"playing" flag), the memory budget has no step for motion blur (it's a number, not a
+level), near-field depth of field doesn't spread over sharp things behind it, and
+reflections have no ray jitter. The GPU checks are one file,
+`Tests/GraphicsScreenEffectsCheck.cmake`, rather than additions to the temporal and
+post-process checks.
+
 ## Known limits
 
 - The overhaul's frame times were all measured on llvmpipe, a CPU renderer. Timings on

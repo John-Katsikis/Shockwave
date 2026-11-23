@@ -330,7 +330,9 @@ void Editor::drawViewportToolbar() {
             "Light clusters",
             "Fog transmittance",
             "Glass (transmission)",
-            "Shading families"};
+            "Shading families",
+            "Contact shadows",
+            "Screen reflections"};
         int view = static_cast<int>(renderer.debugView());
         ImGui::SetNextItemWidth(160.0f * dpi);
         if (ImGui::Combo("Shading", &view, views, IM_ARRAYSIZE(views))) {

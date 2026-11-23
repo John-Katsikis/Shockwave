@@ -1,0 +1,61 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Motion blur (V3, RendererScreenEffects.cpp, Renderer/MotionBlur.h): after TAA, each pixel
+// averaged with kMotionBlurSamples along its motion, centred on it. A sample counts if its
+// surface is at or behind this one, or if it is moving far enough to reach here itself, so
+// still things in front stay sharp. Into a second image, copied back into the scene.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D sceneTexture;
+layout(set = 0, binding = 1) uniform sampler2D depthTexture;
+layout(set = 0, binding = 3) uniform sampler2D motionTexture;   // uv now minus uv last frame; w 1 valid
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D target;
+
+#include "screen_effects.glsl"
+
+const uint kSamples = 8u;   // kMotionBlurSamples
+
+// params: x strength * shutter / frame seconds, y kMotionBlurMaxPixels, z kMotionBlurMinPixels.
+vec2 blurVector(vec4 motion) {
+    if (motion.w < 0.5) return vec2(0.0);
+    vec2 pixels = motion.xy * vec2(pc.size) * pc.params.x;
+    float len = length(pixels);
+    if (!(len >= pc.params.z)) return vec2(0.0);
+    if (len > pc.params.y) pixels *= pc.params.y / len;
+    return pixels;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(pc.size);
+    if (any(greaterThanEqual(pixel, size))) return;
+    vec4 centre = texelFetch(sceneTexture, pixel, 0);
+    vec2 blur = blurVector(texelFetch(motionTexture, pixel, 0));
+    float len = length(blur);
+    if (len == 0.0) {
+        imageStore(target, pixel, centre);
+        return;
+    }
+    float depth = texelFetch(depthTexture, pixel, 0).r;
+    float noise = interleavedGradientNoise(vec2(pixel) + 0.5) - 0.5;
+    vec3 sum = centre.rgb;
+    float weight = 1.0;
+    for (uint i = 0u; i < kSamples; ++i) {
+        float t = (float(i) + 0.5 + noise) / float(kSamples) - 0.5;   // -0.5 .. 0.5 of the blur
+        ivec2 q = clamp(ivec2(floor(vec2(pixel) + 0.5 + blur * t)), ivec2(0), size - 1);
+        float sampleDepth = texelFetch(depthTexture, q, 0).r;
+        bool behind = sampleDepth <= depth + 1e-7;   // reverse-Z: smaller is farther
+        bool reaches = length(blurVector(texelFetch(motionTexture, q, 0))) >= abs(t) * len;
+        if (!(behind || reaches)) continue;
+        sum += texelFetch(sceneTexture, q, 0).rgb;
+        weight += 1.0;
+    }
+    imageStore(target, pixel, vec4(sum / weight, centre.a));
+}

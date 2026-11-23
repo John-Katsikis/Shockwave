@@ -30,6 +30,10 @@ struct Preferences {
     std::string antiAliasing = "none";
     std::string bloomQuality = "high";
     std::string ambientOcclusion = "off";
+    std::string contactShadows = "off";   // V4
+    std::string reflectionsQuality = "off";   // V1
+    float motionBlur = 0.0f;   // V3: 0..1
+    bool depthOfField = true;   // V2: scenes' post-process profiles may blur
     float bloomScale = 1.0f;
     float masterVolume = 1.0f;
 

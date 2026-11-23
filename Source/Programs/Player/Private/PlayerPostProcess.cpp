@@ -193,6 +193,20 @@ void Player::checkPostProcessVolumes(
                 problems.push_back(where + volume.profile + ": lut " + profile->values.lut + ": " + error);
             if (volume.enabled && volume.weight <= 0.0f)
                 std::printf("warning %sweight 0 applies nothing\n", where.c_str());
+            // V2: a focus nearer than every camera's near plane can never be sharp.
+            const shockwave::PostProcessValues& v = profile->values;
+            if (v.dofBlur > 0.0f) {
+                world.each<const shockwave::Camera>([&](shockwave::Entity c, const shockwave::Camera& camera) {
+                    if (v.dofFocusDistance >= camera.nearPlane) return;
+                    const shockwave::Name* cameraName = world.get<shockwave::Name>(c);
+                    char text[160];
+                    std::snprintf(
+                        text, sizeof(text), "dof_focus_distance %g m is nearer than camera '%s''s near_plane %g m",
+                        static_cast<double>(v.dofFocusDistance), cameraName ? cameraName->value.c_str() : "?",
+                        static_cast<double>(camera.nearPlane));
+                    problems.push_back(where + volume.profile + ": " + text);
+                });
+            }
         });
 }
 

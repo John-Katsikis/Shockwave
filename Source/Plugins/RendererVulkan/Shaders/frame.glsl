@@ -32,7 +32,7 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     vec3 cameraPosition;
     uint lightCount;
     vec3 skyAmbient;
-    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters, 12 fog, 13 transmission, 14 shading families
+    uint debugView;   // 0 lit, 1 unlit, 2 normals, 3 lighting only, 4 shadow cascades, 5 ambient occlusion, 6 indirect, 7 reflections, 8 decals, 9 motion, 10 reactive, 11 clusters, 12 fog, 13 transmission, 14 shading families, 15 contact shadows, 16 screen reflections
     vec3 groundAmbient;
     uint cascadeCount;
     vec3 cameraForward;
@@ -79,6 +79,14 @@ layout(buffer_reference, scalar) readonly buffer FrameBuffer {
     uint transmissionBackground;
     uint sceneDepth;
     float transmissionLevels;   // mips of the copy
-    uint shadingPad;
+    // V4: bindless slot of the contact shadows (1 lit, 0 blocked) and the directional light
+    // they darken; 0: none this frame.
+    uint contactShadowTexture;
+    uint contactShadowLight;
+    // V1: bindless slot of the screen-space reflections, premultiplied by confidence, and its
+    // mip levels; 0: none this frame.
+    uint ssrTexture;
+    float ssrLevels;
+    uint screenPad;
     LightData lights[];
 };

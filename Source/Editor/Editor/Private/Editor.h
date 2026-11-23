@@ -311,6 +311,7 @@ private:
     // Colour grading, exposure and fog (PostProcessPanel.cpp, A05/A06).
     shockwave::Entity createPostProcessVolume();
     void drawPostProcessVolumeNotes(shockwave::Entity e);
+    void drawDepthOfFieldFields(const std::string& profileName, const shockwave::PostProcessValues& resolved);
     // InputPanel.cpp: controllers and the project's bindings (Config/Input.swinput).
     void drawInputWindow();
     void loadProjectInput();   // on project open and Revert

@@ -187,6 +187,15 @@ void Editor::applyViewPreferences() {
         engine().renderer().setBloom(settings.bloomQuality, m_prefs.bloomScale);
     if (shockwave::setGraphicsSetting(settings, "ambient_occlusion", m_prefs.ambientOcclusion, error))
         engine().renderer().setAmbientOcclusion(settings.ambientOcclusion);
+    // Screen effects (V1-V4): the same validation as .swgraphics files.
+    shockwave::setGraphicsSetting(settings, "contact_shadows", m_prefs.contactShadows, error);
+    shockwave::setGraphicsSetting(settings, "reflections_quality", m_prefs.reflectionsQuality, error);
+    settings.motionBlur = std::clamp(m_prefs.motionBlur, 0.0f, 1.0f);
+    engine().renderer().setScreenEffectsSettings(
+        {settings.contactShadows, settings.reflectionsQuality, settings.motionBlur});
+    auto post = engine().renderer().postProcessSettings();
+    post.depthOfField = m_prefs.depthOfField;
+    engine().renderer().setPostProcessSettings(post);
 }
 
 void Editor::savePreferences() {

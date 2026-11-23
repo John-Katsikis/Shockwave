@@ -7,6 +7,7 @@
 #include <Renderer/Particles.h>
 #include <Renderer/PostProcess.h>
 #include <Renderer/RenderTypes.h>
+#include <Renderer/ScreenEffects.h>
 #include <Renderer/Shading.h>
 
 #include <filesystem>
@@ -65,6 +66,13 @@ struct GraphicsSettings {
     TransmissionQuality transmissionQuality = TransmissionQuality::Medium;
     SkinQuality skinQuality = SkinQuality::High;
     HairQuality hairQuality = HairQuality::High;
+    // Screen effects (V1-V4): small shadows where things touch, reflections of what's on
+    // screen, motion blur and the scene's depth of field. Off by default except depth of
+    // field, which is the scene's look like colour grading; each off has no pass or memory.
+    ContactShadows contactShadows = ContactShadows::Off;
+    ScreenReflections reflectionsQuality = ScreenReflections::Off;
+    float motionBlur = 0;   // 0..1
+    bool depthOfField = true;
     // Drawing (G12, docs/Drawing.md): copies of a mesh in one call, and skipping what the
     // depth prepass proves hidden. The same picture either way: only the cost differs.
     bool instancing = true;

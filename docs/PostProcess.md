@@ -95,6 +95,36 @@ export the result as a `.cube`.
 With the `color_grading` setting false, white balance and LUTs are skipped: the picture
 is exactly as it is without them.
 
+## Depth of field
+
+Three profile fields blur what's out of focus:
+
+- `dof_focus_distance` (metres, 10 by default): the distance that's sharp.
+- `dof_focus_range` (metres, 2): how far either side of it stays sharp before the blur
+  starts. The blur then grows to full over the focus distance again (at least 1 m).
+- `dof_blur` (pixels at 1080p, 0 = off, up to 24): the largest blur radius. It scales
+  with the render height, so the look is the same at any resolution.
+
+Volumes blend these like any other field. The blur runs after the scene and particles and
+before exposure: a half-resolution downsample keeps each pixel's blur size, a 22-sample
+gather blurs it, and a composite mixes it back in where the blur is over half a pixel.
+`--check` fails a profile whose focus distance is nearer than a camera's near plane.
+The `depth_of_field` graphics setting turns it off everywhere; profiles that leave
+`dof_blur` at 0 cost nothing. It's *depth of field* memory (235,520 bytes at 320x180).
+
+Limit: blurry foreground objects don't spread over sharp ones behind them (it gathers
+each pixel's own blur), so near-field blur is softer-edged than a camera's.
+
+## Motion blur
+
+The `motion_blur` graphics setting (0..1) smears fast movement along TAA's motion
+vectors: 8 samples along each pixel's motion over a 1/120 s shutter times the setting,
+capped at 32 pixels, skipped below half a pixel. It runs after the TAA resolve, so it
+needs `anti_aliasing taa` (without it, the report says why and nothing is drawn), and a
+camera cut skips it for a frame. It's a player choice, not a profile field: presets set
+it to 0, which draws exactly the picture without it. It's *motion blur* memory (460,800
+bytes at 320x180).
+
 ## Debugging
 
 - `player --view fog` and the editor's *Fog transmittance* shading view show how much of

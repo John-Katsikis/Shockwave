@@ -247,6 +247,7 @@ void VulkanRenderer::Impl::decideHistory() {
     lastTemporalStats.resets = temporalResets;
     const bool cut = cameraCut;
     cameraCut = false;
+    cameraCutThisFrame = cut;
     temporalThisFrame = temporalActive() && prepassActive() && currentView.valid() && !captureRequested;
     if (!temporalThisFrame) {
         temporalView = {};

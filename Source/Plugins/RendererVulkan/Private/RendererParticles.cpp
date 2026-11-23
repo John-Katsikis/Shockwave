@@ -411,8 +411,9 @@ void VulkanRenderer::Impl::recordParticles(VkCommandBuffer cmd, bool depthPass) 
         readOnly ? VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     // Kept for the main pass after the depth-writing one, and for the reactive mask and TAA (G09, G10).
-    depthAttachment.storeOp =
-        temporalThisFrame || depthPass || readOnly ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.storeOp = temporalThisFrame || depthPass || readOnly || dofThisFrame
+                                  ? VK_ATTACHMENT_STORE_OP_STORE
+                                  : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea = {{0, 0}, sceneColor.extent};

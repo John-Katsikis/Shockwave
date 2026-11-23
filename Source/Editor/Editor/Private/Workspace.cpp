@@ -790,6 +790,28 @@ void Editor::drawPreferencesWindow() {
     choiceSetting("anti_aliasing", m_prefs.antiAliasing);
     choiceSetting("bloom_quality", m_prefs.bloomQuality);
     choiceSetting("ambient_occlusion", m_prefs.ambientOcclusion);
+    choiceSetting("contact_shadows", m_prefs.contactShadows);
+    choiceSetting("reflections_quality", m_prefs.reflectionsQuality);
+    if (const auto* info = shockwave::findGraphicsSetting("motion_blur")) {
+        if (ImGui::SliderFloat(info->label, &m_prefs.motionBlur, 0.0f, 1.0f, "%.2f")) {
+            auto settings = engine().graphics().requested();
+            settings.motionBlur = std::clamp(m_prefs.motionBlur, 0.0f, 1.0f);
+            std::string error;
+            engine().graphics().apply(settings, error);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("%s", info->tooltip);
+    }
+    if (const auto* info = shockwave::findGraphicsSetting("depth_of_field")) {
+        if (ImGui::Checkbox(info->label, &m_prefs.depthOfField)) {
+            auto settings = engine().graphics().requested();
+            settings.depthOfField = m_prefs.depthOfField;
+            std::string error;
+            engine().graphics().apply(settings, error);
+            changed = true;
+        }
+        ImGui::SetItemTooltip("%s", info->tooltip);
+    }
     if (const auto* info = shockwave::findGraphicsSetting("bloom_scale")) {
         if (ImGui::SliderFloat(info->label, &m_prefs.bloomScale, 0.0f, 1.0f, "%.2fx")) {
             auto settings = engine().graphics().requested();

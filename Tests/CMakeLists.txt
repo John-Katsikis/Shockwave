@@ -568,6 +568,14 @@ target_link_libraries(culling_test PRIVATE Shockwave::Engine)
 shockwave_warnings(culling_test)
 add_test(NAME culling COMMAND culling_test)
 set_tests_properties(culling PROPERTIES TIMEOUT 60 LABELS unit)
+# Screen effects (V1-V4): contact shadows, reflections, motion blur and depth of field maths.
+add_executable(screen_effects_test ScreenEffectsTest.cpp)
+target_link_libraries(screen_effects_test PRIVATE Shockwave::Engine)
+shockwave_warnings(screen_effects_test)
+foreach(effect contact_shadows screen_reflections motion_blur depth_of_field)
+    add_test(NAME ${effect} COMMAND screen_effects_test ${effect})
+    set_tests_properties(${effect} PROPERTIES TIMEOUT 60 LABELS unit)
+endforeach()
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -604,8 +612,9 @@ if(TARGET game_sample)
         -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFixtures
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
+    # Every fixture scene: about 860 s alone on llvmpipe with the screen-effects scenes.
     set_tests_properties(graphics_fixtures_render PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 900 LABELS gpu)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 1200 LABELS gpu)
     # Pipeline warm-up and the fallback tier's pictures (S10 part 2).
     set(release_tier_demo "")
     if(TARGET game_shippingdemo)
@@ -627,6 +636,15 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTemporalCheck.cmake)
     set_tests_properties(graphics_temporal_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Screen effects (V1-V4): contact shadows, screen-space reflections, motion blur and depth
+    # of field change only what they should, off is the old picture, runs repeat, and the report.
+    add_test(NAME graphics_screen_effects_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsScreenEffects
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsScreenEffectsCheck.cmake)
+    set_tests_properties(graphics_screen_effects_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
     # Clustered lighting (G11): the same pixels as brute force (overflow, TAA, glass, past
     # cluster_far), the report on and off, auto by light count, and the cluster view.
     add_test(NAME graphics_clusters_render COMMAND ${CMAKE_COMMAND}

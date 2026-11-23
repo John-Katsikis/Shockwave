@@ -88,6 +88,7 @@ VulkanRenderer::Impl::~Impl() {
     destroyClusters();
     destroyPostProcess();
     destroyShadingPipelines();
+    destroyScreenEffects();
     destroyCullingPipelines();
     destroyDecalPipeline();
     destroyAmbientOcclusionPipeline();
@@ -205,7 +206,8 @@ void VulkanRenderer::Impl::createRenderTargets() {
     createDisplayUiView();
     createBloomTargets();   // the GPU is idle, so a slot is free
     if (antiAliasing == AntiAliasing::Fxaa) createAaTarget();
-    if (effectiveAmbientOcclusion() != AmbientOcclusion::Off || temporalWanted()) createAoTargets();
+    if (effectiveAmbientOcclusion() != AmbientOcclusion::Off || temporalWanted() || screenPrepassWanted())
+        createAoTargets();
     if (temporalWanted()) createTemporalTargets();
     sceneColorState = sceneDepthState = displayState = {};   // new images start undefined
 
@@ -262,6 +264,7 @@ void VulkanRenderer::Impl::recreateSceneTargets() {
     destroyTransmissionBackground(transmissionBackground);
     destroySkinTargets(skinTargets);
     destroyHzb(hzb);
+    destroyScreenEffectTargets();   // made again at the next frame boundary
     destroyImage(sceneColor);
     destroyImage(sceneDepth);
     destroyDisplayUiView();

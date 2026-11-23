@@ -63,6 +63,8 @@ const std::vector<const char*> kFogChoices = {"off", "analytic", "low", "medium"
 const std::vector<const char*> kTransmissionChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kSkinChoices = {"off", "low", "high"};
 const std::vector<const char*> kHairChoices = {"low", "high"};
+const std::vector<const char*> kContactShadowChoices = {"off", "on"};
+const std::vector<const char*> kReflectionChoices = {"off", "low", "medium", "high"};
 
 bool boolean(const std::string& value, bool& out, const char* key, std::string& error) {
     if (value != "true" && value != "false") {
@@ -294,6 +296,15 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return boolean(v, s.colorGrading, "color_grading", error);
          }});
     info.push_back(
+        {"depth_of_field", "Depth of field", "Quality",
+         "Scenes that ask for it blur what's nearer or farther than their focus, like a camera lens. Off keeps "
+         "everything sharp, exactly as without it, with no passes or memory for it.",
+         "true, false", kBool, GraphicsApply::Targets, false,
+         [](const S& s) { return std::string(s.depthOfField ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.depthOfField, "depth_of_field", error);
+         }});
+    info.push_back(
         {"auto_exposure", "Auto exposure", "Quality",
          "Lets scenes that ask for it adjust their brightness to what the camera sees, like an eye adapting. Off "
          "keeps each scene's fixed exposure, with no metering pass.",
@@ -354,6 +365,50 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              if (choice(kHairChoices, v, s.hairQuality)) return true;
              error = "hair_quality must be " + list(kHairChoices);
              return false;
+         }});
+    info.push_back(
+        {"contact_shadows", "Contact shadows", "Quality",
+         "Small, sharp shadows where things touch the ground or each other, which shadow maps are too coarse to "
+         "show, traced a short way towards the sun on the screen. Needs shadows on. Off skips it and frees its "
+         "memory.",
+         "off, on", kContactShadowChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(contactShadowsName(s.contactShadows)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kContactShadowChoices, v, s.contactShadows)) return true;
+             error = "contact_shadows must be " + list(kContactShadowChoices);
+             return false;
+         }});
+    info.push_back(
+        {"reflections_quality", "Screen reflections", "Quality",
+         "Sharp reflections of what's on screen in shiny floors, water and metal, over the reflection probes: low "
+         "traces 16 steps a pixel, medium 32, high 64. What's off screen, behind the camera or see-through still "
+         "comes from the probes. Off skips it and frees its memory.",
+         "off, low, medium, high", kReflectionChoices, GraphicsApply::Targets, true,
+         [](const S& s) { return std::string(screenReflectionsName(s.reflectionsQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kReflectionChoices, v, s.reflectionsQuality)) return true;
+             error = "reflections_quality must be " + list(kReflectionChoices);
+             return false;
+         }});
+    info.push_back(
+        {"motion_blur",
+         "Motion blur",
+         "Quality",
+         "Smears things moving across the screen, as a camera's shutter would: 1 is a 1/120 s shutter. Needs "
+         "anti_aliasing taa for its motion vectors. 0 turns it off and frees its memory.",
+         "0..1",
+         {},
+         GraphicsApply::Targets,
+         true,
+         [](const S& s) { return numberText(s.motionBlur); },
+         [](S& s, const std::string& v, std::string& error) {
+             float x = 0;
+             if (!number(v, x) || x < 0 || x > 1) {
+                 error = "motion_blur must be a number in 0..1";
+                 return false;
+             }
+             s.motionBlur = x;
+             return true;
          }});
     info.push_back(
         {"lod_error_pixels",
@@ -506,6 +561,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Low;
         base.skinQuality = SkinQuality::Off;
         base.hairQuality = HairQuality::Low;
+        base.contactShadows = ContactShadows::Off;
+        base.reflectionsQuality = ScreenReflections::Off;
+        base.motionBlur = 0;   // a personal choice
         break;
     case GraphicsPreset::Medium:
         base.renderScale = 1;
@@ -526,6 +584,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Medium;
         base.skinQuality = SkinQuality::Low;
         base.hairQuality = HairQuality::High;
+        base.contactShadows = ContactShadows::Off;
+        base.reflectionsQuality = ScreenReflections::Off;
+        base.motionBlur = 0;   // a personal choice
         break;
     case GraphicsPreset::High:
         base.renderScale = 1;
@@ -546,6 +607,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Medium;
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
+        base.contactShadows = ContactShadows::On;
+        base.reflectionsQuality = ScreenReflections::Medium;
+        base.motionBlur = 0;   // a personal choice
         break;
     case GraphicsPreset::Ultra:
         base.renderScale = 1;
@@ -566,6 +630,9 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::High;
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
+        base.contactShadows = ContactShadows::On;
+        base.reflectionsQuality = ScreenReflections::High;
+        base.motionBlur = 0;   // a personal choice
         break;
     }
     return base;
@@ -755,6 +822,11 @@ GraphicsSettings Graphics::running() const {
     s.transmissionQuality = shading.transmission;
     s.skinQuality = shading.skin;
     s.hairQuality = shading.hair;
+    s.depthOfField = post.depthOfField;
+    const ScreenEffectsSettings screen = r.screenEffectsSettings();
+    s.contactShadows = screen.contactShadows;
+    s.reflectionsQuality = screen.reflections;
+    s.motionBlur = screen.motionBlur;
     const DrawSettings drawing = r.drawSettings();
     s.instancing = drawing.instancing;
     s.occlusionCulling = drawing.occlusion;
@@ -828,8 +900,11 @@ void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous)
         s.particleLighting != previous.particleLighting || s.particleMotionVectors != previous.particleMotionVectors)
         r.setParticleSettings({s.softParticles, s.particleDistortion, s.particleLighting, s.particleMotionVectors});
     if (s.colorGrading != previous.colorGrading || s.autoExposure != previous.autoExposure ||
-        s.fogQuality != previous.fogQuality)
-        r.setPostProcessSettings({s.colorGrading, s.autoExposure, s.fogQuality});
+        s.fogQuality != previous.fogQuality || s.depthOfField != previous.depthOfField)
+        r.setPostProcessSettings({s.colorGrading, s.autoExposure, s.fogQuality, s.depthOfField});
+    if (s.contactShadows != previous.contactShadows || s.reflectionsQuality != previous.reflectionsQuality ||
+        s.motionBlur != previous.motionBlur)
+        r.setScreenEffectsSettings({s.contactShadows, s.reflectionsQuality, s.motionBlur});
     if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
         s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality)
         r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality});

@@ -40,4 +40,10 @@ shockwave_compile_shaders(renderer_vulkan
     Shaders/exposure_histogram.comp
     Shaders/exposure_adapt.comp
     Shaders/fog.comp
+    Shaders/contact_shadows.comp
+    Shaders/ssr.comp
+    Shaders/motion_blur.comp
+    Shaders/dof_downsample.comp
+    Shaders/dof_gather.comp
+    Shaders/dof_composite.comp
 )

@@ -8,6 +8,7 @@
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/Culling.h>
+#include <Renderer/ScreenEffects.h>
 #include <Renderer/Shading.h>
 #include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
@@ -249,6 +250,12 @@ public:
     void setShadingSettings(const ShadingSettings& settings);
     ShadingSettings shadingSettings() const;
     ShadingStats shadingStats() const;   // the last frame's
+    // The player's contact_shadows, reflections_quality and motion_blur settings (V1, V3,
+    // V4, Renderer/ScreenEffects.h). Each off is the frame without it: no pass, no memory.
+    // Main thread.
+    void setScreenEffectsSettings(const ScreenEffectsSettings& settings);
+    ScreenEffectsSettings screenEffectsSettings() const;
+    ScreenEffectsStats screenEffectsStats() const;   // the last frame's
     // Pipeline warm-up (S10, docs/ReleaseTier.md): asset loading calls warmPipelines with
     // what a material needs, so its pipelines are built on the loading screen and not at
     // its first draw. Off (project key pipeline_warmup false, player --no-pipeline-warmup)

@@ -3,6 +3,11 @@
 
 #include "RendererImpl.h"
 
+#include <Renderer/ContactShadows.h>
+#include <Renderer/DepthOfField.h>
+#include <Renderer/MotionBlur.h>
+#include <Renderer/ScreenReflections.h>
+
 #include <Core/Log.h>
 
 #include <cstdio>
@@ -428,6 +433,66 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
              p.fogQuality == p.fogRequested ? "" : p.fogReason, detail});
     }
 
+    // Screen effects (V1-V4): what last frame drew, and why not when it didn't.
+    {
+        const ScreenEffectsStats& s = lastScreenEffectsStats;
+        auto mib = [](uint64_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); };
+        char detail[256];
+        const VkExtent2D full = sceneColor.extent;
+        if (s.contactShadows)
+            std::snprintf(
+                detail, sizeof(detail), "%u steps over %g m towards the sun at %ux%u; %.2f MiB", kContactShadowSteps,
+                static_cast<double>(kContactShadowLength), full.width, full.height, mib(s.contactBytes));
+        else
+            std::snprintf(detail, sizeof(detail), "no pass or image");
+        settings.push_back(
+            {"contact_shadows", contactShadowsName(screenEffects.contactShadows),
+             contactShadowsName(s.contactShadows ? ContactShadows::On : ContactShadows::Off), s.contactReason, detail});
+        const ScreenReflections reflections = screenEffects.reflections;
+        if (s.reflections)
+            std::snprintf(
+                detail, sizeof(detail), "%u steps over %g m at %ux%u, %u mips, last frame's scene%s; %.2f MiB",
+                screenReflectionSteps(reflections == ScreenReflections::Off ? ScreenReflections::Medium : reflections),
+                static_cast<double>(kReflectionMaxDistance), reflectionTargets.result.extent.width,
+                reflectionTargets.result.extent.height, reflectionTargets.levels,
+                s.reflectionHistory ? "" : " (not there yet: no trace)", mib(s.reflectionBytes));
+        else
+            std::snprintf(detail, sizeof(detail), "no passes or images");
+        settings.push_back(
+            {"reflections_quality", screenReflectionsName(reflections),
+             screenReflectionsName(s.reflections ? reflections : ScreenReflections::Off), s.reflectionReason, detail});
+        char requested[32], effective[32];
+        std::snprintf(requested, sizeof(requested), "%g", static_cast<double>(screenEffects.motionBlur));
+        const bool blurring = s.motionBlur || (screenEffects.motionBlur > 0.0f && !*s.motionBlurReason);
+        std::snprintf(
+            effective, sizeof(effective), "%g", static_cast<double>(blurring ? screenEffects.motionBlur : 0.0f));
+        if (s.motionBlur)
+            std::snprintf(
+                detail, sizeof(detail), "%u samples along TAA's motion vectors, at most %g px; %.2f MiB",
+                kMotionBlurSamples, static_cast<double>(kMotionBlurMaxPixels), mib(s.motionBlurBytes));
+        else if (blurring)
+            std::snprintf(
+                detail, sizeof(detail), "skipped this frame: TAA's history restarted (first frame, cut, resize)");
+        else
+            std::snprintf(detail, sizeof(detail), "no pass or image");
+        settings.push_back({"motion_blur", requested, effective, s.motionBlurReason, detail});
+        if (s.depthOfField)
+            std::snprintf(
+                detail, sizeof(detail),
+                "focus %g m +- %g m, blur up to %.1f px; %u samples at half resolution; %.2f MiB",
+                static_cast<double>(postProcess.dofFocusDistance), static_cast<double>(postProcess.dofFocusRange),
+                static_cast<double>(dofRadius), kDofGatherSamples, mib(s.depthOfFieldBytes));
+        else if (postProcess.dofBlur > 0.0f)
+            std::snprintf(detail, sizeof(detail), "no passes or images");
+        else
+            std::snprintf(detail, sizeof(detail), "no post-process volume asks for depth of field");
+        // A scene without depth of field isn't a fallback: the setting is the player's
+        // permission, the profile asks for it.
+        const bool dofAsked = postProcessSettings.depthOfField;
+        const bool dofDrawn = s.depthOfField || (dofAsked && !(postProcess.dofBlur > 0.0f));
+        settings.push_back({"depth_of_field", onOff(dofAsked), onOff(dofDrawn), s.depthOfFieldReason, detail});
+    }
+
     // Vsync and low latency come down to the present mode the surface allowed.
     const VkPresentModeKHR mode = swapchain->presentMode();
     const bool synced = mode == VK_PRESENT_MODE_FIFO_KHR || mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR ||
@@ -510,6 +575,12 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
         add(GpuMemoryCategory::TemporalHistory, temporalTargets.color[i].allocation);
         add(GpuMemoryCategory::TemporalHistory, temporalTargets.distance[i].allocation);
     }
+    // V1-V4: only while each is on.
+    add(GpuMemoryCategory::ContactShadows, contactTargets.image.allocation);
+    add(GpuMemoryCategory::ScreenReflections, reflectionTargets.previous.allocation);
+    add(GpuMemoryCategory::ScreenReflections, reflectionTargets.result.allocation);
+    add(GpuMemoryCategory::MotionBlur, motionBlurTargets.image.allocation);
+    for (const vk::Image& image : dofTargets.half) add(GpuMemoryCategory::DepthOfField, image.allocation);
     for (const Frame& f : frames) {
         add(GpuMemoryCategory::Clusters, f.clusterBuffer.allocation);
         add(GpuMemoryCategory::Clusters, f.clusterCounters.allocation);

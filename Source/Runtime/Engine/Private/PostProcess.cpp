@@ -290,6 +290,34 @@ const std::vector<PostProcessParamInfo>& postProcessParams() {
          "fog",
          "m",
          "How far the lit fog volume reaches with fog_quality low, medium or high; the closed form past it."},
+        {"dof_focus_distance",
+         T::Float,
+         offsetof(V, dofFocusDistance),
+         0.1f,
+         10000,
+         {},
+         "depth_of_field",
+         "m",
+         "How far from the camera things are sharpest."},
+        {"dof_focus_range",
+         T::Float,
+         offsetof(V, dofFocusRange),
+         0,
+         10000,
+         {},
+         "depth_of_field",
+         "m",
+         "How far in front of and behind the focus distance things stay sharp."},
+        {"dof_blur",
+         T::Float,
+         offsetof(V, dofBlur),
+         0,
+         24,
+         {},
+         "depth_of_field",
+         "px",
+         "The largest blur, in pixels at 1080 lines (scaled with the resolution), reached a focus distance (at "
+         "least 1 m) past the sharp range. 0: no depth of field."},
     };
     return params;
 }
@@ -932,6 +960,9 @@ PostProcessDesc postProcessDesc(const PostProcessResult& result, PostProcessLibr
     desc.fog = fogDesc(v);
     if (!validFog(desc.fog)) desc.fog = {};
     desc.deltaTime = dt;
+    desc.dofFocusDistance = std::clamp(v.dofFocusDistance, 0.1f, 10000.0f);
+    desc.dofFocusRange = std::clamp(v.dofFocusRange, 0.0f, 10000.0f);
+    desc.dofBlur = std::clamp(v.dofBlur, 0.0f, 24.0f);
     float total = 0.0f, kept = 0.0f;
     for (const auto& layer : result.luts) {
         total += layer.weight;

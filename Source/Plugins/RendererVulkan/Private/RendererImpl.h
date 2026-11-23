@@ -40,7 +40,7 @@ constexpr uint32_t kMaxMeshes = 65536;
 // slot the old one isn't using, so it can be made while frames still read the old one.
 // Shadow atlases likewise have two pairs of slots, and ambient occlusion two slots.
 // A07-A09: two for the transmission pass's copy of the scene, six for the skin targets.
-constexpr uint32_t kInternalTextureSlots = 25;
+constexpr uint32_t kInternalTextureSlots = 29;
 // Spare bindless slots for textures being replaced (reloads, texture_quality): the new image
 // goes into a spare while frames in flight still read the old slot, which becomes a spare
 // once they finish. Below the internal slots.
@@ -264,10 +264,17 @@ struct FrameData {
     uint32_t transmissionBackground;
     uint32_t sceneDepth;
     float transmissionLevels;
-    uint32_t shadingPad;
+    // V4: bindless slot of the contact shadows and the light they belong to; 0: none.
+    uint32_t contactShadowTexture;
+    uint32_t contactShadowLight;
+    // V1: bindless slot of the screen-space reflections (premultiplied, with mips); 0: none.
+    uint32_t ssrTexture;
+    float ssrLevels;
+    uint32_t screenPad;
 };
 static_assert(
-    sizeof(FrameData) == 480 && offsetof(FrameData, transmissionBackground) == 464 &&
+    sizeof(FrameData) == 496 && offsetof(FrameData, contactShadowTexture) == 476 &&
+        offsetof(FrameData, ssrLevels) == 488 && offsetof(FrameData, transmissionBackground) == 464 &&
         offsetof(FrameData, fogMode) == 384 && offsetof(FrameData, froxels) == 456 &&
         offsetof(FrameData, fogColor) == 404 && offsetof(FrameData, decalAlbedo) == 332 &&
         offsetof(FrameData, shadowViews) == 96 && offsetof(FrameData, view) == 112 &&
@@ -1574,6 +1581,91 @@ struct VulkanRenderer::Impl {
     // The scene after its opaque part, when glass or skin split it: glass and the other
     // see-through surfaces, back to front, and the grid.
     void recordSeeThrough(VkCommandBuffer cmd, Frame& f);
+
+    // ---- Screen effects (RendererScreenEffects.cpp) --------------------------------------
+    // V4 contact shadows and V1 screen-space reflections run between the surface prepass and
+    // the scene, which reads them through the bindless table; V3 motion blur and V2 depth
+    // of field run on the scene after TAA, before exposure, bloom and tone mapping. Each
+    // has images, descriptor sets and a compute pipeline only while it's on.
+    struct ContactTargets {
+        vk::Image image;   // full resolution R8: 1 lit, 0 blocked
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        uint32_t slot = 0;
+    };
+    struct ReflectionTargets {
+        vk::Image previous;   // last frame's scene at half resolution
+        vk::Image result;   // half resolution, premultiplied by confidence, kReflectionMips levels
+        VkImageView resultTop = VK_NULL_HANDLE;   // level 0, for the compute shader to write
+        uint32_t levels = 0;
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        uint32_t slot = 0;
+    };
+    struct MotionBlurTargets {
+        vk::Image image;   // full resolution: the blurred scene, copied back
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+    };
+    struct DofTargets {
+        vk::Image half[2];   // the downsample (colour, signed blur) and the gather
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkDescriptorSet sets[3] = {};   // downsample, gather, composite
+    };
+    ScreenEffectsSettings screenEffects;   // asked for
+    ScreenEffectsStats lastScreenEffectsStats;
+    ContactTargets contactTargets;
+    ReflectionTargets reflectionTargets;
+    MotionBlurTargets motionBlurTargets;
+    DofTargets dofTargets;
+    vk::ImageState motionBlurState;
+    uint32_t contactSlots[2] = {0, 0}, reflectionSlots[2] = {0, 0};
+    bool contactSlotBusy[2] = {false, false}, reflectionSlotBusy[2] = {false, false};
+    bool contactFormatSupported = true;   // R8 storage images
+    VkSampler screenNearestSampler = VK_NULL_HANDLE, screenLinearSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout screenSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout screenLayout = VK_NULL_HANDLE;
+    // Made the first frame each effect runs, so a game with them off never compiles them.
+    VkPipeline contactPipeline = VK_NULL_HANDLE, ssrPipeline = VK_NULL_HANDLE, motionBlurPipeline = VK_NULL_HANDLE;
+    VkPipeline dofPipelines[3] = {};
+    // This frame's decisions (prepareScreenEffects).
+    bool contactThisFrame = false;
+    bool reflectionsThisFrame = false;   // the history copy runs
+    bool reflectionTraceThisFrame = false;   // and the trace, which needs last frame's
+    bool motionBlurThisFrame = false;
+    bool dofThisFrame = false;
+    glm::vec3 contactSunView{0.0f, 1.0f, 0.0f};   // towards the sun, view space
+    float motionBlurScale = 0.0f;   // strength * shutter / frame seconds
+    float dofRadius = 0.0f;   // full-resolution pixels
+    // V1's history: last frame's scene in reflectionTargets.previous, and its camera.
+    bool reflectionHistory = false;
+    bool reflectionLayoutsReady = false;
+    RenderViewId reflectionView;
+    glm::mat4 reflectionPreviousViewProjection{1.0f};
+    bool cameraCutThisFrame = false;   // Renderer::cutCamera, kept past decideHistory
+
+    void createScreenEffects();   // samplers and layouts; at start-up
+    void destroyScreenEffects();
+    bool contactWanted() const;
+    bool reflectionsWanted() const;
+    bool motionBlurWanted() const;
+    bool dofWanted() const;
+    bool screenPrepassWanted() const { return contactWanted() || reflectionsWanted() || dofWanted(); }
+    void updateScreenEffectTargets();   // at a frame boundary, like the others
+    void destroyScreenEffectTargets();   // the GPU must be idle (resize, shutdown)
+    void destroyContactTargets(ContactTargets& targets);
+    void destroyReflectionTargets(ReflectionTargets& targets);
+    void destroyMotionBlurTargets(MotionBlurTargets& targets);
+    void destroyDofTargets(DofTargets& targets);
+    // Decides this frame's effects and fills their header fields (writeFrameData).
+    void prepareScreenEffects(FrameData& header, const LightData* lights, uint32_t directionalCount);
+    void finishScreenEffects();   // after submit: this frame becomes the reflections' history
+    void recordContactShadows(VkCommandBuffer cmd, Frame& f);
+    void recordReflections(VkCommandBuffer cmd, Frame& f);
+    void recordReflectionCopy(VkCommandBuffer cmd);
+    void recordMotionBlur(VkCommandBuffer cmd, Frame& f);
+    void recordMotionBlurCopy(VkCommandBuffer cmd);
+    void recordDepthOfField(VkCommandBuffer cmd, Frame& f, uint32_t step);
 
     // ---- Retiring resources -----------------------------------------------------------
     // Freed once every frame submitted so far has finished, checked at each frame start.
