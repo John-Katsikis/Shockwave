@@ -224,7 +224,7 @@ foreach(feature USE_AVX USE_AVX2 USE_AVX512 USE_FMADD USE_F16C USE_LZCNT USE_TZC
 endforeach()
 FetchContent_Declare(JoltPhysics
     GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-    GIT_TAG v5.6.0
+    GIT_TAG v5.7.0
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR Build
 )
