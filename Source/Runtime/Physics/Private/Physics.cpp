@@ -100,6 +100,12 @@ public:
         if (!dependencies) QueueJob(job);
         return handle;
     }
+    // Jolt 5.7: several jobs at once (the same as CreateJob for each).
+    void CreateJobs(
+        const char* name, JPH::ColorArg color, const JobFunction& fn, JobHandle* out, JPH::uint32 count,
+        JPH::uint32 dependencies) override {
+        for (JPH::uint32 i = 0; i < count; ++i) out[i] = CreateJob(name, color, fn, dependencies);
+    }
     void drain() { m_jobs.wait(m_pending); }
 
 protected:
