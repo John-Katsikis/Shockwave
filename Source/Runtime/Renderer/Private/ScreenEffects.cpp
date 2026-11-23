@@ -105,7 +105,9 @@ ReflectionHit traceReflection(
     const glm::mat4& inverseProjection, glm::vec3 normalView, uint32_t steps, float maxDistanceMetres,
     float thicknessMetres) {
     ReflectionHit none;
-    if (w == 0 || h == 0 || pixel.x >= w || pixel.y >= h || depth.size() < size_t(w) * h || steps == 0) return none;
+    if (w == 0 || h == 0 || pixel.x >= w || pixel.y >= h || depth.size() < size_t(w) * h || steps == 0 ||
+        !(maxDistanceMetres > 0.0f))
+        return none;
     const glm::vec2 centre = (glm::vec2(pixel) + 0.5f) / glm::vec2(w, h);
     glm::vec3 position;
     if (!viewPositionFromDepth(centre, depth[size_t(pixel.y) * w + pixel.x], inverseProjection, position))

@@ -238,7 +238,7 @@ void VulkanRenderer::Impl::destroyScreenEffects() {
 
 namespace {
 
-VkPipeline createScreenPipeline(VkDevice device, VkPipelineLayout layout, const std::filesystem::path& shader) {
+VkPipeline createScreenPipeline(VkDevice device, VkPipelineLayout layout, const std::string& shader) {
     VkShaderModule module = vk::loadShaderModule(device, shader);
     VkComputePipelineCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
