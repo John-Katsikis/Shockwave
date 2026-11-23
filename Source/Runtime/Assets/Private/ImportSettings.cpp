@@ -41,6 +41,33 @@ bool parseTextureCategory(std::string_view name, TextureCategory& category) {
     return false;
 }
 
+const char* fbxImporterName(FbxImporter importer) {
+    switch (importer) {
+    case FbxImporter::Auto: return "auto";
+    case FbxImporter::Sdk: return "sdk";
+    case FbxImporter::Assimp: return "assimp";
+    }
+    return "auto";
+}
+
+bool parseFbxImporter(std::string_view name, FbxImporter& importer) {
+    for (auto candidate : {FbxImporter::Auto, FbxImporter::Sdk, FbxImporter::Assimp}) {
+        if (name == fbxImporterName(candidate)) {
+            importer = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool fbxSdkAvailable() {
+#if SHOCKWAVE_HAS_FBXSDK
+    return true;
+#else
+    return false;
+#endif
+}
+
 fs::path importSettingsPath(const fs::path& asset) { return fs::path(asset.string() + ".swimport"); }
 bool isImportSettingsFile(const fs::path& path) { return path.extension() == ".swimport"; }
 
@@ -85,8 +112,12 @@ bool loadImportSettings(const fs::path& file, ImportSettings& settings, std::str
             std::string value;
             row >> value;
             if (!parseTextureCategory(value, result.category)) return fail("category must be material or ui");
+        } else if (key == "fbx_importer") {
+            std::string value;
+            row >> value;
+            if (!parseFbxImporter(value, result.fbxImporter)) return fail("fbx_importer must be auto, sdk or assimp");
         } else {
-            return fail("unknown key '" + key + "' (compression, lods, category)");
+            return fail("unknown key '" + key + "' (compression, lods, category, fbx_importer)");
         }
         row >> std::ws;
         if (row.peek() != EOF && row.peek() != '#') return fail("unexpected text after the value");
@@ -116,6 +147,8 @@ bool saveImportSettings(
         out << "compression " << textureCompressionName(settings.compression) << "\n";
     if (settings.lods != defaults.lods) out << "lods " << settings.lods << "\n";
     if (settings.category != defaults.category) out << "category " << textureCategoryName(settings.category) << "\n";
+    if (settings.fbxImporter != defaults.fbxImporter)
+        out << "fbx_importer " << fbxImporterName(settings.fbxImporter) << "\n";
     // Through a hidden temporary file, so the asset folder never reads half of one.
     const fs::path temp = file.parent_path() / ("." + file.filename().string() + ".tmp");
     {

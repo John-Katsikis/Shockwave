@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Assets/Image.h>
+#include <Assets/ImportSettings.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
@@ -114,6 +115,9 @@ struct ModelData {
     // imported without them. --check and the cook refuse a release with any.
     std::vector<std::string> missingTextures;
     uint64_t triangles = 0;
+    // What read the file: "assimp", or "fbxsdk" for an .fbx the Autodesk FBX SDK read
+    // (F1b). Teammates whose builds differ can see why their imports do.
+    std::string importer = "assimp";
 };
 // The clip called name, or null. Names are case-sensitive, as in the file.
 const ModelAnimation* findAnimation(const ModelData& model, std::string_view name);
@@ -141,9 +145,11 @@ std::string modelExtensions();   // formats enabled in this build
 // in attemptedDependencies so saving a missing .bin/.mtl/texture retries the model.
 // .blend: Blender on PATH (or SHOCKWAVE_BLENDER) converts modern files to GLB;
 // without it, the deprecated native reader is tried with an explicit diagnostic.
+// fbxImporter: which importer reads an .fbx (the .swimport's fbx_importer); other formats
+// ignore it.
 bool loadModel(
     const std::filesystem::path& path, ModelData& model, std::string& error,
-    std::vector<std::filesystem::path>* attemptedDependencies = nullptr);
+    std::vector<std::filesystem::path>* attemptedDependencies = nullptr, FbxImporter fbxImporter = FbxImporter::Auto);
 // Ray is in model-local space. Tests real triangles, respecting node transforms. material:
 // the hit mesh's material index, if wanted.
 bool intersectModel(

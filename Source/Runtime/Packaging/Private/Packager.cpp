@@ -253,6 +253,11 @@ private:
         m_engine = m_options.engineFolder.empty() ? executableDir() : m_options.engineFolder;
         m_player = m_engine / (std::string("player") + kLayout.executableSuffix);
         if (packagedProject()) fail("This is a packaged game. Package from the engine's build instead");
+#if SHOCKWAVE_HAS_FBXSDK
+        // Its licence is the developer's: a game must never carry it (docs/Assets.md).
+        fail("This engine is built with the Autodesk FBX SDK (-DSHOCKWAVE_FBXSDK=ON), which a game must never ship. "
+             "Package from a build without it (another build folder, configured without SHOCKWAVE_FBXSDK)");
+#endif
         if (const auto problems = validatePackageSettings(m_project, m_settings); !problems.empty())
             fail(problems.front());
         checkSteam();

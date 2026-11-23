@@ -8,6 +8,7 @@
 #include <UI/Gui.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <string>
 
@@ -66,6 +67,7 @@ std::string levelText(const shockwave::MeshOptimiseReport& meshes) {
 void Editor::applyOptimisationSettings() {
     shockwave::ImportSettings defaults;
     shockwave::parseTextureCompression(m_project.textureCompression, defaults.compression);
+    shockwave::parseFbxImporter(m_project.fbxImporter, defaults.fbxImporter);
     defaults.lods = static_cast<uint32_t>(std::clamp(m_project.meshLods, 0, 7));
     if (!(defaults == m_assetFolder->importDefaults())) m_assetFolder->setImportDefaults(defaults);
     m_assetFolder->setCacheFolder(m_project.statePath() / "Cache" / "Textures");
@@ -161,6 +163,33 @@ void Editor::drawOptimisationWindow() {
                 if (ImGui::IsItemDeactivatedAfterEdit()) {
                     settings.lods = static_cast<uint32_t>(m_importLodsEdit);
                     changed |= !(settings == file->settings);
+                }
+            }
+            if (file->kind == Kind::Model) {
+                std::string extension = file->path.extension().string();
+                for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (extension == ".fbx") {
+                    // F1b, docs/Assets.md: which importer reads this .fbx.
+                    gui::propertyLabel("FBX importer");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (ImGui::BeginCombo("##asset_fbx_importer", shockwave::fbxImporterName(settings.fbxImporter))) {
+                        for (auto option :
+                             {shockwave::FbxImporter::Auto, shockwave::FbxImporter::Sdk,
+                              shockwave::FbxImporter::Assimp}) {
+                            if (ImGui::Selectable(shockwave::fbxImporterName(option), settings.fbxImporter == option) &&
+                                settings.fbxImporter != option) {
+                                settings.fbxImporter = option;
+                                changed = true;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::SetItemTooltip(
+                        "auto: the Autodesk FBX SDK when this build has it, else Assimp.\n"
+                        "sdk: only the SDK; the import fails in a build without it.\n"
+                        "assimp: always Assimp, whatever the build has.\n"
+                        "This build %s the SDK.",
+                        shockwave::fbxSdkAvailable() ? "has" : "doesn't have");
                 }
             }
             ImGui::EndTable();

@@ -31,6 +31,9 @@ struct Project {
     // Asset optimisation (docs/Optimisation.md). A .swimport file next to an asset
     // overrides the first two for it.
     std::string textureCompression = "high";   // high, small or off (texture_compression)
+    // Which importer reads .fbx models (fbx_importer, docs/Assets.md): auto, sdk or assimp.
+    // A .swimport file next to a model overrides it too.
+    std::string fbxImporter = "auto";
     // What the player imports (docs/AssetResidency.md): "all" at start, or "levels", each
     // level's assets when it needs them, unloaded when no level holds them (asset_loading).
     std::string assetLoading = "all";

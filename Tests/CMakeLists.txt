@@ -316,6 +316,16 @@ add_test(NAME model_import COMMAND model_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(model_import PROPERTIES TIMEOUT 120 LABELS unit)
 
+# F1b: the Autodesk FBX SDK against Assimp on the test FBX files. Only in a build with the
+# SDK (-DSHOCKWAVE_FBXSDK=ON), so never in CI: a manual gate recorded in the pull request.
+if(SHOCKWAVE_FBXSDK)
+    add_executable(fbx_sdk_import_test FbxSdkImportTest.cpp)
+    target_link_libraries(fbx_sdk_import_test PRIVATE Shockwave::Assets)
+    shockwave_warnings(fbx_sdk_import_test)
+    add_test(NAME fbx_sdk_import COMMAND fbx_sdk_import_test ${CMAKE_SOURCE_DIR})
+    set_tests_properties(fbx_sdk_import PROPERTIES TIMEOUT 120 LABELS unit)
+endif()
+
 # Explicitly invoked only: needs a real Vulkan GPU/display.
 add_executable(model_gpu_smoke ModelGpuSmoke.cpp)
 target_link_libraries(model_gpu_smoke PRIVATE Shockwave::Engine)

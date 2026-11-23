@@ -134,6 +134,7 @@ compression off
 | `compression` | `high`, `small`, `off` | Textures, and a model's textures |
 | `lods` | `0` to `7` | Models |
 | `category` | `material`, `ui` | Textures, and a model's textures. `ui` keeps every level whatever the player's Textures quality; use it for menu art, icons and anything read as text |
+| `fbx_importer` | `auto`, `sdk`, `assimp` | `.fbx` models: which importer reads it (see [Models and textures](Assets.md#import-fbx-with-the-autodesk-fbx-sdk)) |
 
 - Saving the file re-imports its asset, in the editor and in a running game.
 - A mistake in the file, such as an unknown key or a bad value, makes the asset fail to

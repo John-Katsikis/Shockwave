@@ -23,8 +23,7 @@ std::string megabytes(uint64_t bytes) {
 // "4 levels: 2304 > 1152 > 576 > 288 triangles"
 std::string levelText(const shockwave::MeshOptimiseReport& meshes) {
     std::string text = std::to_string(meshes.levels) + (meshes.levels == 1 ? " level: " : " levels: ");
-    for (uint32_t i = 0; i < meshes.levels; ++i)
-        text += (i ? " > " : "") + std::to_string(meshes.levelTriangles[i]);
+    for (uint32_t i = 0; i < meshes.levels; ++i) text += (i ? " > " : "") + std::to_string(meshes.levelTriangles[i]);
     return text + " triangles";
 }
 }   // namespace
@@ -32,6 +31,7 @@ std::string levelText(const shockwave::MeshOptimiseReport& meshes) {
 void Player::applyOptimisationSettings() {
     shockwave::ImportSettings defaults;
     shockwave::parseTextureCompression(m_project.textureCompression, defaults.compression);
+    shockwave::parseFbxImporter(m_project.fbxImporter, defaults.fbxImporter);
     defaults.lods = static_cast<uint32_t>(m_project.meshLods);
     m_assets->setImportDefaults(defaults);
     m_assets->setCacheFolder(m_project.statePath() / "Cache" / "Textures");
@@ -43,7 +43,8 @@ void Player::applyOptimisationSettings() {
 
 int Player::optimise() {
     if (const size_t waiting = m_assets->compressing())
-        std::printf("Compressing %zu textures into %s...\n", waiting, m_project.relative(m_assets->cacheFolder()).c_str());
+        std::printf(
+            "Compressing %zu textures into %s...\n", waiting, m_project.relative(m_assets->cacheFolder()).c_str());
     else
         std::printf("Every texture is already in %s\n", m_project.relative(m_assets->cacheFolder()).c_str());
     int failures = 0;
@@ -54,8 +55,8 @@ int Player::optimise() {
     uint64_t gpu = 0, uncompressed = 0, files = 0;
     uint32_t textures = 0, compressed = 0;
     std::ostringstream json;
-    json << "{\n  \"gpu\": " << std::quoted(engine().renderer().gpuName()) << ",\n  \"bc7\": "
-         << (bc7 ? "true" : "false") << ",\n  \"assets\": [";
+    json << "{\n  \"gpu\": " << std::quoted(engine().renderer().gpuName())
+         << ",\n  \"bc7\": " << (bc7 ? "true" : "false") << ",\n  \"assets\": [";
     bool first = true;
     for (const auto& f : m_assets->files()) {
         using Kind = shockwave::AssetFolder::Kind;
@@ -113,8 +114,9 @@ int Player::optimise() {
     if (!bc7 && std::string_view(engine().renderer().backendName()) == "null")
         std::printf("note: no GPU in use, so sizes are shown as RGBA8; add --renderer vulkan to check yours\n");
     else if (!bc7)
-        std::printf("note: this GPU (%s) can't sample BC7, so textures are cached compressed but drawn as RGBA8\n",
-                    engine().renderer().gpuName());
+        std::printf(
+            "note: this GPU (%s) can't sample BC7, so textures are cached compressed but drawn as RGBA8\n",
+            engine().renderer().gpuName());
     if (!m_tool.benchmarkJson.empty()) {
         std::ofstream out(m_tool.benchmarkJson);
         out << json.str();

@@ -1661,3 +1661,51 @@ Sections 24 and 25 of the plan, which no batch owned. See [Acceptance](Acceptanc
 - The round trips have run on the null renderer here; on a real GPU, run them as
   Acceptance.md shows.
 - `online_lifecycle` stays "no evidence yet": it needs a match over the real Steam service.
+
+## Upgrade batches E2, E1 and F1b
+
+From the engine upgrade plan's "Fixes and editor" tab. E2 and F1b are built; E1 stopped
+after its first step, as the plan says to when undo is already cheap.
+
+### What was built
+
+- **E2: the player's command line as a table.** `Tests/PlayerCliCheck.cmake` runs 193
+  recorded command lines (`Tests/fixtures/cli/cases.txt`: help, unknown flags, every flag
+  with a missing or wrong value, conflicting modes, and each tool that needs no GPU) and
+  compares exit code, stdout and stderr with `Tests/fixtures/cli/expected/`. Those were
+  recorded from the unchanged player first. Then every flag moved out of `main()`'s
+  `else if` chain into one row of a table (`PlayerFlags.h`, `PlayerFlags*.cpp`), with the
+  help text in `PlayerHelp.cpp`. `Main.cpp` went from 1,481 lines to 734 and has no
+  `else if (arg ==` left. The recordings didn't change.
+- **E1: undo memory, measured.** `World::bytes()` and `PoolBase::bytes()` count what a
+  world's arrays hold; the editor's Stats window shows undo steps and megabytes;
+  `build/bin/undo_memory` measures a big scene by hand.
+- **F1b: an optional Autodesk FBX SDK importer.** `-DSHOCKWAVE_FBXSDK=ON
+  -DSHOCKWAVE_FBXSDK_ROOT=<folder>` (`cmake/FbxSdk.cmake`) builds `FbxSdkImport.cpp`,
+  which fills a model the way the Assimp path does (shared parts in `ModelImport.h`). The
+  `fbx_importer` setting (`auto`, `sdk`, `assimp`) is in the `.swproject` and `.swimport`
+  and in the editor's Optimisation window; the Inspector and `player --material-info`
+  name the importer. A build with the SDK can't make packages. Off by default, and CI
+  builds without it. See [Models and textures](Assets.md#import-fbx-with-the-autodesk-fbx-sdk).
+
+### Tests
+
+| Test | Proves |
+| --- | --- |
+| `player_cli` (Linux) | 193 command lines give the recorded exit codes, stdout and stderr |
+| `model_import` | the new FBX test models (a textured cube whose texture has an artist's absolute path; a two-joint arm with a one-second take) import through whichever FBX importer the build has: counts, colour, the texture found by name, bounds, joint names, weights, the take; `fbx_importer assimp` uses Assimp; `fbx_importer sdk` fails in a build without the SDK |
+| `fbx_sdk_import` (only with the SDK) | the SDK and Assimp agree on the test FBX files: vertex counts, bounds within 1 mm, joint names, clip lengths |
+
+### Measured
+
+- E1 (Linux, Release, `undo_memory`): the 8,000-box physics stress scene grown to 10,000
+  entities is 5.0 MB; 50 undo steps hold 155 MB (3.1 MB a step) and an edit takes 1.6 ms
+  on average, 2.0 ms at worst. Arena grown to 10,000 entities: 104 MB, 1.2 ms. Both are
+  under the plan's line (200 MB, 5 ms), so copy-on-write pools (steps 2 to 7) weren't
+  built. At the 200-step cap the box scene would hold about 620 MB.
+
+### Still unverified
+
+- The FBX SDK importer has never been compiled against the real SDK: it can't be
+  downloaded here. It was checked against stand-in declarations of the API it uses, and
+  needs a build and `ctest -R fbx_sdk_import` on a machine with the SDK.
