@@ -1,0 +1,8 @@
+project <SOURCE>/Games/Arena/Arena.swproject
+build steamworks no, loopback yes, wire protocol 2, up to 64 players
+network settings Config/Network.swnetwork: disabled, transport steam, 12 players, tick 60, snapshots 20/s
+manifest Config/NetworkManifest.swnetmanifest: game_protocol arena.v1, 2 scene(s), 1 prefab(s)
+registry: 4 profiles, 3 commands, 3 events
+schema digest cc716dee85c0cef123cd6695dcbcf22cd8bb0cda38d9e0c179b255223c944742
+content digest 1d101dce8268fd08e8c4de9ee1d13f7b4a93d38e554a426b5bf831993dfead52 (13 files, 60179 bytes)
+player snapshots about 24320 bytes/s per peer

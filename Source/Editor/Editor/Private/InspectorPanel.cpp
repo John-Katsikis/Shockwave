@@ -284,6 +284,9 @@ void Editor::drawComponentNotes(const ComponentInfo& info, Entity e) {
         drawModelAnimationNotes(e);
         drawModelMaterials(e);
         ImGui::SeparatorText("Imported materials");
+        // Which importer read it (F1b): an .fbx reads differently with the Autodesk FBX SDK.
+        ImGui::TextDisabled(
+            "Read by %s", asset->data.importer == "fbxsdk" ? "the Autodesk FBX SDK" : asset->data.importer.c_str());
         // Textures the model's file names but the importer couldn't find (docs/Assets.md).
         for (const std::string& missing : asset->data.missingTextures) {
             ImGui::PushStyleColor(ImGuiCol_Text, gui::semanticColor(gui::currentTheme().warning));

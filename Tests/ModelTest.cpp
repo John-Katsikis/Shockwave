@@ -3,6 +3,7 @@
 #include <Engine/Components.h>
 #include <Engine/SceneFile.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -210,6 +211,75 @@ void missingTextures(const fs::path& root, const fs::path& temporary) {
     }
 }
 }   // namespace
+// The FBX test models (generate_fbx.py), through whichever importer this build has: the
+// Autodesk FBX SDK with -DSHOCKWAVE_FBXSDK=ON, Assimp otherwise (docs/Assets.md, F1b).
+void fbxModels(const fs::path& root) {
+    const std::string expected = fbxSdkAvailable() ? "fbxsdk" : "assimp";
+    ModelData crate;
+    std::string error;
+    check(loadModel(root / "fbx/crate.fbx", crate, error), error.c_str());
+    if (!error.empty()) return;
+    check(crate.importer == expected, "the FBX importer this build has reads .fbx");
+    size_t vertices = 0;
+    for (const auto& mesh : crate.meshes) vertices += mesh.data.vertices.size();
+    check(vertices == 24 && crate.triangles == 12, "FBX cube: 24 corners, 12 triangles");
+    check(
+        crate.materials.size() == 1 && crate.materials[0].name == "Wood" && near(crate.materials[0].baseColor.r, .8f) &&
+            near(crate.materials[0].baseColor.b, .4f),
+        "FBX material and colour");
+    check(
+        crate.materials.size() == 1 && crate.materials[0].baseColorTexture >= 0 && crate.textures.size() == 1 &&
+            crate.textures[0].image.width == 2 && crate.missingTextures.empty(),
+        "FBX texture with an artist's absolute path found by name");
+    // Pallet (y 10) > Crate (y 50, turned 30 degrees about Y): a 100 cm cube.
+    const float reach = 50.0f * (std::cos(glm::radians(30.0f)) + std::sin(glm::radians(30.0f)));
+    check(
+        std::abs(crate.bounds.max.x - reach) < .01f && std::abs(crate.bounds.min.y - 10) < .01f &&
+            std::abs(crate.bounds.max.y - 110) < .01f,
+        "FBX node transforms and bounds");
+    bool pallet = false;
+    for (const auto& node : crate.nodes) pallet |= node.name == "Pallet";
+    check(pallet, "FBX node names");
+
+    ModelData arm;
+    check(loadModel(root / "fbx/arm.fbx", arm, error), error.c_str());
+    if (!error.empty()) return;
+    const ModelMesh* skinned = nullptr;
+    for (const auto& mesh : arm.meshes)
+        if (mesh.skinned()) skinned = &mesh;
+    check(skinned && skinned->bones.size() == 2, "FBX skin with two joints");
+    if (skinned) {
+        std::vector<std::string> joints;
+        for (const auto& bone : skinned->bones) joints.push_back(arm.nodes[bone.node].name);
+        std::sort(joints.begin(), joints.end());
+        check(joints == std::vector<std::string>{"Elbow", "Shoulder"}, "FBX joint names");
+        bool split = false;   // the middle ring follows both joints equally
+        for (const auto& skin : skinned->skin) split |= near(skin.weights.x, .5f) && near(skin.weights.y, .5f);
+        check(split, "FBX skin weights");
+    }
+    check(
+        std::abs(arm.bounds.min.y) < .01f && std::abs(arm.bounds.max.y - 200) < .01f &&
+            std::abs(arm.bounds.max.x - 5) < .01f,
+        "FBX rest pose bounds");
+    check(arm.animations.size() == 1 && std::abs(arm.animations[0].duration - 1.0f) < .01f, "FBX take, one second");
+    if (arm.animations.size() == 1) {
+        check(arm.animations[0].name.find("Wave") != std::string::npos, "FBX take name");
+        bool elbow = false;
+        for (const auto& channel : arm.animations[0].channels) elbow |= arm.nodes[channel.node].name == "Elbow";
+        check(elbow, "FBX take moves the elbow");
+    }
+
+    // fbx_importer assimp: always Assimp. sdk: the SDK, and an error in a build without it.
+    ModelData forced;
+    check(
+        loadModel(root / "fbx/crate.fbx", forced, error, nullptr, FbxImporter::Assimp) && forced.importer == "assimp",
+        "fbx_importer assimp reads with Assimp");
+    const bool sdk = loadModel(root / "fbx/crate.fbx", forced, error, nullptr, FbxImporter::Sdk);
+    check(
+        fbxSdkAvailable() ? sdk && forced.importer == "fbxsdk"
+                          : !sdk && error.find("-DSHOCKWAVE_FBXSDK=ON") != std::string::npos,
+        "fbx_importer sdk needs the SDK");
+}
 int main(int argc, char** argv) {
     if (argc < 2) return 2;
     const fs::path root = fs::path(argv[1]) / "Tests/fixtures/models";
@@ -221,6 +291,7 @@ int main(int argc, char** argv) {
     imported(root, "parts.gltf");
     imported(root, "parts.glb");
     materialMaps(root);
+    fbxModels(root);
     ModelData quad;
     std::string error;
     check(loadModel(root / "quad.obj", quad, error), error.c_str());

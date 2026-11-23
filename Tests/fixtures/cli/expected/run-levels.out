@@ -1,0 +1,6 @@
+levels Config/Levels.swlevels: 4 levels, entry menu
+level menu menu Scenes/menu.swscene, next training, 0 spawns, exits: none
+level training gameplay Scenes/training.swscene, next factory, 1 spawn, exits: factory:start
+level factory gameplay Scenes/factory.swscene, next ending, 2 spawns, exits: ending
+level ending ending Scenes/ending.swscene, next menu, 0 spawns, exits: none
+ok

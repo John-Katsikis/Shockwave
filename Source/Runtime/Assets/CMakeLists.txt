@@ -10,3 +10,13 @@ target_include_directories(ShockwaveAssets SYSTEM PRIVATE ${assimp_SOURCE_DIR}/c
 # linker may hand Assimp our copy of an inline function with another iterator type and
 # calling convention. The nightly sanitizer job found this as a crash in glTF loading.
 target_compile_definitions(ShockwaveAssets PRIVATE RAPIDJSON_HAS_STDSTRING=1 RAPIDJSON_NOMEMBERITERATORCLASS)
+
+# The optional Autodesk FBX SDK importer (-DSHOCKWAVE_FBXSDK=ON, cmake/FbxSdk.cmake). Without
+# it FbxSdkImport.cpp isn't compiled and Assimp reads .fbx files.
+if(SHOCKWAVE_FBXSDK)
+    target_link_libraries(ShockwaveAssets PRIVATE FbxSdk::fbxsdk)
+    target_compile_definitions(ShockwaveAssets PRIVATE SHOCKWAVE_HAS_FBXSDK=1)
+else()
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Private/FbxSdkImport.cpp
+                                TARGET_DIRECTORY ShockwaveAssets PROPERTIES HEADER_FILE_ONLY TRUE)
+endif()

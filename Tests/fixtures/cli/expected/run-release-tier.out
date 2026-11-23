@@ -1,0 +1,26 @@
+Config/ReleaseTier.swtier: fallback low; 1 mandatory, 20 optional
+
+setting                use        minimum  fallback  low       medium    high      ultra    
+shadow_quality         mandatory  low      low       low       medium    high      ultra    
+anti_aliasing          optional   -        fxaa      fxaa      fxaa      fxaa      fxaa     
+bloom_quality          optional   -        low       low       medium    high      high     
+ambient_occlusion      optional   -        off       off       low       medium    high     
+baked_lighting         optional   -        true      true      true      true      true     
+reflection_probes      optional   -        true      true      true      true      true     
+decals_quality         optional   -        low       low       medium    high      high     
+soft_particles         optional   -        false     false     true      true      true     
+particle_distortion    optional   -        false     false     true      true      true     
+particle_lighting      optional   -        simple    simple    scene     scene     scene    
+particle_motion_vectors optional   -        false     false     true      true      true     
+color_grading          optional   -        true      true      true      true      true     
+auto_exposure          optional   -        true      true      true      true      true     
+fog_quality            optional   -        analytic  analytic  low       medium    high     
+clearcoat              optional   -        true      true      true      true      true     
+transmission_quality   optional   -        low       low       medium    medium    high     
+skin_quality           optional   -        off       off       low       high      high     
+hair_quality           optional   -        low       low       high      high      high     
+texture_quality        optional   -        low       low       medium    high      ultra    
+material_quality       optional   -        low       low       high      high      high     
+anisotropy             optional   -        4         4         8         16        16       
+
+mandatory shadow_quality: the sun's shadows are how the rooms read as lit spaces

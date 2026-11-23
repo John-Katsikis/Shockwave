@@ -1,0 +1,206 @@
+# player_cli (Tests/PlayerCliCheck.cmake): one command line per case, "id: arguments".
+# Arguments split on spaces; {SOURCE} is the repository, {TEMP} a scratch folder. The
+# expected exit code, stdout and stderr of each are in expected/<id>.{code,out,err}.
+# Record them again only for an intended change: cmake -DRECORD=ON ... -P PlayerCliCheck.cmake
+
+help: --help
+unknown: --bogus
+unknown-short: -x
+dash: -
+
+# A flag missing its value
+missing--app-shell: --app-shell
+missing--verify-install: --verify-install
+missing--install-record: --install-record
+missing--install-dir: --install-dir
+missing--update-from: --update-from
+missing--inject-device-lost: --inject-device-lost
+missing--symbolize: --symbolize
+missing--symbols: --symbols
+missing--log-file: --log-file
+missing--target: --target
+missing--cook-info: --cook-info
+missing--verify: --verify
+missing--transition-timeout: --transition-timeout
+missing--lap-tolerance: --lap-tolerance
+missing--pref: --pref
+missing--preferences-schema: --preferences-schema
+missing--flow-test: --flow-test
+missing--perf-run: --perf-run
+missing--laps: --laps
+missing--perf-record: --perf-record
+missing--rotations: --rotations
+missing--net-set: --net-set
+missing--save-info: --save-info
+missing--save-migrate: --save-migrate
+missing--graphics: --graphics
+missing--graphics-schema: --graphics-schema
+missing--material-schema: --material-schema
+missing--graphics-preset: --graphics-preset
+missing--graphics-set: --graphics-set
+missing--anti-aliasing: --anti-aliasing
+missing--render-scale: --render-scale
+missing--new-project: --new-project
+missing--name: --name
+missing--module: --module
+missing--project: --project
+missing--frames: --frames
+missing--audio-volume: --audio-volume
+missing--renderer: --renderer
+missing--gpu: --gpu
+missing--game-module: --game-module
+missing--output: --output
+missing--quality: --quality
+missing--lighting-schema: --lighting-schema
+missing--lighting-export: --lighting-export
+missing--lighting-import: --lighting-import
+missing--schema: --schema
+missing--node-schema: --node-schema
+missing--circuit: --circuit
+missing--circuit-ticks: --circuit-ticks
+missing--circuit-steps: --circuit-steps
+missing--send-message: --send-message
+missing--break-node: --break-node
+missing--input-schema: --input-schema
+missing--scene: --scene
+missing--screenshot: --screenshot
+missing--camera: --camera
+missing--image-stats: --image-stats
+missing--region: --region
+missing--postprocess-schema: --postprocess-schema
+missing--postprocess-info: --postprocess-info
+missing--effect-info: --effect-info
+missing--material-info: --material-info
+missing--texture-info: --texture-info
+missing--tolerance: --tolerance
+missing--view: --view
+missing--shadows: --shadows
+missing--size: --size
+missing--fps: --fps
+missing--vsync: --vsync
+missing--json: --json
+missing--ui-nav: --ui-nav
+missing--audio-mix: --audio-mix
+missing--seconds: --seconds
+missing--audio-hrtf: --audio-hrtf
+missing--network-schema: --network-schema
+missing--user-dir: --user-dir
+missing--profile: --profile
+missing--import-legacy-saves: --import-legacy-saves
+missing--release-schema: --release-schema
+missing--load-report: --load-report
+missing--asset-loading: --asset-loading
+missing--asset-budget-cpu: --asset-budget-cpu
+missing--asset-budget-gpu: --asset-budget-gpu
+missing--level-schema: --level-schema
+missing--level: --level
+missing--scenario: --scenario
+missing--preset: --preset
+missing--seed: --seed
+missing--join-lobby: --join-lobby
+missing--join-steam: --join-steam
+missing--net-capture: --net-capture
+missing--net-dump: --net-dump
+missing--net-encode: --net-encode
+missing--clients: --clients
+missing--load: --load
+missing--save: --save
+missing--lut-export-neutral: --lut-export-neutral
+missing--lut-export-neutral-2: --lut-export-neutral 17
+missing--image-diff: --image-diff
+missing--image-diff-2: --image-diff a.png
+
+# A wrong value
+wrong-inject-device-lost-0: --inject-device-lost 0
+wrong-inject-device-lost-x: --inject-device-lost x
+wrong-transition-timeout: --transition-timeout -1
+wrong-lap-tolerance: --lap-tolerance x
+wrong-pref-key: --pref nonsense=1
+wrong-pref-no-equals: --pref master_volume
+wrong-laps-0: --laps 0
+wrong-laps-101: --laps 101
+wrong-rotations: --rotations 999
+wrong-graphics-set: --graphics-set novalue
+wrong-render-scale: --render-scale 5
+wrong-frames: --frames 0
+wrong-audio-volume: --audio-volume 2
+wrong-quality: --quality ultra
+wrong-circuit-ticks: --circuit-ticks 99999
+wrong-circuit-steps: --circuit-steps -1
+wrong-region-big: --region 0,0,2,2
+wrong-region-outside: --region 0.5,0.5,0.6,0.6
+wrong-region-short: --region 0,0,1
+wrong-lut-size: --lut-export-neutral 99 {TEMP}/x.cube
+wrong-tolerance: --tolerance 300
+wrong-view: --view bogus
+wrong-shadows: --shadows bogus
+wrong-size: --size 5x5
+wrong-size-format: --size big
+wrong-fps: --fps 5
+wrong-vsync: --vsync maybe
+wrong-seconds: --seconds 0
+wrong-audio-hrtf: --audio-hrtf maybe
+wrong-asset-loading: --asset-loading some
+wrong-asset-budget: --asset-budget-cpu -1
+wrong-seed: --seed x
+wrong-join-lobby: --join-lobby 0
+wrong-join-steam: --join-steam abc
+wrong-connect-lobby: +connect_lobby abc
+wrong-save-slot: --save bad/slot
+wrong-ui-nav: --ui-nav up,jump
+wrong-app-shell: --app-shell bogus
+wrong-benchmark: --benchmark x
+wrong-devices: --devices x
+wrong-clients: --clients 64
+wrong-graphics-preset: --graphics-preset bogus --renderer null --check --project {SOURCE}/Games/Sample
+wrong-release-alone: --release
+wrong-target-alone: --target linux-x86_64
+wrong-verify-alone: --verify {TEMP}
+
+# Modes that conflict
+conflict-net-test-levels: --net-test --levels
+conflict-package-cook: --package --cook
+conflict-release-info-tier: --release-info --release-tier
+conflict-host-join: --host --join-lobby 1
+conflict-join-steam-alone: --join-steam 5
+conflict-dev-direct-join-alone: --dev-direct-join
+conflict-net-capture-alone: --net-capture {TEMP}/c.swnetcap
+conflict-flow-then-perf: --flow-test a.json --perf-run b.json
+conflict-perf-then-flow: --perf-run a.json --flow-test b.json
+conflict-net-encode-no-output: --net-encode {TEMP}/x.json
+conflict-diagnostics-symbolize: --diagnostics --symbolize {TEMP}/x.crash.txt
+conflict-check-cook-info: --cook-info {TEMP}/x.swcook --levels
+conflict-perf-record-alone: --perf-record machine
+
+# One run of each tool that needs no GPU
+run-renderers: --renderers
+run-schema: --schema -
+run-node-schema: --node-schema -
+run-graphics-schema: --graphics-schema -
+run-material-schema: --material-schema -
+run-release-schema: --release-schema -
+run-level-schema: --level-schema -
+run-network-schema: --network-schema -
+run-postprocess-schema: --postprocess-schema -
+run-lighting-schema: --lighting-schema -
+run-input-schema: --input-schema -
+run-preferences-schema: --preferences-schema -
+run-lut-neutral: --lut-export-neutral 17 -
+run-check: --check --project {SOURCE}/Games/ShippingDemo --renderer null
+run-levels: --levels --project {SOURCE}/Games/ShippingDemo --renderer null
+run-release-info: --release-info --project {SOURCE}/Games/ShippingDemo --renderer null
+run-release-tier: --release-tier --project {SOURCE}/Games/ShippingDemo --renderer null
+run-network-info: --network-info --project {SOURCE}/Games/Arena --renderer null
+run-preferences: --preferences --project {SOURCE}/Games/ShippingDemo --renderer null
+run-asset-dependencies: --asset-dependencies --project {SOURCE}/Games/ShippingDemo --renderer null
+run-circuit-dump: --circuit {SOURCE}/Games/ShippingDemo/Content/Circuits/TrainingExit.swcircuit --dump --project {SOURCE}/Games/ShippingDemo --renderer null
+run-animations: --animations models/Fox.glb --project {SOURCE}/Games/Sample --renderer null
+run-network-manifest: --network-manifest --output {TEMP}/m.swnetmanifest --project {SOURCE}/Games/Arena --renderer null
+run-saves: --saves --user-dir {TEMP}/user --project {SOURCE}/Games/ShippingDemo --renderer null
+run-user-paths: --user-paths --user-dir {TEMP}/user --project {SOURCE}/Games/ShippingDemo --renderer null
+run-cook-info-missing: --cook-info {TEMP}/none.swcook
+run-save-info-missing: --save-info {TEMP}/none.swsave
+run-image-stats-missing: --image-stats {TEMP}/none.png
+run-net-dump-missing: --net-dump {TEMP}/none.swnetcap
+run-effect-info-missing: --effect-info {TEMP}/none.efkefc
+run-texture-info: --texture-info {SOURCE}/Games/ShippingDemo/Content/UI/factory-badge.png --renderer null

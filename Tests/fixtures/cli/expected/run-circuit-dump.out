@@ -1,0 +1,7 @@
+circuit <SOURCE>/Games/ShippingDemo/Content/Circuits/TrainingExit.swcircuit (entity)
+12 registers, 4 nodes, 3 instructions
+reads nothing; writes nothing
+on TriggerEnter (enter) -> 0
+0000  fire   done (Campaign.Complete) in r7 out -> first:1 already:2
+0001  fire   finish (Level.FinishLevel) in r8 r9 out r1 r2 r3 -> accepted:end refused:end
+0002  fire   again (Level.FinishLevel) in r10 r11 out r4 r5 r6 -> accepted:end refused:end

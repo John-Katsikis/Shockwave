@@ -72,7 +72,12 @@ const char* alphaName(shockwave::ModelMaterial::Alpha alpha) {
 shockwave::ModelData loadModelFile(const fs::path& path) {
     shockwave::ModelData model;
     std::string error;
-    if (!shockwave::loadModel(path, model, error)) throw std::runtime_error(path.string() + ": " + error);
+    // The project's fbx_importer isn't read here; a .swimport beside the model is.
+    shockwave::ImportSettings settings;
+    if (!shockwave::loadImportSettings(shockwave::importSettingsPath(path), settings, error))
+        throw std::runtime_error(error);
+    if (!shockwave::loadModel(path, model, error, nullptr, settings.fbxImporter))
+        throw std::runtime_error(path.string() + ": " + error);
     return model;
 }
 // Size and bytes at each texture_quality, for a texture of this format and size.
@@ -242,7 +247,8 @@ int materialInfo(const fs::path& asset, const fs::path& json) {
     using namespace shockwave;
     if (isMaterialFile(asset)) return swmaterialInfo(asset, json);
     const ModelData model = loadModelFile(asset);
-    std::string out = "{\"asset\": " + jsonQuote(asset.generic_string()) + ",\n \"materials\": [";
+    std::string out = "{\"asset\": " + jsonQuote(asset.generic_string()) +
+                      ", \"importer\": " + jsonQuote(model.importer) + ",\n \"materials\": [";
     for (size_t m = 0; m < model.materials.size(); ++m) {
         const ModelMaterial& material = model.materials[m];
         out += std::string(m ? "," : "") + "\n  {\"name\": " + jsonQuote(material.name) +

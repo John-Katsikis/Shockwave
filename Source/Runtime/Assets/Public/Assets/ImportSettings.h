@@ -9,6 +9,8 @@
 //     compression small
 //     category ui
 //
+// and for an .fbx model, fbx_importer auto|sdk|assimp (which importer reads it).
+//
 // The editor writes these files from the Optimisation window; people and tools can write
 // them by hand. Saving one re-imports its asset.
 
@@ -33,10 +35,20 @@ enum class TextureCategory : uint8_t { Material, Ui };
 const char* textureCategoryName(TextureCategory category);   // "material", "ui"
 bool parseTextureCategory(std::string_view name, TextureCategory& category);
 
+// Which importer reads a .fbx file (F1b, docs/Assets.md). Auto uses the Autodesk FBX SDK
+// when this build has it (-DSHOCKWAVE_FBXSDK=ON) and Assimp otherwise, or when the SDK
+// can't read the file. Sdk insists on the SDK: the import fails in a build without it.
+enum class FbxImporter : uint8_t { Auto, Sdk, Assimp };
+const char* fbxImporterName(FbxImporter importer);   // "auto", "sdk", "assimp"
+bool parseFbxImporter(std::string_view name, FbxImporter& importer);
+// Whether this build has the Autodesk FBX SDK importer.
+bool fbxSdkAvailable();
+
 struct ImportSettings {
     TextureCompression compression = TextureCompression::High;   // textures, and a model's textures
     uint32_t lods = 4;   // models: simpler levels of detail to make, 0..7
     TextureCategory category = TextureCategory::Material;   // textures, and a model's textures
+    FbxImporter fbxImporter = FbxImporter::Auto;   // .fbx models
     bool operator==(const ImportSettings&) const = default;
 };
 

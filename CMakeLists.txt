@@ -235,6 +235,7 @@ include(cmake/RmlUi.cmake)
 include(cmake/Recast.cmake)
 include(cmake/SteamAudio.cmake)
 include(cmake/Steamworks.cmake)
+include(cmake/FbxSdk.cmake)
 include(cmake/Ozz.cmake)
 include(cmake/Xatlas.cmake)
 

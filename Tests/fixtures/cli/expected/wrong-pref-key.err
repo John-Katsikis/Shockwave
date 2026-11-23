@@ -1,0 +1,1 @@
+Player: --pref takes key=value with a preference key, like master_volume=0.5 (player --preferences lists them)

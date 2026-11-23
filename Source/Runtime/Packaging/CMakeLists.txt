@@ -6,6 +6,10 @@ target_compile_definitions(ShockwavePackaging PRIVATE
     SHOCKWAVE_BUILD_DIR="${CMAKE_BINARY_DIR}"
     SHOCKWAVE_BUILD_CONFIG="$<CONFIG>"
     SHOCKWAVE_VERSION="${PROJECT_VERSION}")
+# A build with the Autodesk FBX SDK in it can't make packages: games never ship the SDK.
+if(SHOCKWAVE_FBXSDK)
+    target_compile_definitions(ShockwavePackaging PRIVATE SHOCKWAVE_HAS_FBXSDK=1)
+endif()
 
 # Packages ship build/bin/licenses: the engine's license and those of the libraries built
 # into it. (RmlUi, FreeType and HarfBuzz add theirs in cmake/RmlUi.cmake; a new dependency

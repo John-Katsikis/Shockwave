@@ -694,7 +694,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 job.material = std::make_shared<MaterialFile>();
                 loadMaterialFile(f.path, *job.material, job.error);
             } else if (f.kind == Kind::Model)
-                loadModel(f.path, job.model, job.error, &job.dependencies);
+                loadModel(f.path, job.model, job.error, &job.dependencies, job.settings.fbxImporter);
             else
                 importTexture(f, job);
             if (f.kind == Kind::Model && job.error.empty()) optimiseImportedModel(f, job);

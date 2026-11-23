@@ -1,6 +1,11 @@
 #include <Assets/Model.h>
 #include <Assets/Image.h>
 
+#include "ModelImport.h"
+#if SHOCKWAVE_HAS_FBXSDK
+#include "FbxSdkImport.h"
+#endif
+
 #include <assimp/DefaultIOSystem.h>
 #include <assimp/GltfMaterial.h>
 #include <assimp/Importer.hpp>
@@ -39,10 +44,9 @@ std::string toUtf8(const fs::path& p) {
     const std::u8string s = p.u8string();
     return std::string(s.begin(), s.end());
 }
-void dependency(std::vector<fs::path>& list, const fs::path& path) {
-    const auto p = fs::absolute(path).lexically_normal();
-    if (std::find(list.begin(), list.end(), p) == list.end()) list.push_back(p);
-}
+using modelimport::dependency;
+using modelimport::emptyBounds;
+using modelimport::expand;
 // A texture a model names but that isn't where the file says (an artist's own folder,
 // say): look for its file name next to the model, one folder down, in the model's parent
 // folder and one folder down from that, in that order and regardless of letter case.
@@ -118,13 +122,6 @@ glm::mat4 matrix(const aiMatrix4x4& m) {
     return glm::mat4(m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4);
 }
 glm::vec3 vector(const aiVector3D& v) { return {v.x, v.y, v.z}; }
-void expand(Bounds& b, const glm::vec3& p) {
-    b.min = glm::min(b.min, p);
-    b.max = glm::max(b.max, p);
-}
-Bounds emptyBounds() {
-    return {glm::vec3(std::numeric_limits<float>::max()), glm::vec3(std::numeric_limits<float>::lowest())};
-}
 
 // Temporary files are unique and removed after import, including on failure.
 struct Temporary {
@@ -133,17 +130,21 @@ struct Temporary {
         std::error_code ec;
         if (!root.empty()) fs::remove_all(root, ec);
     }
+    // Makes root a new, empty folder: "shockwave-<kind>-..." in the system's temporary folder.
+    void create(const char* kind) {
+        static std::atomic<uint64_t> serial{0};
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        for (int retry = 0; retry < 8; ++retry) {
+            root = fs::temp_directory_path() /
+                   ("shockwave-" + std::string(kind) + "-" + std::to_string(stamp) + "-" + std::to_string(serial++));
+            if (fs::create_directory(root)) return;
+            root.clear();
+        }
+        throw std::runtime_error("Could not create a temporary folder for the import");
+    }
 };
 bool convertBlend(const fs::path& source, Temporary& temp, fs::path& result, std::string& diagnostic) {
-    static std::atomic<uint64_t> serial{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    for (int retry = 0; retry < 8; ++retry) {
-        temp.root =
-            fs::temp_directory_path() / ("shockwave-blend-" + std::to_string(stamp) + "-" + std::to_string(serial++));
-        if (fs::create_directory(temp.root)) break;
-        temp.root.clear();
-    }
-    if (temp.root.empty()) throw std::runtime_error("Could not create Blender conversion directory");
+    temp.create("blend");
     const auto script = temp.root / "export.py";
     result = temp.root / "model.glb";
     std::ofstream out(script);
@@ -195,40 +196,13 @@ bpy.ops.export_scene.gltf(filepath=output, export_format='GLB', use_selection=Fa
 // sign in w makes cross(normal, tangent) * w point up the texture (towards smaller v,
 // since v runs down the image), which also covers mirrored texture coordinates.
 void readTangents(const aiMesh& src, ModelMesh& mesh) {
-    auto& vertices = mesh.data.vertices;
-    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f)), down(vertices.size(), glm::vec3(0.0f));
-    const auto& indices = mesh.data.indices;
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-        const Vertex &a = vertices[indices[i]], &b = vertices[indices[i + 1]], &c = vertices[indices[i + 2]];
-        const glm::vec3 e1 = b.position - a.position, e2 = c.position - a.position;
-        const glm::vec2 d1 = b.uv - a.uv, d2 = c.uv - a.uv;
-        const float det = d1.x * d2.y - d2.x * d1.y;
-        if (std::abs(det) < 1e-12f) continue;
-        // Weighted by the triangle's area in the texture's space: dP/du and dP/dv times det.
-        const float sign = det > 0 ? 1.0f : -1.0f;
-        const glm::vec3 t = (e1 * d2.y - e2 * d1.y) * sign, v = (e2 * d1.x - e1 * d2.x) * sign;
-        for (int k = 0; k < 3; ++k) {
-            tangents[indices[i + k]] += t;
-            down[indices[i + k]] += v;
-        }
+    if (!src.HasTangentsAndBitangents()) return modelimport::computeTangents(mesh, nullptr, nullptr);
+    std::vector<glm::vec3> tangents(src.mNumVertices), bitangents(src.mNumVertices);
+    for (unsigned i = 0; i < src.mNumVertices; ++i) {
+        tangents[i] = vector(src.mTangents[i]);
+        bitangents[i] = vector(src.mBitangents[i]);
     }
-    const bool fromFile = src.HasTangentsAndBitangents();
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        Vertex& vertex = vertices[i];
-        const float length = glm::length(vertex.normal);
-        const glm::vec3 n = length > 1e-12f ? vertex.normal / length : glm::vec3(0, 1, 0);
-        glm::vec3 t = fromFile ? vector(src.mTangents[i]) : tangents[i];
-        t -= n * glm::dot(n, t);   // at right angles to the normal
-        if (!(glm::dot(t, t) > 1e-20f)) {
-            // No usable texture coordinates here: any direction across the surface will do.
-            t = glm::cross(std::abs(n.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0), n);
-            if (!(glm::dot(t, t) > 1e-20f)) t = glm::vec3(1, 0, 0);
-        }
-        t = glm::normalize(t);
-        // Up the texture: the file's bitangent where it has one, else against dP/dv.
-        const glm::vec3 up = fromFile ? vector(src.mBitangents[i]) : -down[i];
-        vertex.tangent = glm::vec4(t, glm::dot(glm::cross(n, t), up) < 0.0f ? -1.0f : 1.0f);
-    }
+    modelimport::computeTangents(mesh, tangents.data(), bitangents.data());
 }
 
 // The glTF JSON of a .gltf or .glb file, or empty when it can't be read.
@@ -373,22 +347,6 @@ void readSkin(const aiMesh& src, ModelMesh& mesh, std::vector<std::string>& bone
     mesh.skin = std::move(skin);
 }
 
-// A skinned mesh's vertices where the model's rest pose puts them, in the model's space.
-std::vector<glm::vec3> restPositions(const ModelData& model, const ModelMesh& mesh) {
-    std::vector<glm::mat4> joints(mesh.bones.size());
-    for (size_t b = 0; b < mesh.bones.size(); ++b)
-        joints[b] = model.nodes[mesh.bones[b].node].world * mesh.bones[b].offset;
-    std::vector<glm::vec3> positions(mesh.data.vertices.size());
-    for (size_t v = 0; v < positions.size(); ++v) {
-        const VertexSkin& skin = mesh.skin[v];
-        glm::mat4 m(0.0f);
-        for (int k = 0; k < 4; ++k)
-            if (skin.weights[k] > 0) m += skin.weights[k] * joints[skin.joints[k]];
-        positions[v] = glm::vec3(m * glm::vec4(mesh.data.vertices[v].position, 1.0f));
-    }
-    return positions;
-}
-
 void resolveSkinsAndAnimations(
     const aiScene& scene, ModelData& model, const std::vector<std::vector<std::string>>& boneNames) {
     std::unordered_map<std::string, uint32_t> nodes;
@@ -403,28 +361,7 @@ void resolveSkinsAndAnimations(
             mesh.bones[b].node = found->second;
         }
     }
-    // Skinned meshes sit where their joints put them, not where their node is: bounds
-    // from the rest pose.
-    bool skinned = false;
-    for (const auto& mesh : model.meshes) skinned = skinned || (mesh.skinned() && !mesh.data.indices.empty());
-    if (skinned) {
-        model.bounds = emptyBounds();
-        for (const auto& node : model.nodes)
-            for (uint32_t index : node.meshes) {
-                const ModelMesh& mesh = model.meshes[index];
-                if (mesh.skinned()) {
-                    for (const glm::vec3& p : restPositions(model, mesh)) expand(model.bounds, p);
-                    continue;
-                }
-                for (int corner = 0; corner < 8; ++corner)
-                    expand(
-                        model.bounds, glm::vec3(
-                                          node.world * glm::vec4(
-                                                           (corner & 1) ? mesh.bounds.max.x : mesh.bounds.min.x,
-                                                           (corner & 2) ? mesh.bounds.max.y : mesh.bounds.min.y,
-                                                           (corner & 4) ? mesh.bounds.max.z : mesh.bounds.min.z, 1)));
-            }
-    }
+    modelimport::skinnedBounds(model);
     for (unsigned a = 0; a < scene.mNumAnimations; ++a) {
         const aiAnimation& src = *scene.mAnimations[a];
         ModelAnimation clip;
@@ -464,6 +401,133 @@ void resolveSkinsAndAnimations(
     }
 }
 }   // namespace
+
+namespace modelimport {
+void dependency(std::vector<fs::path>& list, const fs::path& path) {
+    const auto p = fs::absolute(path).lexically_normal();
+    if (std::find(list.begin(), list.end(), p) == list.end()) list.push_back(p);
+}
+void expand(Bounds& b, const glm::vec3& p) {
+    b.min = glm::min(b.min, p);
+    b.max = glm::max(b.max, p);
+}
+Bounds emptyBounds() {
+    return {glm::vec3(std::numeric_limits<float>::max()), glm::vec3(std::numeric_limits<float>::lowest())};
+}
+std::optional<fs::path> locateTexture(
+    ModelData& model, const std::string& key, const fs::path& modelFolder, const fs::path& fileFolder,
+    bool convertedBlend) {
+    std::string portable = key;
+    std::replace(portable.begin(), portable.end(), '\\', '/');
+    // An absolute path is the artist's own folder: only its file name helps.
+    const bool absolute = absoluteTexturePath(key);
+    fs::path file = absolute ? modelFolder / fromUtf8(textureFileName(key).c_str())
+                             : (fileFolder / fromUtf8(portable.c_str())).lexically_normal();
+    std::error_code ec;
+    if (absolute || !fs::is_regular_file(file, ec)) {
+        if (auto found = findTextureNearby(modelFolder, key)) {
+            std::error_code relError;
+            fs::path shown = fs::relative(*found, modelFolder, relError);
+            if (relError || shown.empty()) shown = *found;
+            model.warnings.push_back(
+                "texture \"" + key + "\" isn't where the file says; using " + toUtf8(shown.generic_u8string()));
+            file = found->lexically_normal();
+        } else {
+            // Putting the file there later re-imports the model. A .blend's
+            // conversion sits in a temporary folder: expect it beside the .blend.
+            if (convertedBlend && !absolute) file = (modelFolder / fromUtf8(portable.c_str())).lexically_normal();
+            dependency(model.dependencies, file);
+            // Read as colour and as data, it's still one missing file.
+            if (std::find(model.missingTextures.begin(), model.missingTextures.end(), key) ==
+                model.missingTextures.end()) {
+                model.missingTextures.push_back(key);
+                model.warnings.push_back("texture \"" + key + "\" is missing; the material is imported without it");
+            }
+            return std::nullopt;
+        }
+    }
+    dependency(model.dependencies, file);
+    return file;
+}
+
+void computeTangents(ModelMesh& mesh, const glm::vec3* fileTangents, const glm::vec3* fileBitangents) {
+    auto& vertices = mesh.data.vertices;
+    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3(0.0f)), down(vertices.size(), glm::vec3(0.0f));
+    const auto& indices = mesh.data.indices;
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const Vertex &a = vertices[indices[i]], &b = vertices[indices[i + 1]], &c = vertices[indices[i + 2]];
+        const glm::vec3 e1 = b.position - a.position, e2 = c.position - a.position;
+        const glm::vec2 d1 = b.uv - a.uv, d2 = c.uv - a.uv;
+        const float det = d1.x * d2.y - d2.x * d1.y;
+        if (std::abs(det) < 1e-12f) continue;
+        // Weighted by the triangle's area in the texture's space: dP/du and dP/dv times det.
+        const float sign = det > 0 ? 1.0f : -1.0f;
+        const glm::vec3 t = (e1 * d2.y - e2 * d1.y) * sign, v = (e2 * d1.x - e1 * d2.x) * sign;
+        for (int k = 0; k < 3; ++k) {
+            tangents[indices[i + k]] += t;
+            down[indices[i + k]] += v;
+        }
+    }
+    const bool fromFile = fileTangents && fileBitangents;
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        Vertex& vertex = vertices[i];
+        const float length = glm::length(vertex.normal);
+        const glm::vec3 n = length > 1e-12f ? vertex.normal / length : glm::vec3(0, 1, 0);
+        glm::vec3 t = fromFile ? fileTangents[i] : tangents[i];
+        t -= n * glm::dot(n, t);   // at right angles to the normal
+        if (!(glm::dot(t, t) > 1e-20f)) {
+            // No usable texture coordinates here: any direction across the surface will do.
+            t = glm::cross(std::abs(n.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0), n);
+            if (!(glm::dot(t, t) > 1e-20f)) t = glm::vec3(1, 0, 0);
+        }
+        t = glm::normalize(t);
+        // Up the texture: the file's bitangent where it has one, else against dP/dv.
+        const glm::vec3 up = fromFile ? fileBitangents[i] : -down[i];
+        vertex.tangent = glm::vec4(t, glm::dot(glm::cross(n, t), up) < 0.0f ? -1.0f : 1.0f);
+    }
+}
+
+// A skinned mesh's vertices where the model's rest pose puts them, in the model's space.
+std::vector<glm::vec3> restPositions(const ModelData& model, const ModelMesh& mesh) {
+    std::vector<glm::mat4> joints(mesh.bones.size());
+    for (size_t b = 0; b < mesh.bones.size(); ++b)
+        joints[b] = model.nodes[mesh.bones[b].node].world * mesh.bones[b].offset;
+    std::vector<glm::vec3> positions(mesh.data.vertices.size());
+    for (size_t v = 0; v < positions.size(); ++v) {
+        const VertexSkin& skin = mesh.skin[v];
+        glm::mat4 m(0.0f);
+        for (int k = 0; k < 4; ++k)
+            if (skin.weights[k] > 0) m += skin.weights[k] * joints[skin.joints[k]];
+        positions[v] = glm::vec3(m * glm::vec4(mesh.data.vertices[v].position, 1.0f));
+    }
+    return positions;
+}
+
+void skinnedBounds(ModelData& model) {
+    // Skinned meshes sit where their joints put them, not where their node is: bounds
+    // from the rest pose.
+    bool skinned = false;
+    for (const auto& mesh : model.meshes) skinned = skinned || (mesh.skinned() && !mesh.data.indices.empty());
+    if (skinned) {
+        model.bounds = emptyBounds();
+        for (const auto& node : model.nodes)
+            for (uint32_t index : node.meshes) {
+                const ModelMesh& mesh = model.meshes[index];
+                if (mesh.skinned()) {
+                    for (const glm::vec3& p : restPositions(model, mesh)) expand(model.bounds, p);
+                    continue;
+                }
+                for (int corner = 0; corner < 8; ++corner)
+                    expand(
+                        model.bounds, glm::vec3(
+                                          node.world * glm::vec4(
+                                                           (corner & 1) ? mesh.bounds.max.x : mesh.bounds.min.x,
+                                                           (corner & 2) ? mesh.bounds.max.y : mesh.bounds.min.y,
+                                                           (corner & 4) ? mesh.bounds.max.z : mesh.bounds.min.z, 1)));
+            }
+    }
+}
+}   // namespace modelimport
 
 const ModelAnimation* findAnimation(const ModelData& model, std::string_view name) {
     for (const auto& clip : model.animations)
@@ -513,7 +577,7 @@ bool isModelFile(const std::filesystem::path& path) {
 
 bool loadModel(
     const std::filesystem::path& path, ModelData& destination, std::string& error,
-    std::vector<std::filesystem::path>* attemptedDependencies) {
+    std::vector<std::filesystem::path>* attemptedDependencies, FbxImporter fbxImporter) {
     error.clear();
     ModelData model;
     dependency(model.dependencies, path);
@@ -528,6 +592,31 @@ bool loadModel(
         std::string blendDiagnostic;
         bool convertedBlend = false;
         const bool blend = extension(path) == ".blend";
+        // .fbx: the Autodesk FBX SDK first when this build has it (F1b), unless the
+        // .swimport or project says fbx_importer assimp. Assimp reads it otherwise.
+        const bool fbx = extension(path) == ".fbx";
+        if (fbx && fbxImporter == FbxImporter::Sdk && !fbxSdkAvailable())
+            return fail("fbx_importer sdk, but this build has no Autodesk FBX SDK importer: build with "
+                        "-DSHOCKWAVE_FBXSDK=ON, or set fbx_importer auto in its .swimport (docs/Assets.md)");
+#if SHOCKWAVE_HAS_FBXSDK
+        if (fbx && fbxImporter != FbxImporter::Assimp) {
+            // Embedded media are unpacked into a temporary folder, never the content folder.
+            temp.create("fbx");
+            ModelData sdk = model;
+            std::string reason;
+            if (importFbxWithSdk(path, sdk, reason, temp.root)) {
+                std::erase_if(
+                    sdk.dependencies, [&](const fs::path& p) { return p.string().starts_with(temp.root.string()); });
+                if (attemptedDependencies) *attemptedDependencies = sdk.dependencies;
+                destination = std::move(sdk);
+                return true;
+            }
+            for (const fs::path& file : sdk.dependencies)
+                if (!file.string().starts_with(temp.root.string())) dependency(model.dependencies, file);
+            if (fbxImporter == FbxImporter::Sdk) return fail("the Autodesk FBX SDK couldn't import it: " + reason);
+            model.warnings.push_back("the Autodesk FBX SDK couldn't import it (" + reason + "); imported with Assimp");
+        }
+#endif
         if (blend) {
             fs::path converted;
             if (convertBlend(path, temp, converted, blendDiagnostic)) {
@@ -582,40 +671,13 @@ bool loadModel(
                     }
                 }
             } else {
-                std::string portable = key;
-                std::replace(portable.begin(), portable.end(), '\\', '/');
-                // An absolute path is the artist's own folder: only its file name helps.
-                const bool absolute = absoluteTexturePath(key);
-                fs::path file = absolute
-                    ? modelFolder / fromUtf8(textureFileName(key).c_str())
-                    : (importedPath.parent_path() / fromUtf8(portable.c_str())).lexically_normal();
-                std::error_code ec;
-                if (absolute || !fs::is_regular_file(file, ec)) {
-                    if (auto found = findTextureNearby(modelFolder, key)) {
-                        std::error_code relError;
-                        fs::path shown = fs::relative(*found, modelFolder, relError);
-                        if (relError || shown.empty()) shown = *found;
-                        model.warnings.push_back(
-                            "texture \"" + key + "\" isn't where the file says; using " + toUtf8(shown.generic_u8string()));
-                        file = found->lexically_normal();
-                    } else {
-                        // Putting the file there later re-imports the model. A .blend's
-                        // conversion sits in a temporary folder: expect it beside the .blend.
-                        if (convertedBlend && !absolute)
-                            file = (modelFolder / fromUtf8(portable.c_str())).lexically_normal();
-                        dependency(model.dependencies, file);
-                        // Read as colour and as data, it's still one missing file.
-                        if (std::find(model.missingTextures.begin(), model.missingTextures.end(), key) ==
-                            model.missingTextures.end()) {
-                            model.missingTextures.push_back(key);
-                            model.warnings.push_back(
-                                "texture \"" + key + "\" is missing; the material is imported without it");
-                        }
-                        textureCache.emplace(cacheKey, -1);
-                        return -1;
-                    }
+                const auto found =
+                    modelimport::locateTexture(model, key, modelFolder, importedPath.parent_path(), convertedBlend);
+                if (!found) {
+                    textureCache.emplace(cacheKey, -1);
+                    return -1;
                 }
-                dependency(model.dependencies, file);
+                const fs::path& file = *found;
                 const std::u8string generic = file.generic_u8string();
                 tex.source.assign(generic.begin(), generic.end());
                 // A file that's there but won't decode is still an error.
@@ -867,7 +929,8 @@ bool intersectModel(
             const bool skinned = model.meshes[index].skinned();
             if (!skinned && !rayBounds(model.meshes[index].bounds, o, d, best)) continue;
             const auto& mesh = model.meshes[index].data;
-            const auto rest = skinned ? restPositions(model, model.meshes[index]) : std::vector<glm::vec3>{};
+            const auto rest =
+                skinned ? modelimport::restPositions(model, model.meshes[index]) : std::vector<glm::vec3>{};
             auto position = [&](uint32_t i) { return skinned ? rest[i] : mesh.vertices[i].position; };
             const auto& ro = skinned ? origin : o;
             const auto& rd = skinned ? direction : d;

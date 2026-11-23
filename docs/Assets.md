@@ -245,6 +245,61 @@ A file that's there but isn't a readable image still fails the import, as before
 missing texture doesn't stop you working in the editor, but `player --check` and the cook
 refuse it (`AssetMissing`), so a release can't ship a model without its textures.
 
+## Import FBX with the Autodesk FBX SDK
+
+Assimp reads `.fbx` files out of the box. Exports from Unreal, 3ds Max and Maya, files
+with several takes, and files with unusual units or axes sometimes read better with
+Autodesk's own FBX SDK, so a developer who has it can build the engine with it.
+
+The SDK is proprietary, so these rules always hold:
+
+- Every developer downloads it from Autodesk
+  (<https://aps.autodesk.com/developer/overview/fbx-sdk>) and accepts its licence
+  themselves.
+- It is never committed, never fetched by the build, and never shipped in a game. Imported
+  models become engine data, so games don't need it. The packager refuses to package
+  from a build that has it: keep a second build folder without it for packaging.
+- CI builds without it.
+
+To build with it, install the SDK, then configure with its folder (the one holding
+`include/fbxsdk.h` and `lib/`):
+
+```sh
+cmake -B build -DSHOCKWAVE_FBXSDK=ON -DSHOCKWAVE_FBXSDK_ROOT="/path/to/FBX SDK/2020.3.7"
+```
+
+This copies the SDK's shared library next to the editor and player. If the folder has
+no `fbxsdk.h` or no library for your platform, CMake stops and names the folder it
+searched.
+
+Which importer reads an `.fbx` is the `fbx_importer` setting, in the project
+(`.swproject`) or in one model's `.swimport` file. The editor shows it as **FBX
+importer** in **Window > Optimisation** when an `.fbx` is selected.
+
+| Value | What happens |
+|---|---|
+| `auto` (the default) | The FBX SDK when the build has it, Assimp otherwise. If the SDK can't read the file, Assimp tries, and the import warns with the SDK's reason. |
+| `sdk` | Only the FBX SDK. In a build without it the import fails, so `player --check` and the cook report it. |
+| `assimp` | Always Assimp, whatever the build has. |
+
+The Inspector's imported material section and `player --material-info` say which
+importer read a model (`"importer": "fbxsdk"` or `"assimp"`), so a teammate without the
+SDK can see why their result differs.
+
+Both importers produce the same kind of model: meshes split per material, the node tree,
+skins with at most four joints a vertex, every take as a clip, and centimetres with Y up,
+as Assimp reads FBX. Missing textures are searched for the same way (see above). Where
+the importers read the file itself differently (a take's keys, pivots, an exporter Assimp
+misreads), the results differ, and that is the point of the SDK. The SDK samples each take
+at the file's frame rate, where Assimp keeps the file's keys.
+
+Embedded textures are unpacked into a temporary folder, never into your content folder.
+
+`Tests/fixtures/models/fbx/` holds two FBX test models (`generate_fbx.py` writes them).
+With the SDK built in, `ctest -R fbx_sdk_import` checks that both importers agree on them:
+the same vertex counts, bounds within 1 mm, and the same joint names and clip lengths. To
+compare your own files too, run `build/bin/fbx_sdk_import_test . path/to/model.fbx`.
+
 ## Use models from game code
 
 Scene files save models by name, not by GPU ID. `ModelRenderer` is registered with the
@@ -274,6 +329,7 @@ The CPU test covers:
 
 - glTF and GLB, with embedded and external PNGs
 - OBJ triangulation and MTL files
+- FBX: a textured cube and a skinned, animated arm, through whichever FBX importer the build has
 - nested transforms and materials
 - triangle picking
 - repairing a missing dependency
@@ -287,6 +343,7 @@ The test models were made for this project. To regenerate them:
 
 ```sh
 python3 Tests/fixtures/models/generate.py
+python3 Tests/fixtures/models/generate_fbx.py
 ```
 
 ## Audio clips

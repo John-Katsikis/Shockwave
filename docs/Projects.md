@@ -107,6 +107,7 @@ save_schema 1            # optional: the game's save data version; raise it when
 remember_destroyed true  # optional: destroyed PersistentIdentity entities stay gone on return
 mesh_lods 4        # optional: simpler levels of detail per mesh, 0 to 7
 lod_error_pixels 1 # optional: how far a level may stray on screen, in pixels
+fbx_importer auto  # optional: auto, sdk or assimp: which importer reads .fbx models
 renderer "vulkan"    # optional: the renderer plugin the player starts with
 ```
 
@@ -137,6 +138,7 @@ renderer "vulkan"    # optional: the renderer plugin the player starts with
 | `asset_loading` | no | `all` | `all` imports every asset when the player starts. `levels` imports each level's assets when it needs them and unloads them when no level holds them. See [Asset residency](AssetResidency.md). |
 | `mesh_lods` | no | `4` | Simpler levels of detail per model mesh, `0` to `7`. |
 | `lod_error_pixels` | no | `1` | How far, in pixels, a level of detail may stray on screen, `0` to `100`. |
+| `fbx_importer` | no | `auto` | Which importer reads `.fbx` models: `auto` uses the Autodesk FBX SDK when the engine was built with it and Assimp otherwise, `sdk` insists on the SDK, `assimp` always uses Assimp. A model's `.swimport` can override it. See [Models and textures](Assets.md#import-fbx-with-the-autodesk-fbx-sdk). |
 | `renderer` | no | | The renderer plugin the player starts with. |
 
 [Frame pacing](FramePacing.md) explains the frame settings, and [Shadows](Shadows.md)

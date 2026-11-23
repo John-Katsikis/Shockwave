@@ -1,0 +1,4 @@
+models/Fox.glb: 27 nodes, 1 skinned mesh (up to 24 joints each), 3 clips
+  clip "Survey" 3.417 s, 20 animated nodes
+  clip "Walk" 0.708 s, 20 animated nodes
+  clip "Run" 1.158 s, 20 animated nodes

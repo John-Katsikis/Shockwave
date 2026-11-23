@@ -61,3 +61,6 @@ network_session
 network_replication
 network_prediction
 network_combat
+
+# The player command line, recorded (E2).
+player_cli linux

@@ -246,6 +246,18 @@ if(TARGET game_shippingdemo AND TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/ErrorCatalogCheck.cmake)
     set_tests_properties(error_catalog PROPERTIES TIMEOUT 60 LABELS unit)
 endif()
+# The player's command line as recorded (E2, Tests/PlayerCliCheck.cmake): every flag's
+# missing and wrong values, the modes that conflict and a run of each tool that needs no
+# GPU give the exit code and messages in Tests/fixtures/cli/expected. Linux only: the
+# recordings hold Linux paths and renderer plugin names.
+if(UNIX AND NOT APPLE AND TARGET game_shippingdemo AND TARGET game_sample AND TARGET game_arena)
+    add_test(NAME player_cli COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DSOURCE=${CMAKE_SOURCE_DIR}
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/PlayerCli
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/PlayerCliCheck.cmake)
+    set_tests_properties(player_cli PROPERTIES TIMEOUT 600 LABELS integration)
+endif()
 # player --check names catalog text no font can draw (Reactor Run with a Japanese catalog).
 if(TARGET game_shippingdemo)
 add_test(NAME localization_glyphs COMMAND ${CMAKE_COMMAND}
@@ -303,6 +315,16 @@ target_link_libraries(model_test PRIVATE Shockwave::Engine)
 add_test(NAME model_import COMMAND model_test ${CMAKE_SOURCE_DIR}
          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 set_tests_properties(model_import PROPERTIES TIMEOUT 120 LABELS unit)
+
+# F1b: the Autodesk FBX SDK against Assimp on the test FBX files. Only in a build with the
+# SDK (-DSHOCKWAVE_FBXSDK=ON), so never in CI: a manual gate recorded in the pull request.
+if(SHOCKWAVE_FBXSDK)
+    add_executable(fbx_sdk_import_test FbxSdkImportTest.cpp)
+    target_link_libraries(fbx_sdk_import_test PRIVATE Shockwave::Assets)
+    shockwave_warnings(fbx_sdk_import_test)
+    add_test(NAME fbx_sdk_import COMMAND fbx_sdk_import_test ${CMAKE_SOURCE_DIR})
+    set_tests_properties(fbx_sdk_import PROPERTIES TIMEOUT 120 LABELS unit)
+endif()
 
 # Explicitly invoked only: needs a real Vulkan GPU/display.
 add_executable(model_gpu_smoke ModelGpuSmoke.cpp)
@@ -923,3 +945,8 @@ set_tests_properties(editor_package_release PROPERTIES ENVIRONMENT "SDL_VIDEO_DR
                      TIMEOUT 300 LABELS gpu)
 endif()
 endif()
+
+# Undo memory on a 10,000-entity scene (E1): a measurement run by hand, not a ctest.
+add_executable(undo_memory UndoMemory.cpp)
+target_link_libraries(undo_memory PRIVATE Shockwave::Engine)
+shockwave_warnings(undo_memory)

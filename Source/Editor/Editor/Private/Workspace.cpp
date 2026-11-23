@@ -547,6 +547,14 @@ void Editor::drawStatsWindow() {
             "pipelines when their materials load; a number that rises during play is a stall "
             "(docs/ReleaseTier.md).",
             renderer.pipelineWarmup() ? "on" : "off: pipeline_warmup false");
+        gui::propertyLabel("Undo");
+        size_t undoBytes = 0;
+        for (const shockwave::World& step : m_undo) undoBytes += step.bytes();
+        for (const shockwave::World& step : m_redo) undoBytes += step.bytes();
+        ImGui::Text("%zu steps, %.1f MB", m_undo.size() + m_redo.size(), static_cast<double>(undoBytes) / 1048576.0);
+        ImGui::SetItemTooltip(
+            "Undo and redo keep a whole copy of the scene for each step, up to 200 steps. The figure counts "
+            "the component arrays, not text a component holds (names, paths).");
         gui::propertyLabel("CPU / GPU");
         if (pacing.gpuMs > 0)
             ImGui::Text("%.2f / %.2f ms", pacing.cpuMs, pacing.gpuMs);

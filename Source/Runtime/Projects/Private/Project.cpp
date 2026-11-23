@@ -137,6 +137,10 @@ bool loadProject(const std::filesystem::path& path, Project& project, std::strin
                 row >> result.assetLoading;
                 if (result.assetLoading != "all" && result.assetLoading != "levels")
                     return fail("asset_loading must be all or levels");
+            } else if (key == "fbx_importer") {
+                row >> result.fbxImporter;
+                if (result.fbxImporter != "auto" && result.fbxImporter != "sdk" && result.fbxImporter != "assimp")
+                    return fail("fbx_importer must be auto, sdk or assimp");
             } else if (key == "mesh_lods") {
                 if (!(row >> result.meshLods) || result.meshLods < 0 || result.meshLods > 7)
                     return fail("mesh_lods must be a whole number from 0 to 7");
@@ -244,6 +248,7 @@ bool saveProject(const Project& project, std::string& error) {
     if (project.saveSchema != 1) out << "save_schema " << project.saveSchema << "\n";
     if (!project.rememberDestroyed) out << "remember_destroyed false\n";
     if (project.meshLods != 4) out << "mesh_lods " << project.meshLods << "\n";
+    if (project.fbxImporter != "auto") out << "fbx_importer " << project.fbxImporter << "\n";
     if (project.lodErrorPixels != 1.0) out << "lod_error_pixels " << project.lodErrorPixels << "\n";
     if (project.shadowQuality != 3) out << "shadow_quality " << shadowQualityName(project.shadowQuality) << "\n";
     if (project.renderer != "vulkan") out << "renderer " << std::quoted(project.renderer) << "\n";
