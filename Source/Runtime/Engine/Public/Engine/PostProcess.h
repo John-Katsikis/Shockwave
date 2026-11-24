@@ -68,6 +68,8 @@ struct PostProcessValues {
     glm::vec3 fogColor{0.5f, 0.6f, 0.7f};
     float fogAlbedo = 0.8f, fogAnisotropy = 0.3f;
     float fogStart = 0.0f, fogSkyDistance = 1000.0f, fogVolumetricDistance = 64.0f;
+    // V2: depth of field. dof_blur 0 (the default) draws nothing.
+    float dofFocusDistance = 10.0f, dofFocusRange = 2.0f, dofBlur = 0.0f;
 };
 enum class PostProcessValueType { Float, Vec2, Color3, Bool, Enum, Path };
 struct PostProcessParamInfo {
@@ -76,7 +78,7 @@ struct PostProcessParamInfo {
     size_t offset;   // in PostProcessValues
     float min, max;   // per component; min == max: any finite value
     std::vector<const char*> options;   // Enum
-    const char* group;   // exposure, auto_exposure, white_balance, lut, bloom, fog
+    const char* group;   // exposure, auto_exposure, white_balance, lut, bloom, fog, depth_of_field
     const char* unit;   // "stops", "1/m", ... or ""
     const char* description;
 };

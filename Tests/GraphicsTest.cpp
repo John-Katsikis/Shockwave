@@ -89,6 +89,15 @@ int main() {
             check(
                 lowered.skinQuality == high.skinQuality && lowered.fogQuality == high.fogQuality,
                 "settings without memory keep their values");
+            // The screen effects' memory counts and has steps too, depth of field included.
+            RendererMemoryReport screen;
+            screen.gpu[size_t(GpuMemoryCategory::DepthOfField)].bytes = 4 << 20;
+            check(budgetedMemoryBytes(screen) == (4u << 20), "depth of field memory counts toward the budget");
+            GraphicsSettings dof = graphicsPreset(GraphicsPreset::Ultra);
+            dof.depthOfField = true;
+            step = nextMemoryBudgetStep(dof, screen, lowered);
+            check(step && !lowered.depthOfField, "depth of field can be turned off for the budget");
+            check(!nextMemoryBudgetStep(lowered, screen, lowered), "then nothing else holds memory");
         }
         Graphics api;
         auto initial = api.current();

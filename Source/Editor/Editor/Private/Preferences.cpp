@@ -109,14 +109,23 @@ bool loadPreferences(const fs::path& path, Preferences& prefs, std::string& erro
             float quality = static_cast<float>(loaded.shadowQuality);
             number(quality);
             loaded.shadowQuality = std::clamp(static_cast<int>(quality), 0, 4);
-        } else if (key == "anti_aliasing" || key == "bloom_quality" || key == "ambient_occlusion") {
+        } else if (
+            key == "anti_aliasing" || key == "bloom_quality" || key == "ambient_occlusion" ||
+            key == "contact_shadows" || key == "reflections_quality") {
             // Checked against the graphics settings' own values; a bad one keeps the default.
             shockwave::GraphicsSettings check;
             std::string problem;
             if (shockwave::setGraphicsSetting(check, key, value, problem))
-                (key == "anti_aliasing"   ? loaded.antiAliasing
-                 : key == "bloom_quality" ? loaded.bloomQuality
-                                          : loaded.ambientOcclusion) = value;
+                (key == "anti_aliasing"         ? loaded.antiAliasing
+                 : key == "bloom_quality"       ? loaded.bloomQuality
+                 : key == "contact_shadows"     ? loaded.contactShadows
+                 : key == "reflections_quality" ? loaded.reflectionsQuality
+                                                : loaded.ambientOcclusion) = value;
+        } else if (key == "motion_blur") {
+            number(loaded.motionBlur);
+            loaded.motionBlur = std::clamp(loaded.motionBlur, 0.0f, 1.0f);
+        } else if (key == "depth_of_field") {
+            loaded.depthOfField = parseBool(value);
         } else if (key == "bloom_scale") {
             number(loaded.bloomScale);
             loaded.bloomScale = std::clamp(loaded.bloomScale, 0.0f, 1.0f);
@@ -178,6 +187,10 @@ bool savePreferences(const fs::path& path, const Preferences& prefs, std::string
         << "bloom_quality = " << prefs.bloomQuality << "   # off, low, medium, high\n"
         << "bloom_scale = " << prefs.bloomScale << "   # 0..1, times each scene's bloom intensity\n"
         << "ambient_occlusion = " << prefs.ambientOcclusion << "   # off, low, medium, high\n"
+        << "contact_shadows = " << prefs.contactShadows << "   # off, on\n"
+        << "reflections_quality = " << prefs.reflectionsQuality << "   # off, low, medium, high\n"
+        << "motion_blur = " << prefs.motionBlur << "   # 0..1; needs anti_aliasing taa\n"
+        << "depth_of_field = " << flag(prefs.depthOfField) << "\n"
         << "\n# Viewport\n"
         << "camera_speed = " << prefs.cameraSpeed << "\n"
         << "field_of_view = " << prefs.fieldOfView << "\n"

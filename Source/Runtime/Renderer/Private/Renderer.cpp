@@ -98,6 +98,10 @@ const char* gpuMemoryCategoryName(GpuMemoryCategory category) {
     case GpuMemoryCategory::Exposure: return "exposure";
     case GpuMemoryCategory::Transmission: return "transmission";
     case GpuMemoryCategory::Skin: return "skin";
+    case GpuMemoryCategory::ContactShadows: return "contact shadows";
+    case GpuMemoryCategory::ScreenReflections: return "screen reflections";
+    case GpuMemoryCategory::MotionBlur: return "motion blur";
+    case GpuMemoryCategory::DepthOfField: return "depth of field";
     case GpuMemoryCategory::Count: break;
     }
     return "?";
@@ -136,6 +140,7 @@ struct Renderer::State {
     PostProcessSettings postProcessSettings;
     DrawSettings drawSettings;
     ShadingSettings shadingSettings;
+    ScreenEffectsSettings screenEffectsSettings;
     bool pipelineWarmup = true;
     PipelineNeeds warmNeeds;   // what content has asked for so far
     bool lost = false;   // the device was lost (or that was injected): nothing is drawn again
@@ -404,6 +409,7 @@ struct Renderer::State {
         backend->setParticleSettings(particleSettings);
         backend->setPostProcessSettings(postProcessSettings);
         backend->setShadingSettings(shadingSettings);
+        backend->setScreenEffectsSettings(screenEffectsSettings);
         if (pipelineWarmup) warmedPipelines += backend->warmPipelines(warmNeeds);
         backend->setDrawSettings(drawSettings);
         backend->setPostProcess(postProcess);
@@ -1049,6 +1055,12 @@ uint64_t Renderer::pipelinesCreated() const { return m->backend->pipelinesCreate
 uint64_t Renderer::warmedPipelines() const { return m->warmedPipelines; }
 ShadingSettings Renderer::shadingSettings() const { return m->shadingSettings; }
 ShadingStats Renderer::shadingStats() const { return m->backend->shadingStats(); }
+void Renderer::setScreenEffectsSettings(const ScreenEffectsSettings& settings) {
+    m->screenEffectsSettings = settings;
+    m->backend->setScreenEffectsSettings(settings);
+}
+ScreenEffectsSettings Renderer::screenEffectsSettings() const { return m->screenEffectsSettings; }
+ScreenEffectsStats Renderer::screenEffectsStats() const { return m->backend->screenEffectsStats(); }
 void Renderer::setDrawSettings(const DrawSettings& settings) {
     m->drawSettings = settings;
     m->backend->setDrawSettings(settings);

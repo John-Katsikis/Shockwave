@@ -261,6 +261,7 @@ bool VulkanRenderer::Impl::beginFrame() {
     updateAoTargets();
     updateDecalTargets();
     updateTemporalTargets();
+    updateScreenEffectTargets();
 
     SW_PROFILE_SCOPE("Acquire swapchain image");
     VkResult acquire =
@@ -674,6 +675,7 @@ void VulkanRenderer::Impl::endFrame() {
     }
 
     finishHistory();
+    finishScreenEffects();
     if (screenshotRequested) finishScreenshot();
     if (captureRequested) finishCapture();
     frameIndex = (frameIndex + 1) % kFramesInFlight;
@@ -749,6 +751,7 @@ void VulkanRenderer::Impl::writeFrameData(Frame& f) {
     }
     planShadows(used, out, count, views, header);
     header.lightCount = count;
+    prepareScreenEffects(header, out, header.directionalCount);
     prepareClusters(f, header, count - header.directionalCount);
     preparePostProcess(f, header);
     header.shadowViews = f.frameAddress + kShadowViewsOffset;
@@ -850,6 +853,15 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
             graph.addPass(
                 "ambient occlusion", {{depth, ImageUse::ComputeSampled}, {normals, ImageUse::ComputeSampled}},
                 [this, &f](VkCommandBuffer cmd) { recordAmbientOcclusion(cmd, f); });
+        // V4, V1: their images keep their own barriers too, read by the scene alone.
+        if (contactThisFrame)
+            graph.addPass("contact shadows", {{depth, ImageUse::ComputeSampled}}, [this, &f](VkCommandBuffer cmd) {
+                recordContactShadows(cmd, f);
+            });
+        if (reflectionTraceThisFrame)
+            graph.addPass(
+                "screen reflections", {{depth, ImageUse::ComputeSampled}, {normals, ImageUse::ComputeSampled}},
+                [this, &f](VkCommandBuffer cmd) { recordReflections(cmd, f); });
         sceneUses[1] = {depth, ImageUse::DepthReadOnly};
     }
     std::vector<vk::RenderGraph::BufferAccess> sceneReads = vertexReads;
@@ -970,6 +982,11 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         graph.addPass(
             "particles", particleUses, [this](VkCommandBuffer cmd) { recordParticles(cmd, false); }, particleReads);
     }
+    // V1: this frame's scene, for next frame's reflections, before TAA blends it.
+    if (reflectionsThisFrame)
+        graph.addPass("reflection history copy", {{color, ImageUse::TransferSrc}}, [this](VkCommandBuffer cmd) {
+            recordReflectionCopy(cmd);
+        });
     if (temporalThisFrame && motionImage != kNoGraphImage) {
         // G09, G10: the reactive mask, then the resolve into this frame's history, copied back.
         const auto reactive = graph.import(
@@ -1003,6 +1020,32 @@ void VulkanRenderer::Impl::buildGraph(VkCommandBuffer, Frame& f, VkImage swapcha
         graph.addPass(
             "taa resolve copy", {{historyOut, ImageUse::TransferSrc}, {color, ImageUse::TransferDst}},
             [this](VkCommandBuffer cmd) { recordTaaCopy(cmd); });
+        if (motionBlurThisFrame) {
+            // V3: along the motion vectors into a second image, copied back.
+            const auto blurred = graph.import(
+                "motion blur", motionBlurTargets.image.image, VK_IMAGE_ASPECT_COLOR_BIT, motionBlurState, true);
+            graph.addPass(
+                "motion blur",
+                {{color, ImageUse::ComputeSampled},
+                 {depth, ImageUse::ComputeSampled},
+                 {motionImage, ImageUse::ComputeSampled},
+                 {blurred, ImageUse::StorageWrite}},
+                [this, &f](VkCommandBuffer cmd) { recordMotionBlur(cmd, f); });
+            graph.addPass(
+                "motion blur copy", {{blurred, ImageUse::TransferSrc}, {color, ImageUse::TransferDst}},
+                [this](VkCommandBuffer cmd) { recordMotionBlurCopy(cmd); });
+        }
+    }
+    if (dofThisFrame) {
+        // V2: half resolution colour and blur, the gather (its images keep their own
+        // barriers), then mixed into the scene in place.
+        graph.addPass(
+            "depth of field downsample", {{color, ImageUse::ComputeSampled}, {depth, ImageUse::ComputeSampled}},
+            [this, &f](VkCommandBuffer cmd) { recordDepthOfField(cmd, f, 0); });
+        graph.addPass("depth of field gather", {}, [this, &f](VkCommandBuffer cmd) { recordDepthOfField(cmd, f, 1); });
+        graph.addPass(
+            "depth of field composite", {{depth, ImageUse::ComputeSampled}, {color, ImageUse::StorageReadWrite}},
+            [this, &f](VkCommandBuffer cmd) { recordDepthOfField(cmd, f, 2); });
     }
     // A05: auto exposure meters the resolved, unexposed scene before bloom; the tonemap reads it.
     std::vector<vk::RenderGraph::BufferAccess> tonemapReads;
@@ -1085,9 +1128,11 @@ void VulkanRenderer::Impl::recordScene(VkCommandBuffer cmd, Frame& f) {
     }
     // Kept when particles are drawn next, for their depth test, and for the reactive mask and
     // TAA; and for skin and glass (A07b, A08) when they split the scene.
+    // Depth of field (V2) reads it after everything.
     const bool split = transmissionThisFrame || skinThisFrame;
-    depthAttachment.storeOp = particleDraws.empty() && !temporalThisFrame && !split ? VK_ATTACHMENT_STORE_OP_DONT_CARE
-                                                                                    : VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.storeOp = particleDraws.empty() && !temporalThisFrame && !split && !dofThisFrame
+                                  ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                  : VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil = {0.0f, 0};   // reverse-Z: 0 is infinitely far
 
     VkRenderingInfo rendering{};

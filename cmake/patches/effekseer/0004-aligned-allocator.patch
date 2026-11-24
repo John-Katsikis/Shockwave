@@ -1,0 +1,20 @@
+Align Effekseer's aligned allocator to the types it allocates (at least 32 bytes).
+DrawSet, InstanceChunk and InstanceGroup are alignas(32) but were allocated 16-byte
+aligned; GCC 15 at -O3 crashed in ManagerImplemented::AddDrawSet on it.
+
+diff --git a/Dev/Cpp/Effekseer/Effekseer/Utils/Effekseer.CustomAllocator.h b/Dev/Cpp/Effekseer/Effekseer/Utils/Effekseer.CustomAllocator.h
+index d8524d0a..0c67ba9d 100644
+--- a/Dev/Cpp/Effekseer/Effekseer/Utils/Effekseer.CustomAllocator.h
++++ b/Dev/Cpp/Effekseer/Effekseer/Utils/Effekseer.CustomAllocator.h
+@@ -167,7 +167,10 @@ struct CustomAlignedAllocator
+ 
+ 	T* allocate(std::size_t n)
+ 	{
+-		return reinterpret_cast<T*>(GetAlignedMallocFunc()(sizeof(T) * static_cast<uint32_t>(n), 16));
++		// DrawSet, InstanceChunk and InstanceGroup are alignas(32) (InstanceGroups also live in
++		// a byte buffer from this allocator), so 16 isn't enough: GCC 15 crashed on it.
++		constexpr uint32_t alignment = alignof(T) > 32 ? static_cast<uint32_t>(alignof(T)) : 32;
++		return reinterpret_cast<T*>(GetAlignedMallocFunc()(sizeof(T) * static_cast<uint32_t>(n), alignment));
+ 	}
+ 	void deallocate(T* p, std::size_t n)
+ 	{

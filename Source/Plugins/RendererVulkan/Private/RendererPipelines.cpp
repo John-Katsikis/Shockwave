@@ -350,6 +350,7 @@ void VulkanRenderer::Impl::createPipelines() {
     createClusterPipeline();
     createPostProcessPipelines();
     createShadingPipelines();
+    createScreenEffects();
     createCullingPipelines();
 
     createUiPipeline();

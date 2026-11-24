@@ -1,0 +1,146 @@
+# Contact shadows (V4): small cubes and a thin fence on a floor under a low sun, seen from
+# close by. The shadow maps are too coarse for the thin dark lines where they touch the
+# floor; contact_shadows on draws them. Camera: "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+end
+
+entity "Sun"
+  Transform
+    rotation -35 40 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 3
+end
+
+entity "Floor"
+  Transform
+    scale 20 1 20
+  MeshRenderer
+    mesh floor
+    tint 0.75 0.75 0.75 1
+end
+
+entity "Cube 0"
+  Transform
+    position -0.6 0.05 0.2
+    scale 0.1 0.1 0.1
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.35 0.25 1
+end
+
+entity "Cube 1"
+  Transform
+    position -0.2 0.05 -0.3
+    scale 0.1 0.1 0.1
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.35 0.25 1
+end
+
+entity "Cube 2"
+  Transform
+    position 0.3 0.05 0.1
+    scale 0.1 0.1 0.1
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.35 0.25 1
+end
+
+entity "Cube 3"
+  Transform
+    position 0.7 0.05 -0.4
+    scale 0.1 0.1 0.1
+  MeshRenderer
+    mesh cube
+    tint 0.8 0.35 0.25 1
+end
+
+entity "Fence post 0"
+  Transform
+    position -0.90 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 1"
+  Transform
+    position -0.60 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 2"
+  Transform
+    position -0.30 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 3"
+  Transform
+    position -0.00 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 4"
+  Transform
+    position 0.30 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 5"
+  Transform
+    position 0.60 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence post 6"
+  Transform
+    position 0.90 0.15 -0.9
+    scale 0.02 0.3 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Fence rail"
+  Transform
+    position 0 0.25 -0.9
+    scale 1.9 0.02 0.02
+  MeshRenderer
+    mesh cube
+    tint 0.55 0.5 0.45 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 0.9 1.6
+    rotation -28 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end

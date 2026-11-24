@@ -36,12 +36,15 @@ budget, the next step in this list is applied, one step per frame, until they fi
 | 1 | `anti_aliasing` | `fxaa` | TAA's history and motion vectors |
 | 2 | `skin_quality` | `off` | the skin diffusion targets |
 | 3 | `transmission_quality` | `off` | glass's copy of the scene |
-| 4 | `fog_quality` | `analytic` | the froxel volume |
-| 5 | `ambient_occlusion` | `low` | part of the AO targets |
-| 6 | `ambient_occlusion` | `off` | the AO targets, and the prepass if nothing else needs it |
-| 7 | `reflection_probes` | `false` | resident probe cubes |
-| 8 | `occlusion_culling` | `off` | the depth pyramid |
-| 9 | `bloom_quality` | `low` | most of bloom's chain |
+| 4 | `reflections_quality` | `off` | screen-space reflections and their history |
+| 5 | `fog_quality` | `analytic` | the froxel volume |
+| 6 | `contact_shadows` | `off` | the contact shadow image |
+| 7 | `depth_of_field` | `false` | the depth of field targets |
+| 8 | `ambient_occlusion` | `low` | part of the AO targets |
+| 9 | `ambient_occlusion` | `off` | the AO targets, and the prepass if nothing else needs it |
+| 10 | `reflection_probes` | `false` | resident probe cubes |
+| 11 | `occlusion_culling` | `off` | the depth pyramid |
+| 12 | `bloom_quality` | `low` | most of bloom's chain |
 
 TAA's history goes first because it's the largest by far: about 68 MiB at 1080p, against
 about 8 MiB for AO. FXAA still smooths edges without it.

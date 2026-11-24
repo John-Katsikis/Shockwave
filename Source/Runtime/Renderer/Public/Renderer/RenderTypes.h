@@ -345,7 +345,13 @@ enum class DebugView : uint32_t {
     // A07-A09: which shading each surface gets as drawn: coats yellow; skin orange with
     // diffusion, brown without; hair cyan with the stretched highlight, blue with the round
     // one; glass green through the transmission pass, magenta simplified; the rest dimmed.
-    ShadingFamilies
+    ShadingFamilies,
+    // V4: the contact shadows alone, white lit and black blocked; red where the effect is
+    // off or can't run this frame (no surface prepass or no shadow-casting sun).
+    ContactShadows,
+    // V1: the screen-space reflections' confidence, white where they replace the probes,
+    // black where the probes are left; red where the effect is off or can't run.
+    ScreenReflections
 };
 
 // Shadow map resolution, filtering and how many lights can cast at once: a per-device
@@ -460,6 +466,10 @@ enum class GpuMemoryCategory : uint32_t {
     Exposure,   // A05: the exposure histogram, state and readbacks
     Transmission,   // A07b: the transmission pass's copy of the scene
     Skin,   // A08: the skin diffusion targets
+    ContactShadows,   // V4
+    ScreenReflections,   // V1: the reflection image and last frame's scene
+    MotionBlur,   // V3
+    DepthOfField,   // V2
     Count
 };
 const char* gpuMemoryCategoryName(GpuMemoryCategory category);   // "render targets", ...

@@ -256,12 +256,16 @@ void addGraphicsFlags(std::vector<Flag>& flags) {
             s.tool.view = shockwave::DebugView::Transmission;
         else if (view == "shading")
             s.tool.view = shockwave::DebugView::ShadingFamilies;
+        else if (view == "contact_shadows")
+            s.tool.view = shockwave::DebugView::ContactShadows;
+        else if (view == "screen_reflections")
+            s.tool.view = shockwave::DebugView::ScreenReflections;
         else if (view == "navmesh")
             s.tool.showNavMesh = true;
         else
             throw std::runtime_error("--view takes lit, unlit, normals, lighting, cascades, ao, indirect, "
                                      "reflections, decals, motion, reactive, clusters, fog, transmission, "
-                                     "shading or navmesh");
+                                     "shading, contact_shadows, screen_reflections or navmesh");
 
         return {};
     });

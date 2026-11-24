@@ -242,7 +242,7 @@ void VulkanRenderer::Impl::createShadingPipelines() {
     transmissionSlots[1] = bindlessSlots() - 19;
     for (uint32_t pair = 0; pair < 2; ++pair)
         for (uint32_t i = 0; i < 3; ++i) skinSlots[pair][i] = bindlessSlots() - 20 - pair * 3 - i;
-    static_assert(kInternalTextureSlots == 25, "the shading slots end the internal ones");
+    static_assert(kInternalTextureSlots == 29, "the screen effects' slots follow the shading ones");
 
     // The blur's layout now; the pipelines the first frame that needs them
     // (ensureTransmissionPipelines, ensureSkinPipelines), so a game without glass or skin

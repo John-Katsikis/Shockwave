@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 namespace editor {
 
@@ -69,6 +71,56 @@ void Editor::drawPostProcessVolumeNotes(Entity e) {
                            ? (volume->enabled ? std::clamp(volume->weight, 0.0f, 1.0f) : 0.0f)
                            : shockwave::postProcessVolumeWeight(*volume, shockwave::worldMatrix(m_world, e), camera);
     ImGui::TextDisabled("Applies %.0f%% at the viewport camera", static_cast<double>(here * 100.0f));
+    drawDepthOfFieldFields(volume->profile, profile->values);
+}
+
+// Depth of field (V2): the profile's three dof_* keys, written straight into its file (which
+// then reloads by itself). Keys the profile inherits stay inherited until they're changed.
+void Editor::drawDepthOfFieldFields(const std::string& profileName, const shockwave::PostProcessValues& resolved) {
+    if (!ImGui::TreeNodeEx("Depth of field", ImGuiTreeNodeFlags_SpanAvailWidth)) return;
+    float distance = resolved.dofFocusDistance, range = resolved.dofFocusRange, blur = resolved.dofBlur;
+    struct Field {
+        const char* key;
+        float* value;
+        float speed, min, max;
+        const char* format;
+    };
+    const Field fields[3] = {
+        {"dof_focus_distance", &distance, 0.05f, 0.1f, 10000.0f, "%.2f m"},
+        {"dof_focus_range", &range, 0.05f, 0.0f, 10000.0f, "%.2f m"},
+        {"dof_blur", &blur, 0.1f, 0.0f, 24.0f, "%.1f px"},
+    };
+    for (const Field& field : fields) {
+        const shockwave::PostProcessParamInfo* info = shockwave::findPostProcessParam(field.key);
+        bool commit = false;
+        if (ImGui::DragFloat(
+                field.key, field.value, field.speed, field.min, field.max, field.format, ImGuiSliderFlags_AlwaysClamp))
+            commit = true;
+        if (info) ImGui::SetItemTooltip("%s", info->description);
+        if (!commit) continue;
+        const std::filesystem::path path = m_postProcess->contentFolder() / profileName;
+        std::ifstream in(path, std::ios::binary);
+        std::ostringstream text;
+        text << in.rdbuf();
+        shockwave::PostProcessFile file;
+        std::string error;
+        if (!shockwave::parsePostProcess(text.str(), file, error)) {
+            warn(profileName + ": " + error);
+            continue;
+        }
+        const auto& params = shockwave::postProcessParams();
+        for (size_t i = 0; i < params.size(); ++i)
+            if (params[i].key == std::string_view(field.key)) {
+                file.set |= uint64_t(1) << i;
+                *reinterpret_cast<float*>(reinterpret_cast<char*>(&file.values) + params[i].offset) =
+                    std::clamp(*field.value, field.min, field.max);
+            }
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << shockwave::writePostProcess(file);
+        if (!out) warn("Couldn't write " + path.string());
+    }
+    if (blur <= 0.0f) ImGui::TextDisabled("dof_blur 0: no depth of field");
+    ImGui::TreePop();
 }
 
 // A selected volume: its box, and the inner box where its blend has fully faded in.

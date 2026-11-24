@@ -1,0 +1,80 @@
+# Screen-space reflections (V1): a floor glossy on the left half and rough on the right,
+# with red, green and blue pillars standing across it. With reflections_quality on, the
+# glossy half reflects the pillars; the rough half keeps the probes' reflection. Camera:
+# "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 0.35 0.42 0.55 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0.6
+end
+
+entity "Sun"
+  Transform
+    rotation -50 30 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 2
+end
+
+entity "Glossy floor"
+  Transform
+    position -2 -0.05 -4
+    scale 4 0.1 12
+  MeshRenderer
+    mesh cube
+    tint 0.6 0.6 0.6 1
+    roughness 0.05
+    metallic 1
+end
+
+entity "Rough floor"
+  Transform
+    position 2 -0.05 -4
+    scale 4 0.1 12
+  MeshRenderer
+    mesh cube
+    tint 0.6 0.6 0.6 1
+    roughness 0.9
+    metallic 1
+end
+
+entity "Pillar 0"
+  Transform
+    position -2.5 1.5 -6
+    scale 0.8 3 0.8
+  MeshRenderer
+    mesh cube
+    tint 0.9 0.1 0.1 1
+end
+
+entity "Pillar 1"
+  Transform
+    position 0 1.5 -6
+    scale 0.8 3 0.8
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.8 0.1 1
+end
+
+entity "Pillar 2"
+  Transform
+    position 2.5 1.5 -6
+    scale 0.8 3 0.8
+  MeshRenderer
+    mesh cube
+    tint 0.1 0.2 0.9 1
+end
+
+entity "Main Camera"
+  Transform
+    position 0 1.2 3
+    rotation -12 0 0
+  Camera
+    fov 60
+    near_plane 0.05
+    primary 1
+end

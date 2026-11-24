@@ -381,6 +381,11 @@ vec3 directLight(FrameBuffer frame, uint i, vec3 n, vec3 v, float nDotV, float a
     if (nDotL <= 0.0 || attenuation <= 0.0) return vec3(0.0);
     if (l.shadowView != 0xFFFFFFFFu) {
         float shadow = lightShadow(frame, l, vWorldPosition, n, toLight, distance);
+        // Contact shadows (V4): the small ones the shadow map is too coarse for, traced on
+        // the screen for opaque surfaces over the prepass.
+        if (kReceivesAo && frame.contactShadowTexture != 0u && i == frame.contactShadowLight)
+            shadow *= texelFetch(sampler2D(textures[frame.contactShadowTexture], linearSampler),
+                                 ivec2(gl_FragCoord.xy), 0).r;
         attenuation *= mix(1.0, shadow, l.shadowStrength);
         if (attenuation <= 0.0) return vec3(0.0);
     }
@@ -551,6 +556,23 @@ void main() {
         outColor = vec4(shown, 1.0);
         return;
     }
+    if (frame.debugView == 15u) {
+        // Contact shadows (V4): white lit, black blocked; red where there are none.
+        bool have = kReceivesAo && frame.contactShadowTexture != 0u;
+        float c = have ? texelFetch(sampler2D(textures[frame.contactShadowTexture], linearSampler),
+                                    ivec2(gl_FragCoord.xy), 0).r : 0.0;
+        outColor = have ? vec4(vec3(c), 1.0) : vec4(1.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    if (frame.debugView == 16u) {
+        // Screen-space reflections (V1): their confidence, white where they replace the
+        // probes; red where there are none.
+        bool have = kReceivesAo && frame.ssrTexture != 0u;
+        float c = have ? texelFetch(sampler2D(textures[frame.ssrTexture], linearSampler),
+                                    ivec2(gl_FragCoord.xy * 0.5), 0).a : 0.0;
+        outColor = have ? vec4(vec3(c), 1.0) : vec4(1.0, 0.0, 0.0, 1.0);
+        return;
+    }
 #endif
     bool receivesAo = kReceivesAo && frame.aoTexture != 0u;
     float ssao = 1.0;
@@ -716,6 +738,20 @@ void main() {
     if (pickedProbes != 0u) {
         vec2 shares;
         prefiltered = localReflections(frame, pickedProbes, vWorldPosition, reflected, roughness, prefiltered, shares);
+    }
+    // Screen-space reflections (V1) over the probes, for opaque surfaces over the prepass:
+    // premultiplied by confidence, read at a level that grows with roughness, faded out
+    // for rough surfaces. Off (slot 0), the probes' reflection is kept exactly.
+    if (kReceivesAo && frame.ssrTexture != 0u) {
+        // The table's sampler repeats: kept half a texel inside the level read, so the bottom
+        // row never filters in the top one's.
+        float level = roughness * (frame.ssrLevels - 1.0);
+        vec2 levelSize = max(floor(ceil(frame.renderSize * 0.5) / exp2(ceil(level))), vec2(1.0));
+        vec2 uv = clamp(gl_FragCoord.xy / frame.renderSize, 0.5 / levelSize, 1.0 - 0.5 / levelSize);
+        vec4 s = textureLod(sampler2D(textures[frame.ssrTexture], linearSampler), uv, level);
+        float confidence = clamp(s.a, 0.0, 1.0);
+        if (confidence > 1e-4)
+            prefiltered = mix(prefiltered, s.rgb / s.a, confidence * (1.0 - smoothstep(0.35, 0.6, roughness)));
     }
     vec3 irradiance = surroundingsIrradiance(n);
     vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(1.0 - nDotV, 5.0);

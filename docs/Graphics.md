@@ -116,6 +116,11 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
   detail. Off draws no fog, with no passes or memory. `player --view fog` and the
   editor's *Fog transmittance* shading view show how much the fog lets through. Scenes
   without fog cost nothing either way.
+- `depth_of_field`: `true` (the default) or `false`. Lets postprocess profiles that set
+  `dof_blur` blur what's nearer or farther than their focus distance (docs/PostProcess.md,
+  *Depth of field*). False draws everything sharp, pixel for pixel as without it, with no
+  passes and no memory. Scenes whose profiles don't ask for it cost nothing either way.
+  Presets leave it alone.
 - `clearcoat`: `true` (the default) or `false`. The varnish layer on clear-coated
   materials (docs/Shading.md). False draws the surface under it, exactly as without the
   coat. Presets leave it on.
@@ -129,6 +134,21 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `hair_quality`: `low` or `high` (the default). High draws hair cards' highlight as a
   band across the strands; low draws an ordinary round one. Low uses low.
   Scenes without glass, skin or hair cost nothing for any of these.
+- `contact_shadows`: `off` or `on`. A short ray march through the depth buffer towards
+  the sun adds the small shadows its shadow map is too coarse for: under feet, along
+  fences, where objects touch the floor (docs/Shadows.md, *Contact shadows*). It needs the
+  sun to cast shadows; without them it stays off and the report says why. Off, there's
+  no pass and no memory. `player --view contact_shadows` shows it alone. High and ultra
+  turn it on.
+- `reflections_quality`: `off`, `low`, `medium` or `high` (16, 32 or 64 steps a ray).
+  Screen-space reflections: glossy surfaces reflect what's on screen, and fall back to
+  their reflection probe or the sky where the ray leaves the screen (docs/Lighting.md,
+  *Screen-space reflections*). Off, there's no pass and no memory. `player --view
+  screen_reflections` shows what they found. High uses medium, ultra high.
+- `motion_blur` (0..1, 0 by default): how much fast movement smears, as a fraction of a
+  1/120 s shutter. It reads TAA's motion vectors, so it needs `anti_aliasing taa`;
+  without TAA it stays at 0 and the report says why. 0 draws exactly the picture without
+  it, with no pass and no memory. Presets set it to 0.
 - `instancing`: `true` (the default) or `false`. Neighbouring draws of the same mesh with
   the same pipeline go out as one instanced draw call (docs/Drawing.md). False issues one
   call per object. The picture is the same pixel for pixel either way. Presets leave it on.

@@ -237,8 +237,9 @@ void VulkanRenderer::Impl::destroyAoTargets(AoTargets& targets) {
 
 void VulkanRenderer::Impl::updateAoTargets() {
     // The prepass runs for ambient occlusion, for decals (G08), which read its depth and
-    // normals, and for motion vectors (G09).
-    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off || decalsWanted() || temporalWanted();
+    // normals, for motion vectors (G09), and for the screen effects that read them (V1, V2, V4).
+    const bool want = effectiveAmbientOcclusion() != AmbientOcclusion::Off || decalsWanted() || temporalWanted() ||
+                      screenPrepassWanted();
     if (want == prepassActive()) return;
     if (!want) {
         const int slot = aoTargets.slot == aoSlots[0] ? 0 : 1;

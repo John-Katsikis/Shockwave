@@ -229,6 +229,7 @@ a change load and play exactly as in the official Effekseer.
 | `0001-flipbook-motion-vectors.patch` | Flipbook interpolation *Motion vectors* (2), with a motion vector texture and strength. Only an effect that uses it stores the two extra values, so older effects keep their layout; an effect saved with it needs this patched Effekseer. |
 | `0002-editor-build-fixes.patch` | Missing `<cstdint>` includes, so the editor's C++ parts build with GCC 13 and newer. Editor only. |
 | `0003-flipbook-motion-vectors-editor.patch` | The editor side of 0001: the *Motion Vectors* choice, its texture and strength in *Basic Render Settings* (English, Japanese, Spanish), saving them, and Effekseer's own shaders, so the editor's viewport draws the blend. The shader source is the DirectX 11 HLSL; only the OpenGL shaders (which the Linux editor uses) are regenerated from it. Editor only. |
+| `0004-aligned-allocator.patch` | Effekseer's aligned allocator gave 16-byte alignment to types declared `alignas(32)` (draw sets, instance chunks and groups). GCC 15 at `-O3` crashed on it; it now aligns to at least 32 bytes. |
 
 To change a patch, edit a clean Effekseer 1.7.3.0 checkout, write it out with
 `git diff > cmake/patches/effekseer/<name>.patch`, and configure again: the build resets

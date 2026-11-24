@@ -1,1 +1,1 @@
-Player: --view takes lit, unlit, normals, lighting, cascades, ao, indirect, reflections, decals, motion, reactive, clusters, fog, transmission, shading or navmesh
+Player: --view takes lit, unlit, normals, lighting, cascades, ao, indirect, reflections, decals, motion, reactive, clusters, fog, transmission, shading, contact_shadows, screen_reflections or navmesh

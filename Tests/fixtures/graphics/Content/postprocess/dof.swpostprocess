@@ -1,0 +1,4 @@
+swpostprocess 1
+dof_focus_distance 10
+dof_focus_range 2
+dof_blur 12

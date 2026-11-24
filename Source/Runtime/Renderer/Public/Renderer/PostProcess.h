@@ -208,13 +208,18 @@ struct PostProcessDesc {
     bool overrideBloom = false;
     float bloomIntensity = 0.04f;
     FogDesc fog;
-    float deltaTime = 1.0f / 60.0f;   // seconds since the last frame (adaptation)
+    float deltaTime = 1.0f / 60.0f;   // seconds since the last frame (adaptation, motion blur)
+    // V2: depth of field (Renderer/DepthOfField.h). dofBlur 0: none.
+    float dofFocusDistance = 10.0f;   // metres
+    float dofFocusRange = 2.0f;   // metres either side that stay sharp
+    float dofBlur = 0.0f;   // largest blur, pixels at 1080 lines
 };
 // The player's settings. Each one off is exactly the scene without it.
 struct PostProcessSettings {
     bool colorGrading = true;   // white balance and LUTs
     bool autoExposure = true;   // off keeps every profile's manual exposure
     FogQuality fog = FogQuality::Medium;
+    bool depthOfField = true;   // off ignores every profile's dof_blur (V2)
     bool operator==(const PostProcessSettings&) const = default;
 };
 // The last frame's (Renderer::postProcessStats).

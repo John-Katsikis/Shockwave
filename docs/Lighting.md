@@ -288,6 +288,31 @@ Selecting a probe in the editor shows its box and capture point.
   surfaces outside every box reflect the sky.
 
 
+## Screen-space reflections
+
+Reflection probes are captured once, from a fixed point, and leave out anything that
+moves. `reflections_quality` adds reflections of what's on screen right now: each glossy
+pixel marches its reflected ray through the depth buffer (16, 32 or 64 steps, up to
+30 m) at half resolution, and where it hits, reflects the previous frame's picture
+there, reprojected to where it was. Where the ray leaves the screen, goes behind
+something, or the surface is rough (roughness 0.35 fades it out, 0.6 and up never uses
+it), the probe or sky reflection shows as before, and the two blend smoothly.
+
+- Off, the picture is exactly the one without it, with no passes and no memory.
+- `player --view screen_reflections` and View > Shading > Screen reflections show what
+  was found (the reflection where it hit, black where the probes take over).
+- It costs a half-resolution colour target with mips and a half-resolution copy of the
+  last frame (277,248 bytes at 320x180), the *screen reflections* pass and the
+  *reflection history copy* pass.
+
+### Limits
+
+- Only what's on screen can be reflected: a mirror facing the camera shows the probes.
+- It reflects the previous frame, so a fast-moving object's reflection is a frame late.
+- Transparent surfaces (glass, particles) aren't reflected and don't receive it.
+- There's no ray jitter, so low quality can show steps in long reflections.
+
+
 ## How it works
 
 The renderer draws the surroundings into a cube map, then filters it into two more: an

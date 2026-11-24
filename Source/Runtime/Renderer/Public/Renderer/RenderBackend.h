@@ -28,6 +28,7 @@
 #include <Renderer/ReflectionProbes.h>
 #include <Renderer/RenderTypes.h>
 #include <Renderer/Culling.h>
+#include <Renderer/ScreenEffects.h>
 #include <Renderer/Shading.h>
 #include <Renderer/Clusters.h>
 #include <Renderer/Temporal.h>
@@ -172,6 +173,9 @@ public:
     // A07-A09: a backend without a family draws its stand-in (standard, simplified glass).
     virtual void setShadingSettings(const ShadingSettings&) {}
     virtual ShadingStats shadingStats() const { return {}; }
+    // V1, V3, V4: a backend without them draws the frame as with each off.
+    virtual void setScreenEffectsSettings(const ScreenEffectsSettings&) {}
+    virtual ScreenEffectsStats screenEffectsStats() const { return {}; }
     // Pipeline warm-up (S10): build now what `needs` would otherwise build at its first
     // draw; returns how many pipelines that made. pipelinesCreated counts every pipeline
     // this backend has made since it started. Main thread, outside a frame.

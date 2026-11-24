@@ -1,0 +1,88 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+
+// Screen-space reflections (V1, RendererScreenEffects.cpp, Renderer/ScreenReflections.h),
+// at half resolution: each texel's mirror ray through the prepass's depth; a hit is that
+// spot of last frame's scene, reprojected. Written premultiplied by confidence (rgb * a, a)
+// so the mips the renderer blits from it average only what was found; mesh.glsl reads it
+// at a level that grows with roughness.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+#include "frame.glsl"
+#include "screen.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D depthTexture;
+layout(set = 0, binding = 1) uniform sampler2D normalTexture;   // octahedral, view space
+layout(set = 0, binding = 2) uniform sampler2D previousScene;   // last frame's, half resolution, linear
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D target;
+
+#include "screen_effects.glsl"
+
+const float kStartOffset = 0.02;   // kReflectionStartOffset
+const uint kRefinements = 4u;
+const float kMaxColor = 16.0;
+
+float smooth01(float e0, float e1, float x) { return smoothstep(e0, e1, x); }
+
+vec4 reflection(ivec2 halfTexel) {
+    if ((pc.flags & 1u) == 0u) return vec4(0.0);   // no last frame to reflect
+    ivec2 full = ivec2(pc.frame.renderSize);
+    ivec2 pixel = min(2 * halfTexel, full - 1);
+    vec2 centre = (vec2(pixel) + 0.5) / vec2(full);
+    vec3 position;
+    if (!viewPositionFromDepth(centre, texelFetch(depthTexture, pixel, 0).r, pc.frame.inverseProjection, position))
+        return vec4(0.0);
+    bool orthographic = abs(pc.frame.projection[2][3]) < 1e-6;
+    vec3 viewDir = orthographic ? vec3(0.0, 0.0, -1.0) : normalize(position);
+    vec3 n = octDecode(texelFetch(normalTexture, pixel, 0).xy);
+    vec3 ray = reflect(viewDir, n);
+    if (ray.z > 0.0) return vec4(0.0);
+    vec3 origin = position + n * kStartOffset;
+    float maxDistance = pc.params.x, thickness = pc.params.y;
+    float stepLength = pc.params.z, growth = pc.params.w;
+    float t = 0.0;
+    for (uint i = 0u; i < pc.steps; ++i) {
+        float previous = t;
+        t += stepLength;
+        stepLength *= growth;
+        vec3 point = origin + ray * t;
+        vec2 uv;
+        if (!projectView(point, uv)) return vec4(0.0);
+        vec3 surface;
+        if (!surfaceAt(uv, surface)) continue;
+        float gap = surface.z - point.z;
+        if (!(gap > 0.0 && gap < thickness)) continue;
+        float lo = previous, hi = t;
+        for (uint k = 0u; k < kRefinements; ++k) {
+            float mid = 0.5 * (lo + hi);
+            vec3 p = origin + ray * mid;
+            vec2 m;
+            vec3 s;
+            if (projectView(p, m) && surfaceAt(m, s) && s.z - p.z > 0.0) hi = mid;
+            else lo = mid;
+        }
+        vec3 hit = origin + ray * hi;
+        projectView(hit, uv);
+        float edge = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+        float confidence = (1.0 - smooth01(0.8, 1.0, hi / maxDistance)) * smooth01(0.0, 0.1, edge) *
+                           smooth01(0.0, 0.2, max(dot(-viewDir, n), 0.0));
+        // Where it was last frame: off screen there, nothing to show.
+        vec4 clip = pc.matrix * vec4(hit, 1.0);
+        if (!(clip.w > 1e-6)) return vec4(0.0);
+        vec2 previousUv = screenUvFromClip(clip);
+        if (any(lessThan(previousUv, vec2(0.0))) || any(greaterThan(previousUv, vec2(1.0)))) return vec4(0.0);
+        vec3 color = min(textureLod(previousScene, previousUv, 0.0).rgb, vec3(kMaxColor));
+        if (any(isnan(color))) return vec4(0.0);
+        return vec4(color * confidence, confidence);
+    }
+    return vec4(0.0);
+}
+
+void main() {
+    ivec2 halfTexel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(halfTexel, ivec2(pc.size)))) return;
+    imageStore(target, halfTexel, reflection(halfTexel));
+}

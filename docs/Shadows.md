@@ -96,6 +96,24 @@ The render graph times the `shadows (sun)` and `shadows (lights)` passes on the 
 them in **Window > Stats** or with `player --benchmark`. See
 [Frame pacing](FramePacing.md) for more on both.
 
+## Contact shadows
+
+Sun shadow maps cover tens of metres with a few thousand texels, so the narrow shadows
+where things touch (a foot on the floor, a crate against a wall, the slats of a fence)
+come out too soft or not at all. `contact_shadows on` fills them in: each pixel marches
+12 steps, up to 0.35 m, through the depth buffer towards the sun, and is shadowed when it
+passes behind something that's at most 0.25 m thick. It only darkens the sun's light,
+never ambient or other lamps, and only on surfaces drawn in the surface prepass.
+
+- It needs sun shadows: with `--shadows off` (or no shadow-casting sun) it stays off and
+  `--graphics-report` says why.
+- `player --view contact_shadows`, and View > Shading > Contact shadows in the editor,
+  show it alone (white lit, black shadowed).
+- It costs a full-resolution 8-bit image (57,600 bytes at 320x180) and one compute pass,
+  *contact shadows*, timed like the other passes.
+- Limits: it only sees what's on screen, so an occluder just off the edge casts nothing,
+  and thin objects seen edge-on can miss.
+
 ## How it works
 
 - **Sun.** The view out to the shadow distance is split into up to four cascades, using

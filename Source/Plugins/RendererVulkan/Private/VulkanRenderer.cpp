@@ -107,6 +107,10 @@ uint32_t VulkanRenderer::droppedLights() const { return m_impl->lastDroppedLight
 // Both take effect at the next frame boundary (beginFrame), without waiting for the GPU.
 void VulkanRenderer::setAntiAliasing(AntiAliasing aa) { m_impl->antiAliasing = aa; }
 void VulkanRenderer::setAmbientOcclusion(AmbientOcclusion ao) { m_impl->ambientOcclusion = ao; }
+void VulkanRenderer::setScreenEffectsSettings(const ScreenEffectsSettings& settings) {
+    m_impl->screenEffects = settings;
+}
+ScreenEffectsStats VulkanRenderer::screenEffectsStats() const { return m_impl->lastScreenEffectsStats; }
 void VulkanRenderer::setBloom(BloomQuality quality, float scale) {
     m_impl->bloomQuality = quality;
     m_impl->bloomScale = scale;
