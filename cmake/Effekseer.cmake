@@ -10,6 +10,7 @@
 #   0001  flipbook motion vectors: a third flipbook interpolation, "Motion vectors"
 #   0002  editor build fixes for newer compilers (editor only)
 #   0003  flipbook motion vectors in the editor: UI, saving, its OpenGL shaders (editor only)
+#   0004  the aligned allocator honours alignas(32) types (crashed with GCC 15)
 # cmake/BuildEffekseerEditor.sh builds that editor on Linux.
 # Their hash is part of the patch step, so editing a patch re-applies them all.
 set(effekseer_patch_dir ${CMAKE_CURRENT_LIST_DIR}/patches/effekseer)

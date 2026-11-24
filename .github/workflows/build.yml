@@ -50,17 +50,6 @@ jobs:
           cmake -DBUILD=build -DNAME="Linux tests" -DEXPECT=128
           -DREQUIRE_FILE=Tests/RequiredTests.txt -DPLATFORM=linux
           -P cmake/CTestGate.cmake
-      # TEMPORARY (PR #78): find GCC 15's crash in the effects test. Removed once fixed.
-      - name: Diagnose the effects crash
-        if: always()
-        run: |
-          g++ --version | head -1
-          sudo apt-get install -y gdb
-          gdb -batch -ex run -ex "bt 40" --args build/bin/effects_test "$PWD" || true
-          cmake -B build-san -DCMAKE_BUILD_TYPE=Release -DSHOCKWAVE_SANITIZE=address,undefined > /dev/null
-          cp -r build/_deps build-san/ 2>/dev/null || true
-          cmake --build build-san -j --target effects_test > /dev/null
-          ASAN_OPTIONS=detect_leaks=0 build-san/bin/effects_test "$PWD" 2>&1 | head -80 || true
       - name: Check the sample, the shipping demo and Arena, unchanged
         run: |
           xvfb-run -a build/bin/player --check Games/Sample/Sample.swproject
