@@ -40,7 +40,8 @@ struct MaterialHandle {
 
 // Shading families (A07-A09, docs/Shading.md), in ShadingFamily's order: standard (glTF
 // metallic-roughness, optionally with a clearcoat), skin, hair cards and transmission.
-enum class MaterialFamily : int { Standard, Skin, HairCard, Transmission };
+// Terrain (W1b) is never in a .swmaterial: a painted terrain sets it on its own draws.
+enum class MaterialFamily : int { Standard, Skin, HairCard, Transmission, Terrain };
 enum class MaterialAlpha : int { Opaque, Mask, Blend };
 // Which channel of a mask texture is read.
 enum class MaskChannel : int { R, G, B, A };

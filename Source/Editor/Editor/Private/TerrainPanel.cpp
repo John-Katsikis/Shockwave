@@ -1,6 +1,6 @@
-// Terrain in the editor (W1a, docs/Terrain.md): Window > Terrain makes a terrain, sculpts it
-// with Raise, Lower, Smooth and Flatten brushes in the viewport, imports heights from a
-// 16-bit PNG or .r16 and saves. Strokes change an editable copy of the heights and publish
+// Terrain in the editor (W1a, W1b, docs/Terrain.md): Window > Terrain makes a terrain, sculpts
+// it with Raise, Lower, Smooth and Flatten brushes in the viewport, paints its layers (Paint,
+// Add layer, Remove layer), imports heights from a 16-bit PNG or .r16 and saves. Strokes change an editable copy of the heights and publish
 // it to the asset registry each frame, rebuilding only the chunks they touch; each stroke
 // is one undo step in a journal beside the world snapshots.
 #include "Editor.h"
@@ -22,13 +22,15 @@ using shockwave::TerrainData;
 
 namespace {
 
-constexpr const char* kBrushNames[] = {"Raise", "Lower", "Smooth", "Flatten"};
+constexpr const char* kBrushNames[] = {"Raise", "Lower", "Smooth", "Flatten", "Paint"};
 constexpr const char* kBrushTips[] = {
     "Lifts the ground under the circle while the left button is down",
     "Lowers the ground under the circle while the left button is down",
     "Evens out bumps under the circle",
     "Pulls the ground towards the height under the first click",
+    "Paints the chosen layer under the circle, taking share from the others",
 };
+constexpr int kPaintBrush = int(shockwave::TerrainBrush::Paint);
 
 }   // namespace
 
@@ -42,12 +44,32 @@ Entity Editor::terrainTarget() const {
     return first;
 }
 
-void Editor::publishTerrain(const std::string& asset, std::shared_ptr<const TerrainData> data, glm::ivec4 rect) {
+void Editor::publishTerrain(
+    const std::string& asset, std::shared_ptr<const TerrainData> data, glm::ivec4 rect, uint32_t changed) {
     shockwave::Assets& assets = engine().assets();
     const auto previous = assets.terrain(asset);
     if (!previous) return;
-    auto next = shockwave::updateTerrain(engine().renderer(), *previous, std::move(data), rect, m_terrain.retired);
+    auto next =
+        shockwave::updateTerrain(engine().renderer(), *previous, std::move(data), rect, m_terrain.retired, changed);
     assets.addTerrain(asset, std::move(next));
+}
+
+void Editor::commitTerrainChange(
+    const std::string& asset, const TerrainData& before, std::shared_ptr<TerrainData> after, glm::ivec4 rect,
+    uint32_t changed) {
+    const glm::ivec4 all{0, 0, int(after->samples) - 1, int(after->samples) - 1};
+    // Heights undo only within rect; a layout change keeps all of the weights itself.
+    m_terrainUndo.push_back(shockwave::makeTerrainEdit(
+        asset, before, *after, (changed & shockwave::kTerrainHeightsChanged) ? rect : glm::ivec4{1, 1, 0, 0}));
+    m_undoOrder.push_back(UndoKind::Terrain);
+    m_terrainRedo.clear();
+    m_redo.clear();
+    m_redoOrder.clear();
+    m_terrain.working[asset] = std::make_shared<TerrainData>(*after);
+    publishTerrain(asset, std::move(after), (changed & shockwave::kTerrainHeightsChanged) ? rect : all, changed);
+    if (std::find(m_terrain.unsaved.begin(), m_terrain.unsaved.end(), asset) == m_terrain.unsaved.end())
+        m_terrain.unsaved.push_back(asset);
+    m_dirty = true;
 }
 
 bool Editor::updateTerrainBrush(const ImVec2& pos, const ImVec2& size, bool hovered) {
@@ -112,11 +134,14 @@ bool Editor::updateTerrainBrush(const ImVec2& pos, const ImVec2& size, bool hove
         stroke.strength = m_terrain.strength;
         stroke.dt = std::min(io.DeltaTime, 0.1f);
         stroke.flattenTo = m_terrain.flattenTo;
+        stroke.layer = static_cast<uint32_t>(std::clamp(m_terrain.paintLayer, 0, 3));
         const glm::ivec4 changed = shockwave::applyTerrainBrush(*working, stroke);
         if (changed.x <= changed.z) {
             m_terrain.strokeRect = shockwave::unionRect(m_terrain.strokeRect, changed);
             // The registry gets its own copy; the working copy keeps changing.
-            publishTerrain(m_terrain.strokeAsset, std::make_shared<const TerrainData>(*working), changed);
+            publishTerrain(
+                m_terrain.strokeAsset, std::make_shared<const TerrainData>(*working), changed,
+                m_terrain.brush == kPaintBrush ? shockwave::kTerrainWeightsChanged : shockwave::kTerrainHeightsChanged);
         }
     }
     if (m_terrain.stroking && !down) {
@@ -152,7 +177,11 @@ void Editor::stepTerrainUndo(bool redo) {
         auto data = std::make_shared<TerrainData>(*asset->data);
         shockwave::applyTerrainEdit(*data, edit, redo);
         m_terrain.working[edit.asset] = std::make_shared<TerrainData>(*data);
-        publishTerrain(edit.asset, data, edit.rect);
+        uint32_t changed = 0;
+        if (!edit.before.empty()) changed |= shockwave::kTerrainHeightsChanged;
+        if (edit.layout || !edit.weightsBefore.empty()) changed |= shockwave::kTerrainWeightsChanged;
+        const glm::ivec4 all{0, 0, int(data->samples) - 1, int(data->samples) - 1};
+        publishTerrain(edit.asset, data, edit.layout ? shockwave::unionRect(edit.rect, all) : edit.rect, changed);
         if (std::find(m_terrain.unsaved.begin(), m_terrain.unsaved.end(), edit.asset) == m_terrain.unsaved.end())
             m_terrain.unsaved.push_back(edit.asset);
     }
@@ -266,7 +295,7 @@ void Editor::drawTerrainWindow() {
         ImGui::TextDisabled(
             "%u points a side, %.0f m, %u chunks", data.samples, double(data.size()),
             shockwave::terrainChunkCount(data));
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < kPaintBrush; ++i) {
             if (i) ImGui::SameLine();
             const bool active = m_terrain.brush == i;
             if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
@@ -278,7 +307,81 @@ void Editor::drawTerrainWindow() {
         ImGui::SliderFloat("Strength", &m_terrain.strength, 0.0f, 1.0f, "%.2f");
         static const char* kFalloff[] = {"Smooth", "Linear"};
         ImGui::Combo("Falloff", &m_terrain.falloff, kFalloff, IM_ARRAYSIZE(kFalloff));
-        if (m_terrain.brush >= 0) ImGui::TextDisabled("Paint in the viewport with the left mouse button");
+        if (m_terrain.brush >= 0 && m_terrain.brush != kPaintBrush)
+            ImGui::TextDisabled("Sculpt in the viewport with the left mouse button");
+
+        // Painted layers (W1b): up to four materials, blended by weights.
+        ImGui::SeparatorText("Paint");
+        const auto layers = shockwave::terrainLayers(data);
+        const uint32_t count = shockwave::terrainLayerCount(data);
+        if (!data.painted())
+            ImGui::TextDisabled(
+                "One material (%s). Add a layer to paint more",
+                data.material.empty() ? "default" : data.material.c_str());
+        for (uint32_t i = 0; i < shockwave::kTerrainLayerCount; ++i) {
+            if (!layers[i].used) continue;
+            ImGui::PushID(int(i));
+            const std::string label =
+                "Layer " + std::to_string(i) + ": " +
+                (layers[i].material.empty() ? std::string("default surface") : layers[i].material);
+            if (ImGui::RadioButton(label.c_str(), m_terrain.paintLayer == int(i))) m_terrain.paintLayer = int(i);
+            ImGui::SetItemTooltip("%g m per texture repeat", double(layers[i].uvMetres));
+            if (data.painted() && count > 1) {
+                ImGui::SameLine();
+                ImGui::BeginDisabled(playing());
+                if (ImGui::SmallButton("Remove")) {
+                    auto next = std::make_shared<TerrainData>(data);
+                    std::string why;
+                    if (shockwave::removeTerrainLayer(*next, i, why)) {
+                        commitTerrainChange(
+                            component->asset, data, next, {1, 1, 0, 0}, shockwave::kTerrainWeightsChanged);
+                        m_terrain.status = "Removed layer " + std::to_string(i) + "; its share went to the others";
+                    } else {
+                        m_terrain.status = why;
+                    }
+                }
+                ImGui::EndDisabled();
+                ImGui::SetItemTooltip("Removes the layer, sharing its weight among the others");
+            }
+            ImGui::PopID();
+        }
+        ImGui::InputText("Material", m_terrain.newLayerMaterial, sizeof(m_terrain.newLayerMaterial));
+        ImGui::SetItemTooltip("The new layer's .swmaterial, a Content path; empty for the default surface");
+        ImGui::DragFloat(
+            "Metres per repeat", &m_terrain.newLayerUvMetres, 0.1f, 0.01f, 10000.0f, "%.2f m",
+            ImGuiSliderFlags_AlwaysClamp);
+        ImGui::BeginDisabled(playing() || count >= shockwave::kTerrainLayerCount);
+        if (ImGui::Button("Add layer")) {
+            auto next = std::make_shared<TerrainData>(data);
+            std::string why;
+            const int index =
+                shockwave::addTerrainLayer(*next, m_terrain.newLayerMaterial, m_terrain.newLayerUvMetres, why);
+            if (index >= 0) {
+                commitTerrainChange(component->asset, data, next, {1, 1, 0, 0}, shockwave::kTerrainWeightsChanged);
+                m_terrain.paintLayer = index;
+                m_terrain.status = "Added layer " + std::to_string(index) +
+                                   (data.painted() ? "" : "; the terrain is now painted (swterrain 2)");
+            } else {
+                m_terrain.status = why;
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        {
+            const bool active = m_terrain.brush == kPaintBrush;
+            ImGui::BeginDisabled(!data.painted());
+            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button(kBrushNames[kPaintBrush])) m_terrain.brush = active ? -1 : kPaintBrush;
+            if (active) ImGui::PopStyleColor();
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("%s", kBrushTips[kPaintBrush]);
+        }
+        if (m_terrain.brush == kPaintBrush) {
+            if (!data.painted() || !layers[size_t(std::clamp(m_terrain.paintLayer, 0, 3))].used)
+                m_terrain.brush = -1;
+            else
+                ImGui::TextDisabled("Paint layer %d in the viewport with the left mouse button", m_terrain.paintLayer);
+        }
 
         ImGui::SeparatorText("Import heights");
         ImGui::InputText("File", m_terrain.importPath, sizeof(m_terrain.importPath));
@@ -297,17 +400,7 @@ void Editor::drawTerrainWindow() {
                 auto next = std::make_shared<TerrainData>(data);
                 next->heights = std::move(heights);
                 const glm::ivec4 all{0, 0, int(data.samples) - 1, int(data.samples) - 1};
-                m_terrainUndo.push_back(shockwave::makeTerrainEdit(component->asset, data, *next, all));
-                m_undoOrder.push_back(UndoKind::Terrain);
-                m_terrainRedo.clear();
-                m_redo.clear();
-                m_redoOrder.clear();
-                m_terrain.working[component->asset] = std::make_shared<TerrainData>(*next);
-                publishTerrain(component->asset, next, all);
-                if (std::find(m_terrain.unsaved.begin(), m_terrain.unsaved.end(), component->asset) ==
-                    m_terrain.unsaved.end())
-                    m_terrain.unsaved.push_back(component->asset);
-                m_dirty = true;
+                commitTerrainChange(component->asset, data, next, all, shockwave::kTerrainHeightsChanged);
                 m_terrain.status = "Imported " + fs::path(m_terrain.importPath).filename().string();
             }
         }
@@ -318,7 +411,8 @@ void Editor::drawTerrainWindow() {
     ImGui::BeginDisabled(m_terrain.unsaved.empty() || playing());
     if (ImGui::Button("Save terrains")) saveTerrains();
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Writes every sculpted terrain's .swterrain and heights (Save scene does too)");
+    ImGui::SetItemTooltip(
+        "Writes every sculpted or painted terrain's .swterrain, heights and weights (Save scene does too)");
     if (!m_terrain.unsaved.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("%zu unsaved", m_terrain.unsaved.size());

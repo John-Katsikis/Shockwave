@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 namespace player {
 
@@ -64,9 +65,36 @@ int terrainInfo(const fs::path& file, const fs::path& json) {
                number(terrain.high) + "], \"min_height\": " + number(lowest) + ", \"max_height\": " + number(highest) +
                ", \"chunks\": " + std::to_string(shockwave::terrainChunkCount(terrain)) +
                ", \"heights\": " + quote(terrain.heightsFile) + ", \"material\": " + quote(terrain.material) +
-               ", \"uv_metres\": " + number(terrain.uvMetres);
+               ", \"uv_metres\": " + number(terrain.uvMetres) + ", \"version\": " + std::to_string(terrain.version);
+        std::vector<std::string> warnings;
         if (!terrain.material.empty() && !fs::exists(content / terrain.material))
-            out += ", \"warnings\": [" + quote("the material " + terrain.material + " isn't in Content") + "]";
+            warnings.push_back("the material " + terrain.material + " isn't in Content");
+        if (terrain.painted()) {
+            // Each layer's share of the whole terrain, 0..1.
+            double share[shockwave::kTerrainLayerCount] = {};
+            const size_t points = size_t(terrain.samples) * terrain.samples;
+            for (size_t p = 0; p < points; ++p)
+                for (uint32_t i = 0; i < shockwave::kTerrainLayerCount; ++i) share[i] += terrain.weights[p * 4 + i];
+            out += ", \"weights\": " + quote(terrain.weightsFile) + ", \"layers\": [";
+            bool first = true;
+            for (uint32_t i = 0; i < shockwave::kTerrainLayerCount; ++i) {
+                const shockwave::TerrainLayer& l = terrain.layers[i];
+                if (!l.used) continue;
+                out += std::string(first ? "" : ", ") + "{\"index\": " + std::to_string(i) +
+                       ", \"material\": " + quote(l.material) + ", \"uv_metres\": " + number(l.uvMetres) +
+                       ", \"share\": " + number(share[i] / (255.0 * double(points))) + "}";
+                first = false;
+                if (!l.material.empty() && !fs::exists(content / l.material))
+                    warnings.push_back(
+                        "layer " + std::to_string(i) + "'s material " + l.material + " isn't in Content");
+            }
+            out += "]";
+        }
+        if (!warnings.empty()) {
+            out += ", \"warnings\": [";
+            for (size_t i = 0; i < warnings.size(); ++i) out += (i ? ", " : "") + quote(warnings[i]);
+            out += "]";
+        }
     } else {
         out += ", \"error\": " + quote(error);
     }
@@ -86,9 +114,26 @@ int terrainInfo(const fs::path& file, const fs::path& json) {
     std::printf(
         "  heights %g to %g m (range %g to %g m), %u chunks\n", double(lowest), double(highest), double(terrain.low),
         double(terrain.high), shockwave::terrainChunkCount(terrain));
+    if (!terrain.painted()) {
+        std::printf(
+            "  heights file %s, material %s, %g m per texture repeat\n", terrain.heightsFile.c_str(),
+            terrain.material.empty() ? "(default)" : terrain.material.c_str(), double(terrain.uvMetres));
+        return 0;
+    }
     std::printf(
-        "  heights file %s, material %s, %g m per texture repeat\n", terrain.heightsFile.c_str(),
-        terrain.material.empty() ? "(default)" : terrain.material.c_str(), double(terrain.uvMetres));
+        "  heights file %s, weights file %s, %u layers\n", terrain.heightsFile.c_str(), terrain.weightsFile.c_str(),
+        shockwave::terrainLayerCount(terrain));
+    const size_t points = size_t(terrain.samples) * terrain.samples;
+    for (uint32_t i = 0; i < shockwave::kTerrainLayerCount; ++i) {
+        const shockwave::TerrainLayer& l = terrain.layers[i];
+        if (!l.used) continue;
+        double share = 0;
+        for (size_t p = 0; p < points; ++p) share += terrain.weights[p * 4 + i];
+        std::printf(
+            "  layer %u: %s, %g m per repeat, %.1f%% of the terrain\n", i,
+            l.material.empty() ? "(default)" : l.material.c_str(), double(l.uvMetres),
+            100.0 * share / (255.0 * double(points)));
+    }
     return 0;
 }
 

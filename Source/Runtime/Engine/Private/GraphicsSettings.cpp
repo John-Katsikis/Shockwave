@@ -63,6 +63,7 @@ const std::vector<const char*> kFogChoices = {"off", "analytic", "low", "medium"
 const std::vector<const char*> kTransmissionChoices = {"off", "low", "medium", "high"};
 const std::vector<const char*> kSkinChoices = {"off", "low", "high"};
 const std::vector<const char*> kHairChoices = {"low", "high"};
+const std::vector<const char*> kTerrainChoices = {"low", "high"};
 const std::vector<const char*> kContactShadowChoices = {"off", "on"};
 const std::vector<const char*> kReflectionChoices = {"off", "low", "medium", "high"};
 
@@ -367,6 +368,17 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"terrain_quality", "Terrain", "Quality",
+         "Painted terrain's layers. High blends every layer a spot has, with their normal maps; low blends only the "
+         "two heaviest and leaves out their normal maps, which only shows where three or more layers mix.",
+         "low, high", kTerrainChoices, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(terrainQualityName(s.terrainQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kTerrainChoices, v, s.terrainQuality)) return true;
+             error = "terrain_quality must be " + list(kTerrainChoices);
+             return false;
+         }});
+    info.push_back(
         {"contact_shadows", "Contact shadows", "Quality",
          "Small, sharp shadows where things touch the ground or each other, which shadow maps are too coarse to "
          "show, traced a short way towards the sun on the screen. Needs shadows on. Off skips it and frees its "
@@ -561,6 +573,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Low;
         base.skinQuality = SkinQuality::Off;
         base.hairQuality = HairQuality::Low;
+        base.terrainQuality = TerrainQuality::Low;
         base.contactShadows = ContactShadows::Off;
         base.reflectionsQuality = ScreenReflections::Off;
         base.motionBlur = 0;   // a personal choice
@@ -584,6 +597,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Medium;
         base.skinQuality = SkinQuality::Low;
         base.hairQuality = HairQuality::High;
+        base.terrainQuality = TerrainQuality::Low;
         base.contactShadows = ContactShadows::Off;
         base.reflectionsQuality = ScreenReflections::Off;
         base.motionBlur = 0;   // a personal choice
@@ -607,6 +621,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::Medium;
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
+        base.terrainQuality = TerrainQuality::High;
         base.contactShadows = ContactShadows::On;
         base.reflectionsQuality = ScreenReflections::Medium;
         base.motionBlur = 0;   // a personal choice
@@ -630,6 +645,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.transmissionQuality = TransmissionQuality::High;
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
+        base.terrainQuality = TerrainQuality::High;
         base.contactShadows = ContactShadows::On;
         base.reflectionsQuality = ScreenReflections::High;
         base.motionBlur = 0;   // a personal choice
@@ -822,6 +838,7 @@ GraphicsSettings Graphics::running() const {
     s.transmissionQuality = shading.transmission;
     s.skinQuality = shading.skin;
     s.hairQuality = shading.hair;
+    s.terrainQuality = shading.terrain;
     s.depthOfField = post.depthOfField;
     const ScreenEffectsSettings screen = r.screenEffectsSettings();
     s.contactShadows = screen.contactShadows;
@@ -906,8 +923,9 @@ void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous)
         s.motionBlur != previous.motionBlur)
         r.setScreenEffectsSettings({s.contactShadows, s.reflectionsQuality, s.motionBlur});
     if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
-        s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality)
-        r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality});
+        s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality ||
+        s.terrainQuality != previous.terrainQuality)
+        r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality, s.terrainQuality});
     if (s.instancing != previous.instancing || s.occlusionCulling != previous.occlusionCulling)
         r.setDrawSettings({s.instancing, s.occlusionCulling});
     if (s.lodErrorPixels != previous.lodErrorPixels) {

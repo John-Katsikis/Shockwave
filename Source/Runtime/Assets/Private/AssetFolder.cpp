@@ -519,13 +519,13 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 isKtx2File(f.path) && f.path.has_parent_path() &&
                 (fs::exists(f.path.parent_path().string() + ".swlighting", ec) ||
                  (file.rfind("Lightmap_", 0) == 0 && inLighting) || (file.rfind("Probe_", 0) == 0 && inLighting));
-            f.kind = bakedPayload                                ? Kind::Other
-                     : isImageFile(f.path) || isKtx2File(f.path) ? Kind::Texture
-                     : isModelFile(f.path)                       ? Kind::Model
-                     : isAudioFile(f.path)                       ? Kind::Audio
-                     : isMaterialFile(f.path)                    ? Kind::Material
-                     : isTerrainFile(f.path)                     ? Kind::Terrain
-                                                                 : Kind::Other;
+            f.kind = bakedPayload || isTerrainWeightsFile(f.path) ? Kind::Other
+                     : isImageFile(f.path) || isKtx2File(f.path)  ? Kind::Texture
+                     : isModelFile(f.path)                        ? Kind::Model
+                     : isAudioFile(f.path)                        ? Kind::Audio
+                     : isMaterialFile(f.path)                     ? Kind::Material
+                     : isTerrainFile(f.path)                      ? Kind::Terrain
+                                                                  : Kind::Other;
             f.bytes = it->file_size(ec);
             f.modified = it->last_write_time(ec);
             found.push_back(std::move(f));
@@ -703,7 +703,10 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
                 TerrainData header;
                 std::string ignored;
-                if (parseTerrain(text, header, ignored)) job.dependencies.push_back(m_root / header.heightsFile);
+                if (parseTerrain(text, header, ignored)) {
+                    job.dependencies.push_back(m_root / header.heightsFile);
+                    if (header.painted()) job.dependencies.push_back(m_root / header.weightsFile);
+                }
                 job.terrain = std::make_shared<TerrainData>();
                 readTerrain(f.path, m_root, *job.terrain, job.error);
             } else if (f.kind == Kind::Model)

@@ -5,6 +5,8 @@
 #include <Renderer/Renderer.h>
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
@@ -132,12 +134,19 @@ bool validTerrainSamples(uint32_t samples) {
 
 bool isTerrainFile(const fs::path& path) { return path.extension() == ".swterrain"; }
 
+bool isTerrainWeightsFile(const fs::path& path) {
+    const std::string name = path.filename().string();
+    constexpr std::string_view suffix = ".weights.png";
+    return name.size() > suffix.size() && name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 bool parseTerrain(std::string_view text, TerrainData& terrain, std::string& error) {
     terrain = {};
     int lineNumber = 0;
     bool header = false;
     bool seenSamples = false, seenSpacing = false, seenRange = false, seenHeights = false, seenMaterial = false,
-         seenUv = false;
+         seenUv = false, seenWeights = false;
+    std::array<bool, kTerrainLayerCount> seenLayer{};
     std::vector<std::string> w;
     auto fail = [&](const std::string& why) {
         error = lineNumber > 0 ? "line " + std::to_string(lineNumber) + ": " + why : why;
@@ -163,8 +172,9 @@ bool parseTerrain(std::string_view text, TerrainData& terrain, std::string& erro
         }
         const size_t count = w.size() - 1;
         if (!header) {
-            if (w[0] != "swterrain") return fail("the first line must be \"swterrain 1\"");
-            if (w.size() != 2 || w[1] != "1") return fail("only swterrain version 1 is known");
+            if (w[0] != "swterrain") return fail("the first line must be \"swterrain 1\" or \"swterrain 2\"");
+            if (w.size() != 2 || (w[1] != "1" && w[1] != "2")) return fail("only swterrain versions 1 and 2 are known");
+            terrain.version = w[1] == "2" ? 2u : 1u;
             header = true;
         } else if (w[0] == "samples") {
             if (!once(seenSamples)) return fail("samples given twice");
@@ -193,17 +203,38 @@ bool parseTerrain(std::string_view text, TerrainData& terrain, std::string& erro
             if (fs::path(w[1]).extension() != ".r16") return fail("heights must be a .r16 file");
             terrain.heightsFile = w[1];
         } else if (w[0] == "material") {
+            if (terrain.version >= 2) return fail("swterrain 2 paints layers: use layer lines instead of material");
             if (!once(seenMaterial)) return fail("material given twice");
             if (count != 1) return fail("material needs one quoted .swmaterial path");
             if (!w[1].empty() && fs::path(w[1]).extension() != ".swmaterial")
                 return fail("material must be a .swmaterial file");
             terrain.material = w[1];
         } else if (w[0] == "uv_metres") {
+            if (terrain.version >= 2) return fail("swterrain 2 gives each layer its own metres per repeat");
             if (!once(seenUv)) return fail("uv_metres given twice");
             float v = 0;
             if (count != 1 || !number(w[1], v)) return fail("uv_metres needs one number");
             if (v < kMinUvMetres || v > kMaxUvMetres) return fail("uv_metres must be 0.01 to 10000");
             terrain.uvMetres = v;
+        } else if (w[0] == "layer") {
+            if (terrain.version < 2) return fail("layer needs \"swterrain 2\"");
+            uint32_t index = 0;
+            float uv = 0;
+            if (count != 3 || !whole(w[1], index) || !number(w[3], uv))
+                return fail("layer needs an index, a quoted .swmaterial path and metres per repeat");
+            if (index >= kTerrainLayerCount) return fail("layer index must be 0 to 3");
+            if (!once(seenLayer[index])) return fail("layer " + w[1] + " given twice");
+            if (!w[2].empty() && fs::path(w[2]).extension() != ".swmaterial")
+                return fail("a layer's material must be a .swmaterial file");
+            if (uv < kMinUvMetres || uv > kMaxUvMetres)
+                return fail("a layer's metres per repeat must be 0.01 to 10000");
+            terrain.layers[index] = {true, w[2], uv};
+        } else if (w[0] == "weights") {
+            if (terrain.version < 2) return fail("weights needs \"swterrain 2\"");
+            if (!once(seenWeights)) return fail("weights given twice");
+            if (count != 1 || w[1].empty()) return fail("weights needs one quoted .png path");
+            if (fs::path(w[1]).extension() != ".png") return fail("weights must be a .png file");
+            terrain.weightsFile = w[1];
         } else {
             return fail("unknown key " + w[0]);
         }
@@ -215,15 +246,28 @@ bool parseTerrain(std::string_view text, TerrainData& terrain, std::string& erro
     if (!seenSpacing) return fail("spacing is missing");
     if (!seenRange) return fail("height_range is missing");
     if (!seenHeights) return fail("heights is missing");
+    if (terrain.version >= 2) {
+        if (std::none_of(seenLayer.begin(), seenLayer.end(), [](bool b) { return b; }))
+            return fail("swterrain 2 needs at least one layer line");
+        if (!seenWeights) return fail("weights is missing");
+    }
     return true;
 }
 
 std::string terrainText(const TerrainData& t) {
-    std::string out = "swterrain 1\n";
+    std::string out = t.painted() ? "swterrain 2\n" : "swterrain 1\n";
     out += "samples " + std::to_string(t.samples) + "\n";
     out += "spacing " + formatFloat(t.spacing) + "\n";
     out += "height_range " + formatFloat(t.low) + " " + formatFloat(t.high) + "\n";
     out += "heights \"" + t.heightsFile + "\"\n";
+    if (t.painted()) {
+        for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+            if (t.layers[i].used)
+                out += "layer " + std::to_string(i) + " \"" + t.layers[i].material + "\" " +
+                       formatFloat(t.layers[i].uvMetres) + "\n";
+        out += "weights \"" + t.weightsFile + "\"\n";
+        return out;
+    }
     if (!t.material.empty()) out += "material \"" + t.material + "\"\n";
     out += "uv_metres " + formatFloat(t.uvMetres) + "\n";
     return out;
@@ -250,6 +294,26 @@ bool readTerrain(const fs::path& file, const fs::path& content, TerrainData& ter
     next.heights.resize(want / 2);
     for (size_t i = 0; i < next.heights.size(); ++i)
         next.heights[i] = static_cast<uint16_t>(raw[i * 2] | (raw[i * 2 + 1] << 8));
+    if (next.painted()) {
+        std::vector<uint8_t> png;
+        if (!readBytes(content / next.weightsFile, png, error)) {
+            error = "the weights file " + next.weightsFile + " is missing";
+            return false;
+        }
+        Image image;
+        if (!decodeImage(png, image, error)) {
+            error = "the weights file " + next.weightsFile + " can't be read: " + error;
+            return false;
+        }
+        if (image.width != next.samples || image.height != next.samples) {
+            error = "the weights file " + next.weightsFile + " is " + std::to_string(image.width) + " by " +
+                    std::to_string(image.height) + "; " + std::to_string(next.samples) + " samples need " +
+                    std::to_string(next.samples) + " by " + std::to_string(next.samples);
+            return false;
+        }
+        next.weights = std::move(image.rgba);
+        normaliseTerrainWeights(next);
+    }
     terrain = std::move(next);
     return true;
 }
@@ -270,7 +334,19 @@ bool writeTerrain(const fs::path& file, const fs::path& content, const TerrainDa
         raw[i * 2] = static_cast<uint8_t>(terrain.heights[i] & 0xff);
         raw[i * 2 + 1] = static_cast<uint8_t>(terrain.heights[i] >> 8);
     }
-    // Heights first: a header naming new heights never points at a missing file.
+    // Weights and heights first: a header naming new ones never points at a missing file.
+    if (terrain.painted()) {
+        if (terrain.weights.size() != size_t(terrain.samples) * terrain.samples * 4) {
+            error = "the terrain's weights don't match its " + std::to_string(terrain.samples) + " samples";
+            return false;
+        }
+        if (terrain.weightsFile.empty()) {
+            error = "the terrain names no weights file";
+            return false;
+        }
+        const std::vector<uint8_t> png = encodePngRgba8(terrain.samples, terrain.samples, terrain.weights);
+        if (!replaceFile(content / terrain.weightsFile, png.data(), png.size(), error)) return false;
+    }
     if (!replaceFile(content / terrain.heightsFile, raw.data(), raw.size(), error)) return false;
     const std::string text = terrainText(terrain);
     return replaceFile(file, text.data(), text.size(), error);
@@ -284,6 +360,149 @@ TerrainData flatTerrain(uint32_t samples, float spacing, float low, float high, 
     t.high = high;
     t.heights.assign(size_t(samples) * samples, t.value(height));
     return t;
+}
+
+namespace {
+
+// Shares out total among the weights in proportion to share (integers summing to total), the
+// largest remainders rounding up, ties to the lower layer.
+void distribute(const float share[kTerrainLayerCount], uint32_t total, uint8_t out[kTerrainLayerCount]) {
+    float sum = 0.0f;
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i) sum += share[i];
+    uint32_t given = 0;
+    float rest[kTerrainLayerCount] = {};
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+        const float exact = sum > 0.0f ? share[i] / sum * float(total) : 0.0f;
+        const auto whole = static_cast<uint32_t>(std::floor(exact));
+        out[i] = static_cast<uint8_t>(whole);
+        rest[i] = exact - float(whole);
+        given += whole;
+    }
+    while (given < total && sum > 0.0f) {
+        uint32_t best = kTerrainLayerCount;
+        for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+            if (share[i] > 0.0f && (best == kTerrainLayerCount || rest[i] > rest[best])) best = i;
+        if (best == kTerrainLayerCount) break;
+        ++out[best];
+        rest[best] = -1.0f;
+        ++given;
+    }
+}
+
+uint32_t usedMask(const TerrainData& t) {
+    uint32_t mask = 0;
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+        if (t.layers[i].used) mask |= 1u << i;
+    return mask;
+}
+
+}   // namespace
+
+std::array<TerrainLayer, kTerrainLayerCount> terrainLayers(const TerrainData& t) {
+    if (t.painted()) return t.layers;
+    std::array<TerrainLayer, kTerrainLayerCount> one{};
+    one[0] = {true, t.material, t.uvMetres};
+    return one;
+}
+
+uint32_t terrainLayerCount(const TerrainData& t) {
+    const auto layers = terrainLayers(t);
+    return static_cast<uint32_t>(
+        std::count_if(layers.begin(), layers.end(), [](const TerrainLayer& l) { return l.used; }));
+}
+
+void normaliseTerrainWeights(TerrainData& t) {
+    if (!t.painted()) return;
+    const size_t points = size_t(t.samples) * t.samples;
+    t.weights.resize(points * 4, 0);
+    const uint32_t used = usedMask(t);
+    if (!used) return;
+    const auto first = static_cast<uint32_t>(std::countr_zero(used));
+    for (size_t p = 0; p < points; ++p) {
+        uint8_t* w = &t.weights[p * 4];
+        float share[kTerrainLayerCount];
+        uint32_t sum = 0;
+        for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+            if (!(used & (1u << i))) w[i] = 0;
+            share[i] = float(w[i]);
+            sum += w[i];
+        }
+        if (sum == 255) continue;
+        if (sum == 0) {
+            w[first] = 255;
+            continue;
+        }
+        distribute(share, 255, w);
+    }
+}
+
+int addTerrainLayer(TerrainData& t, std::string material, float uvMetres, std::string& error) {
+    if (!material.empty() && fs::path(material).extension() != ".swmaterial") {
+        error = "a layer's material must be a .swmaterial file";
+        return -1;
+    }
+    if (!(uvMetres >= kMinUvMetres && uvMetres <= kMaxUvMetres)) {
+        error = "a layer's metres per repeat must be 0.01 to 10000";
+        return -1;
+    }
+    if (t.painted() && usedMask(t) == (1u << kTerrainLayerCount) - 1u) {
+        error = "a terrain has at most 4 layers";
+        return -1;
+    }
+    if (!t.painted()) {
+        // Version 1 becomes version 2: its material is layer 0, everywhere.
+        t.version = 2;
+        t.layers = {};
+        t.layers[0] = {true, t.material, t.uvMetres};
+        t.material.clear();
+        t.weightsFile = t.heightsFile.empty()
+                            ? std::string()
+                            : fs::path(t.heightsFile).replace_extension(".weights.png").generic_string();
+        t.weights.assign(size_t(t.samples) * t.samples * 4, 0);
+        for (size_t p = 0; p < size_t(t.samples) * t.samples; ++p) t.weights[p * 4] = 255;
+    }
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+        if (!t.layers[i].used) {
+            t.layers[i] = {true, std::move(material), uvMetres};
+            return int(i);
+        }
+    error = "a terrain has at most 4 layers";
+    return -1;
+}
+
+bool removeTerrainLayer(TerrainData& t, uint32_t layer, std::string& error) {
+    if (!t.painted()) {
+        error = "a swterrain 1 terrain has only its one material";
+        return false;
+    }
+    if (layer >= kTerrainLayerCount || !t.layers[layer].used) {
+        error = "there's no layer " + std::to_string(layer);
+        return false;
+    }
+    if (std::popcount(usedMask(t)) <= 1) {
+        error = "a terrain keeps at least one layer";
+        return false;
+    }
+    t.layers[layer] = {};
+    normaliseTerrainWeights(t);   // its share goes to the others in proportion
+    return true;
+}
+
+uint32_t terrainChunkLayers(const TerrainData& t, uint32_t chunk) {
+    if (!t.painted()) return 1u;
+    const size_t points = size_t(t.samples) * t.samples;
+    if (t.weights.size() != points * 4) return usedMask(t);
+    const uint32_t perSide = terrainChunksPerSide(t);
+    if (perSide == 0) return usedMask(t);
+    const uint32_t x0 = (chunk % perSide) * kTerrainChunkQuads, z0 = (chunk / perSide) * kTerrainChunkQuads;
+    uint32_t mask = 0;
+    for (uint32_t z = z0; z <= z0 + kTerrainChunkQuads && z < t.samples; ++z)
+        for (uint32_t x = x0; x <= x0 + kTerrainChunkQuads && x < t.samples; ++x) {
+            const uint8_t* w = &t.weights[(size_t(z) * t.samples + x) * 4];
+            for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+                if (w[i] >= 3) mask |= 1u << i;
+        }
+    return mask ? mask : usedMask(t);
 }
 
 float terrainHeight(const TerrainData& t, float x, float z) {
@@ -471,6 +690,9 @@ void terrainTriangles(
 glm::ivec4 applyTerrainBrush(TerrainData& t, const TerrainBrushStroke& s) {
     glm::ivec4 changed{1, 1, 0, 0};
     if (t.heights.empty() || !(s.radius > 0.0f) || !(s.strength > 0.0f) || !(s.dt > 0.0f)) return changed;
+    if (s.brush == TerrainBrush::Paint && (!t.painted() || s.layer >= kTerrainLayerCount || !t.layers[s.layer].used ||
+                                           t.weights.size() != size_t(t.samples) * t.samples * 4))
+        return changed;
     const int last = int(t.samples) - 1;
     const int x0 = std::max(0, int(std::ceil((s.centre.x - s.radius) / t.spacing)));
     const int x1 = std::min(last, int(std::floor((s.centre.x + s.radius) / t.spacing)));
@@ -489,6 +711,25 @@ glm::ivec4 applyTerrainBrush(TerrainData& t, const TerrainBrushStroke& s) {
             if (d >= s.radius) continue;
             const float lin = 1.0f - d / s.radius;
             const float weight = s.falloff == TerrainFalloff::Linear ? lin : smoothstep01(lin);
+            if (s.brush == TerrainBrush::Paint) {
+                // The layer's share moves this much of the way to all of it; the others give
+                // up what it gains in proportion. At least one step, so it always gets there.
+                uint8_t* w = &t.weights[(size_t(z) * t.samples + size_t(x)) * 4];
+                const uint32_t l = s.layer;
+                if (w[l] == 255) continue;
+                const float a = std::min(1.0f, strength * 4.0f * s.dt * weight);
+                auto mine = static_cast<uint32_t>(std::lround(float(w[l]) + a * float(255 - w[l])));
+                if (mine <= w[l]) mine = w[l] + 1u;
+                float share[kTerrainLayerCount];
+                for (uint32_t i = 0; i < kTerrainLayerCount; ++i) share[i] = i == l ? 0.0f : float(w[i]);
+                uint8_t next[kTerrainLayerCount];
+                distribute(share, 255 - mine, next);
+                next[l] = static_cast<uint8_t>(mine);
+                if (std::equal(next, next + kTerrainLayerCount, w)) continue;
+                std::copy(next, next + kTerrainLayerCount, w);
+                changed = unionRect(changed, {x, z, x, z});
+                continue;
+            }
             uint16_t& value = t.heights[size_t(z) * t.samples + size_t(x)];
             const float h = t.metres(value);
             float next = h;
@@ -496,6 +737,7 @@ glm::ivec4 applyTerrainBrush(TerrainData& t, const TerrainBrushStroke& s) {
             case TerrainBrush::Raise: next = h + rate * weight; break;
             case TerrainBrush::Lower: next = h - rate * weight; break;
             case TerrainBrush::Flatten: next = h + (s.flattenTo - h) * pull * weight; break;
+            case TerrainBrush::Paint: break;   // above
             case TerrainBrush::Smooth: {
                 float sum = 0.0f;
                 int count = 0;
@@ -541,17 +783,66 @@ glm::ivec4 unionRect(glm::ivec4 a, glm::ivec4 b) {
     return {std::min(a.x, b.x), std::min(a.y, b.y), std::max(a.z, b.z), std::max(a.w, b.w)};
 }
 
+std::vector<uint8_t> terrainWeightsRegion(const TerrainData& t, glm::ivec4 r) {
+    std::vector<uint8_t> out;
+    if (r.x > r.z || r.y > r.w || t.weights.size() != size_t(t.samples) * t.samples * 4) return out;
+    out.reserve(size_t(r.z - r.x + 1) * size_t(r.w - r.y + 1) * 4);
+    for (int z = r.y; z <= r.w; ++z) {
+        const auto* row = &t.weights[(size_t(z) * t.samples + size_t(r.x)) * 4];
+        out.insert(out.end(), row, row + size_t(r.z - r.x + 1) * 4);
+    }
+    return out;
+}
+
+void setTerrainWeightsRegion(TerrainData& t, glm::ivec4 r, std::span<const uint8_t> values) {
+    if (r.x > r.z || r.y > r.w || t.weights.size() != size_t(t.samples) * t.samples * 4) return;
+    const size_t width = size_t(r.z - r.x + 1) * 4;
+    if (values.size() < width * size_t(r.w - r.y + 1)) return;
+    for (int z = r.y; z <= r.w; ++z)
+        std::copy_n(
+            values.begin() + ptrdiff_t(size_t(z - r.y) * width), width,
+            t.weights.begin() + ptrdiff_t((size_t(z) * t.samples + size_t(r.x)) * 4));
+}
+
+TerrainLayout terrainLayout(const TerrainData& t) { return {t.version, t.layers, t.weightsFile}; }
+
 TerrainEdit makeTerrainEdit(std::string asset, const TerrainData& before, const TerrainData& after, glm::ivec4 rect) {
     TerrainEdit edit;
     edit.asset = std::move(asset);
     edit.rect = rect;
     edit.before = terrainRegion(before, rect);
     edit.after = terrainRegion(after, rect);
+    edit.layoutBefore = terrainLayout(before);
+    edit.layoutAfter = terrainLayout(after);
+    edit.layout = edit.layoutBefore != edit.layoutAfter;
+    if (edit.layout) {
+        // Layers added or removed: all of the weights, and version 1's material.
+        edit.weightsBefore = before.weights;
+        edit.weightsAfter = after.weights;
+        edit.materialBefore = before.material;
+        edit.materialAfter = after.material;
+        edit.uvMetresBefore = before.uvMetres;
+        edit.uvMetresAfter = after.uvMetres;
+    } else if (before.painted()) {
+        edit.weightsBefore = terrainWeightsRegion(before, rect);
+        edit.weightsAfter = terrainWeightsRegion(after, rect);
+    }
     return edit;
 }
 
 void applyTerrainEdit(TerrainData& terrain, const TerrainEdit& edit, bool redo) {
     setTerrainRegion(terrain, edit.rect, redo ? edit.after : edit.before);
+    if (edit.layout) {
+        const TerrainLayout& layout = redo ? edit.layoutAfter : edit.layoutBefore;
+        terrain.version = layout.version;
+        terrain.layers = layout.layers;
+        terrain.weightsFile = layout.weightsFile;
+        terrain.weights = redo ? edit.weightsAfter : edit.weightsBefore;
+        terrain.material = redo ? edit.materialAfter : edit.materialBefore;
+        terrain.uvMetres = redo ? edit.uvMetresAfter : edit.uvMetresBefore;
+    } else {
+        setTerrainWeightsRegion(terrain, edit.rect, redo ? edit.weightsAfter : edit.weightsBefore);
+    }
 }
 
 bool importTerrainHeights(const fs::path& file, uint32_t& samples, std::vector<uint16_t>& heights, std::string& error) {
@@ -592,20 +883,40 @@ bool importTerrainHeights(const fs::path& file, uint32_t& samples, std::vector<u
     return true;
 }
 
+namespace {
+
+TerrainChunk makeChunk(Renderer& renderer, const TerrainData& data, uint32_t c) {
+    const MeshData mesh = buildTerrainChunk(data, c);
+    TerrainChunk chunk;
+    chunk.mesh = renderer.createMesh(mesh);
+    if (chunk.mesh.valid()) renderer.setMeshLods(chunk.mesh, mesh.lods, mesh.lodIndices);
+    chunk.bounds = computeBounds(mesh);
+    chunk.layers = terrainChunkLayers(data, c);
+    return chunk;
+}
+
+bool hasWeights(const TerrainData& d) { return d.painted() && d.weights.size() == size_t(d.samples) * d.samples * 4; }
+
+// The weights texture: made the first time, then updated in place.
+void syncWeights(Renderer& renderer, TerrainAsset& asset) {
+    if (!hasWeights(*asset.data)) return;
+    const uint32_t n = asset.data->samples;
+    if (asset.weights.id != 0)
+        renderer.updateTexture(asset.weights, n, n, asset.data->weights, false);
+    else
+        asset.weights = renderer.createTexture(n, n, asset.data->weights, false);
+}
+
+}   // namespace
+
 std::shared_ptr<TerrainAsset> uploadTerrain(Renderer& renderer, std::shared_ptr<const TerrainData> data) {
     auto asset = std::make_shared<TerrainAsset>();
     asset->data = std::move(data);
     const uint32_t count = terrainChunkCount(*asset->data);
     asset->chunks.reserve(count);
     try {
-        for (uint32_t c = 0; c < count; ++c) {
-            const MeshData mesh = buildTerrainChunk(*asset->data, c);
-            TerrainChunk chunk;
-            chunk.mesh = renderer.createMesh(mesh);
-            if (chunk.mesh.valid()) renderer.setMeshLods(chunk.mesh, mesh.lods, mesh.lodIndices);
-            chunk.bounds = computeBounds(mesh);
-            asset->chunks.push_back(chunk);
-        }
+        for (uint32_t c = 0; c < count; ++c) asset->chunks.push_back(makeChunk(renderer, *asset->data, c));
+        syncWeights(renderer, *asset);
     } catch (...) {
         releaseTerrain(renderer, *asset);
         throw;
@@ -615,35 +926,38 @@ std::shared_ptr<TerrainAsset> uploadTerrain(Renderer& renderer, std::shared_ptr<
 
 std::shared_ptr<TerrainAsset> updateTerrain(
     Renderer& renderer, const TerrainAsset& previous, std::shared_ptr<const TerrainData> data, glm::ivec4 rect,
-    std::vector<MeshHandle>& retired) {
+    std::vector<MeshHandle>& retired, uint32_t changed) {
     const bool sameShape =
         previous.data && previous.data->samples == data->samples && previous.chunks.size() == terrainChunkCount(*data);
+    auto asset = std::make_shared<TerrainAsset>();
+    asset->revision = previous.revision + 1;
+    asset->weights = previous.weights;
+    asset->data = std::move(data);
     if (!sameShape) {
         for (const TerrainChunk& c : previous.chunks)
             if (c.mesh.valid()) retired.push_back(c.mesh);
-        auto fresh = uploadTerrain(renderer, std::move(data));
-        fresh->revision = previous.revision + 1;
-        return fresh;
+        const uint32_t count = terrainChunkCount(*asset->data);
+        for (uint32_t c = 0; c < count; ++c) asset->chunks.push_back(makeChunk(renderer, *asset->data, c));
+        syncWeights(renderer, *asset);
+        return asset;
     }
-    auto asset = std::make_shared<TerrainAsset>();
     asset->chunks = previous.chunks;
-    asset->revision = previous.revision + 1;
-    for (const uint32_t c : terrainChunksTouching(*data, rect)) {
-        const MeshData mesh = buildTerrainChunk(*data, c);
-        TerrainChunk chunk;
-        chunk.mesh = renderer.createMesh(mesh);
-        if (chunk.mesh.valid()) renderer.setMeshLods(chunk.mesh, mesh.lods, mesh.lodIndices);
-        chunk.bounds = computeBounds(mesh);
-        if (asset->chunks[c].mesh.valid()) retired.push_back(asset->chunks[c].mesh);
-        asset->chunks[c] = chunk;
+    for (const uint32_t c : terrainChunksTouching(*asset->data, rect)) {
+        if (changed & kTerrainHeightsChanged) {
+            if (asset->chunks[c].mesh.valid()) retired.push_back(asset->chunks[c].mesh);
+            asset->chunks[c] = makeChunk(renderer, *asset->data, c);
+        } else if (changed & kTerrainWeightsChanged) {
+            asset->chunks[c].layers = terrainChunkLayers(*asset->data, c);
+        }
     }
-    asset->data = std::move(data);
+    if (changed & kTerrainWeightsChanged) syncWeights(renderer, *asset);
     return asset;
 }
 
 void releaseTerrain(Renderer& renderer, const TerrainAsset& terrain) {
     for (const TerrainChunk& c : terrain.chunks)
         if (c.mesh.valid()) renderer.destroyMesh(c.mesh);
+    if (terrain.weights.id != 0) renderer.destroyTexture(terrain.weights);
 }
 
 }   // namespace shockwave

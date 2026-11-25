@@ -1,4 +1,4 @@
-Config/ReleaseTier.swtier: fallback low; 1 mandatory, 23 optional
+Config/ReleaseTier.swtier: fallback low; 1 mandatory, 24 optional
 
 setting                use        minimum  fallback  low       medium    high      ultra    
 shadow_quality         mandatory  low      low       low       medium    high      ultra    
@@ -20,6 +20,7 @@ clearcoat              optional   -        true      true      true      true   
 transmission_quality   optional   -        low       low       medium    medium    high     
 skin_quality           optional   -        off       off       low       high      high     
 hair_quality           optional   -        low       low       high      high      high     
+terrain_quality        optional   -        low       low       low       high      high     
 contact_shadows        optional   -        off       off       off       on        on       
 reflections_quality    optional   -        off       off       off       medium    high     
 texture_quality        optional   -        low       low       medium    high      ultra    

@@ -69,6 +69,14 @@ std::vector<std::string> terrainProblems(
         const std::string& material = asset->data->material;
         if (!material.empty() && !assets.findMaterial(material).valid())
             problems.push_back(terrain->asset + ": the material " + material + " isn't loaded");
+        if (asset->data->painted())
+            for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+                const TerrainLayer& layer = asset->data->layers[i];
+                if (layer.used && !layer.material.empty() && !assets.findMaterial(layer.material).valid())
+                    problems.push_back(
+                        terrain->asset + ": layer " + std::to_string(i) + "'s material " + layer.material +
+                        " isn't loaded");
+            }
     });
     return problems;
 }

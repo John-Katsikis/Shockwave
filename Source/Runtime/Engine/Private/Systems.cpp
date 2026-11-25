@@ -269,12 +269,49 @@ void renderWorld(
                     texture = material->baseColorTexture;
                     baseColor = material->baseColor;
                 }
+            // Painted (W1b): up to four layers blended by the weights, in the terrain family.
+            TerrainShading layered;
+            MaterialShading family;
+            const bool painted = asset->data->painted() && asset->weights.id != 0;
+            if (painted) {
+                options = DrawMaterial{};
+                texture = TextureHandle{};
+                baseColor = glm::vec4(1.0f);
+                layered.weights = asset->weights;
+                SamplerDesc clamped;
+                clamped.wrapU = clamped.wrapV = TextureWrap::Clamp;
+                layered.weightsSampler = renderer.sampler(clamped);
+                layered.corner = glm::vec2(placed[3].x, placed[3].z);
+                layered.spacing = asset->data->spacing;
+                layered.samples = asset->data->samples;
+                for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+                    const TerrainLayer& source = asset->data->layers[i];
+                    TerrainLayerShading& l = layered.layer[i];
+                    l.uvMetres = source.uvMetres;
+                    l.baseColor = glm::vec4(0.55f, 0.55f, 0.5f, 1.0f);   // the default surface
+                    if (!source.used || source.material.empty()) continue;
+                    if (const auto m = assets->material(assets->findMaterial(source.material))) {
+                        l.baseColorTexture = m->baseColorTexture;
+                        l.normalTexture = m->draw.normalTexture;
+                        l.metallicRoughnessTexture = m->draw.metallicRoughnessTexture;
+                        l.sampler = m->draw.bindings[size_t(MaterialSlot::BaseColor)].sampler;
+                        l.baseColor = m->baseColor;
+                        l.roughness = m->draw.roughness;
+                        l.metallic = m->draw.metallic;
+                        l.normalScale = m->draw.normalScale;
+                    }
+                }
+                family.family = ShadingFamily::Terrain;
+                family.terrain = &layered;
+                options.shading = &family;
+            }
             options.castShadows = terrain.castShadows;
             options.decalLayers = decalLayers(e);
             IndirectLighting probe;
             for (uint32_t c = 0; c < asset->chunks.size(); ++c) {
                 const TerrainChunk& chunk = asset->chunks[c];
                 if (!chunk.mesh.valid()) continue;
+                layered.layers = chunk.layers;
                 DrawMaterial each = options;
                 const glm::vec3 centre =
                     glm::vec3(placed * glm::vec4((chunk.bounds.min + chunk.bounds.max) * 0.5f, 1.0f));

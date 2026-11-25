@@ -536,12 +536,19 @@ void registerBuiltinProviders() {
                 }
             return true;
         });
-    // A terrain: its heights file and its material.
+    // A terrain: its heights file and its material, or (painted) its weights and layers' materials.
     registerAssetProvider("terrain", {".swterrain"}, [](AssetReader& r, std::string& error) {
         TerrainData terrain;
         if (!parseTerrain(r.text(), terrain, error)) return false;
         r.content(terrain.heightsFile, "heights", 0, AssetKind::Other);
         if (!terrain.material.empty()) r.content(terrain.material, "material", 0, AssetKind::Material);
+        if (terrain.painted()) {
+            r.content(terrain.weightsFile, "weights", 0, AssetKind::Other);
+            for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+                if (terrain.layers[i].used && !terrain.layers[i].material.empty())
+                    r.content(
+                        terrain.layers[i].material, "layer " + std::to_string(i) + " material", 0, AssetKind::Material);
+        }
         return true;
     });
     // Baked lighting and reflections: the generated files the manifest vouches for. The

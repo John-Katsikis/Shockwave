@@ -100,7 +100,8 @@ struct ShadingData {
     vec3 skinRadius;   // metres per channel, times the strength
     float skinMaxPixels;
     uint skinReceiver;   // 1..255 in the skin pass; 0: none
-    float pad0, pad1, pad2;
+    float pad0;
+    uvec2 terrain;   // family terrain (W1b): a TerrainShadingBuffer; 0: none
     SlotBinding slots[3];   // MaterialSlot::Clearcoat onwards
 };
 layout(buffer_reference, scalar) readonly buffer ShadingBuffer {
@@ -116,6 +117,38 @@ const uint kShadingRoughTaps = 64u;   // transmission high: four more taps for r
 const uint kShadingSimplifiedGlass = 128u;   // transmission off (or no pass this frame): blended stand-in
 // ShadingData::slots
 const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u;
+// ShadingData::family
+const uint kFamilyStandard = 0u, kFamilySkin = 1u, kFamilyHairCard = 2u, kFamilyTransmission = 3u, kFamilyTerrain = 4u;
+
+// A painted terrain draw's layers (W1b, Renderer/Shading.h). Must match TerrainShadingData
+// in RendererImpl.h.
+struct TerrainLayerData {
+    uint baseColor;   // bindless slots; 0: white (normal: none)
+    uint normal;
+    uint metallicRoughness;
+    uint layerSampler;   // a material sampler, for all three
+    vec4 baseColorFactor;
+    float roughness;
+    float metallic;
+    float normalScale;
+    float inverseUvMetres;
+};
+struct TerrainShadingData {
+    uint weights;   // bindless slot of the RGBA8 weights, one texel per terrain point
+    uint layers;   // bit i: layer i is sampled in this draw
+    uint flags;   // kTerrain*
+    uint weightsSampler;   // a material sampler, clamped at the edges
+    vec2 weightScale;   // weights uv = world XZ * weightScale + weightOffset
+    vec2 weightOffset;
+    vec2 corner;   // world XZ of the terrain's corner, where the layers' UVs start
+    vec2 pad2;
+    TerrainLayerData layer[4];
+};
+layout(buffer_reference, scalar) readonly buffer TerrainShadingBuffer {
+    TerrainShadingData terrain;
+};
+// TerrainShadingData::flags
+const uint kTerrainLow = 1u;   // terrain_quality low: the two heaviest layers, no normal maps
 
 // One entry per draw in the frame's draw table. Must match DrawData in RendererImpl.h.
 struct DrawData {

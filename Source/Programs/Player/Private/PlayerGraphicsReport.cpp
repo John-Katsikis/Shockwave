@@ -228,10 +228,13 @@ void Player::graphicsReport() {
         terrainChunks += static_cast<uint32_t>(asset->chunks.size());
     });
     const shockwave::LodStats lod = renderer.lodStats();
+    const shockwave::ShadingStats shadingStats = renderer.shadingStats();
     if (terrains)
         std::printf(
-            "\nterrain: %u terrain%s, %u chunks submitted; %u draws used a simpler level\n", terrains,
-            terrains == 1 ? "" : "s", terrainChunks, lod.reducedDraws);
+            "\nterrain: %u terrain%s, %u chunks submitted; %u draws used a simpler level; %u painted draws sampled %u "
+            "layers (terrain_quality %s)\n",
+            terrains, terrains == 1 ? "" : "s", terrainChunks, lod.reducedDraws, shadingStats.terrainDraws,
+            shadingStats.terrainLayers, shockwave::terrainQualityName(renderer.shadingSettings().terrain));
 
     if (m_tool.benchmarkJson.empty()) return;
     std::ostringstream json;
@@ -281,8 +284,11 @@ void Player::graphicsReport() {
          << ", \"over_budget\": " << (graphics.overBudget() ? "true" : "false") << "}"
          << ",\n  \"terrain\": {\"terrains\": " << terrains << ", \"chunks\": " << terrainChunks
          << ", \"lod_reduced_draws\": " << lod.reducedDraws << ", \"triangles\": " << lod.triangles
-         << ", \"full_triangles\": " << lod.fullTriangles << "}"
-         << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
+         << ", \"full_triangles\": " << lod.fullTriangles << ", \"painted_draws\": " << shadingStats.terrainDraws
+         << ", \"layers_sampled\": " << shadingStats.terrainLayers
+         << ", \"low_quality_draws\": " << shadingStats.terrainLowDraws
+         << ", \"terrain_quality\": " << quoted(shockwave::terrainQualityName(renderer.shadingSettings().terrain))
+         << "}" << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
     out << json.str();

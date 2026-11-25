@@ -27,6 +27,9 @@ struct GreyImage16 {
     std::vector<uint16_t> values;
 };
 bool decodeGreyImage16(std::span<const uint8_t> bytes, GreyImage16& image, std::string& error);
+// An RGBA8 PNG of the pixels (rows top to bottom), stored without compression: simple,
+// exact and readable by any tool. For files the engine writes itself (terrain weights, W1b).
+std::vector<uint8_t> encodePngRgba8(uint32_t width, uint32_t height, std::span<const uint8_t> rgba);
 // Whether loadImage knows the file's extension.
 bool isImageFile(const std::filesystem::path& path);
 

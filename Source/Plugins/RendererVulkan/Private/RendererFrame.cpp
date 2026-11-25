@@ -134,6 +134,11 @@ void VulkanRenderer::Impl::drawMesh(
     command.data.shading = 0;
     ShadingData shade{};
     const bool shaded = material.shading && fillShading(material, scale, command, shade, vertexTangents);
+    // Painted terrain (W1b): its layers in a table of their own.
+    TerrainShadingData terrain{};
+    const bool terrainLayers =
+        shaded && material.shading->family == ShadingFamily::Terrain && material.shading->terrain;
+    if (terrainLayers) fillTerrainShading(*material.shading->terrain, terrain);
     if (!mesh.skinAddress) joints = {};
     const glm::vec4 bounds = joints.empty() ? mesh.bounds : skinnedBounds(mesh, joints);
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
@@ -164,6 +169,10 @@ void VulkanRenderer::Impl::drawMesh(
             command.shading = static_cast<uint32_t>(list.shading.size());
             list.shading.push_back(shade);
         }
+        if (terrainLayers) {
+            command.terrain = static_cast<uint32_t>(list.terrain.size());
+            list.terrain.push_back(terrain);
+        }
         addDraw(list, index, command, handle.id, joints);
     };
     if (thread < drawLists.size()) {
@@ -182,6 +191,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
         list.layers.clear();
         list.probes.clear();
         list.shading.clear();
+        list.terrain.clear();
     }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
@@ -190,6 +200,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
     foreignDraws.layers.clear();
     foreignDraws.probes.clear();
     foreignDraws.shading.clear();
+    foreignDraws.terrain.clear();
     skinDispatches.clear();
 }
 
@@ -427,7 +438,11 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     uint32_t shadingCount = 0;
     for (const DrawCommand& draw : draws) shadingCount += draw.shading != kNoLayers;
     if (shadingCount) ensureShadingCapacity(f, shadingCount);
-    uint32_t nextLayer = 0, nextProbe = 0, nextShading = 0;
+    // And painted terrains' layers (W1b), pointed at from their ShadingData.
+    uint32_t terrainCount = 0;
+    for (const DrawCommand& draw : draws) terrainCount += draw.terrain != kNoLayers;
+    if (terrainCount) ensureTerrainCapacity(f, terrainCount);
+    uint32_t nextLayer = 0, nextProbe = 0, nextShading = 0, nextTerrain = 0;
     std::lock_guard lock(foreignDrawMutex);
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
@@ -441,6 +456,12 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         if (draws[i].shading != kNoLayers) {
             f.shadingData[nextShading] = list.shading[draws[i].shading];
             f.drawData[i].shading = f.shadingAddress + VkDeviceAddress(nextShading) * sizeof(ShadingData);
+            if (draws[i].terrain != kNoLayers) {
+                f.terrainData[nextTerrain] = list.terrain[draws[i].terrain];
+                f.shadingData[nextShading].terrain =
+                    f.terrainAddress + VkDeviceAddress(nextTerrain) * sizeof(TerrainShadingData);
+                draws[i].terrain = nextTerrain++;   // from here on, its entry in the frame's table
+            }
             draws[i].shading = nextShading++;   // from here on, its entry in the frame's table
         }
         if (draws[i].layers == kNoLayers) continue;
@@ -460,6 +481,11 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     if (layerCount)
         vk::check(
             vmaFlushAllocation(context->allocator(), f.layerBuffer.allocation, 0, sizeof(LayerData) * layerCount),
+            "vmaFlushAllocation");
+    if (terrainCount)
+        vk::check(
+            vmaFlushAllocation(
+                context->allocator(), f.terrainBuffer.allocation, 0, sizeof(TerrainShadingData) * terrainCount),
             "vmaFlushAllocation");
     if (probeCount)
         vk::check(

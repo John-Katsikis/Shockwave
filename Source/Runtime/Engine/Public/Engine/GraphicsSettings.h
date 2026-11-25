@@ -66,6 +66,9 @@ struct GraphicsSettings {
     TransmissionQuality transmissionQuality = TransmissionQuality::Medium;
     SkinQuality skinQuality = SkinQuality::High;
     HairQuality hairQuality = HairQuality::High;
+    // Painted terrain (W1b): high blends every layer at a pixel; low only its two heaviest,
+    // without their normal maps.
+    TerrainQuality terrainQuality = TerrainQuality::High;
     // Screen effects (V1-V4): small shadows where things touch, reflections of what's on
     // screen, motion blur and the scene's depth of field. Off by default except depth of
     // field, which is the scene's look like colour grading; each off has no pass or memory.

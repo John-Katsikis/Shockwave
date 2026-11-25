@@ -854,6 +854,7 @@ uint32_t materialFeatures(const MaterialDesc& desc) {
         break;
     case MaterialFamily::Skin: features |= kMaterialSkin; break;
     case MaterialFamily::HairCard: features |= kMaterialHairCard; break;
+    case MaterialFamily::Terrain: break;   // never parsed from a .swmaterial
     }
     return features;
 }

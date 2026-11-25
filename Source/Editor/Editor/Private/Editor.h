@@ -356,7 +356,14 @@ private:
     void stepTerrainUndo(bool redo);
     // The terrain asset the panel works on: the selected entity's, else the scene's first.
     shockwave::Entity terrainTarget() const;
-    void publishTerrain(const std::string& asset, std::shared_ptr<const shockwave::TerrainData> data, glm::ivec4 rect);
+    // changed: shockwave::TerrainChange bits (heights, weights).
+    void publishTerrain(
+        const std::string& asset, std::shared_ptr<const shockwave::TerrainData> data, glm::ivec4 rect,
+        uint32_t changed = shockwave::kTerrainHeightsChanged);
+    // A whole-terrain change (an import, a layer added or removed) as one undo step.
+    void commitTerrainChange(
+        const std::string& asset, const shockwave::TerrainData& before, std::shared_ptr<shockwave::TerrainData> after,
+        glm::ivec4 rect, uint32_t changed);
     struct TerrainTool {
         bool open = false;
         int brush = -1;   // -1: none, else shockwave::TerrainBrush
@@ -366,6 +373,10 @@ private:
         float newSpacing = 1.0f, newLow = 0.0f, newHigh = 100.0f;
         char newName[128] = "terrain/terrain";
         char importPath[512] = "";
+        // Painted layers (W1b): the layer Paint raises, and the next layer's material.
+        int paintLayer = 0;
+        char newLayerMaterial[256] = "";
+        float newLayerUvMetres = 4.0f;
         // The stroke under way: its asset, the heights before it, what it has touched so far.
         bool stroking = false;
         std::string strokeAsset;

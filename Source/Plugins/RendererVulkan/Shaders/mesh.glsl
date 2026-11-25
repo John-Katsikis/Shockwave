@@ -273,6 +273,20 @@ vec3 mappedNormal(vec3 n, uint map, SlotBinding binding, bool derivative, float 
     return normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
 }
 
+// A painted terrain's layer normal (W1b): the layer's map read at uv, in the vertex tangents'
+// frame (terrain tangents follow +X, like the layers' u). len as mappedNormal.
+vec3 terrainLayerNormal(vec3 n, TerrainLayerData l, vec2 uv, out float len) {
+    len = 1.0;
+    vec3 t, b;
+    if (l.normal == 0u || !tangentFrame(n, uv, false, t, b)) return n;
+    vec3 m = texture(sampler2D(textures[nonuniformEXT(l.normal)], materialSamplers[nonuniformEXT(l.layerSampler)]), uv).xyz * 2.0 - 1.0;
+    float filtered = textureQueryLod(
+        sampler2D(textures[nonuniformEXT(l.normal)], materialSamplers[nonuniformEXT(l.layerSampler)]), uv).y;
+    len = mix(1.0, min(length(m) / 0.996, 1.0), clamp(filtered, 0.0, 1.0));
+    m.xy *= l.normalScale;
+    return normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
+}
+
 // The surface normal, tilted by the normal map (tangent space, glTF's convention: green
 // points up the texture), not yet turned around for back faces. len as mappedNormal.
 vec3 surfaceNormal(out float len) {
@@ -451,6 +465,63 @@ void main() {
     vec2 roughnessMetallic = vRoughnessMetallic;
     if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
 
+    // Painted terrain (W1b): up to four layers blended by the weights texture, in place of
+    // the material's colour, roughness, metallic and normal. Layers the draw's chunk doesn't
+    // use, and layers under 1% at this pixel, aren't sampled; low keeps the two heaviest and
+    // leaves out their normal maps.
+    vec4 terrainWeights = vec4(0.0);
+    if (family == kFamilyTerrain && sh.terrain != uvec2(0u)) {
+        TerrainShadingBuffer tb = TerrainShadingBuffer(sh.terrain);
+        uint used = tb.terrain.layers;
+        bool low = (tb.terrain.flags & kTerrainLow) != 0u;
+        vec2 xz = vWorldPosition.xz;
+        vec4 w = texture(sampler2D(textures[nonuniformEXT(tb.terrain.weights)],
+            materialSamplers[nonuniformEXT(tb.terrain.weightsSampler)]), xz * tb.terrain.weightScale + tb.terrain.weightOffset);
+        for (uint i = 0u; i < 4u; ++i)
+            if ((used & (1u << i)) == 0u || w[i] <= 0.01) w[i] = 0.0;
+        if (low) {
+            // The two heaviest (ties to the lower layer), the rest dropped.
+            uint first = 0u;
+            for (uint i = 1u; i < 4u; ++i) if (w[i] > w[first]) first = i;
+            uint second = first == 0u ? 1u : 0u;
+            for (uint i = 0u; i < 4u; ++i) if (i != first && w[i] > w[second]) second = i;
+            for (uint i = 0u; i < 4u; ++i) if (i != first && i != second) w[i] = 0.0;
+        }
+        float total = w.x + w.y + w.z + w.w;
+        if (total <= 0.0) {
+            // Nothing above 1% here: the first layer the draw uses.
+            uint first = findLSB(max(used, 1u));
+            w = vec4(0.0);
+            w[first] = 1.0;
+            total = 1.0;
+        }
+        w /= total;
+        terrainWeights = w;
+        vec3 geometric = normalize(vNormal);
+        vec3 color = vec3(0.0), normalSum = vec3(0.0);
+        vec2 rm = vec2(0.0);
+        float lengthSum = 0.0;
+        for (uint i = 0u; i < 4u; ++i) {
+            if (w[i] <= 0.0) continue;
+            TerrainLayerData l = tb.terrain.layer[i];
+            vec2 uv = (xz - tb.terrain.corner) * l.inverseUvMetres;
+            uint s = l.layerSampler;
+            color += w[i] * texture(sampler2D(textures[nonuniformEXT(l.baseColor)], materialSamplers[nonuniformEXT(s)]), uv).rgb *
+                     l.baseColorFactor.rgb;
+            rm += w[i] * vec2(l.roughness, l.metallic) *
+                  texture(sampler2D(textures[nonuniformEXT(l.metallicRoughness)], materialSamplers[nonuniformEXT(s)]), uv).gb;
+            float len = 1.0;
+            vec3 ln = low ? geometric : terrainLayerNormal(geometric, l, uv, len);
+            normalSum += w[i] * ln;
+            lengthSum += w[i] * len;
+        }
+        albedo.rgb = color * vColor.rgb;
+        roughnessMetallic = rm;
+        float normalSumLength = length(normalSum);
+        n = normalSumLength > 1e-6 ? normalSum / normalSumLength : geometric;
+        normalLength = lengthSum;
+    }
+
     // Detail and second layers (A02): mixed into the surface before a single evaluation of
     // the lighting. Alpha, emission and occlusion stay the first layer's.
     uvec2 layerAddress = pc.drawBuffer.draws[vDraw].layers;
@@ -553,6 +624,10 @@ void main() {
         if (family == 1u) shown = (shadingFlags & kShadingSkinDiffusion) != 0u ? vec3(1.0, 0.5, 0.25) : vec3(0.45, 0.25, 0.1);
         if (family == 2u) shown = (shadingFlags & kShadingAnisotropic) != 0u ? vec3(0.2, 1.0, 1.0) : vec3(0.2, 0.3, 1.0);
         if (family == 3u) shown = kTransmissionPass ? vec3(0.2, 1.0, 0.3) : vec3(0.8, 0.2, 0.8);
+        // Painted terrain (W1b): each layer's share, layer 0 red, 1 green, 2 blue, 3 yellow.
+        if (family == kFamilyTerrain)
+            shown = terrainWeights.x * vec3(1.0, 0.0, 0.0) + terrainWeights.y * vec3(0.0, 1.0, 0.0) +
+                    terrainWeights.z * vec3(0.0, 0.0, 1.0) + terrainWeights.w * vec3(1.0, 1.0, 0.0);
         outColor = vec4(shown, 1.0);
         return;
     }

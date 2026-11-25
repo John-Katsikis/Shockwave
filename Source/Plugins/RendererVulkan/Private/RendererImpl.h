@@ -166,13 +166,39 @@ struct ShadingData {
     glm::vec3 skinRadius;   // metres, times the strength
     float skinMaxPixels;
     uint32_t skinReceiver;
-    float pad[3];
+    float pad;
+    VkDeviceAddress terrain;   // family terrain: its TerrainShadingData (W1b); 0: none
     SlotBinding slots[kShadingSlots];
 };
 static_assert(
     offsetof(ShadingData, absorption) == 48 && offsetof(ShadingData, skinRadius) == 64 &&
-        offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, slots) == 96 && sizeof(ShadingData) == 168,
+        offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, terrain) == 88 &&
+        offsetof(ShadingData, slots) == 96 && sizeof(ShadingData) == 168,
     "ShadingData must match the shader's scalar layout");
+
+// A painted terrain draw's layers (W1b, Renderer/Shading.h TerrainShading), in a table of its
+// own, pointed at by ShadingData::terrain. Must match TerrainShadingData in shaders/draw.glsl.
+constexpr uint32_t kTerrainLow = 1u;   // terrain_quality low: two heaviest layers, no normal maps
+struct TerrainLayerData {
+    uint32_t baseColor, normal, metallicRoughness;   // bindless slots; 0: white (normal: none)
+    uint32_t sampler;
+    glm::vec4 baseColorFactor;
+    float roughness, metallic, normalScale;
+    float inverseUvMetres;
+};
+struct TerrainShadingData {
+    uint32_t weights;   // bindless slot of the RGBA8 weights
+    uint32_t layers;   // bit i: layer i is sampled
+    uint32_t flags;   // kTerrain*
+    uint32_t weightsSampler;
+    glm::vec2 weightScale, weightOffset;   // weights uv = world XZ * scale + offset
+    glm::vec2 corner;   // world XZ of the terrain's corner, where layer UVs start
+    glm::vec2 pad2;
+    TerrainLayerData layer[kTerrainLayerCount];
+};
+static_assert(
+    sizeof(TerrainLayerData) == 48 && offsetof(TerrainShadingData, layer) == 48 && sizeof(TerrainShadingData) == 240,
+    "TerrainShadingData must match the shader's scalar layout");
 // The skin blur's per-receiver spread (shaders/skin.frag), receiver ids 1..255.
 struct SkinProfile {
     glm::vec3 radius;   // metres per channel
@@ -410,6 +436,8 @@ struct DrawCommand {
     uint32_t probes = kNoLayers;
     // Draws with a shading family or a coat (A07-A09): which ShadingData in the same DrawList.
     uint32_t shading = kNoLayers;
+    // Painted terrain draws (W1b): which TerrainShadingData in the same DrawList.
+    uint32_t terrain = kNoLayers;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     // Glass (drawn see-through: blend is set too), and skin that may diffuse (A07b, A08).
     bool transmission = false, skinDiffusion = false;
@@ -515,6 +543,7 @@ struct alignas(64) DrawList {
     std::vector<LayerData> layers;
     std::vector<ProbeData> probes;
     std::vector<ShadingData> shading;
+    std::vector<TerrainShadingData> terrain;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -602,6 +631,10 @@ struct VulkanRenderer::Impl {
         ShadingData* shadingData = nullptr;
         VkDeviceAddress shadingAddress = 0;
         uint32_t shadingCapacity = 0;
+        vk::Buffer terrainBuffer;   // this frame's TerrainShadingData (W1b), persistently mapped
+        TerrainShadingData* terrainData = nullptr;
+        VkDeviceAddress terrainAddress = 0;
+        uint32_t terrainCapacity = 0;
         vk::Buffer probeBuffer;   // this frame's ProbeData, persistently mapped
         ProbeData* probeData = nullptr;
         VkDeviceAddress probeAddress = 0;
@@ -1529,6 +1562,7 @@ struct VulkanRenderer::Impl {
     std::atomic<TransmissionQuality> shadingTransmission{TransmissionQuality::Medium};
     std::atomic<SkinQuality> shadingSkin{SkinQuality::High};
     std::atomic<HairQuality> shadingHair{HairQuality::High};
+    std::atomic<TerrainQuality> shadingTerrain{TerrainQuality::High};
     ShadingStats lastShadingStats;
     std::array<VkPipeline, 4> transmissionPipelines{};   // + 1 double-sided, + 2 mirrored
     std::array<VkPipeline, 8> skinPipelines{};   // indexed by prepassIndex
@@ -1564,6 +1598,9 @@ struct VulkanRenderer::Impl {
     bool fillShading(
         const DrawMaterial& material, float scale, DrawCommand& command, ShadingData& out,
         const std::function<bool(const TextureBinding&)>& vertexTangents);
+    // drawMesh, family terrain: the draw's TerrainShadingData.
+    void fillTerrainShading(const TerrainShading& terrain, TerrainShadingData& out);
+    void ensureTerrainCapacity(Frame& f, uint32_t count);
     // prepareDraws, after sorting: decides the passes and finishes the draws' ShadingData.
     void prepareShading(Frame& f);
     void ensureShadingCapacity(Frame& f, uint32_t count);

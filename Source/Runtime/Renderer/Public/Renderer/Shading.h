@@ -15,8 +15,9 @@
 namespace shockwave {
 
 // A material's shading family (.swmaterial "family"). Standard can add a clearcoat.
-enum class ShadingFamily : uint32_t { Standard, Skin, HairCard, Transmission };
-const char* shadingFamilyName(ShadingFamily family);   // "standard", "skin", "hair_card", "transmission"
+// Terrain (W1b) is a painted terrain's draws: up to four layers blended by a weights texture.
+enum class ShadingFamily : uint32_t { Standard, Skin, HairCard, Transmission, Terrain };
+const char* shadingFamilyName(ShadingFamily family);   // "standard", "skin", "hair_card", "transmission", "terrain"
 
 // ---- Settings (GraphicsSettings: clearcoat, transmission_quality, skin_quality, hair_quality) ----
 // Transmission: off draws glass as simplified see-through blended glass (never invisible
@@ -31,11 +32,16 @@ const char* skinQualityName(SkinQuality quality);
 // Hair: low shades cards with the isotropic highlight; high draws it as a band across the strands.
 enum class HairQuality : uint32_t { Low, High };
 const char* hairQualityName(HairQuality quality);
+// Terrain layers (W1b): high blends every layer a pixel has; low only its two heaviest,
+// without the layers' normal maps.
+enum class TerrainQuality : uint32_t { Low, High };
+const char* terrainQualityName(TerrainQuality quality);
 struct ShadingSettings {
     bool clearcoat = true;   // off: coated materials draw as their base (standard) material
     TransmissionQuality transmission = TransmissionQuality::Medium;
     SkinQuality skin = SkinQuality::High;
     HairQuality hair = HairQuality::High;
+    TerrainQuality terrain = TerrainQuality::High;
     bool operator==(const ShadingSettings&) const = default;
 };
 // The pipelines content needs that aren't built when the renderer starts (S10): glass and
@@ -46,6 +52,30 @@ struct PipelineNeeds {
     bool skin = false;
 };
 uint32_t skinBlurTaps(SkinQuality quality);   // per direction: 0, 7, 13
+
+// A painted terrain's layers (W1b, docs/Terrain.md), for family Terrain. Each layer is a
+// material's base colour, normal and metallic-roughness maps, tiled every uvMetres over
+// the world's XZ from the terrain's corner; the weights texture (RGBA8, linear, one texel
+// per terrain point) holds each layer's share in one channel.
+inline constexpr uint32_t kTerrainLayerCount = 4;
+struct TerrainLayerShading {
+    TextureHandle baseColorTexture;   // sRGB; 0: white
+    TextureHandle normalTexture;   // 0: none
+    TextureHandle metallicRoughnessTexture;   // 0: white
+    SamplerHandle sampler;   // for all three
+    glm::vec4 baseColor{1.0f};
+    float roughness = 1.0f, metallic = 0.0f, normalScale = 1.0f;
+    float uvMetres = 4.0f;
+};
+struct TerrainShading {
+    TextureHandle weights;
+    SamplerHandle weightsSampler;   // clamped at the edges
+    glm::vec2 corner{0.0f};   // world XZ of the terrain's lowest corner
+    float spacing = 1.0f;   // metres between points
+    uint32_t samples = 129;   // points along a side (the weights texture's size)
+    uint32_t layers = 0;   // bit i: layer i has weight somewhere in this draw; the rest aren't sampled
+    std::array<TerrainLayerShading, kTerrainLayerCount> layer{};
+};
 
 // What a material's family adds to DrawMaterial (MaterialShading lives with the material
 // asset; DrawMaterial::shading points at it during the draw call).
@@ -74,6 +104,8 @@ struct MaterialShading {
     float hairAnisotropy = 0.8f;   // -1..1; 0 is isotropic, positive a band across the strands
     uint32_t hairDirection = 1;   // root to tip: 0 along +u, 1 along +v (down the texture)
     std::array<TextureBinding, kShadingSlots> bindings{};
+    // Family Terrain: the layers. Read during the draw call only, like DrawMaterial::shading.
+    const TerrainShading* terrain = nullptr;
 };
 
 // ---- Clearcoat ----
@@ -123,6 +155,9 @@ struct ShadingStats {
     uint32_t skinDraws = 0;   // in the skin pass
     uint32_t hairDraws = 0;
     bool anisotropicHair = false;
+    uint32_t terrainDraws = 0;   // painted terrain chunks (W1b)
+    uint32_t terrainLayers = 0;   // the layers those draws sample, summed
+    uint32_t terrainLowDraws = 0;   // of them, drawn with terrain_quality low
     bool transmissionPass = false, skinPass = false;
     uint64_t transmissionBytes = 0, skinBytes = 0;
 };

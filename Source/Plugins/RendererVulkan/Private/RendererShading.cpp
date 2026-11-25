@@ -21,6 +21,8 @@
 // their setting is turned off or nothing has needed them for kIdleFrames frames.
 #include "RendererImpl.h"
 
+#include <bit>
+
 namespace shockwave {
 
 namespace {
@@ -56,6 +58,7 @@ void VulkanRenderer::Impl::setShadingSettings(const ShadingSettings& settings) {
     shadingTransmission.store(settings.transmission, std::memory_order_relaxed);
     shadingSkin.store(settings.skin, std::memory_order_relaxed);
     shadingHair.store(settings.hair, std::memory_order_relaxed);
+    shadingTerrain.store(settings.terrain, std::memory_order_relaxed);
 }
 
 bool VulkanRenderer::Impl::fillShading(
@@ -115,6 +118,12 @@ bool VulkanRenderer::Impl::fillShading(
         out.hairDirection = s.hairDirection == 0 ? 0u : 1u;
         any = true;
         break;
+    case ShadingFamily::Terrain:
+        // The layers go in a table of their own (fillTerrainShading); without them the draw
+        // is its standard material.
+        if (!s.terrain) out.family = static_cast<uint32_t>(ShadingFamily::Standard);
+        any = s.terrain != nullptr;
+        break;
     }
     for (size_t i = 0; i < kShadingSlots; ++i) {
         const TextureBinding& b = s.bindings[i];
@@ -125,6 +134,50 @@ bool VulkanRenderer::Impl::fillShading(
         o.samplerAndSet = samplerSlot(b.sampler) | (b.uvSet == 1 ? kSlotUvSet1 : 0u);
     }
     return any;
+}
+
+void VulkanRenderer::Impl::fillTerrainShading(const TerrainShading& t, TerrainShadingData& out) {
+    out = {};
+    out.weights = textureSlot(t.weights.id);
+    out.weightsSampler = samplerSlot(t.weightsSampler);
+    out.layers = t.layers & ((1u << kTerrainLayerCount) - 1u);
+    if (shadingTerrain.load(std::memory_order_relaxed) == TerrainQuality::Low) out.flags |= kTerrainLow;
+    // One texel per point: point i's centre is at (i + 0.5) / samples.
+    const float samples = static_cast<float>(std::max(t.samples, 2u));
+    const float spacing = std::max(t.spacing, 1e-4f);
+    out.weightScale = glm::vec2(1.0f / (spacing * samples));
+    out.weightOffset = glm::vec2(0.5f / samples) - t.corner * out.weightScale;
+    out.corner = t.corner;
+    auto slot = [&](TextureHandle h) { return h.id ? textureSlot(h.id) : 0u; };
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+        const TerrainLayerShading& l = t.layer[i];
+        TerrainLayerData& o = out.layer[i];
+        o.baseColor = textureSlot(l.baseColorTexture.id);
+        o.normal = slot(l.normalTexture);
+        o.metallicRoughness = textureSlot(l.metallicRoughnessTexture.id);
+        o.sampler = samplerSlot(l.sampler);
+        o.baseColorFactor = l.baseColor;
+        o.roughness = l.roughness;
+        o.metallic = l.metallic;
+        o.normalScale = l.normalScale;
+        o.inverseUvMetres = 1.0f / std::max(l.uvMetres, 0.01f);
+    }
+}
+
+void VulkanRenderer::Impl::ensureTerrainCapacity(Frame& f, uint32_t count) {
+    if (count <= f.terrainCapacity) return;
+    uint32_t capacity = std::max<uint32_t>(f.terrainCapacity, 64);
+    while (capacity < count) capacity *= 2;
+    if (f.terrainBuffer.buffer)
+        vmaDestroyBuffer(context->allocator(), f.terrainBuffer.buffer, f.terrainBuffer.allocation);
+    VmaAllocationInfo info{};
+    f.terrainBuffer = createBuffer(
+        capacity * sizeof(TerrainShadingData),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
+    f.terrainData = static_cast<TerrainShadingData*>(info.pMappedData);
+    f.terrainAddress = bufferAddress(f.terrainBuffer.buffer);
+    f.terrainCapacity = capacity;
 }
 
 void VulkanRenderer::Impl::ensureShadingCapacity(Frame& f, uint32_t count) {
@@ -225,6 +278,12 @@ void VulkanRenderer::Impl::prepareShading(Frame& f) {
             stats.coatDraws += (d.flags & kShadingCoat) != 0;
             stats.hairDraws += d.family == uint32_t(ShadingFamily::HairCard);
             stats.anisotropicHair |= (d.flags & kShadingAnisotropic) != 0;
+            if (draw.terrain != kNoLayers) {
+                const TerrainShadingData& t = f.terrainData[draw.terrain];
+                stats.terrainDraws += 1;
+                stats.terrainLayers += static_cast<uint32_t>(std::popcount(t.layers));
+                stats.terrainLowDraws += (t.flags & kTerrainLow) != 0;
+            }
         }
     }
     stats.transmissionPass = transmissionThisFrame;
