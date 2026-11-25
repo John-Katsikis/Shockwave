@@ -135,11 +135,15 @@ bool VulkanRenderer::Impl::prepareDraw(
          glm::dot(glm::vec3(transform[2]), glm::vec3(transform[2]))}));
     // Shading families and coats (A07-A09): glass becomes see-through here.
     command.data.shading = 0;
+    command.surfaceShader = 0;
     prepared.shaded = material.shading && fillShading(material, scale, command, shade, vertexTangents);
     const bool shaded = prepared.shaded;
     // Painted terrain (W1b): its layers in a table of their own.
     prepared.terrainLayers = shaded && material.shading->family == ShadingFamily::Terrain && material.shading->terrain;
     if (prepared.terrainLayers) fillTerrainShading(*material.shading->terrain, terrain);
+    // Material graphs (W4): their values in a table of their own; fillShading picked the shader.
+    prepared.graphed = shaded && command.surfaceShader != 0;
+    if (prepared.graphed) fillGraphShading(*material.shading->graph, prepared.graph);
     if (!mesh.skinAddress) joints = {};
     const glm::vec4 bounds = joints.empty() ? mesh.bounds : skinnedBounds(mesh, joints);
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
@@ -167,7 +171,7 @@ void VulkanRenderer::Impl::submitDraws(
     auto add = [&](DrawList& list, uint32_t index) {
         // One entry each in the list's tables, however many draws share it: each draw gets
         // its own copy when the frame's tables are filled.
-        uint32_t layers = kNoLayers, probes = kNoLayers, shading = kNoLayers, terrain = kNoLayers;
+        uint32_t layers = kNoLayers, probes = kNoLayers, shading = kNoLayers, terrain = kNoLayers, graph = kNoLayers;
         if (prepared.layer.flags) {
             layers = static_cast<uint32_t>(list.layers.size());
             list.layers.push_back(prepared.layer);
@@ -184,6 +188,10 @@ void VulkanRenderer::Impl::submitDraws(
             terrain = static_cast<uint32_t>(list.terrain.size());
             list.terrain.push_back(prepared.terrain);
         }
+        if (prepared.graphed) {
+            graph = static_cast<uint32_t>(list.graphs.size());
+            list.graphs.push_back(prepared.graph);
+        }
         list.commands.reserve(list.commands.size() + commands.size());
         for (DrawCommand& command : commands) {
             command.skinList = index;   // the list it's in, for its layers too
@@ -191,6 +199,7 @@ void VulkanRenderer::Impl::submitDraws(
             command.probes = probes;
             command.shading = shading;
             command.terrain = terrain;
+            command.graph = graph;
             addDraw(list, index, command, mesh, joints);
         }
     };
@@ -248,6 +257,10 @@ void VulkanRenderer::Impl::drawMeshInstances(
             shared.terrain = static_cast<uint32_t>(list.terrain.size());
             list.terrain.push_back(prepared.terrain);
         }
+        if (prepared.graphed) {
+            shared.graph = static_cast<uint32_t>(list.graphs.size());
+            list.graphs.push_back(prepared.graph);
+        }
         shared.data.tint = tint;
         shared.indexBuffer = mesh.indices.buffer;
         shared.firstIndex = 0;
@@ -303,6 +316,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
         list.probes.clear();
         list.shading.clear();
         list.terrain.clear();
+        list.graphs.clear();
     }
     std::lock_guard lock(foreignDrawMutex);
     foreignDraws.commands.clear();
@@ -312,6 +326,7 @@ void VulkanRenderer::Impl::clearDrawLists() {
     foreignDraws.probes.clear();
     foreignDraws.shading.clear();
     foreignDraws.terrain.clear();
+    foreignDraws.graphs.clear();
     skinDispatches.clear();
 }
 
@@ -508,6 +523,7 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         lastLodStats.fullTriangles += (draw.fullIndexCount ? draw.fullIndexCount : draw.indexCount) / 3;
         lastLodStats.reducedDraws += draw.fullIndexCount != 0;
     }
+    ensureGraphPipelines(draws);   // W4: before draws are sorted by pipeline
     const auto transparent =
         std::stable_partition(draws.begin(), draws.end(), [](const auto& draw) { return !draw.blend; });
     // Opaque draws by pipeline, then nearest first, so nearer surfaces fill the depth buffer
@@ -553,7 +569,11 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
     uint32_t terrainCount = 0;
     for (const DrawCommand& draw : draws) terrainCount += draw.terrain != kNoLayers;
     if (terrainCount) ensureTerrainCapacity(f, terrainCount);
-    uint32_t nextLayer = 0, nextProbe = 0, nextShading = 0, nextTerrain = 0;
+    // And material graphs' values (W4), the same way.
+    uint32_t graphCount = 0;
+    for (const DrawCommand& draw : draws) graphCount += draw.graph != kNoLayers;
+    if (graphCount) ensureGraphCapacity(f, graphCount);
+    uint32_t nextLayer = 0, nextProbe = 0, nextShading = 0, nextTerrain = 0, nextGraph = 0;
     std::lock_guard lock(foreignDrawMutex);
     for (uint32_t i = 0; i < draws.size(); ++i) {
         draws[i].drawIndex = i;
@@ -572,6 +592,12 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
                 f.shadingData[nextShading].terrain =
                     f.terrainAddress + VkDeviceAddress(nextTerrain) * sizeof(TerrainShadingData);
                 draws[i].terrain = nextTerrain++;   // from here on, its entry in the frame's table
+            }
+            if (draws[i].graph != kNoLayers) {
+                f.graphData[nextGraph] = list.graphs[draws[i].graph];
+                f.shadingData[nextShading].graph =
+                    f.graphAddress + VkDeviceAddress(nextGraph) * sizeof(GraphShadingData);
+                draws[i].graph = nextGraph++;
             }
             draws[i].shading = nextShading++;   // from here on, its entry in the frame's table
         }
@@ -602,9 +628,15 @@ void VulkanRenderer::Impl::prepareDraws(Frame& f) {
         vk::check(
             vmaFlushAllocation(context->allocator(), f.probeBuffer.allocation, 0, sizeof(ProbeData) * probeCount),
             "vmaFlushAllocation");
+    if (graphCount)
+        vk::check(
+            vmaFlushAllocation(
+                context->allocator(), f.graphBuffer.allocation, 0, sizeof(GraphShadingData) * graphCount),
+            "vmaFlushAllocation");
 }
 
 VkPipeline VulkanRenderer::Impl::meshPipelineFor(const DrawCommand& draw) const {
+    if (draw.surfaceShader) return surfaceShaders[draw.surfaceShader].pipelines[graphPipelineIndex(draw, false)];
     if (!draw.blend && draw.data.alphaCutoff < 0.0f)
         return solidPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)];
     return draw.mirrored ? mirroredPipelines[(draw.blend ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
@@ -686,10 +718,13 @@ void VulkanRenderer::Impl::recordDraws(VkCommandBuffer cmd, Frame& f, DrawFilter
         if ((filter == DrawFilter::Opaque && draw.blend) || (filter == DrawFilter::SeeThrough && !draw.blend)) continue;
         // Over the surface prepass, opaque surfaces shade where its depth is EQUAL to theirs.
         // Glass with its pass this frame draws over the copy of the scene (A07b).
-        const VkPipeline pipeline = draw.transmission && transmissionThisFrame
-                                        ? transmissionPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
-                                    : prepassActive() && !draw.blend ? depthEqualPipelines[prepassIndex(draw)]
-                                                                     : meshPipelineFor(draw);
+        const VkPipeline pipeline =
+            draw.transmission && transmissionThisFrame
+                ? transmissionPipelines[(draw.mirrored ? 2 : 0) + (draw.doubleSided ? 1 : 0)]
+            : prepassActive() && !draw.blend
+                ? (draw.surfaceShader ? surfaceShaders[draw.surfaceShader].pipelines[graphPipelineIndex(draw, true)]
+                                      : depthEqualPipelines[prepassIndex(draw)])
+                : meshPipelineFor(draw);
         if (indirect && draw.cullSlot != kNoCull) {
             batch.flush();
             ++drawStats.objects;

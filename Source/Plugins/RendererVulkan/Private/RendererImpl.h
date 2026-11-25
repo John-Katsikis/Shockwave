@@ -177,14 +177,25 @@ struct ShadingData {
     float waterClarity;
     float waterInverseRippleScale, waterRippleSpeed, waterFoamDistance;
     uint32_t waterNormalTexture;   // bindless slot; 0: flat
+    VkDeviceAddress graph;   // a material graph's GraphShadingData (W4); 0: none
     SlotBinding slots[kShadingSlots];
 };
 static_assert(
     offsetof(ShadingData, absorption) == 48 && offsetof(ShadingData, skinRadius) == 64 &&
         offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, terrain) == 88 &&
         offsetof(ShadingData, waterShallow) == 96 && offsetof(ShadingData, waterNormalTexture) == 140 &&
-        offsetof(ShadingData, slots) == 144 && sizeof(ShadingData) == 240,
+        offsetof(ShadingData, graph) == 144 && offsetof(ShadingData, slots) == 152 && sizeof(ShadingData) == 248,
     "ShadingData must match the shader's scalar layout");
+
+// A material graph's values (W4), in a table of its own pointed at by ShadingData::graph.
+// Must match GraphShadingData in shaders/draw.glsl.
+struct GraphShadingData {
+    glm::vec4 params[16];
+    uint32_t textures[16];
+    uint32_t samplers[16];
+};
+static_assert(
+    sizeof(GraphShadingData) == 384 && kGraphSlots == 16, "GraphShadingData must match the shader's scalar layout");
 
 // A painted terrain draw's layers (W1b, Renderer/Shading.h TerrainShading), in a table of its
 // own, pointed at by ShadingData::terrain. Must match TerrainShadingData in shaders/draw.glsl.
@@ -448,6 +459,10 @@ struct DrawCommand {
     uint32_t shading = kNoLayers;
     // Painted terrain draws (W1b): which TerrainShadingData in the same DrawList.
     uint32_t terrain = kNoLayers;
+    // Material graph draws (W4): which GraphShadingData in the same DrawList, and the
+    // graph's shader (0: the engine's own), whose pipelines it's drawn with.
+    uint32_t graph = kNoLayers;
+    uint32_t surfaceShader = 0;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     // Glass (drawn see-through: blend is set too), and skin that may diffuse (A07b, A08).
     bool transmission = false, skinDiffusion = false;
@@ -554,6 +569,7 @@ struct alignas(64) DrawList {
     std::vector<ProbeData> probes;
     std::vector<ShadingData> shading;
     std::vector<TerrainShadingData> terrain;
+    std::vector<GraphShadingData> graphs;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -645,6 +661,10 @@ struct VulkanRenderer::Impl {
         TerrainShadingData* terrainData = nullptr;
         VkDeviceAddress terrainAddress = 0;
         uint32_t terrainCapacity = 0;
+        vk::Buffer graphBuffer;   // this frame's GraphShadingData (W4), persistently mapped
+        GraphShadingData* graphData = nullptr;
+        VkDeviceAddress graphAddress = 0;
+        uint32_t graphCapacity = 0;
         vk::Buffer probeBuffer;   // this frame's ProbeData, persistently mapped
         ProbeData* probeData = nullptr;
         VkDeviceAddress probeAddress = 0;
@@ -1037,7 +1057,8 @@ struct VulkanRenderer::Impl {
         ProbeData probe{};
         ShadingData shade{};
         TerrainShadingData terrain{};
-        bool shaded = false, terrainLayers = false;
+        GraphShadingData graph{};
+        bool shaded = false, terrainLayers = false, graphed = false;
     };
     // False when the mesh isn't ready or the transform is degenerate. A skinned draw's
     // joints are cleared when the mesh has no skin.
@@ -1602,6 +1623,25 @@ struct VulkanRenderer::Impl {
     std::atomic<HairQuality> shadingHair{HairQuality::High};
     std::atomic<TerrainQuality> shadingTerrain{TerrainQuality::High};
     std::atomic<WaterQuality> shadingWater{WaterQuality::High};
+    std::atomic<bool> shadingGraphs{true};
+    // Material graphs' shaders (W4, RendererMaterialGraphs.cpp): each one's SPIR-V and its
+    // pipelines, built as they're first needed (graphPipelineIndex). Main thread.
+    static constexpr uint32_t kGraphPipelines = 20;   // 4 solid, 8 mesh, 8 depth EQUAL
+    struct SurfaceShader {
+        std::vector<uint32_t> spirv;
+        std::array<VkPipeline, kGraphPipelines> pipelines{};
+    };
+    std::array<SurfaceShader, kMaxSurfaceShaders> surfaceShaders;
+    void createSurfaceShader(SurfaceShaderHandle handle, std::span<const uint32_t> spirv);
+    void destroySurfaceShader(SurfaceShaderHandle handle);
+    void destroySurfaceShaders();   // shutdown
+    // Which of a graph's pipelines a draw uses: as meshPipelineFor, or over the prepass.
+    static uint32_t graphPipelineIndex(const DrawCommand& draw, bool depthEqual);
+    // Builds the pipelines this frame's graph draws need, before they're sorted by pipeline.
+    void ensureGraphPipelines(std::span<const DrawCommand> draws);
+    void buildGraphPipeline(SurfaceShader& shader, uint32_t index);
+    void fillGraphShading(const MaterialGraphShading& graph, GraphShadingData& out);
+    void ensureGraphCapacity(Frame& f, uint32_t count);
     ShadingStats lastShadingStats;
     std::array<VkPipeline, 4> transmissionPipelines{};   // + 1 double-sided, + 2 mirrored
     std::array<VkPipeline, 8> skinPipelines{};   // indexed by prepassIndex

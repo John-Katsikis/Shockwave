@@ -182,8 +182,9 @@ struct Renderer::State {
     }
 
     // CPU copies for replaying into a new backend (swappable only), ordered by id.
-    std::mutex journalMutex;
+    mutable std::mutex journalMutex;
     std::map<uint32_t, std::pair<std::vector<MeshLod>, std::vector<uint32_t>>> meshLods;
+    std::map<uint32_t, std::vector<uint32_t>> surfaceShaders;   // W4: id to SPIR-V, under journalMutex
     std::map<uint32_t, MeshData> meshes;
     std::map<uint32_t, std::vector<VertexSkin>> skins;   // skinned meshes' weights
 
@@ -403,6 +404,7 @@ struct Renderer::State {
         {
             std::lock_guard lock(journalMutex);
             for (const auto& [id, lods] : meshLods) backend->setMeshLods({id}, lods.first, lods.second);
+            for (const auto& [id, spirv] : surfaceShaders) backend->createSurfaceShader({id}, spirv);
         }
         backend->setLocalReflections(localReflections);
         backend->setDecalQuality(decalQuality);
@@ -751,6 +753,34 @@ SamplerHandle Renderer::sampler(const SamplerDesc& wanted) {
     m->backend->createSampler(handle, desc);
     m->samplers.push_back(desc);
     return handle;
+}
+SurfaceShaderHandle Renderer::createSurfaceShader(std::span<const uint32_t> spirv) {
+    if (spirv.empty() || spirv[0] != 0x07230203u) throw std::runtime_error("createSurfaceShader: that isn't SPIR-V");
+    std::shared_lock swap(m->swapMutex);
+    uint32_t id = 0;
+    {
+        std::lock_guard lock(m->journalMutex);
+        for (id = 1; id < kMaxSurfaceShaders && m->surfaceShaders.count(id); ++id) {}
+        if (id >= kMaxSurfaceShaders)
+            throw std::runtime_error(
+                "more than " + std::to_string(kMaxSurfaceShaders - 1) + " material graph shaders at once");
+        m->surfaceShaders[id].assign(spirv.begin(), spirv.end());
+    }
+    m->backend->createSurfaceShader({id}, spirv);
+    return {id};
+}
+void Renderer::destroySurfaceShader(SurfaceShaderHandle shader) {
+    if (!shader.id) return;
+    std::shared_lock swap(m->swapMutex);
+    {
+        std::lock_guard lock(m->journalMutex);
+        if (!m->surfaceShaders.erase(shader.id)) return;
+    }
+    m->backend->destroySurfaceShader(shader);
+}
+size_t Renderer::surfaceShaderCount() const {
+    std::lock_guard lock(m->journalMutex);
+    return m->surfaceShaders.size();
 }
 SamplerDesc Renderer::samplerDesc(SamplerHandle sampler) const {
     std::lock_guard lock(m->samplerMutex);

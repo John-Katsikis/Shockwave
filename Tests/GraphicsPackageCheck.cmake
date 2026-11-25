@@ -4,7 +4,8 @@
 # source tree, must then render every graphics feature exactly as the project it came
 # from: baked lighting, reflection probes, layered materials, colour grading with a LUT,
 # lit particles, decals, glass, skin and the 6v6 combat scene. Playing must write nothing
-# into the package: no bake, compression or cache on a player's first launch.
+# into the package: no bake, compression or cache on a player's first launch. A material
+# graph (W4) draws from the shader the package ships, with glslangValidator switched off.
 cmake_policy(SET CMP0054 NEW)
 file(REMOVE_RECURSE "${TEMP}")
 file(MAKE_DIRECTORY "${TEMP}/images")
@@ -22,6 +23,8 @@ run("--bake-lighting" "${PLAYER}" --project "${PROJECT}/Graphics.swproject" --ba
     --scene "${PROJECT}/Scenes/room-doorway-baked.swscene" --quality preview --seed 7)
 run("--capture-reflections" "${PLAYER}" --project "${PROJECT}/Graphics.swproject" --capture-reflections
     --scene "${PROJECT}/Scenes/reflection-rooms.swscene")
+# --check compiles every material graph into Saved/Cache/Shaders, which the package ships.
+run("--check" "${PLAYER}" --project "${PROJECT}/Graphics.swproject" --check)
 run("--package" "${PLAYER}" --package --project "${PROJECT}/Graphics.swproject" --no-build --no-archive
     --output "${TEMP}/out")
 if(NOT out MATCHES "package ([^\n]+)")
@@ -35,6 +38,10 @@ foreach(file Game/Content/Lighting/room-doorway-baked.swlighting Game/Content/Li
         message(FATAL_ERROR "The package is missing ${file}")
     endif()
 endforeach()
+file(GLOB shaders "${package}/Game/Saved/Cache/Shaders/*.spv")
+if(NOT shaders)
+    message(FATAL_ERROR "The package has no compiled material graph shaders in Game/Saved/Cache/Shaders")
+endif()
 
 file(GLOB_RECURSE before "${package}/*")
 set(before_hashes "")
@@ -44,12 +51,13 @@ foreach(file ${before})
 endforeach()
 
 foreach(scene room-doorway-baked reflection-rooms material-layers postprocess-chart particles-lit decal-wall
-        shading-glass shading-skin combat-6v6)
+        shading-glass shading-skin combat-6v6 graph-lava)
     set(common --no-user-graphics --size 320x180 --frames 8 --fixed-step --graphics-preset high)
     run("${scene} from the project" "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
         "${PLAYER}" --project "${PROJECT}/Graphics.swproject" --scene "${PROJECT}/Scenes/${scene}.swscene" ${common}
         --screenshot "${TEMP}/images/${scene}-project.png")
     run("${scene} from the package" "${CMAKE_COMMAND}" -E env SDL_VIDEO_DRIVER=offscreen SDL_AUDIO_DRIVER=dummy
+        SHOCKWAVE_GLSLANG=none
         "${package}/Binaries/Graphicsfixtures" --scene "${package}/Game/Scenes/${scene}.swscene" ${common}
         --user-dir "${TEMP}/user"
         --screenshot "${TEMP}/images/${scene}-package.png")
@@ -71,4 +79,4 @@ endforeach()
 if(NOT before_hashes STREQUAL after_hashes)
     message(FATAL_ERROR "Playing changed the package (a first-launch bake, compression or cache?)")
 endif()
-message(STATUS "9 scenes render the same from the package; playing left it unchanged")
+message(STATUS "10 scenes render the same from the package; playing left it unchanged")

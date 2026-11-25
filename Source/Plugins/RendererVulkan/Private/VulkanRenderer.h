@@ -48,6 +48,8 @@ public:
     void createSampler(SamplerHandle id, const SamplerDesc& desc) override;
     void setAnisotropy(uint32_t anisotropy) override;
     void setMaterialQuality(MaterialQuality quality) override;
+    void createSurfaceShader(SurfaceShaderHandle id, std::span<const uint32_t> spirv) override;
+    void destroySurfaceShader(SurfaceShaderHandle id) override;
     void updateTextureData(TextureHandle id, const TextureData& data) override;
     void setLodSettings(const LodSettings& settings) override;
     LodStats lodStats() const override;

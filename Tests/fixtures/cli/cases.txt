@@ -77,6 +77,8 @@ missing--height-range: --height-range
 missing--height-range-2: --height-range 0
 missing--effect-info: --effect-info
 missing--material-info: --material-info
+missing--material-graph: --material-graph
+missing--material-graph-schema: --material-graph-schema
 missing--texture-info: --texture-info
 missing--tolerance: --tolerance
 missing--view: --view
@@ -121,6 +123,7 @@ wrong-inject-device-lost-0: --inject-device-lost 0
 wrong-inject-device-lost-x: --inject-device-lost x
 wrong-transition-timeout: --transition-timeout -1
 wrong-lap-tolerance: --lap-tolerance x
+wrong-material-graph: --material-graph rock.png
 wrong-pref-key: --pref nonsense=1
 wrong-pref-no-equals: --pref master_volume
 wrong-laps-0: --laps 0
@@ -186,6 +189,9 @@ run-schema: --schema -
 run-node-schema: --node-schema -
 run-graphics-schema: --graphics-schema -
 run-material-schema: --material-schema -
+run-material-graph-schema: --material-graph-schema -
+run-material-graph-dump: --material-graph {SOURCE}/Tests/fixtures/graphics/Content/materials/graph/forward.swmatgraph --dump
+run-material-graph-broken: --material-graph {SOURCE}/Tests/fixtures/graphics/Broken/broken.swmatgraph
 run-release-schema: --release-schema -
 run-level-schema: --level-schema -
 run-network-schema: --network-schema -

@@ -8,6 +8,8 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <string_view>
@@ -170,6 +172,22 @@ public:
     // Returns how many were unloaded.
     size_t unload(const std::vector<std::string>& names);
     bool loaded(std::string_view name) const;
+
+    // ---- Material graphs (W4, docs/MaterialGraph.md) ----
+    // Where compiled graphs are kept: empty (the default) is Saved/Cache/Shaders beside the
+    // folder (the project's, for its Content). Set before open().
+    void setShaderCacheFolder(std::filesystem::path folder) { m_shaderCache = std::move(folder); }
+    std::filesystem::path shaderCacheFolder() const;
+    // Off (a packaged game): graphs are only read from that folder, never compiled.
+    void setCompileShaders(bool on) { m_compileShaders = on; }
+    struct GraphStats {
+        size_t loaded = 0;   // graph shaders alive now
+        size_t compiled = 0;   // compiled since open(), not read from the cache
+        size_t fromCache = 0;   // read from the cache since open()
+        double milliseconds = 0;   // spent compiling and reading them since open()
+        std::vector<std::string> errors;   // "<graph>: <problem>", the last resolve's
+    };
+    const GraphStats& graphStats() const { return m_graphStats; }
     // Tests: called with "upload" and a file's name on the thread that uploads it, just
     // before; returning true makes that upload fail. Empty: none.
     void setFaultHook(std::function<bool(std::string_view stage, std::string_view name)> hook) {
@@ -208,6 +226,16 @@ private:
     bool m_onDemand = false;
     Batch* m_batch = nullptr;   // during load(): the batch refresh() imports
     std::function<bool(std::string_view, std::string_view)> m_fault;
+    // Material graphs
+    struct GraphShader {
+        SurfaceShaderHandle shader;
+        std::shared_ptr<int> users;   // a copy in each material that draws with it
+    };
+    std::map<uint64_t, GraphShader> m_graphShaders;   // by the compiled shader's hash
+    void releaseGraphShaders(bool all);   // those no material holds any more
+    std::filesystem::path m_shaderCache;
+    bool m_compileShaders = true;
+    GraphStats m_graphStats;
 };
 
 }   // namespace shockwave

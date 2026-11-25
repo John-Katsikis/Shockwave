@@ -110,10 +110,21 @@ struct ShadingData {
     float waterRippleSpeed;   // metres a second
     float waterFoamDistance;   // metres; 0: none
     uint waterNormalTexture;   // bindless slot; 0: flat
+    uvec2 graph;   // a material graph's GraphShadingBuffer (W4); 0: none
     SlotBinding slots[4];   // MaterialSlot::Clearcoat onwards
 };
 layout(buffer_reference, scalar) readonly buffer ShadingBuffer {
     ShadingData shading;
+};
+// A material graph's values (W4, Assets/MaterialGraph.h): its params, then its textures and
+// their samplers (bindless slots). Must match GraphShadingData in RendererImpl.h.
+struct GraphShadingData {
+    vec4 params[16];
+    uint textures[16];
+    uint samplers[16];
+};
+layout(buffer_reference, scalar) readonly buffer GraphShadingBuffer {
+    GraphShadingData graph;
 };
 // ShadingData::flags
 const uint kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u;

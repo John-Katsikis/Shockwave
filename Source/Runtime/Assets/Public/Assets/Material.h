@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -146,12 +147,23 @@ struct MaterialSlotOverride {
     bool empty() const { return !hasTexture && !hasUvSet && !hasTransform && !hasSampler; }
     bool operator==(const MaterialSlotOverride&) const = default;
 };
+// A value for one of a material graph's params (W4): "graph_param <name> <1 to 4 numbers>".
+struct MaterialGraphParamValue {
+    std::string name;
+    std::vector<float> values;
+    bool operator==(const MaterialGraphParamValue&) const = default;
+};
 struct MaterialFile {
     std::string parent;   // a .swmaterial or a model, by asset name; empty: the schema's defaults
     std::string parentMaterial;   // with a model parent: the source material's name in it
     MaterialParams values;   // only those in set mean anything
     uint64_t set = 0;   // bit i: materialParams()[i] is overridden
     std::array<MaterialSlotOverride, kAllMaterialSlots> slots{};
+    // A material graph (W4, docs/MaterialGraph.md): "graph \"x.swmatgraph\"" fills in the
+    // surface from its nodes; empty: the parent's (or none). graph_param values change the
+    // graph's params, by name, over the parent's.
+    std::string graph;
+    std::vector<MaterialGraphParamValue> graphParams;
 
     bool isSet(std::string_view key) const;
     void setValue(std::string_view key, bool on);   // marks or clears an override
@@ -195,8 +207,9 @@ enum MaterialFeature : uint32_t {
     kMaterialSkin = 1u << 9,
     kMaterialHairCard = 1u << 10,
     kMaterialWater = 1u << 11,
+    kMaterialGraph = 1u << 12,   // a material graph (W4), family standard
 };
-inline constexpr uint32_t kMaterialFeatureCount = 12;
+inline constexpr uint32_t kMaterialFeatureCount = 13;
 const char* materialFeatureName(uint32_t feature);   // "alpha_mask", ...
 struct MaterialDesc {
     MaterialParams params;
@@ -207,6 +220,8 @@ struct MaterialDesc {
     std::vector<std::string> dependencies;   // asset names it was resolved from
     std::vector<std::string> warnings;   // fields that do nothing, and why
     uint32_t features = 0;
+    std::string graph;   // the .swmatgraph, by asset name; empty: none (W4)
+    std::vector<MaterialGraphParamValue> graphParams;   // the chain's graph_param values, by name
     bool operator==(const MaterialDesc&) const = default;
 };
 uint32_t materialFeatures(const MaterialDesc& desc);
@@ -237,6 +252,7 @@ struct MaterialLookup {
     std::function<bool(std::string_view name, MaterialFile& file, std::string& error)> file;
     std::function<const ModelData*(std::string_view name, std::string& error)> model;
     std::function<bool(std::string_view name)> texture;
+    std::function<bool(std::string_view name)> graph;   // a .swmatgraph exists (W4)
 };
 // Reads the material files from a folder (Content), models through loadModel. For tools.
 MaterialLookup folderMaterialLookup(const std::filesystem::path& root);
@@ -256,6 +272,10 @@ struct MaterialAsset {
     DrawMaterial draw;
     MaterialLayers layers;
     MaterialShading shading;   // DrawMaterial::shading points here (A07-A09)
+    // A material graph's shader and values (W4); shading.graph points here. Set by whoever
+    // loads the graph (AssetFolder), after buildDrawMaterial.
+    std::shared_ptr<MaterialGraphShading> graph;
+    std::shared_ptr<const void> graphOwner;   // keeps the graph's shader alive (AssetFolder)
     std::array<TextureHandle, kAllMaterialSlots> textures{};   // per slot, what draw uses
     std::array<SamplerHandle, kAllMaterialSlots> samplers{};
     bool fallback = false;   // couldn't be resolved: drawn magenta, see error

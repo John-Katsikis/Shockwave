@@ -7,6 +7,8 @@
 #include <Assets/Image.h>
 #include <Assets/LightingData.h>
 #include <Assets/Material.h>
+#include <Assets/MaterialGraph.h>
+#include <Assets/ShaderCompiler.h>
 #include <Assets/Model.h>
 #include <Assets/ReflectionData.h>
 #include <Assets/TextureCompression.h>
@@ -97,6 +99,7 @@ const char* assetKindName(AssetKind kind) {
     case AssetKind::Builtin: return "builtin";
     case AssetKind::Terrain: return "terrain";
     case AssetKind::Foliage: return "foliage";
+    case AssetKind::MaterialGraph: return "material graph";
     }
     return "file";
 }
@@ -119,6 +122,7 @@ AssetKind assetKindOf(std::string_view path) {
     if (ext == ".cube") return AssetKind::Lut;
     if (ext == ".swterrain") return AssetKind::Terrain;
     if (ext == ".swfoliage") return AssetKind::Foliage;
+    if (ext == ".swmatgraph") return AssetKind::MaterialGraph;
     const fs::path p{std::string(path)};
     if (isAudioFile(p)) return AssetKind::Audio;
     if (isImageFile(p) || ext == ".ktx2") return AssetKind::Texture;
@@ -519,10 +523,34 @@ void registerBuiltinProviders() {
         MaterialFile file;
         if (!parseMaterial(r.text(), file, error)) return false;
         if (!file.parent.empty()) r.content(file.parent, "parent");
+        if (!file.graph.empty()) r.content(file.graph, "graph", 0, AssetKind::MaterialGraph);
         for (size_t slot = 0; slot < file.slots.size(); ++slot) {
             const MaterialSlotOverride& o = file.slots[slot];
             if (o.hasTexture && !o.texture.empty())
                 r.named(o.texture, AssetKind::Texture, std::string(materialSlotName(MaterialSlot(slot))) + " texture");
+        }
+        return true;
+    });
+    // A material graph (W4): the textures its nodes read, and its compiled shader in the
+    // project's Saved/Cache/Shaders, which a packaged game reads instead of compiling (so a
+    // graph nobody has compiled since it changed fails --check and the cook).
+    registerAssetProvider("material graph", {".swmatgraph"}, [](AssetReader& r, std::string& error) {
+        MaterialGraph graph;
+        if (!parseMaterialGraph(r.text(), graph, error)) return false;
+        MaterialGraphCode code;
+        std::vector<MaterialGraphError> errors;
+        if (!compileMaterialGraph(graph, code, errors)) {
+            error = materialGraphErrorText(errors);
+            return false;
+        }
+        for (const MaterialGraphNode& node : graph.nodes)
+            if (node.type == "texture" && !node.text.empty())
+                r.content(node.text, "node '" + node.id + "'", node.line, AssetKind::Texture);
+        if (const uint64_t engine = engineSurfaceShaderHash()) {
+            const uint64_t hash = materialGraphHash(materialGraphShaderSource(code), engine);
+            r.id(
+                "Saved/Cache/Shaders/" + materialGraphShaderFile({}, hash).generic_string(), "compiled shader", 0,
+                AssetKind::Other);
         }
         return true;
     });

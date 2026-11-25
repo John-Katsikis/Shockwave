@@ -1,0 +1,5 @@
+{"graph": "<SOURCE>/Tests/fixtures/graphics/Broken/broken.swmatgraph", "ok": false, "error": "node 'lonely': add's input 'b' isn't connected",
+ "nodes": 4, "outputs": ["base_color"], "normal": false,
+ "params": [{"name": "tint", "components": 3, "default": [1, 0.5, 0.2]}],
+ "textures": [],
+ "shader": {"file": "", "from_cache": false, "words": 0}}

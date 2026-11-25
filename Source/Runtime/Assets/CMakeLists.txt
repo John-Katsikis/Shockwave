@@ -20,3 +20,13 @@ else()
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Private/FbxSdkImport.cpp
                                 TARGET_DIRECTORY ShockwaveAssets PROPERTIES HEADER_FILE_ONLY TRUE)
 endif()
+
+# Material graphs compile at edit time (Assets/ShaderCompiler.h) with the glslangValidator the
+# engine's shaders were built with, against the engine's shader sources. A packaged game only
+# reads the compiled cache and never uses either.
+target_compile_definitions(ShockwaveAssets PRIVATE
+    SHOCKWAVE_GLSLANG_PATH="${SHOCKWAVE_GLSLANG_COMMAND}"
+    SHOCKWAVE_SHADER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/Source/Plugins/RendererVulkan/Shaders")
+if(SHOCKWAVE_GLSLANG_DEPENDS)
+    add_dependencies(ShockwaveAssets ${SHOCKWAVE_GLSLANG_DEPENDS})
+endif()

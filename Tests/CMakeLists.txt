@@ -621,6 +621,14 @@ shockwave_warnings(material_test)
 shockwave_link_plugins(material_test)
 add_test(NAME materials COMMAND material_test)
 set_tests_properties(materials PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
+# Material graphs (W4): the .swmatgraph format, its checks and GLSL, .swmaterial's graph
+# records, and an AssetFolder compiling and loading one on the null renderer.
+add_executable(material_graph_test MaterialGraphTest.cpp)
+target_link_libraries(material_graph_test PRIVATE Shockwave::Engine)
+shockwave_warnings(material_graph_test)
+shockwave_link_plugins(material_graph_test)
+add_test(NAME material_graph COMMAND material_graph_test)
+set_tests_properties(material_graph PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 if(TARGET game_arena)
     add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
@@ -651,7 +659,7 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     # Every fixture scene: about 860 s alone on llvmpipe with the screen-effects scenes.
     set_tests_properties(graphics_fixtures_render PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 1200 LABELS gpu)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 1800 LABELS gpu)
     # Pipeline warm-up and the fallback tier's pictures (S10 part 2).
     set(release_tier_demo "")
     if(TARGET game_shippingdemo)
@@ -743,6 +751,15 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsShading
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsShadingCheck.cmake)
     set_tests_properties(graphics_shading_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Material graphs (W4): a forwarding graph matches its standard material, off is exactly
+    # the plain material, a glowing graph and its param, the report's counts.
+    add_test(NAME graphics_material_graph_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsMaterialGraph
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsMaterialGraphCheck.cmake)
+    set_tests_properties(graphics_material_graph_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
     # Batching, occlusion culling and indirect drawing (G12): the same pictures with each on
     # and off, and the report's counts.

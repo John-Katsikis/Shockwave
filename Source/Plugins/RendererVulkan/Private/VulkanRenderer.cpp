@@ -71,6 +71,10 @@ void VulkanRenderer::setMeshLightmapUv(MeshHandle id, std::span<const glm::vec2>
 }
 void VulkanRenderer::createSampler(SamplerHandle id, const SamplerDesc& desc) { m_impl->createSampler(id, desc); }
 void VulkanRenderer::setAnisotropy(uint32_t anisotropy) { m_impl->setAnisotropy(anisotropy); }
+void VulkanRenderer::createSurfaceShader(SurfaceShaderHandle id, std::span<const uint32_t> spirv) {
+    m_impl->createSurfaceShader(id, spirv);
+}
+void VulkanRenderer::destroySurfaceShader(SurfaceShaderHandle id) { m_impl->destroySurfaceShader(id); }
 void VulkanRenderer::setMaterialQuality(MaterialQuality quality) {
     m_impl->materialDetail.store(quality != MaterialQuality::Low, std::memory_order_relaxed);
 }

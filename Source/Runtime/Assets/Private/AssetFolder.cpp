@@ -1,6 +1,8 @@
 #include <Assets/AssetFolder.h>
 
 #include <Assets/Image.h>
+#include <Assets/MaterialGraph.h>
+#include <Assets/ShaderCompiler.h>
 #include <Assets/TextureCompression.h>
 #include <Core/Jobs.h>
 #include <Renderer/Renderer.h>
@@ -16,6 +18,8 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <sstream>
 #include <stdexcept>
 
 namespace shockwave {
@@ -81,7 +85,27 @@ AssetFolder::AssetFolder(Renderer& renderer, Assets& assets, JobSystem& jobs)
     : m_renderer(&renderer), m_assets(assets), m_jobs(jobs) {}
 
 AssetFolder::AssetFolder(Assets& assets, JobSystem& jobs) : m_assets(assets), m_jobs(jobs) {}
-AssetFolder::~AssetFolder() { m_jobs.wait(m_audioJobs); }
+AssetFolder::~AssetFolder() {
+    m_jobs.wait(m_audioJobs);
+    releaseGraphShaders(true);
+}
+
+fs::path AssetFolder::shaderCacheFolder() const {
+    if (!m_shaderCache.empty()) return m_shaderCache;
+    return m_root.parent_path() / "Saved" / "Cache" / "Shaders";
+}
+
+void AssetFolder::releaseGraphShaders(bool all) {
+    for (auto it = m_graphShaders.begin(); it != m_graphShaders.end();) {
+        if (all || it->second.users.use_count() <= 1) {
+            if (m_renderer) m_renderer->destroySurfaceShader(it->second.shader);
+            it = m_graphShaders.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    m_graphStats.loaded = m_graphShaders.size();
+}
 
 // ---- Optimisation (docs/Optimisation.md) ----
 
@@ -207,6 +231,7 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
         const File* f = find(name);
         return f && f->kind == Kind::Texture && f->imported;
     };
+    lookup.graph = [&](std::string_view name) { return find(name) != nullptr; };
 
     struct Resolved {
         File* file;
@@ -222,6 +247,72 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
             r.problem = resolveMaterial(f.name, lookup, r.desc, r.error);
         }
     if (resolved.empty()) return;
+
+    // Material graphs (W4): each graph the resolved materials draw with, read, checked and
+    // compiled once (or read from the shader cache), with the textures its nodes read.
+    struct GraphLoad {
+        std::string error;
+        MaterialGraphCode code;
+        GraphShaderResult shader;
+        std::vector<File*> textures;   // per texture slot
+    };
+    std::map<std::string, GraphLoad> graphs;
+    for (Resolved& r : resolved)
+        if (r.problem == MaterialProblem::None && (r.desc.features & kMaterialGraph)) graphs[r.desc.graph];
+    for (auto& [name, g] : graphs) {
+        std::ifstream in(m_root / fs::path(std::u8string(name.begin(), name.end())), std::ios::binary);
+        std::ostringstream text;
+        text << in.rdbuf();
+        MaterialGraph graph;
+        std::vector<MaterialGraphError> errors;
+        if (!in) {
+            g.error = "can't open it";
+        } else if (!parseMaterialGraph(text.str(), graph, g.error)) {
+        } else if (!compileMaterialGraph(graph, g.code, errors)) {
+            g.error = materialGraphErrorText(errors);
+        }
+        for (const MaterialGraphTexture& t : g.code.textures) {
+            File* tf = findFile(t.asset);
+            if (!tf || tf->kind != Kind::Texture || !tf->imported) {
+                if (g.error.empty()) g.error = "texture " + t.asset + " isn't in Content (or isn't an image)";
+                tf = nullptr;
+            }
+            g.textures.push_back(tf);
+        }
+    }
+    m_jobs.parallelFor(graphs.size(), 1, [&](size_t begin, size_t end) {
+        auto it = std::next(graphs.begin(), std::ptrdiff_t(begin));
+        for (size_t i = begin; i < end; ++i, ++it) {
+            GraphLoad& g = it->second;
+            if (!g.error.empty()) continue;
+            g.shader = materialGraphShader(g.code, shaderCacheFolder(), m_compileShaders);
+            if (!g.shader.ok) g.error = g.shader.error;
+        }
+    });
+    m_graphStats.errors.clear();
+    for (auto& [name, g] : graphs) {
+        if (!g.error.empty()) {
+            m_graphStats.errors.push_back(name + ": " + g.error);
+            continue;
+        }
+        (g.shader.fromCache ? m_graphStats.fromCache : m_graphStats.compiled) += 1;
+        m_graphStats.milliseconds += g.shader.milliseconds;
+        if (m_graphShaders.count(g.shader.hash)) continue;
+        try {
+            m_graphShaders[g.shader.hash] = {m_renderer->createSurfaceShader(g.shader.spirv), std::make_shared<int>(0)};
+        } catch (const std::exception& e) {
+            g.error = e.what();
+            m_graphStats.errors.push_back(name + ": " + g.error);
+        }
+    }
+    // Each graph's textures, so they reload with it too.
+    for (Resolved& r : resolved) {
+        const auto g = graphs.find(r.desc.graph);
+        if (g == graphs.end()) continue;
+        for (const MaterialGraphTexture& t : g->second.code.textures)
+            if (std::find(r.desc.dependencies.begin(), r.desc.dependencies.end(), t.asset) == r.desc.dependencies.end())
+                r.desc.dependencies.push_back(t.asset);
+    }
 
     // The decodings each slot needs: colour slots read a file as sRGB, data slots as linear,
     // and a masked material's base color gets coverage-keeping mipmaps (A02).
@@ -265,6 +356,19 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
             if (!fresh && !queued) jobs.push_back({tf, srgb, cutoff, key, {}, {}, 0, {}});
         }
     }
+    // A graph's textures: colour unless its node says linear.
+    auto graphVariant = [&](File* tf, bool srgb) {
+        if (!tf || ownServes(*tf, srgb, -1.0f)) return;
+        const std::string key = variantKey(srgb, -1.0f);
+        const bool fresh = std::any_of(tf->variants.begin(), tf->variants.end(), [&](const TextureVariant& v) {
+            return v.key == key && v.modified == tf->modified && v.bytes == tf->bytes;
+        });
+        const bool queued =
+            std::any_of(jobs.begin(), jobs.end(), [&](const VariantJob& j) { return j.file == tf && j.key == key; });
+        if (!fresh && !queued) jobs.push_back({tf, srgb, -1.0f, key, {}, {}, 0, {}});
+    };
+    for (auto& [name, g] : graphs)
+        for (size_t i = 0; i < g.textures.size(); ++i) graphVariant(g.textures[i], !g.code.textures[i].linear);
     const bool bc7 = m_renderer->supportsTextureFormat(TextureFormat::BC7);
     m_jobs.parallelFor(jobs.size(), 1, [&](size_t begin, size_t end) {
         for (size_t i = begin; i < end; ++i) {
@@ -383,6 +487,53 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
                     if (v.key == key) textures[slot] = v.texture;
                 used.insert({tf, key});
             }
+            // Its graph (W4): the shader, the params (the graph's defaults under the chain's
+            // graph_param values) and the textures. A graph that doesn't load leaves the plain
+            // material, and says why.
+            if (const auto g = graphs.find(next->desc.graph); g != graphs.end()) {
+                const GraphLoad& load = g->second;
+                const auto shader = m_graphShaders.find(load.shader.hash);
+                if (!load.error.empty() || shader == m_graphShaders.end()) {
+                    next->desc.warnings.push_back(
+                        "graph " + next->desc.graph + ": " + (load.error.empty() ? "no shader" : load.error) +
+                        "; drawn without it");
+                } else {
+                    auto shading = std::make_shared<MaterialGraphShading>();
+                    shading->shader = shader->second.shader;
+                    for (size_t i = 0; i < load.code.params.size() && i < kGraphSlots; ++i)
+                        shading->params[i] = load.code.params[i].value;
+                    for (const MaterialGraphParamValue& value : next->desc.graphParams) {
+                        const auto param = std::find_if(
+                            load.code.params.begin(), load.code.params.end(),
+                            [&](const MaterialGraphParam& p) { return p.name == value.name; });
+                        if (param == load.code.params.end()) {
+                            next->desc.warnings.push_back(
+                                "graph_param " + value.name + ": " + next->desc.graph + " has no param called that");
+                            continue;
+                        }
+                        if (int(value.values.size()) != param->components)
+                            next->desc.warnings.push_back(
+                                "graph_param " + value.name + " has " + std::to_string(value.values.size()) +
+                                " numbers but the graph's param has " + std::to_string(param->components));
+                        glm::vec4& v = shading->params[size_t(param - load.code.params.begin())];
+                        for (size_t c = 0; c < value.values.size() && c < 4; ++c) v[int(c)] = value.values[c];
+                    }
+                    for (size_t i = 0; i < load.textures.size() && i < kGraphSlots; ++i) {
+                        File* tf = load.textures[i];
+                        if (!tf) continue;
+                        const bool srgb = !load.code.textures[i].linear;
+                        shading->textures[i] = tf->texture;
+                        if (!ownServes(*tf, srgb, -1.0f)) {
+                            const std::string key = variantKey(srgb, -1.0f);
+                            for (const TextureVariant& v : tf->variants)
+                                if (v.key == key) shading->textures[i] = v.texture;
+                            used.insert({tf, key});
+                        }
+                    }
+                    next->graph = std::move(shading);
+                    next->graphOwner = shader->second.users;
+                }
+            }
             buildDrawMaterial(*next, textures, samplers);
             warmPipelinesFor(*m_renderer, next->draw);
         } else if (r.problem == MaterialProblem::File && previous && !previous->fallback) {
@@ -398,8 +549,8 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
         f.dependencies.clear();
         for (const auto& name : next->desc.dependencies) f.dependencies.push_back(stamp(m_root / name));
         f.dependencies.push_back(stamp(f.path));
-        const bool same = previous && previous->fallback == next->fallback && previous->desc == next->desc &&
-                          previous->error == next->error &&
+        const bool same = previous && !previous->graph && !next->graph && previous->fallback == next->fallback &&
+                          previous->desc == next->desc && previous->error == next->error &&
                           std::equal(
                               previous->textures.begin(), previous->textures.end(), next->textures.begin(),
                               [](TextureHandle a, TextureHandle b) { return a.id == b.id; }) &&
@@ -423,10 +574,12 @@ void AssetFolder::resolveMaterials(std::vector<Change>& changes) {
             f.gpuBytes -= std::min(f.gpuBytes, v.gpuBytes);
             return true;
         });
+    releaseGraphShaders(false);   // graphs no material draws with any more
 }
 
 std::vector<AssetFolder::Change> AssetFolder::open(fs::path root) {
     m_jobs.wait(m_audioJobs);
+    m_graphStats = {};
     m_audioImports.clear();
     if (m_compressor) m_compressor->clear();
     for (const auto& old : m_files)

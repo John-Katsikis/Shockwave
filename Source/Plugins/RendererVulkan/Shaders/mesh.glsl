@@ -436,6 +436,21 @@ vec3 clusterHeat(uint lights) {
     return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
 }
 
+#ifdef MATERIAL_GRAPH
+// A material graph (W4, docs/MaterialGraph.md): what it fills in of the standard surface.
+// The generated shader defines materialGraphSurface after this file.
+struct MaterialGraphSurface {
+    vec3 baseColor;
+    float opacity;
+    vec3 normal;   // tangent space
+    float roughness;
+    float metallic;
+    vec3 emissive;
+    float occlusion;
+};
+void materialGraphSurface(GraphShadingData g, float graphTime, vec3 graphView, inout MaterialGraphSurface s);
+#endif
+
 void main() {
     SlotBinding baseBinding = pc.drawBuffer.draws[vDraw].slots[kBaseColor];
     vec4 albedo = sampleSlot(vTexture, baseBinding, slotUv(baseBinding, vUvs)) * vColor;
@@ -464,6 +479,40 @@ void main() {
     vec3 n = surfaceNormal(normalLength);
     vec2 roughnessMetallic = vRoughnessMetallic;
     if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
+
+    // @material_graph: a material graph's pipelines (W4) fill in the standard surface here,
+    // from what the material gave it so far. Lighting and everything after are unchanged.
+    bool graphSurface = false;
+    vec3 graphEmissive = vec3(0.0);
+    float graphOcclusion = 1.0;
+#ifdef MATERIAL_GRAPH
+    if (shadingAddress != uvec2(0u) && sh.graph != uvec2(0u)) {
+        MaterialGraphSurface gs;
+        gs.baseColor = albedo.rgb;
+        gs.opacity = albedo.a;
+        gs.normal = vec3(0.0, 0.0, 1.0);
+        gs.roughness = roughnessMetallic.x;
+        gs.metallic = roughnessMetallic.y;
+        gs.emissive = vEmissive;
+        gs.occlusion = 1.0;
+        float graphTime = pc.drawBuffer.draws[vDraw].windPhase * (1.0 / 1.7);   // the frame clock (kWindRate)
+        materialGraphSurface(GraphShadingBuffer(sh.graph).graph, graphTime,
+            normalize(frame.cameraPosition - vWorldPosition), gs);
+        albedo = vec4(gs.baseColor, gs.opacity);
+        roughnessMetallic = vec2(gs.roughness, gs.metallic);
+#ifdef MATERIAL_GRAPH_NORMAL
+        vec3 geometric = normalize(vNormal);
+        vec3 gt, gb;
+        bool derivative = (pc.drawBuffer.draws[vDraw].flags & kDerivativeTangents) != 0u;
+        if (tangentFrame(geometric, vUvs.xy, derivative, gt, gb))
+            n = normalize(gt * gs.normal.x + gb * gs.normal.y + geometric * max(gs.normal.z, 1e-3));
+        normalLength = 1.0;
+#endif
+        graphSurface = true;
+        graphEmissive = gs.emissive;
+        graphOcclusion = gs.occlusion;
+    }
+#endif
 
     // Painted terrain (W1b): up to four layers blended by the weights texture, in place of
     // the material's colour, roughness, metallic and normal. Layers the draw's chunk doesn't
@@ -726,6 +775,7 @@ void main() {
     }
     vec3 emissive = vEmissive;
     if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
+    if (graphSurface) emissive = graphEmissive;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
     if (frame.debugView == 6u) { outColor = vec4(surroundingsIrradiance(n), 1.0); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
@@ -856,6 +906,7 @@ void main() {
     // scattering energy compensation of Fdez-Aguera 2019 so rough metals don't lose light.
     // The occlusion map only darkens this: direct light has shadows of its own.
     float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w, kOcclusion).r - 1.0) : 1.0;
+    if (graphSurface) occlusion = clamp(graphOcclusion, 0.0, 1.0);
     const float tableTexel = 1.0 / 128.0;   // kBrdfTableSize; clamped so lookups never wrap
     vec2 brdf = textureLod(
         sampler2D(textures[frame.brdfTable], linearSampler),

@@ -26,7 +26,20 @@ namespace {
 constexpr const char* kBuiltinMeshes[] = {"cube", "sphere", "plane", "floor"};
 constexpr const char* kBuiltinTextures[] = {"white", "checker", "grid", "panel"};
 
-enum class TileKind { Folder, Mesh, Model, Texture, Audio, Scene, UIDocument, Prefab, Circuit, Material, Other };
+enum class TileKind {
+    Folder,
+    Mesh,
+    Model,
+    Texture,
+    Audio,
+    Scene,
+    UIDocument,
+    Prefab,
+    Circuit,
+    Material,
+    MaterialGraph,
+    Other
+};
 
 struct Tile {
     TileKind kind;
@@ -113,8 +126,9 @@ void drawIcon(ImDrawList* draw, TileKind kind, const std::string& name, ImVec2 c
         draw->AddRect(ImVec2(c.x - s, c.y - r), ImVec2(c.x + s, c.y), color, 0.0f, 0, 2.0f);
         return;
     }
-    if (kind == TileKind::Circuit) {
-        // Two nodes and a wire between them.
+    if (kind == TileKind::Circuit || kind == TileKind::MaterialGraph) {
+        // Two nodes and a wire between them (a material graph's with a ball on the second).
+        if (kind == TileKind::MaterialGraph) draw->AddCircle(ImVec2(c.x + r * 0.58f, c.y + r * 0.7f), r * 0.2f, color);
         const float s = r * 0.42f;
         draw->AddRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r + 2 * s, c.y - r + 1.4f * s), color, 0.0f, 0, 2.0f);
         draw->AddRect(ImVec2(c.x + r - 2 * s, c.y + r - 1.4f * s), ImVec2(c.x + r, c.y + r), color, 0.0f, 0, 2.0f);
@@ -341,14 +355,15 @@ void Editor::drawContentItems() {
         }
         for (const AssetFolder::File& f : m_assetFolder->files()) {
             if (filter.empty() ? parentOf(f.name) != m_contentFolder : !matches(f.name)) continue;
-            const TileKind kind = f.kind == AssetFolder::Kind::Texture ? TileKind::Texture
-                                  : f.kind == AssetFolder::Kind::Audio ? TileKind::Audio
-                                  : f.kind == AssetFolder::Kind::Model ? TileKind::Model
+            const TileKind kind = f.kind == AssetFolder::Kind::Texture    ? TileKind::Texture
+                                  : f.kind == AssetFolder::Kind::Audio    ? TileKind::Audio
+                                  : f.kind == AssetFolder::Kind::Model    ? TileKind::Model
                                   : f.kind == AssetFolder::Kind::Material ? TileKind::Material
-                                  : f.path.extension() == ".rml"       ? TileKind::UIDocument
-                                  : f.path.extension() == ".swprefab"  ? TileKind::Prefab
-                                  : f.path.extension() == ".swcircuit" ? TileKind::Circuit
-                                                                       : TileKind::Other;
+                                  : f.path.extension() == ".rml"          ? TileKind::UIDocument
+                                  : f.path.extension() == ".swprefab"     ? TileKind::Prefab
+                                  : f.path.extension() == ".swcircuit"    ? TileKind::Circuit
+                                  : f.path.extension() == ".swmatgraph"   ? TileKind::MaterialGraph
+                                                                          : TileKind::Other;
             const uint64_t thumb =
                 f.imported && kind == TileKind::Texture ? engine().renderer().guiTexture(f.texture) : 0;
             tiles.push_back({kind, f.name, leafName(f.name), thumb, &f, f.path});
@@ -405,6 +420,7 @@ void Editor::drawContentItems() {
         const bool failed = tile.file && !tile.file->error.empty();
         const bool usable = tile.kind == TileKind::UIDocument || tile.kind == TileKind::Prefab ||
                             tile.kind == TileKind::Circuit || tile.kind == TileKind::Material ||
+                            tile.kind == TileKind::MaterialGraph ||
                             (tile.kind != TileKind::Other && (!tile.file || tile.file->imported));
         if (i % columns != 0) ImGui::SameLine();
 
@@ -506,6 +522,9 @@ void Editor::drawContentItems() {
                         ImGui::TextDisabled("Inherits from %s", material->desc.chain[1].c_str());
                 ImGui::TextDisabled("Material. Drag onto an object or a model's part, or double-click to edit it");
                 break;
+            case TileKind::MaterialGraph:
+                ImGui::TextDisabled("Material graph. Drop onto a material's Graph field to draw it with this");
+                break;
             case TileKind::Other: break;
             }
             ImGui::EndTooltip();
@@ -513,14 +532,15 @@ void Editor::drawContentItems() {
 
         // Drag sources carry the asset name.
         if (usable && tile.kind != TileKind::Folder && tile.kind != TileKind::Scene && ImGui::BeginDragDropSource()) {
-            const char* payload = tile.kind == TileKind::Mesh         ? kMeshPayload
-                                  : tile.kind == TileKind::Audio      ? kAudioPayload
-                                  : tile.kind == TileKind::Model      ? kModelPayload
-                                  : tile.kind == TileKind::UIDocument ? kUIDocumentPayload
-                                  : tile.kind == TileKind::Prefab     ? kPrefabPayload
-                                  : tile.kind == TileKind::Circuit    ? kCircuitPayload
-                                  : tile.kind == TileKind::Material   ? kMaterialPayload
-                                                                      : kTexturePayload;
+            const char* payload = tile.kind == TileKind::Mesh            ? kMeshPayload
+                                  : tile.kind == TileKind::Audio         ? kAudioPayload
+                                  : tile.kind == TileKind::Model         ? kModelPayload
+                                  : tile.kind == TileKind::UIDocument    ? kUIDocumentPayload
+                                  : tile.kind == TileKind::Prefab        ? kPrefabPayload
+                                  : tile.kind == TileKind::Circuit       ? kCircuitPayload
+                                  : tile.kind == TileKind::Material      ? kMaterialPayload
+                                  : tile.kind == TileKind::MaterialGraph ? kMaterialGraphPayload
+                                                                         : kTexturePayload;
             ImGui::SetDragDropPayload(payload, tile.name.c_str(), tile.name.size() + 1);
             if (tile.texture) {
                 ImGui::Image(static_cast<ImTextureID>(tile.texture), ImVec2(48.0f * dpi, 48.0f * dpi));
@@ -564,6 +584,7 @@ void Editor::drawContentItems() {
             case TileKind::Prefab: editPrefab(tile.name); break;
             case TileKind::Circuit: openCircuit(tile.name); break;
             case TileKind::Material: openMaterial(tile.name); break;
+            case TileKind::MaterialGraph: break;
             case TileKind::Other: break;
             }
         }
@@ -632,6 +653,10 @@ void Editor::drawContentItems() {
                 if (ImGui::MenuItem("New material instance"))
                     newMaterial(parentOf(tile.name), leafName(fs::path(tile.name).stem().string()) + " instance",
                                 tile.name, {});
+                if (ImGui::MenuItem("Open in text editor"))
+                    SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
+                break;
+            case TileKind::MaterialGraph:
                 if (ImGui::MenuItem("Open in text editor"))
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;

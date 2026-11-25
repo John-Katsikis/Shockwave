@@ -112,6 +112,11 @@ public:
     // A02: Low leaves DrawMaterial::layers' detail out of later draws.
     virtual void setMaterialQuality(MaterialQuality) {}
     virtual LodStats lodStats() const { return {}; }
+    // A material graph's fragment shader (W4): SPIR-V of mesh.glsl with the graph spliced in.
+    // Main thread, between frames. A backend without them draws graph materials as their
+    // standard material.
+    virtual void createSurfaceShader(SurfaceShaderHandle, std::span<const uint32_t> /*spirv*/) {}
+    virtual void destroySurfaceShader(SurfaceShaderHandle) {}
 
     // ---- Per frame ----
     virtual void setClearColor(const Color& color) = 0;

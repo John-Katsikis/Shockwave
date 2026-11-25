@@ -125,6 +125,15 @@ public:
     // kMaxSamplers distinct descs it logs once and returns the default.
     SamplerHandle sampler(const SamplerDesc& desc);
     SamplerDesc samplerDesc(SamplerHandle sampler) const;
+    // ---- Material graphs (W4, docs/MaterialGraph.md) ----
+    // A material graph's compiled fragment shader (Assets/ShaderCompiler.h), for
+    // MaterialGraphShading::shader. Its pipelines are built here, so a level pays for them
+    // while it loads. Main thread, between frames. Throws past kMaxSurfaceShaders.
+    SurfaceShaderHandle createSurfaceShader(std::span<const uint32_t> spirv);
+    // Main thread, between frames, after materials have dropped it; its pipelines are freed
+    // once no frame in flight uses them.
+    void destroySurfaceShader(SurfaceShaderHandle shader);
+    size_t surfaceShaderCount() const;   // alive now
     // The most anisotropic filtering any texture gets, 1 (off), 2, 4, 8 or 16; the device's
     // limit caps it too. Samplers are remade at the frame boundary and the old ones freed
     // once no frame uses them. Main thread.

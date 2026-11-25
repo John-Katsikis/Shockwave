@@ -1,0 +1,7 @@
+# A material graph with mistakes, for player_cli: each is reported against its node.
+swmatgraph 1
+node tint param tint 1 0.5 0.2
+node uvs uv
+node mix lerp a=tint b=uvs t=0.5
+node lonely add a=1
+output base_color mix

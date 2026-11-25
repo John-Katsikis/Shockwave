@@ -48,6 +48,7 @@ struct ShadingSettings {
     HairQuality hair = HairQuality::High;
     TerrainQuality terrain = TerrainQuality::High;
     WaterQuality water = WaterQuality::High;
+    bool materialGraphs = true;   // off: graph materials draw as their plain standard material (W4)
     bool operator==(const ShadingSettings&) const = default;
 };
 // The pipelines content needs that aren't built when the renderer starts (S10): glass and
@@ -81,6 +82,17 @@ struct TerrainShading {
     uint32_t samples = 129;   // points along a side (the weights texture's size)
     uint32_t layers = 0;   // bit i: layer i has weight somewhere in this draw; the rest aren't sampled
     std::array<TerrainLayerShading, kTerrainLayerCount> layer{};
+};
+
+// A material graph's shader and values (W4, docs/MaterialGraph.md), for family Standard: the
+// shader from Renderer::createSurfaceShader, then its params, textures and samplers in slot
+// order. Owned by the material, read during the draw call only.
+inline constexpr size_t kGraphSlots = 16;
+struct MaterialGraphShading {
+    SurfaceShaderHandle shader;
+    std::array<glm::vec4, kGraphSlots> params{};
+    std::array<TextureHandle, kGraphSlots> textures{};
+    std::array<SamplerHandle, kGraphSlots> samplers{};
 };
 
 // What a material's family adds to DrawMaterial (MaterialShading lives with the material
@@ -121,6 +133,8 @@ struct MaterialShading {
     std::array<TextureBinding, kShadingSlots> bindings{};
     // Family Terrain: the layers. Read during the draw call only, like DrawMaterial::shading.
     const TerrainShading* terrain = nullptr;
+    // A material graph (W4), family Standard only. Read during the draw call only.
+    const MaterialGraphShading* graph = nullptr;
 };
 
 // ---- Clearcoat ----
@@ -175,6 +189,7 @@ struct ShadingStats {
     uint32_t terrainLowDraws = 0;   // of them, drawn with terrain_quality low
     uint32_t waterDraws = 0;   // water through the transmission pass (W3)
     uint32_t simplifiedWaterDraws = 0;   // water without it: a blended stand-in
+    uint32_t graphDraws = 0;   // draws with a material graph's shader (W4)
     bool transmissionPass = false, skinPass = false;
     uint64_t transmissionBytes = 0, skinBytes = 0;
 };

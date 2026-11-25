@@ -71,6 +71,9 @@ struct GraphicsSettings {
     TerrainQuality terrainQuality = TerrainQuality::High;
     // Water (W3): high refracts, adds foam and mixes two ripple samples; low none of those.
     WaterQuality waterQuality = WaterQuality::High;
+    // Material graphs (W4): off draws graph materials as their plain standard material, with
+    // no graph pipelines built.
+    bool materialGraphs = true;
     // Foliage (W2a): the share of instances drawn (0 draws none and makes no draw calls) and
     // a scale on every type's distance.
     float foliageDensity = 1;   // 0..1

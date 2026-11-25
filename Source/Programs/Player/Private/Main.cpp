@@ -361,6 +361,10 @@ int main(int argc, char** argv) {
             return player::symbolizeReport(diagnostics, tool.benchmarkJson);   // no project
         if (!imageStats.empty()) return player::imageStats(imageStats, tool.benchmarkJson, imageRegion);   // no project
         if (!materialInfo.empty()) return player::materialInfo(materialInfo, tool.benchmarkJson);
+        if (!state.materialGraph.empty())   // no project
+            return player::materialGraphInfo(
+                state.materialGraph, tool.mode == player::Tool::Mode::CircuitDump, tool.benchmarkJson);
+        if (!state.materialGraphSchema.empty()) return player::materialGraphSchema(state.materialGraphSchema);
         if (!effectInfo.empty()) return player::effectInfo(effectInfo, tool.benchmarkJson);   // no project
         if (!postProcessSchema.empty()) return player::postProcessSchema(postProcessSchema);
         if (!postProcessInfo.empty()) return player::postProcessInfo(postProcessInfo, tool.benchmarkJson);

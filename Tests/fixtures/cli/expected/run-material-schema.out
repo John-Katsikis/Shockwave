@@ -20,6 +20,17 @@ below. Saving from the editor writes this canonical order and drops comments.
 Chains are at most 16 files long and can't loop. A missing parent draws the material magenta, with
 the reason in the editor and `player --check`.
 
+## Material graph
+
+| Record | Meaning |
+|---|---|
+| `graph "materials/lava.swmatgraph"` | Fill in the surface from a node graph (docs/MaterialGraph.md); family standard only. A child without one keeps its parent's |
+| `graph_param <name> <1 to 4 numbers>` | A value for the graph's param node of that name, over the graph's default and the parent's value |
+
+The graph starts from the values below (base colour, roughness, metallic, emissive and their
+textures) and replaces what it outputs. With the graphics setting `material_graphs` false the
+material draws as those values alone.
+
 ## Values
 
 | Key | Values | Default | Range | Meaning |

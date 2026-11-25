@@ -7,6 +7,7 @@
 #include "Editor.h"
 
 #include <Assets/Material.h>
+#include <Assets/MaterialGraph.h>
 #include <UI/Gui.h>
 
 #include <imgui_stdlib.h>
@@ -15,6 +16,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 
 namespace editor {
 
@@ -362,6 +365,102 @@ void Editor::drawMaterialWindow() {
             ImGui::PopID();
         }
         ImGui::EndTable();
+    }
+
+    // A material graph (W4, docs/MaterialGraph.md): the .swmatgraph that fills in the surface,
+    // and its params, each set here or left at the graph's (or the parent's) value.
+    if (family == int(shockwave::MaterialFamily::Standard)) {
+        ImGui::SeparatorText("Material graph");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##graph", "none (or the parent's): drop a .swmatgraph here", &edit.graph);
+        settled(false);
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kMaterialGraphPayload)) {
+                edit.graph = static_cast<const char*>(payload->Data);
+                commit = true;
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::SetItemTooltip("Drop a material graph from Content here. Empty keeps the parent's graph, if any");
+        const std::string graph = !edit.graph.empty() ? edit.graph : asset && !asset->fallback ? asset->desc.graph : "";
+        // The graph's params, read again when its file changes.
+        static std::string cachedPath;
+        static fs::file_time_type cachedTime{};
+        static std::vector<shockwave::MaterialGraphParam> cachedParams;
+        static std::string cachedError;
+        std::error_code ec;
+        const fs::path file = m_project.assetFolder / graph;
+        const auto time = graph.empty() ? fs::file_time_type{} : fs::last_write_time(file, ec);
+        if (graph != cachedPath || time != cachedTime) {
+            cachedPath = graph;
+            cachedTime = time;
+            cachedParams.clear();
+            cachedError.clear();
+            if (!graph.empty()) {
+                std::ifstream in(file, std::ios::binary);
+                const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                shockwave::MaterialGraph parsed;
+                shockwave::MaterialGraphCode code;
+                std::vector<shockwave::MaterialGraphError> errors;
+                if (!in && text.empty())
+                    cachedError = "can't open " + graph;
+                else if (!shockwave::parseMaterialGraph(text, parsed, cachedError)) {
+                } else if (!shockwave::compileMaterialGraph(parsed, code, errors))
+                    cachedError = shockwave::materialGraphErrorText(errors);
+                cachedParams = code.params;
+            }
+        }
+        if (!cachedError.empty()) ImGui::TextColored(gui::semanticColor(theme.error), "%s", cachedError.c_str());
+        if (!cachedParams.empty() && gui::beginPropertyGrid("graph params")) {
+            for (const shockwave::MaterialGraphParam& param : cachedParams) {
+                ImGui::PushID(param.name.c_str());
+                auto own = std::find_if(
+                    edit.graphParams.begin(), edit.graphParams.end(),
+                    [&](const shockwave::MaterialGraphParamValue& v) { return v.name == param.name; });
+                const bool set = own != edit.graphParams.end();
+                overrideLabel(param.name.c_str(), set);
+                // What it draws with now: this file's value, the chain's, or the graph's default.
+                glm::vec4 value = param.value;
+                const std::vector<float>* from = set ? &own->values : nullptr;
+                if (!from && asset && !asset->fallback)
+                    for (const auto& v : asset->desc.graphParams)
+                        if (v.name == param.name) from = &v.values;
+                if (from)
+                    for (size_t c = 0; c < from->size() && c < 4; ++c) value[int(c)] = (*from)[c];
+                ImGui::SetNextItemWidth(set ? -inheritWidth : -1.0f);
+                bool changed = false;
+                switch (param.components) {
+                case 1: changed = ImGui::DragFloat("##v", &value.x, 0.01f); break;
+                case 2: changed = ImGui::DragFloat2("##v", &value.x, 0.01f); break;
+                case 3:
+                    changed = ImGui::ColorEdit3("##v", &value.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+                    break;
+                default:
+                    changed = ImGui::ColorEdit4("##v", &value.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+                    break;
+                }
+                ImGui::SetItemTooltip("graph_param %s: the graph's param node of that name", param.name.c_str());
+                if (changed) {
+                    std::vector<float> values(&value.x, &value.x + param.components);
+                    if (set)
+                        own->values = values;
+                    else
+                        edit.graphParams.push_back({param.name, values});
+                }
+                settled(changed);
+                if (set) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Inherit")) {
+                        edit.graphParams.erase(std::find_if(
+                            edit.graphParams.begin(), edit.graphParams.end(),
+                            [&](const shockwave::MaterialGraphParamValue& v) { return v.name == param.name; }));
+                        commit = true;
+                    }
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
     }
 
     // Texture slots: which texture, and how it's read.

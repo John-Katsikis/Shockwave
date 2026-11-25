@@ -4,6 +4,7 @@
 
 #include "Player.h"
 
+#include <Assets/AssetFolder.h>
 #include <Engine/GraphicsBudget.h>
 #include <Engine/Foliage.h>
 #include <Engine/Terrain.h>
@@ -308,6 +309,12 @@ void Player::graphicsReport() {
          << ", \"instances_drawn\": " << foliage.instancesDrawn << ", \"calls\": " << foliage.calls
          << ", \"submit_ms\": " << foliage.submitMs << ", \"density\": " << foliageSettings.density
          << ", \"distance\": " << foliageSettings.distance << "}"
+         << ",\n  \"material_graphs\": {\"enabled\": " << (renderer.shadingSettings().materialGraphs ? "true" : "false")
+         << ", \"shaders\": " << renderer.surfaceShaderCount() << ", \"draws\": " << shadingStats.graphDraws
+         << ", \"compiled\": " << (m_assets ? m_assets->graphStats().compiled : 0)
+         << ", \"from_cache\": " << (m_assets ? m_assets->graphStats().fromCache : 0)
+         << ", \"load_ms\": " << (m_assets ? m_assets->graphStats().milliseconds : 0.0)
+         << ", \"errors\": " << (m_assets ? m_assets->graphStats().errors.size() : 0) << "}"
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

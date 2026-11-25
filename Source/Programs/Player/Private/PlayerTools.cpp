@@ -317,7 +317,12 @@ int Player::check(const std::vector<std::string>& importProblems) {
     settle(ProblemKind::Circuit);
     // What everything checked reaches, file by file (docs/AssetResidency.md): references
     // that don't resolve, wrong case, paths leaving the project, cycles.
+    // Material graphs first (W4): compiling them fills the shader cache the graph's
+    // dependencies point at.
+    if (!onlySaves) checkMaterialGraphs(problems);
+    settle(ProblemKind::Content);
     if (!onlySaves) checkAssetGraph(scenes, problems);
+    if (!onlySaves) reportGraphsPerScene(scenes);
     // Save games: they must read back the way a load would, entity handles and all.
     for (const fs::path& file : saves) {
         const std::string shown = m_project.relative(file);

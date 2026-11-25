@@ -30,6 +30,11 @@ player --material-info model.glb|file.swmaterial [--json file]
                                     for a .swmaterial, also its parents, values, features,
                                     what material_quality low leaves out, and warnings
 player --material-schema file|-     write the .swmaterial reference (docs/MaterialSchema.md)
+player --material-graph file.swmatgraph [--dump] [--json file]
+                                    check and compile a material graph into its project's
+                                    Saved/Cache/Shaders: params, textures, errors by node;
+                                    --dump prints the shader it makes (docs/MaterialGraph.md)
+player --material-graph-schema file|- write the node reference (docs/MaterialGraphNodes.md)
 player --effect-info file.efkefc [--json file]
                                     each part of a particle effect and how it's drawn:
                                     supported, approximated or unsupported (docs/Effects.md)

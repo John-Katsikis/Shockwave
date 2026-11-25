@@ -100,6 +100,13 @@ struct SamplerHandle {
     bool operator==(const SamplerHandle&) const = default;
 };
 inline constexpr uint32_t kMaxSamplers = 64;   // distinct SamplerDescs, the default included
+// A material graph's compiled fragment shader (W4, Renderer::createSurfaceShader). 0: none,
+// the engine's own surface shader.
+struct SurfaceShaderHandle {
+    uint32_t id = 0;
+    bool operator==(const SurfaceShaderHandle&) const = default;
+};
+inline constexpr uint32_t kMaxSurfaceShaders = 256;
 
 // glTF's KHR_texture_transform: uv' = offset + R(rotation) * (scale * uv), rotating about
 // the UV origin, with R = [cos sin; -sin cos] as glTF defines it.

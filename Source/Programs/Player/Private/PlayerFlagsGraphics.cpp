@@ -236,6 +236,18 @@ void addGraphicsFlags(std::vector<Flag>& flags) {
         return {};
     });
 
+    add(flags, {"--material-graph"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.materialGraph = a.next();
+        if (s.materialGraph.extension() != ".swmatgraph")
+            throw player::UsageError("--material-graph takes a .swmatgraph file");
+        return {};
+    });
+
+    add(flags, {"--material-graph-schema"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.materialGraphSchema = a.next();
+        return {};
+    });
+
     add(flags, {"--material-info"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
         s.materialInfo = a.next();
 

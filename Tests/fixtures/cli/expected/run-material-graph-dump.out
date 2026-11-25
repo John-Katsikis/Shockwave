@@ -1,0 +1,30 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_GOOGLE_include_directive : require
+#define MATERIAL_GRAPH 1
+#include "mesh.glsl"
+// Generated from a .swmatgraph (Assets/MaterialGraph.cpp); edit the graph, not this.
+vec4 graphVec4(float x) { return vec4(x, x, x, 1.0); }
+vec4 graphVec4(vec2 x) { return vec4(x, 0.0, 1.0); }
+vec4 graphVec4(vec3 x) { return vec4(x, 1.0); }
+vec4 graphVec4(vec4 x) { return x; }
+float graphHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float graphNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(graphHash(i), graphHash(i + vec2(1.0, 0.0)), u.x),
+               mix(graphHash(i + vec2(0.0, 1.0)), graphHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+void materialGraphSurface(GraphShadingData g, float graphTime, vec3 graphView, inout MaterialGraphSurface s) {
+    vec4 n0 = texture(sampler2D(textures[nonuniformEXT(g.textures[0])], materialSamplers[nonuniformEXT(g.samplers[0])]), vUvs.xy);   // checker (texture)
+    vec3 n1 = vec3(0.9, 0.6, 0.4);   // warm (constant)
+    vec3 n2 = n0.rgb * n1;   // color (multiply)
+    float n3 = 0.45;   // rough (constant)
+    float n4 = 0.2;   // metal (constant)
+    s.baseColor = n2;
+    s.roughness = n3;
+    s.metallic = n4;
+}

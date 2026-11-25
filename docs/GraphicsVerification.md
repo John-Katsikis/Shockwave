@@ -1111,6 +1111,43 @@ meshes' naming. Water isn't in screen-space reflections, which only opaque surfa
 Not done (as planned): waves that move the mesh, buoyancy, swimming, an underwater view,
 waterfalls.
 
+## W4a: material graphs
+
+A material can be built from a node graph (docs/MaterialGraph.md): a `.swmatgraph` compiles
+to one GLSL function spliced into the scene's fragment shader at `@material_graph`, compiled
+to SPIR-V with glslangValidator and kept in `Saved/Cache/Shaders/<hash>.spv`. A `.swmaterial`
+draws with one through `graph` and changes its params with `graph_param`.
+
+- **Contract.** `Assets/MaterialGraph.h` (format, 26 node types, checks, GLSL) and
+  `Assets/ShaderCompiler.h` (compiling and the cache); `Renderer::createSurfaceShader` and
+  `MaterialGraphShading` in `Renderer/Shading.h`; `GraphShadingData` in a per-frame table
+  like terrain's, pointed at by `ShadingData::graph`; the Vulkan renderer's graph
+  pipelines (solid, mesh and depth EQUAL variants, built as needed). The `material_graphs`
+  graphics setting turns it off.
+- **Unit test.** `material_graph`: parse and write, every check (each naming its node),
+  generated GLSL, cache names, the `.swmaterial` records and inheritance, and loading
+  through an AssetFolder on the null renderer, including a broken graph and a hot reload.
+- **GPU check.** `graphics_material_graph_render`: a graph recomputing `plain.swmaterial`'s
+  values draws the same picture (RMSE 0.0012, one pixel one level apart); with
+  `material_graphs false` the lava scene is identical to its plain material (RMSE 0); the
+  lava glow changes the box by 26 RMSE and `graph_param glow 0 0 0` takes it away; two
+  fixed-step runs are identical; the report counts two graph draws, and none when off.
+- **Tools.** `--material-graph [--dump]`, `--material-graph-schema` (docs/MaterialGraphNodes.md),
+  `--check` compiling every graph and counting graphs per scene (warning past 64), the
+  graph's compiled shader as a required asset (so the cook refuses a stale one), and the
+  packager shipping `Saved/Cache/Shaders`. The Material window has a Graph field (a drop
+  target for the Content browser's new material graph tiles) with each param's value.
+
+Deviations from the plan: the plan spliced the graph into a preprocessed copy of
+`mesh.glsl`; the generated shader instead defines `MATERIAL_GRAPH` and includes `mesh.glsl`,
+which declares the graph function and calls it at `@material_graph`, so there's one copy of
+the scene shader to maintain. Per the decision taken before starting, there's no fixed graph
+cap: a level builds only its own graphs while it loads, and `--check` and the report count
+them, with a warning past 64.
+
+Not done: graphs on families other than standard; graph normals and opacity in the depth
+prepass, shadows and screen-space effects (they see the material's own); vertex offsets.
+
 ## Known limits
 
 - The overhaul's frame times were all measured on llvmpipe, a CPU renderer. Timings on

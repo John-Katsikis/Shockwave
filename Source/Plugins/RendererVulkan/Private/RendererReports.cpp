@@ -371,6 +371,13 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
             detail, sizeof(detail), "last frame %u water draws through the transmission pass, %u simplified",
             st.waterDraws, st.simplifiedWaterDraws);
         settings.push_back({"water_quality", waterQualityName(water), waterQualityName(water), "", detail});
+        const bool graphs = shadingGraphs.load(std::memory_order_relaxed);
+        uint32_t shaders = 0;
+        for (const SurfaceShader& shader : surfaceShaders) shaders += !shader.spirv.empty();
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u draws with a material graph; %u graph shaders loaded", st.graphDraws,
+            shaders);
+        settings.push_back({"material_graphs", graphs ? "on" : "off", graphs ? "on" : "off", "", detail});
     }
 
     // Drawing (G12): what last frame merged and culled.
@@ -603,8 +610,8 @@ RendererMemoryReport VulkanRenderer::Impl::memoryReport() const {
     add(GpuMemoryCategory::Readback, captureBuffer.allocation);
     for (const Frame& f : frames) {
         for (const vk::Buffer* b :
-             {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.shadingBuffer, &f.terrainBuffer, &f.frameBuffer,
-              &f.jointBuffer, &f.skinnedBuffer})
+             {&f.drawBuffer, &f.layerBuffer, &f.probeBuffer, &f.shadingBuffer, &f.terrainBuffer, &f.graphBuffer,
+              &f.frameBuffer, &f.jointBuffer, &f.skinnedBuffer})
             add(GpuMemoryCategory::FrameData, b->allocation);
         add(GpuMemoryCategory::GameUi, f.uiVertexBuffer.allocation);
         add(GpuMemoryCategory::GameUi, f.uiIndexBuffer.allocation);

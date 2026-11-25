@@ -62,6 +62,8 @@ void Player::onStart() {
     }
     m_assets = std::make_unique<shockwave::AssetFolder>(engine().renderer(), engine().assets(), engine().jobs());
     applyOptimisationSettings();   // before importing (docs/Optimisation.md)
+    // Material graphs (W4): a packaged game reads their compiled shaders and never compiles.
+    m_assets->setCompileShaders(packagedProjectFile().empty());
     // asset_loading levels (docs/AssetResidency.md): nothing is imported now; each level's
     // lease loads what it needs, and what no lease holds is unloaded.
     if (loadAssetsOnDemand()) {

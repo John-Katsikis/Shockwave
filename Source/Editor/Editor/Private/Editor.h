@@ -58,6 +58,7 @@ inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
 inline constexpr const char* kPrefabPayload = "SW_PREFAB";   // path inside Content
 inline constexpr const char* kCircuitPayload = "SW_CIRCUIT";   // path inside Content
 inline constexpr const char* kMaterialPayload = "SW_MATERIAL";   // path inside Content
+inline constexpr const char* kMaterialGraphPayload = "SW_MATERIAL_GRAPH";   // path inside Content (W4)
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 

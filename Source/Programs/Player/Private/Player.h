@@ -387,6 +387,11 @@ int foliageInfo(const fs::path& file, const fs::path& json);
 int lutExportNeutral(uint32_t size, const fs::path& output);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
+// --material-graph <file.swmatgraph> [--dump] and --material-graph-schema (W4,
+// docs/MaterialGraph.md): checks and compiles a graph (into its project's
+// Saved/Cache/Shaders), reporting its params, textures and errors; --dump prints its GLSL.
+int materialGraphInfo(const fs::path& file, bool dump, const fs::path& json);
+int materialGraphSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);
 // Baked lighting payloads (PlayerLighting.cpp), no project needed: --lighting-schema writes
 // docs/LightingSchema.md ("-": stdout); --lighting-export turns a .ktx2 lightmap, .swbake
@@ -508,6 +513,11 @@ private:
     // reported those that don't), and its warnings are printed without failing the check.
     void checkMaterialOverrides(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
     void checkMaterialFiles();
+    // --check for material graphs (W4): every .swmatgraph in Content compiles (into
+    // Saved/Cache/Shaders, which the asset graph then finds); then, per scene, how many
+    // graphs it loads, with a warning past kGraphsPerLevelWarning.
+    void checkMaterialGraphs(std::vector<std::string>& problems);
+    void reportGraphsPerScene(const std::vector<fs::path>& scenes);
     // --check for colour grading, exposure and fog (PlayerPostProcess.cpp, A05/A06): each
     // PostProcessVolume's profile and LUT resolve, then every .swpostprocess in Content.
     void checkPostProcessVolumes(

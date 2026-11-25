@@ -392,6 +392,15 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"material_graphs", "Material graphs", "Quality",
+         "Materials built from node graphs (.swmatgraph). Off draws each one as its plain material (its own colour, "
+         "roughness and textures, without the graph), and builds none of the graphs' pipelines.",
+         "true, false", kBool, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(s.materialGraphs ? "true" : "false"); },
+         [](S& s, const std::string& v, std::string& error) {
+             return boolean(v, s.materialGraphs, "material_graphs", error);
+         }});
+    info.push_back(
         {"foliage_density",
          "Foliage density",
          "Quality",
@@ -901,6 +910,7 @@ GraphicsSettings Graphics::running() const {
     s.hairQuality = shading.hair;
     s.terrainQuality = shading.terrain;
     s.waterQuality = shading.water;
+    s.materialGraphs = shading.materialGraphs;
     const FoliageSettings foliage = r.foliageSettings();
     s.foliageDensity = foliage.density;
     s.foliageDistance = foliage.distance;
@@ -989,9 +999,11 @@ void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous)
         r.setScreenEffectsSettings({s.contactShadows, s.reflectionsQuality, s.motionBlur});
     if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
         s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality ||
-        s.terrainQuality != previous.terrainQuality || s.waterQuality != previous.waterQuality)
+        s.terrainQuality != previous.terrainQuality || s.waterQuality != previous.waterQuality ||
+        s.materialGraphs != previous.materialGraphs)
         r.setShadingSettings(
-            {s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality, s.terrainQuality, s.waterQuality});
+            {s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality, s.terrainQuality, s.waterQuality,
+             s.materialGraphs});
     if (s.foliageDensity != previous.foliageDensity || s.foliageDistance != previous.foliageDistance)
         r.setFoliageSettings({s.foliageDensity, s.foliageDistance});
     if (s.instancing != previous.instancing || s.occlusionCulling != previous.occlusionCulling)

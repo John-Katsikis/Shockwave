@@ -108,6 +108,7 @@ VulkanRenderer::Impl::~Impl() {
     vkDestroyPipelineLayout(device, tonemapLayout, nullptr);
     for (auto pipeline : mirroredPipelines) vkDestroyPipeline(device, pipeline, nullptr);
     for (auto pipeline : solidPipelines) vkDestroyPipeline(device, pipeline, nullptr);
+    destroySurfaceShaders();
     vkDestroyPipeline(device, meshPipeline, nullptr);
     vkDestroyPipeline(device, meshDoubleSidedPipeline, nullptr);
     vkDestroyPipeline(device, meshBlendPipeline, nullptr);
@@ -126,6 +127,7 @@ VulkanRenderer::Impl::~Impl() {
         if (f.layerBuffer.buffer) vmaDestroyBuffer(allocator, f.layerBuffer.buffer, f.layerBuffer.allocation);
         if (f.probeBuffer.buffer) vmaDestroyBuffer(allocator, f.probeBuffer.buffer, f.probeBuffer.allocation);
         if (f.terrainBuffer.buffer) vmaDestroyBuffer(allocator, f.terrainBuffer.buffer, f.terrainBuffer.allocation);
+        if (f.graphBuffer.buffer) vmaDestroyBuffer(allocator, f.graphBuffer.buffer, f.graphBuffer.allocation);
         if (f.shadingBuffer.buffer) vmaDestroyBuffer(allocator, f.shadingBuffer.buffer, f.shadingBuffer.allocation);
         vmaDestroyBuffer(allocator, f.frameBuffer.buffer, f.frameBuffer.allocation);
         vkDestroySemaphore(device, f.imageAcquired, nullptr);

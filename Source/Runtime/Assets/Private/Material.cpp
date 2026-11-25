@@ -570,6 +570,29 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
             }
             continue;
         }
+        if (key.text == "graph") {
+            if (!records.insert("graph").second) return fail("duplicate record 'graph'");
+            if (tokens.size() != 2 || !tokens[1].quoted) return fail("expected graph \"path.swmatgraph\"");
+            if (fs::path(tokens[1].text).extension() != ".swmatgraph")
+                return fail("graph names a .swmatgraph file, not '" + tokens[1].text + "'");
+            file.graph = tokens[1].text;
+            continue;
+        }
+        if (key.text == "graph_param") {
+            if (tokens.size() < 3 || tokens.size() > 6 || tokens[1].quoted)
+                return fail("expected graph_param <name> <1 to 4 numbers>");
+            MaterialGraphParamValue value;
+            value.name = tokens[1].text;
+            if (!records.insert("graph_param " + value.name).second)
+                return fail("duplicate record 'graph_param " + value.name + "'");
+            for (size_t c = 2; c < tokens.size(); ++c) {
+                float v = 0;
+                if (!parseNumber(tokens[c], v)) return fail("'" + tokens[c].text + "' isn't a finite number");
+                value.values.push_back(v);
+            }
+            file.graphParams.push_back(std::move(value));
+            continue;
+        }
         if (const MaterialParamInfo* info = findMaterialParam(key.text)) {
             if (!records.insert(key.text).second) return fail("duplicate record '" + key.text + "'");
             const size_t index = size_t(info - kParams.data());
@@ -709,6 +732,12 @@ std::string writeMaterial(const MaterialFile& file) {
     if (!file.parent.empty())
         out += "parent " + quote(file.parent) + (file.parentMaterial.empty() ? "" : " " + quote(file.parentMaterial)) +
                "\n";
+    if (!file.graph.empty()) out += "graph " + quote(file.graph) + "\n";
+    for (const MaterialGraphParamValue& p : file.graphParams) {
+        out += "graph_param " + p.name;
+        for (float v : p.values) out += " " + number(v);
+        out += "\n";
+    }
     for (size_t i = 0; i < kParams.size(); ++i) {
         if (!((file.set >> i) & 1u)) continue;
         const MaterialParamInfo& info = kParams[i];
@@ -806,6 +835,15 @@ std::string materialSchemaMarkdown() {
         << kMaxMaterialDepth
         << " files long and can't loop. A missing parent draws the material magenta, with\n"
            "the reason in the editor and `player --check`.\n\n"
+           "## Material graph\n\n"
+           "| Record | Meaning |\n|---|---|\n"
+           "| `graph \"materials/lava.swmatgraph\"` | Fill in the surface from a node graph (docs/MaterialGraph.md); "
+           "family standard only. A child without one keeps its parent's |\n"
+           "| `graph_param <name> <1 to 4 numbers>` | A value for the graph's param node of that name, over the "
+           "graph's default and the parent's value |\n\n"
+           "The graph starts from the values below (base colour, roughness, metallic, emissive and their\n"
+           "textures) and replaces what it outputs. With the graphics setting `material_graphs` false the\n"
+           "material draws as those values alone.\n\n"
            "## Values\n\n"
            "| Key | Values | Default | Range | Meaning |\n|---|---|---|---|---|\n";
     const MaterialParams defaults;
@@ -887,6 +925,7 @@ const char* materialFeatureName(uint32_t feature) {
     case kMaterialSkin: return "skin";
     case kMaterialHairCard: return "hair_card";
     case kMaterialWater: return "water";
+    case kMaterialGraph: return "graph";
     }
     return "unknown";
 }
@@ -922,6 +961,7 @@ uint32_t materialFeatures(const MaterialDesc& desc) {
         break;
     case MaterialFamily::Terrain: break;   // never parsed from a .swmaterial
     }
+    if (!desc.graph.empty() && p.family == int(MaterialFamily::Standard)) features |= kMaterialGraph;
     return features;
 }
 
@@ -936,6 +976,10 @@ bool materialFamilyUses(int family, std::string_view group) {
 
 std::string materialEffectiveShading(const MaterialDesc& desc, const ShadingSettings& settings) {
     const uint32_t f = desc.features;
+    if (f & kMaterialGraph) {
+        if (!settings.materialGraphs) return "standard (material_graphs off)";
+        return (f & kMaterialClearcoat) && settings.clearcoat ? "material graph with clearcoat" : "material graph";
+    }
     if (f & kMaterialClearcoat) return settings.clearcoat ? "standard with clearcoat" : "standard (clearcoat off)";
     if (f & kMaterialTransmission) {
         if (settings.transmission == TransmissionQuality::Off) return "simplified glass (transmission_quality off)";
@@ -1142,6 +1186,29 @@ resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDes
             }
         }
     }
+    // The graph (W4): the nearest file that names one, and every file's param values over
+    // its parent's.
+    for (auto it = files.rbegin(); it != files.rend(); ++it) {
+        const MaterialFile& file = it->second;
+        if (!file.graph.empty()) {
+            if (lookup.graph && !lookup.graph(file.graph)) {
+                error = it->first + ": graph " + file.graph + " isn't in Content";
+                return MaterialProblem::Reference;
+            }
+            desc.graph = file.graph;
+        }
+        for (const MaterialGraphParamValue& value : file.graphParams) {
+            auto same =
+                std::find_if(desc.graphParams.begin(), desc.graphParams.end(), [&](const MaterialGraphParamValue& v) {
+                    return v.name == value.name;
+                });
+            if (same != desc.graphParams.end())
+                *same = value;
+            else
+                desc.graphParams.push_back(value);
+        }
+    }
+    if (!desc.graph.empty()) desc.dependencies.push_back(desc.graph);
     for (const auto& [file, data] : files) {
         chain.push_back(file);
         desc.dependencies.push_back(file);
@@ -1188,6 +1255,12 @@ resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDes
             desc.warnings.push_back(
                 std::string(group) + " values are set but family " + family + " doesn't read them, so they do nothing");
     }
+    if (!desc.graph.empty() && p.family != int(MaterialFamily::Standard))
+        desc.warnings.push_back(
+            std::string("a graph is set but family ") + family +
+            " doesn't take one (only standard does), so it does nothing");
+    if (desc.graph.empty() && !desc.graphParams.empty())
+        desc.warnings.push_back("graph_param values are set but there's no graph, so they do nothing");
     if (p.family == int(MaterialFamily::Transmission)) {
         if (p.alphaMode == int(MaterialAlpha::Blend) && (desc.features & kMaterialTransmission))
             desc.warnings.push_back("family transmission draws its own see-through, so alpha_mode blend is ignored");
@@ -1322,7 +1395,8 @@ void buildDrawMaterial(
     }
     for (size_t slot = 0; slot < kShadingSlots; ++slot)
         sh.bindings[slot] = binding(MaterialSlot(kMaterialSlots + kLayerSlots + slot));
-    d.shading = sh.family != ShadingFamily::Standard || sh.clearcoat > 0.0f ? &asset.shading : nullptr;
+    sh.graph = sh.family == ShadingFamily::Standard ? asset.graph.get() : nullptr;   // W4
+    d.shading = sh.family != ShadingFamily::Standard || sh.clearcoat > 0.0f || sh.graph ? &asset.shading : nullptr;
 }
 
 DrawMaterial modelDrawMaterial(const ModelAsset& model, uint32_t material) {

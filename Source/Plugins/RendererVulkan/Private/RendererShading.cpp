@@ -60,6 +60,7 @@ void VulkanRenderer::Impl::setShadingSettings(const ShadingSettings& settings) {
     shadingHair.store(settings.hair, std::memory_order_relaxed);
     shadingTerrain.store(settings.terrain, std::memory_order_relaxed);
     shadingWater.store(settings.water, std::memory_order_relaxed);
+    shadingGraphs.store(settings.materialGraphs, std::memory_order_relaxed);
 }
 
 bool VulkanRenderer::Impl::fillShading(
@@ -142,6 +143,14 @@ bool VulkanRenderer::Impl::fillShading(
         if (!s.terrain) out.family = static_cast<uint32_t>(ShadingFamily::Standard);
         any = s.terrain != nullptr;
         break;
+    }
+    // A material graph (W4), standard family only: its own shader, its values pointed at
+    // from here (fillGraphShading). Off, or without the shader, the plain material.
+    if (s.graph && s.family == ShadingFamily::Standard && s.graph->shader.id &&
+        s.graph->shader.id < kMaxSurfaceShaders && !surfaceShaders[s.graph->shader.id].spirv.empty() &&
+        shadingGraphs.load(std::memory_order_relaxed)) {
+        command.surfaceShader = s.graph->shader.id;
+        any = true;
     }
     for (size_t i = 0; i < kShadingSlots; ++i) {
         const TextureBinding& b = s.bindings[i];
@@ -299,6 +308,7 @@ void VulkanRenderer::Impl::prepareShading(Frame& f) {
             stats.skinDraws += diffuses;
             stats.coatDraws += (d.flags & kShadingCoat) != 0;
             stats.hairDraws += d.family == uint32_t(ShadingFamily::HairCard);
+            stats.graphDraws += draw.surfaceShader != 0;
             stats.anisotropicHair |= (d.flags & kShadingAnisotropic) != 0;
             if (draw.terrain != kNoLayers) {
                 const TerrainShadingData& t = f.terrainData[draw.terrain];
