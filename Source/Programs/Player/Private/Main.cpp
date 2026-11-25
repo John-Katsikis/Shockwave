@@ -106,6 +106,8 @@ int main(int argc, char** argv) {
         auto& postProcessInfo = state.postProcessInfo;
         auto& lutNeutral = state.lutNeutral;
         auto& lutNeutralSize = state.lutNeutralSize;
+        auto& terrainInfo = state.terrainInfo;
+        auto& terrainImport = state.terrainImport;
         auto& lightingSchema = state.lightingSchema;
         auto& lightingExport = state.lightingExport;
         auto& lightingImport = state.lightingImport;
@@ -285,12 +287,12 @@ int main(int argc, char** argv) {
                 output.clear();
             }
             if (!output.empty() && !package.requested && netEncode.empty() && lightingExport.empty() &&
-                lightingImport.empty() && saveMigrateFile.empty() && tool.mode != Tool::Mode::NetworkManifest &&
-                tool.mode != Tool::Mode::Cook && tool.mode != Tool::Mode::AssignNetworkKeys &&
-                tool.mode != Tool::Mode::LightingAssignIds)
+                lightingImport.empty() && saveMigrateFile.empty() && terrainImport.empty() &&
+                tool.mode != Tool::Mode::NetworkManifest && tool.mode != Tool::Mode::Cook &&
+                tool.mode != Tool::Mode::AssignNetworkKeys && tool.mode != Tool::Mode::LightingAssignIds)
                 throw player::UsageError("--output goes with --package, --net-encode, --network-manifest, "
                                          "--assign-network-keys, --lighting-assign-ids, --lighting-export, "
-                                         "--lighting-import or --save-migrate");
+                                         "--lighting-import, --save-migrate or --terrain-import");
             if ((package.development || package.noBuild || package.noArchive) && !package.requested)
                 throw player::UsageError("--dev-package, --no-build and --no-archive go with --package");
             // --level picks a catalog level; guessing which wins against another start is
@@ -362,6 +364,10 @@ int main(int argc, char** argv) {
         if (!postProcessSchema.empty()) return player::postProcessSchema(postProcessSchema);
         if (!postProcessInfo.empty()) return player::postProcessInfo(postProcessInfo, tool.benchmarkJson);
         if (!lutNeutral.empty()) return player::lutExportNeutral(lutNeutralSize, lutNeutral);
+        if (!terrainInfo.empty()) return player::terrainInfo(terrainInfo, tool.benchmarkJson);   // no project
+        if (!terrainImport.empty())
+            return player::terrainImport(
+                terrainImport, output, state.terrainSpacing, state.terrainLow, state.terrainHigh);   // no project
         if (!textureInfo.empty()) return player::textureInfo(textureInfo, tool.benchmarkJson);
         if (!imageReference.empty())
             return player::imageDiff(imageReference, imageCandidate, imageTolerance, tool.benchmarkJson, imageRegion);

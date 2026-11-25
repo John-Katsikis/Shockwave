@@ -343,6 +343,43 @@ private:
     std::string m_materialLoadError;
     bool m_showCircuits = false;
     bool m_showNetwork = false;
+    // TerrainPanel.cpp: Window > Terrain (W1a, docs/Terrain.md). Create a terrain, sculpt it
+    // with brushes in the viewport, import heights and save. Strokes keep their own undo
+    // steps beside the world snapshots (m_undoOrder says which came last).
+    void drawTerrainWindow();
+    // Each frame the viewport is drawn: the brush circle under the mouse, and the stroke
+    // while the left button is down. True when the brush has the mouse (no click-select).
+    bool updateTerrainBrush(const ImVec2& pos, const ImVec2& size, bool hovered);
+    shockwave::Entity createTerrain();
+    bool saveTerrains();   // every terrain with unsaved strokes; false if any failed
+    void clearTerrainUndo();
+    void stepTerrainUndo(bool redo);
+    // The terrain asset the panel works on: the selected entity's, else the scene's first.
+    shockwave::Entity terrainTarget() const;
+    void publishTerrain(const std::string& asset, std::shared_ptr<const shockwave::TerrainData> data, glm::ivec4 rect);
+    struct TerrainTool {
+        bool open = false;
+        int brush = -1;   // -1: none, else shockwave::TerrainBrush
+        float radius = 10.0f, strength = 0.5f;
+        int falloff = 0;   // shockwave::TerrainFalloff
+        int newSamples = 2;   // 65 << n, + 1
+        float newSpacing = 1.0f, newLow = 0.0f, newHigh = 100.0f;
+        char newName[128] = "terrain/terrain";
+        char importPath[512] = "";
+        // The stroke under way: its asset, the heights before it, what it has touched so far.
+        bool stroking = false;
+        std::string strokeAsset;
+        std::shared_ptr<const shockwave::TerrainData> strokeBefore;
+        glm::ivec4 strokeRect{1, 1, 0, 0};
+        float flattenTo = 0.0f;
+        std::map<std::string, std::shared_ptr<shockwave::TerrainData>> working;   // edited copies
+        std::vector<std::string> unsaved;
+        std::vector<shockwave::MeshHandle> retired, retiring;   // chunk meshes to destroy next frame
+        std::string status;
+    } m_terrain;
+    enum class UndoKind { World, Terrain };
+    std::vector<UndoKind> m_undoOrder, m_redoOrder;
+    std::vector<shockwave::TerrainEdit> m_terrainUndo, m_terrainRedo;
     // EditorLighting.cpp: Window > Lighting, the scene's bake (G05, G06; docs/Lighting.md).
     // Bakes a copy of the scene on a thread, so editing carries on; cancelled when the
     // project or scene changes, or the editor closes.

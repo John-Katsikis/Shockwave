@@ -3,6 +3,7 @@
 #include "Player.h"
 
 #include <Engine/Levels.h>
+#include <Engine/Terrain.h>
 
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
@@ -219,6 +220,15 @@ int Player::check(const std::vector<std::string>& importProblems) {
             else if (decal.receiverMask == 0)
                 std::printf("warning %sreceiver_mask 0 lands on nothing\n", where.c_str());
         });
+        // Terrains (W1a): heights that don't load, a rotated or scaled terrain, a Terrain
+        // collider without its Terrain, a material that isn't there.
+        for (const std::string& problem :
+             shockwave::terrainProblems(world, engine().assets(), [&](std::string_view asset) -> std::string {
+                 const shockwave::AssetFolder::File* file = m_assets ? m_assets->find(asset) : nullptr;
+                 if (!file) return "there's no such file in Content";
+                 return file->error;
+             }))
+            problems.push_back(shown + ": " + problem);
         checkLighting(world, shown, problems);
         checkAnimators(world, scene.string(), problems);
         settle(ProblemKind::Content);

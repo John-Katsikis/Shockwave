@@ -163,10 +163,12 @@ void Editor::drawViewport() {
     }
 
     drawViewportOverlay(pos, size);
+    // A terrain brush (W1a) takes the left button while it's over a terrain.
+    const bool sculpting = !gameView && updateTerrainBrush(pos, size, imageHovered);
 
     // Click to select (Ctrl toggles, Shift adds). Clicks on the overlay, gizmo or view
     // cube don't count.
-    if (!gameView && imageHovered && !m_looking && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+    if (!gameView && !sculpting && imageHovered && !m_looking && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
         !m_gameUI->wantsMouse() && !ImGui::IsAnyItemHovered() && !ImGuizmo::IsOver() && !ImGuizmo::IsUsingAny() &&
         !ImGuizmo::IsViewManipulateHovered()) {
         Entity hit = m_prefs.showCameraIcons ? cameraIconAt(io.MousePos, pos, size) : kNullEntity;

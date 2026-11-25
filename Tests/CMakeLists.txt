@@ -97,6 +97,18 @@ if(TARGET game_shippingdemo)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/ReleaseTierCheck.cmake)
     set_tests_properties(release_tier_cli PROPERTIES TIMEOUT 300 LABELS integration)
 endif()
+# Terrain in a real game (W1a, Tests/TerrainFlowCheck.cmake): Reactor Run's training level
+# with a terrain added, through --check, its dependencies and the game's whole-run flow.
+if(TARGET game_shippingdemo)
+    add_test(NAME terrain_flow COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DGAME=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTERRAIN=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Content/terrain
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/TerrainFlow
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/TerrainFlowCheck.cmake)
+    set_tests_properties(terrain_flow PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS integration)
+endif()
 # player --perf-run on Reactor Run (two laps of the tour, null renderer) and the gate
 # reading its records (Tests/PerformanceCheck.cmake). It proves the accounting, never the
 # speed: CI machines aren't release hardware.
@@ -576,6 +588,12 @@ foreach(effect contact_shadows screen_reflections motion_blur depth_of_field)
     add_test(NAME ${effect} COMMAND screen_effects_test ${effect})
     set_tests_properties(${effect} PROPERTIES TIMEOUT 60 LABELS unit)
 endforeach()
+# Terrain (W1a): the .swterrain format, heights, chunks, brushes, undo and importing.
+add_executable(terrain_test TerrainTest.cpp)
+target_link_libraries(terrain_test PRIVATE Shockwave::Engine)
+shockwave_warnings(terrain_test)
+add_test(NAME terrain COMMAND terrain_test)
+set_tests_properties(terrain PROPERTIES TIMEOUT 60 LABELS unit)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -645,6 +663,14 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsScreenEffectsCheck.cmake)
     set_tests_properties(graphics_screen_effects_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Terrain (W1a): deterministic, no cracks between chunks at different detail, the report.
+    add_test(NAME graphics_terrain_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsTerrain
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTerrainCheck.cmake)
+    set_tests_properties(graphics_terrain_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
     # Clustered lighting (G11): the same pixels as brute force (overflow, TAA, glass, past
     # cluster_far), the report on and off, auto by light count, and the cluster view.
     add_test(NAME graphics_clusters_render COMMAND ${CMAKE_COMMAND}

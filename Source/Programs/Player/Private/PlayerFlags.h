@@ -60,6 +60,9 @@ struct ParseState {
     std::filesystem::path saveInfoFile, saveMigrateFile;   // --save-info, --save-migrate
     std::filesystem::path postProcessSchema, postProcessInfo, lutNeutral;   // A05/A06 tools, no project
     uint32_t lutNeutralSize = 0;
+    std::filesystem::path terrainInfo, terrainImport;   // --terrain-info, --terrain-import (W1a)
+    float terrainSpacing = 1.0f;   // --spacing
+    float terrainLow = 0.0f, terrainHigh = 100.0f;   // --height-range
     std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project
     double imageTolerance = 1.0;   // --tolerance
     std::array<double, 4> imageRegion{0, 0, 1, 1};   // --region

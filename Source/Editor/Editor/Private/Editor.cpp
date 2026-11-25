@@ -262,6 +262,7 @@ void Editor::onGui() {
     if (m_showNetwork) drawNetworkWindow();
     if (m_showMaterial) drawMaterialWindow();
     if (m_showLighting || m_lightingBake || m_reflectionCapture) drawLightingWindow();
+    if (m_terrain.open) drawTerrainWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);

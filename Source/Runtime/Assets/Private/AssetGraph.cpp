@@ -1,5 +1,6 @@
 // The asset dependency graph: see Assets/AssetGraph.h and docs/AssetResidency.md.
 #include <Assets/AssetGraph.h>
+#include <Assets/TerrainData.h>
 
 #include <Assets/AudioClip.h>
 #include <Assets/Image.h>
@@ -93,6 +94,7 @@ const char* assetKindName(AssetKind kind) {
     case AssetKind::PostProcess: return "post process";
     case AssetKind::Lut: return "lut";
     case AssetKind::Builtin: return "builtin";
+    case AssetKind::Terrain: return "terrain";
     }
     return "file";
 }
@@ -113,6 +115,7 @@ AssetKind assetKindOf(std::string_view path) {
     if (ext == ".swreflection") return AssetKind::Reflections;
     if (ext == ".swpostprocess") return AssetKind::PostProcess;
     if (ext == ".cube") return AssetKind::Lut;
+    if (ext == ".swterrain") return AssetKind::Terrain;
     const fs::path p{std::string(path)};
     if (isAudioFile(p)) return AssetKind::Audio;
     if (isImageFile(p) || ext == ".ktx2") return AssetKind::Texture;
@@ -533,6 +536,14 @@ void registerBuiltinProviders() {
                 }
             return true;
         });
+    // A terrain: its heights file and its material.
+    registerAssetProvider("terrain", {".swterrain"}, [](AssetReader& r, std::string& error) {
+        TerrainData terrain;
+        if (!parseTerrain(r.text(), terrain, error)) return false;
+        r.content(terrain.heightsFile, "heights", 0, AssetKind::Other);
+        if (!terrain.material.empty()) r.content(terrain.material, "material", 0, AssetKind::Material);
+        return true;
+    });
     // Baked lighting and reflections: the generated files the manifest vouches for. The
     // manifest's scene line points back at the scene; that's provenance, not a use.
     registerAssetProvider("lighting", {".swlighting"}, [](AssetReader& r, std::string& error) {

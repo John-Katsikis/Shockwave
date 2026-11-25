@@ -58,6 +58,29 @@ bool decodeImage(std::span<const uint8_t> bytes, Image& image, std::string& erro
     return true;
 }
 
+bool decodeGreyImage16(std::span<const uint8_t> bytes, GreyImage16& image, std::string& error) {
+    error.clear();
+    if (bytes.empty() || bytes.size() > size_t(INT_MAX)) {
+        error = "empty image or encoded image exceeds decoder limit";
+        return false;
+    }
+    int width = 0, height = 0, channels = 0;
+    std::unique_ptr<stbi_us, decltype(&stbi_image_free)> pixels(
+        stbi_load_16_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 1),
+        stbi_image_free);
+    if (!pixels) {
+        const char* reason = stbi_failure_reason();
+        error = reason ? reason : "image decoding failed";
+        return false;
+    }
+    GreyImage16 decoded;
+    decoded.width = static_cast<uint32_t>(width);
+    decoded.height = static_cast<uint32_t>(height);
+    decoded.values.assign(pixels.get(), pixels.get() + size_t(width) * height);
+    image = std::move(decoded);
+    return true;
+}
+
 bool isHdrImage(std::span<const uint8_t> bytes) {
     return !bytes.empty() && bytes.size() <= size_t(INT_MAX) &&
            stbi_is_hdr_from_memory(bytes.data(), static_cast<int>(bytes.size()));

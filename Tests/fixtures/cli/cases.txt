@@ -69,6 +69,11 @@ missing--image-stats: --image-stats
 missing--region: --region
 missing--postprocess-schema: --postprocess-schema
 missing--postprocess-info: --postprocess-info
+missing--terrain-info: --terrain-info
+missing--terrain-import: --terrain-import
+missing--spacing: --spacing
+missing--height-range: --height-range
+missing--height-range-2: --height-range 0
 missing--effect-info: --effect-info
 missing--material-info: --material-info
 missing--texture-info: --texture-info
@@ -132,6 +137,8 @@ wrong-region-outside: --region 0.5,0.5,0.6,0.6
 wrong-region-short: --region 0,0,1
 wrong-lut-size: --lut-export-neutral 99 {TEMP}/x.cube
 wrong-tolerance: --tolerance 300
+wrong-spacing: --spacing 0
+wrong-height-range: --height-range 10 5
 wrong-view: --view bogus
 wrong-shadows: --shadows bogus
 wrong-size: --size 5x5
@@ -186,6 +193,8 @@ run-lighting-schema: --lighting-schema -
 run-input-schema: --input-schema -
 run-preferences-schema: --preferences-schema -
 run-lut-neutral: --lut-export-neutral 17 -
+run-terrain-info: --terrain-info {SOURCE}/Tests/fixtures/graphics/Content/terrain/hills.swterrain
+run-terrain-import: --terrain-import {SOURCE}/Tests/fixtures/graphics/Content/terrain/hills.r16 --output {TEMP}/Content/terrain/copy.swterrain --spacing 2 --height-range 0 60
 run-check: --check --project {SOURCE}/Games/ShippingDemo --renderer null
 run-levels: --levels --project {SOURCE}/Games/ShippingDemo --renderer null
 run-release-info: --release-info --project {SOURCE}/Games/ShippingDemo --renderer null

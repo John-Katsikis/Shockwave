@@ -14,6 +14,8 @@
 #include <set>
 #include <cmath>
 #include <exception>
+#include <fstream>
+#include <iterator>
 #include <stdexcept>
 
 namespace shockwave {
@@ -522,6 +524,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                      : isModelFile(f.path)                       ? Kind::Model
                      : isAudioFile(f.path)                       ? Kind::Audio
                      : isMaterialFile(f.path)                    ? Kind::Material
+                     : isTerrainFile(f.path)                     ? Kind::Terrain
                                                                  : Kind::Other;
             f.bytes = it->file_size(ec);
             f.modified = it->last_write_time(ec);
@@ -546,6 +549,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         std::vector<TextureData> modelTextures;
         std::vector<float> coverage;   // per model texture: modelCoverageCutoffs
         std::shared_ptr<MaterialFile> material;
+        std::shared_ptr<TerrainData> terrain;
         uint64_t cacheKey = 0;   // a texture file's, from its bytes
         uint64_t compressedFileBytes = 0;
         MeshOptimiseReport meshes;
@@ -693,6 +697,15 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
             else if (f.kind == Kind::Material) {
                 job.material = std::make_shared<MaterialFile>();
                 loadMaterialFile(f.path, *job.material, job.error);
+            } else if (f.kind == Kind::Terrain) {
+                // The heights file is a dependency even while it's missing, so making it reloads this.
+                std::ifstream in(f.path, std::ios::binary);
+                const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                TerrainData header;
+                std::string ignored;
+                if (parseTerrain(text, header, ignored)) job.dependencies.push_back(m_root / header.heightsFile);
+                job.terrain = std::make_shared<TerrainData>();
+                readTerrain(f.path, m_root, *job.terrain, job.error);
             } else if (f.kind == Kind::Model)
                 loadModel(f.path, job.model, job.error, &job.dependencies, job.settings.fbxImporter);
             else
@@ -784,6 +797,17 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 f.materialParseFailed = false;
             } else if (!m_renderer) {
                 job.error = "this audio-only asset folder cannot publish GPU assets";
+            } else if (f.kind == Kind::Terrain) {
+                try {
+                    if (m_fault && m_fault("upload", f.name)) throw std::runtime_error("the upload failed (injected)");
+                    const auto previous = m_assets.terrain(f.name);
+                    auto uploaded = uploadTerrain(*m_renderer, std::move(job.terrain));
+                    if (previous) uploaded->revision = previous->revision + 1;
+                    m_assets.addTerrain(f.name, uploaded);
+                    if (previous) releaseTerrain(*m_renderer, *previous);
+                } catch (const std::exception& e) {
+                    job.error = e.what();
+                }
             } else if (f.kind == Kind::Model) {
                 auto uploaded = std::make_shared<ModelAsset>();
                 uploaded->data = std::move(job.model);
@@ -1032,6 +1056,12 @@ void AssetFolder::unloadFile(File& f) {
         f.materialParseFailed = false;
         break;
     case Kind::Audio: m_assets.addAudioClip(f.name, nullptr); break;
+    case Kind::Terrain:
+        if (const auto terrain = m_assets.terrain(f.name)) {
+            m_assets.addTerrain(f.name, nullptr);
+            if (m_renderer) releaseTerrain(*m_renderer, *terrain);
+        }
+        break;
     case Kind::Other: return;
     }
     f.imported = false;

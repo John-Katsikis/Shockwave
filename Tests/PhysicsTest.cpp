@@ -2,6 +2,7 @@
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/SceneFile.h>
+#include <Engine/Terrain.h>
 #include <GameFramework/PlaySession.h>
 #include <Physics/Physics.h>
 
@@ -263,6 +264,57 @@ void models(JobSystem& jobs, const std::filesystem::path& root) {
     p.step(1.0 / 60);
     check(p.bodyCount() == 2 && p.diagnostics().empty(), "model reload rebuilds collision geometry");
 }
+// Terrain colliders (W1a): a height field on a Static body only.
+void terrains(JobSystem& jobs) {
+    Assets assets;
+    // A range of 65.535 m makes each step of the heights exactly 1 mm.
+    auto data = std::make_shared<TerrainData>(flatTerrain(65, 1.0f, 0.0f, 65.535f, 5.0f));
+    for (uint32_t z = 0; z < 65; ++z)
+        for (uint32_t x = 32; x < 65; ++x) data->heights[z * 65 + x] = data->value(5.0f + float(x - 32) * 0.3f);
+    auto asset = std::make_shared<TerrainAsset>();
+    asset->data = data;
+    assets.addTerrain("terrain/hills.swterrain", asset);
+    World w;
+    const Entity ground = w.create();
+    w.add<Transform>(ground, {glm::vec3(-32.0f, 0.0f, -32.0f)});
+    w.add<Terrain>(ground, {"terrain/hills.swterrain"});
+    Collider shape;
+    shape.shape = Collider::Shape::Terrain;
+    w.add<Collider>(ground, shape);
+    RigidBody fixed;
+    fixed.motion = RigidBody::Motion::Static;
+    w.add<RigidBody>(ground, fixed);
+    auto sphere = [&](glm::vec3 at) {
+        const Entity e = box(w, at);
+        w.get<Collider>(e)->shape = Collider::Shape::Sphere;
+        w.get<Collider>(e)->radius = 0.5f;
+        return e;
+    };
+    const Entity flat = sphere({-16.0f, 8.0f, 0.0f});
+    const Entity slope = sphere({16.0f, 12.0f, 0.0f});
+    PhysicsWorld p(w, jobs, &assets);
+    ticks(p, 90);
+    check(p.diagnostics().empty(), "terrain collider builds");
+    const glm::vec3 a = w.get<Transform>(flat)->position;
+    // Jolt lets a resting contact sink by its penetration slop, 2 cm: hence 0.021.
+    check(
+        near(a.y, terrainHeight(*data, a.x + 32.0f, a.z + 32.0f) + 0.5f, 0.021f),
+        "a sphere on flat terrain rests at its height plus its radius");
+    // On the slope it rolls, touching: its centre is a radius from the surface along the
+    // normal, which is radius / cos(slope) above the height beneath it.
+    const glm::vec3 b = w.get<Transform>(slope)->position;
+    const float cosSlope = 1.0f / std::sqrt(1.0f + 0.3f * 0.3f);
+    check(
+        b.x + 32.0f > 33.0f &&
+            near(b.y, terrainHeight(*data, b.x + 32.0f, b.z + 32.0f) + 0.5f / cosSlope, 0.021f / cosSlope),
+        "a sphere on sloped terrain touches it");
+    const auto ray = p.raycast({-10.0f, 20.0f, 3.0f}, {0, -1, 0}, 40.0f);
+    check(ray && ray->entity == ground && near(ray->point.y, 5.0f, 0.01f), "a ray hits the terrain");
+    check(!p.raycast({40.0f, 20.0f, 3.0f}, {0, -1, 0}, 40.0f), "nothing past the terrain's edge");
+    w.get<RigidBody>(ground)->motion = RigidBody::Motion::Dynamic;
+    p.step(1.0 / 60);
+    check(!p.diagnostics().empty(), "a moving terrain collider is refused");
+}
 struct Lifecycle final : GameMode {
     int& steps;
     explicit Lifecycle(int& s) : steps(s) {}
@@ -328,6 +380,7 @@ int main(int argc, char** argv) {
         hierarchyAndValidation(jobs);
         characters(jobs);
         models(jobs, argv[1]);
+        terrains(jobs);
         sessionsAndFiles(jobs);
     } catch (const std::exception& e) {
         check(false, e.what());

@@ -1,0 +1,3 @@
+terrain/hills.swterrain: 257 points a side, 2 m apart: 512 m by 512 m
+  heights 3.71252 to 44.791 m (range 0 to 60 m), 16 chunks
+  heights file terrain/hills.r16, material (default), 4 m per texture repeat

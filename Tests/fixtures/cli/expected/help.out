@@ -37,6 +37,11 @@ player --postprocess-schema file|- write the .swpostprocess reference (docs/Post
 player --postprocess-info file.swpostprocess [--json file]
                                     a grading, exposure and fog profile with its parents
                                     applied, and its LUT (docs/PostProcess.md)
+player --terrain-info file.swterrain [--json file]
+                                    a terrain's points, size, heights and chunks (docs/Terrain.md)
+player --terrain-import heights.png|heights.r16 --output terrain/name.swterrain
+       [--spacing metres] [--height-range low high]
+                                    make a terrain from a 16-bit heightmap
 player --lut-export-neutral 17|33|65 file.cube|-
                                     an identity LUT to grade in another tool
 player --bake-lighting [--scene file.swscene] [--quality preview|final] [--seed N]

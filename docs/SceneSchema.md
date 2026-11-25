@@ -351,7 +351,7 @@ No fields; the component's presence is what matters.
 
 | Field | Value | Default |
 |---|---|---|
-| `shape` | one of: Box, Sphere, Capsule, "Convex model", "Triangle model" (or its number, counting from 0) | `Box` |
+| `shape` | one of: Box, Sphere, Capsule, "Convex model", "Triangle model", Terrain (or its number, counting from 0) | `Box` |
 | `half_extents` | x y z; range 0.001 to 10000 | `0.5 0.5 0.5` |
 | `radius` | number; range 0.001 to 10000 | `0.5` |
 | `half_height` | number; range 0.001 to 10000 | `0.5` |
@@ -514,6 +514,14 @@ No fields; the component's presence is what matters.
 | `priority` | whole number; range -1000 to 1000 | `0` |
 | `blend_distance` | number; range 0 to 1000 | `1` |
 | `weight` | number; range 0 to 1 | `1` |
+
+#### Terrain
+
+| Field | Value | Default |
+|---|---|---|
+| `asset` | quoted text | `""` |
+| `visible` | 1 or 0 (true/false also accepted) | `1` |
+| `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
 
 ### UI
 

@@ -1,0 +1,42 @@
+# Terrain (W1a), another sky: 512 m of rolling hills seen low from one side, so near chunks draw every
+# point, middle ones every 2nd and far ones every 4th. Skirts must hide every crack between
+# chunks at different detail: terrain-hills-sky.swscene is this scene with another sky
+# colour, and below the horizon the two must match exactly. Camera: "Main Camera".
+shockwave_scene 2
+
+entity "Environment"
+  Environment
+    sky_color 1 0 1 1
+    ground_color 0.2 0.18 0.15 1
+    ambient_intensity 0
+end
+
+entity "Sun"
+  Transform
+    rotation -40 30 0
+  Light
+    type Directional
+    color 1 0.95 0.88 1
+    intensity 1.2
+end
+
+entity "Hills"
+  Transform
+    position -256 0 -256
+  Terrain
+    asset terrain/hills.swterrain
+  RigidBody
+    motion Static
+  Collider
+    shape Terrain
+end
+
+entity "Main Camera"
+  Transform
+    position 0 70 250
+    rotation -9 0 0
+  Camera
+    fov 60
+    near_plane 0.1
+    primary 1
+end

@@ -6,9 +6,11 @@
 #include <Engine/Decals.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/Pose.h>
+#include <Engine/Terrain.h>
 #include <Renderer/Renderer.h>
 
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -249,6 +251,37 @@ void renderWorld(
                 }
             },
             64);
+
+    // Terrains (W1a): one draw per chunk; the renderer picks each chunk's detail level by
+    // distance (lod_error_pixels), like model levels. Only the entity's position counts.
+    if (assets && world.count<Terrain>() > 0)
+        world.each<const Transform, const Terrain>([&](Entity e, const Transform&, const Terrain& terrain) {
+            if (!terrain.visible || terrain.asset.empty() || (include && !include(world, e))) return;
+            const auto asset = assets->terrain(terrain.asset);
+            if (!asset || !asset->data) return;
+            const glm::mat4 placed = glm::translate(glm::mat4(1.0f), glm::vec3(worldMatrix(world, e)[3]));
+            DrawMaterial options;
+            TextureHandle texture{};
+            glm::vec4 baseColor{0.55f, 0.55f, 0.5f, 1.0f};
+            if (!asset->data->material.empty())
+                if (const auto material = assets->material(assets->findMaterial(asset->data->material))) {
+                    options = material->draw;
+                    texture = material->baseColorTexture;
+                    baseColor = material->baseColor;
+                }
+            options.castShadows = terrain.castShadows;
+            options.decalLayers = decalLayers(e);
+            IndirectLighting probe;
+            for (uint32_t c = 0; c < asset->chunks.size(); ++c) {
+                const TerrainChunk& chunk = asset->chunks[c];
+                if (!chunk.mesh.valid()) continue;
+                DrawMaterial each = options;
+                const glm::vec3 centre =
+                    glm::vec3(placed * glm::vec4((chunk.bounds.min + chunk.bounds.max) * 0.5f, 1.0f));
+                each.indirect = probeLit(e, centre, probe) ? &probe : nullptr;
+                renderer.drawMesh(chunk.mesh, placed, texture, baseColor, each, instanceKey(world, e, c));
+            }
+        });
 
     // Decals (G08): every enabled one, with its box where the hierarchy puts it this frame.
     // The renderer picks which to draw within the player's decals_quality budget.

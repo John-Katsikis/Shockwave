@@ -54,6 +54,7 @@ void Editor::newScene(SceneTemplate kind) {
     m_camera.pitch = camera.pitch;
     m_undo.clear();
     m_redo.clear();
+    clearTerrainUndo();
     select(kNullEntity);
     m_dirty = false;
     m_viewThroughCamera = false;
@@ -93,6 +94,7 @@ bool Editor::openScene(const fs::path& path) {
     m_camera.pitch = camera.pitch;
     m_undo.clear();
     m_redo.clear();
+    clearTerrainUndo();
     select(kNullEntity);
     m_dirty = false;
     m_viewThroughCamera = false;
@@ -144,6 +146,7 @@ bool Editor::saveSceneAs(fs::path path) {
         error("Couldn't save: " + err);
         return false;
     }
+    saveTerrains();   // sculpted terrains are part of the level (W1a)
     if (prefab) shockwave::prefabs().reload(shockwave::prefabs().pathOf(path));   // copies follow
     fs::remove(oldAutosave, ec);
     m_scenePath = path;

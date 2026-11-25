@@ -44,6 +44,7 @@ A `RigidBody` can also be Static. A static body stays put unless your code moves
 | Capsule | Half height of the middle cylinder, plus a round cap of the given radius at each end |
 | ConvexModel | Uses the entity's model, wrapped in one convex hull |
 | TriangleModel | Uses the entity's model's exact triangles |
+| Terrain | Uses the entity's `Terrain` heights as a height field; Static only (docs/Terrain.md) |
 
 Every shape has an Offset, in the entity's local coordinates.
 

@@ -375,6 +375,12 @@ int effectInfo(const fs::path& effect, const fs::path& json);
 // identity .cube of 17, 33 or 65 entries a side.
 int postProcessSchema(const fs::path& file);
 int postProcessInfo(const fs::path& profile, const fs::path& json);
+// W1a terrain tools, no project needed (docs/Terrain.md). --terrain-info prints a terrain's
+// samples, size, height range, chunks and problems (and writes them as JSON); --terrain-import
+// makes a .swterrain and its heights from a 16-bit PNG or .r16, inside the Content folder
+// that holds output.
+int terrainInfo(const fs::path& file, const fs::path& json);
+int terrainImport(const fs::path& heights, const fs::path& output, float spacing, float low, float high);
 int lutExportNeutral(uint32_t size, const fs::path& output);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);

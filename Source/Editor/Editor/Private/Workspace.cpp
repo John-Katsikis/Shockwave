@@ -147,8 +147,8 @@ void Editor::drawMenuBar() {
     if (m_hasProject) {
         if (ImGui::BeginMenu("Edit")) {
             const bool any = !selection().empty();
-            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undo.empty() && !playing())) undo();
-            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redo.empty() && !playing())) redo();
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !m_undoOrder.empty() && !playing())) undo();
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !m_redoOrder.empty() && !playing())) redo();
             ImGui::Separator();
             if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, any)) duplicateSelected();
             if (ImGui::MenuItem("Delete", "Del", false, any)) deleteSelected();
@@ -222,6 +222,8 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Network", nullptr, &m_showNetwork);
             ImGui::MenuItem("Material", nullptr, &m_showMaterial);
             ImGui::MenuItem("Lighting", nullptr, &m_showLighting);
+            ImGui::MenuItem("Terrain", nullptr, &m_terrain.open);
+            ImGui::SetItemTooltip("Create, sculpt and import heightmap terrain (docs/Terrain.md)");
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;
             ImGui::EndMenu();
@@ -284,12 +286,12 @@ void Editor::drawCommandBar() {
             ImGui::EndDisabled();
             ImGui::SetItemTooltip("Save scene (Ctrl+S)");
             ImGui::SameLine(0.0f, style.ItemSpacing.x * 3.0f);
-            ImGui::BeginDisabled(m_undo.empty() || playing());
+            ImGui::BeginDisabled(m_undoOrder.empty() || playing());
             if (gui::button("Undo")) undo();
             ImGui::EndDisabled();
             ImGui::SetItemTooltip("Undo (Ctrl+Z)");
             ImGui::SameLine();
-            ImGui::BeginDisabled(m_redo.empty() || playing());
+            ImGui::BeginDisabled(m_redoOrder.empty() || playing());
             if (gui::button("Redo")) redo();
             ImGui::EndDisabled();
             ImGui::SetItemTooltip("Redo (Ctrl+Y)");

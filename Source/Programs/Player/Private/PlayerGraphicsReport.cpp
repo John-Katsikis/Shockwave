@@ -5,6 +5,7 @@
 #include "Player.h"
 
 #include <Engine/GraphicsBudget.h>
+#include <Engine/Terrain.h>
 
 #include <Renderer/Renderer.h>
 
@@ -218,6 +219,20 @@ void Player::graphicsReport() {
         residency.reduced, residency.textures, residency.pending, mib(residency.residentBytes),
         mib(residency.fullBytes));
 
+    // Terrains (W1a): how many, the chunks they submit, and what levels of detail saved.
+    uint32_t terrains = 0, terrainChunks = 0;
+    m_world.each<const shockwave::Terrain>([&](shockwave::Entity, const shockwave::Terrain& t) {
+        const auto asset = t.visible ? engine().assets().terrain(t.asset) : nullptr;
+        if (!asset) return;
+        ++terrains;
+        terrainChunks += static_cast<uint32_t>(asset->chunks.size());
+    });
+    const shockwave::LodStats lod = renderer.lodStats();
+    if (terrains)
+        std::printf(
+            "\nterrain: %u terrain%s, %u chunks submitted; %u draws used a simpler level\n", terrains,
+            terrains == 1 ? "" : "s", terrainChunks, lod.reducedDraws);
+
     if (m_tool.benchmarkJson.empty()) return;
     std::ostringstream json;
     json << "{\n  \"renderer\": " << quoted(caps.backend) << ",\n  \"device\": " << quoted(caps.device)
@@ -264,6 +279,9 @@ void Player::graphicsReport() {
          << ", \"budgeted_bytes\": " << shockwave::budgetedMemoryBytes(memory)
          << ", \"turned_down\": " << graphics.budgetDrops().size()
          << ", \"over_budget\": " << (graphics.overBudget() ? "true" : "false") << "}"
+         << ",\n  \"terrain\": {\"terrains\": " << terrains << ", \"chunks\": " << terrainChunks
+         << ", \"lod_reduced_draws\": " << lod.reducedDraws << ", \"triangles\": " << lod.triangles
+         << ", \"full_triangles\": " << lod.fullTriangles << "}"
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
