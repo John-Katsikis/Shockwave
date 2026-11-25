@@ -108,6 +108,7 @@ int main(int argc, char** argv) {
         auto& lutNeutralSize = state.lutNeutralSize;
         auto& terrainInfo = state.terrainInfo;
         auto& terrainImport = state.terrainImport;
+        auto& foliageInfo = state.foliageInfo;
         auto& lightingSchema = state.lightingSchema;
         auto& lightingExport = state.lightingExport;
         auto& lightingImport = state.lightingImport;
@@ -365,6 +366,7 @@ int main(int argc, char** argv) {
         if (!postProcessInfo.empty()) return player::postProcessInfo(postProcessInfo, tool.benchmarkJson);
         if (!lutNeutral.empty()) return player::lutExportNeutral(lutNeutralSize, lutNeutral);
         if (!terrainInfo.empty()) return player::terrainInfo(terrainInfo, tool.benchmarkJson);   // no project
+        if (!foliageInfo.empty()) return player::foliageInfo(foliageInfo, tool.benchmarkJson);   // no project
         if (!terrainImport.empty())
             return player::terrainImport(
                 terrainImport, output, state.terrainSpacing, state.terrainLow, state.terrainHigh);   // no project

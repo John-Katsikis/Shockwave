@@ -5,6 +5,7 @@
 #include "Player.h"
 
 #include <Engine/GraphicsBudget.h>
+#include <Engine/Foliage.h>
 #include <Engine/Terrain.h>
 
 #include <Renderer/Renderer.h>
@@ -236,6 +237,17 @@ void Player::graphicsReport() {
             terrains, terrains == 1 ? "" : "s", terrainChunks, lod.reducedDraws, shadingStats.terrainDraws,
             shadingStats.terrainLayers, shockwave::terrainQualityName(renderer.shadingSettings().terrain));
 
+    // Foliage (W2a): what the last frame chose and submitted.
+    const shockwave::FoliageStats& foliage = shockwave::lastFoliageStats();
+    const shockwave::FoliageSettings foliageSettings = renderer.foliageSettings();
+    if (foliage.foliages)
+        std::printf(
+            "\nfoliage: %u foliage%s, %u of %u instances drawn from %u of %u cells in range, %u calls, %.3f ms to "
+            "submit (foliage_density %g, foliage_distance %g)\n",
+            foliage.foliages, foliage.foliages == 1 ? "" : "s", foliage.instancesDrawn, foliage.instances,
+            foliage.cellsDrawn, foliage.cells, foliage.calls, foliage.submitMs, double(foliageSettings.density),
+            double(foliageSettings.distance));
+
     if (m_tool.benchmarkJson.empty()) return;
     std::ostringstream json;
     json << "{\n  \"renderer\": " << quoted(caps.backend) << ",\n  \"device\": " << quoted(caps.device)
@@ -288,7 +300,12 @@ void Player::graphicsReport() {
          << ", \"layers_sampled\": " << shadingStats.terrainLayers
          << ", \"low_quality_draws\": " << shadingStats.terrainLowDraws
          << ", \"terrain_quality\": " << quoted(shockwave::terrainQualityName(renderer.shadingSettings().terrain))
-         << "}" << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
+         << "}" << ",\n  \"foliage\": {\"foliages\": " << foliage.foliages << ", \"cells\": " << foliage.cells
+         << ", \"cells_drawn\": " << foliage.cellsDrawn << ", \"instances\": " << foliage.instances
+         << ", \"instances_drawn\": " << foliage.instancesDrawn << ", \"calls\": " << foliage.calls
+         << ", \"submit_ms\": " << foliage.submitMs << ", \"density\": " << foliageSettings.density
+         << ", \"distance\": " << foliageSettings.distance << "}"
+         << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);
     out << json.str();

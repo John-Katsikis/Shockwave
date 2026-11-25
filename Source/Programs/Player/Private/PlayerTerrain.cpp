@@ -1,8 +1,11 @@
 // Terrain tools (W1a, docs/Terrain.md), no project needed:
 //   --terrain-info      a terrain's points, size, heights and chunks, as text or JSON
 //   --terrain-import    a .swterrain and its .r16 heights from a 16-bit heightmap
+// and foliage (W2a, docs/Foliage.md):
+//   --foliage-info      a foliage file's types, instances per type and cells
 #include "Player.h"
 
+#include <Assets/FoliageData.h>
 #include <Assets/TerrainData.h>
 
 #include <algorithm>
@@ -161,6 +164,66 @@ int terrainImport(const fs::path& heights, const fs::path& output, float spacing
     std::printf(
         "Wrote %s and %s: %u points a side, %g m\n", name.generic_string().c_str(), terrain.heightsFile.c_str(),
         samples, double(terrain.size()));
+    return 0;
+}
+
+int foliageInfo(const fs::path& file, const fs::path& json) {
+    const fs::path content = contentFolderOf(file);
+    const std::string name = fs::absolute(file).lexically_normal().lexically_relative(content).generic_string();
+    shockwave::FoliageData foliage;
+    std::string error;
+    const bool ok = shockwave::readFoliage(file, content, foliage, error);
+    std::string out = "{\"foliage\": " + quote(name) + ", \"valid\": " + (ok ? "true" : "false");
+    std::vector<uint32_t> perType(foliage.types.size(), 0), cellsPerType(foliage.types.size(), 0);
+    std::vector<std::string> warnings;
+    if (ok) {
+        for (const shockwave::FoliageInstance& in : foliage.instances) ++perType[in.type];
+        for (const shockwave::FoliageCell& c : foliage.cells) ++cellsPerType[c.type];
+        out += ", \"instances_file\": " + quote(foliage.instancesFile) +
+               ", \"instances\": " + std::to_string(foliage.instances.size()) +
+               ", \"cells\": " + std::to_string(foliage.cells.size()) + ", \"types\": [";
+        for (size_t t = 0; t < foliage.types.size(); ++t) {
+            const shockwave::FoliageType& type = foliage.types[t];
+            out += std::string(t ? ", " : "") + "{\"index\": " + std::to_string(t) +
+                   ", \"model\": " + quote(type.model) + ", \"distance\": " + number(type.distance) +
+                   ", \"fade\": " + number(type.fade) + ", \"shadows\": " + (type.shadows ? "true" : "false") +
+                   ", \"wind\": " + number(type.wind) + ", \"instances\": " + std::to_string(perType[t]) +
+                   ", \"cells\": " + std::to_string(cellsPerType[t]) + "}";
+            if (!fs::exists(content / type.model))
+                warnings.push_back("type " + std::to_string(t) + "'s model " + type.model + " isn't in Content");
+        }
+        out += "]";
+        if (!warnings.empty()) {
+            out += ", \"warnings\": [";
+            for (size_t i = 0; i < warnings.size(); ++i) out += (i ? ", " : "") + quote(warnings[i]);
+            out += "]";
+        }
+    } else {
+        out += ", \"error\": " + quote(error);
+    }
+    out += "}\n";
+    if (!json.empty()) {
+        std::ofstream stream(json, std::ios::binary | std::ios::trunc);
+        stream << out;
+        if (!stream) throw std::runtime_error("can't write " + json.string());
+    }
+    if (!ok) {
+        std::printf("%s: %s\n", name.c_str(), error.c_str());
+        return 1;
+    }
+    std::printf(
+        "%s: %zu instances in %zu cells of %g m, %zu types (instances file %s)\n", name.c_str(),
+        foliage.instances.size(), foliage.cells.size(), double(shockwave::kFoliageCellMetres), foliage.types.size(),
+        foliage.instancesFile.c_str());
+    for (size_t t = 0; t < foliage.types.size(); ++t) {
+        const shockwave::FoliageType& type = foliage.types[t];
+        std::printf(
+            "  type %zu %s: %u instances in %u cells, drawn to %g m (thinning over the last %g m), shadows %s, "
+            "wind %g\n",
+            t, type.model.c_str(), perType[t], cellsPerType[t], double(type.distance), double(type.fade),
+            type.shadows ? "on" : "off", double(type.wind));
+    }
+    for (const std::string& w : warnings) std::printf("warning: %s\n", w.c_str());
     return 0;
 }
 

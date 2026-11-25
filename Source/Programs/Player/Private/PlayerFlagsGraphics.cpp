@@ -188,6 +188,12 @@ void addGraphicsFlags(std::vector<Flag>& flags) {
         return {};
     });
 
+    add(flags, {"--foliage-info"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.foliageInfo = a.next();
+
+        return {};
+    });
+
     add(flags, {"--terrain-import"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
         s.terrainImport = a.next();
 

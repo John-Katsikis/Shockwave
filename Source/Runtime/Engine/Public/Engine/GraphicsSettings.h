@@ -69,6 +69,10 @@ struct GraphicsSettings {
     // Painted terrain (W1b): high blends every layer at a pixel; low only its two heaviest,
     // without their normal maps.
     TerrainQuality terrainQuality = TerrainQuality::High;
+    // Foliage (W2a): the share of instances drawn (0 draws none and makes no draw calls) and
+    // a scale on every type's distance.
+    float foliageDensity = 1;   // 0..1
+    float foliageDistance = 1;   // 0.5..1.5
     // Screen effects (V1-V4): small shadows where things touch, reflections of what's on
     // screen, motion blur and the scene's depth of field. Off by default except depth of
     // field, which is the scene's look like colour grading; each off has no pass or memory.

@@ -4,6 +4,7 @@
 
 #include <Engine/PostProcess.h>
 #include <Engine/Prefab.h>
+#include <Engine/Foliage.h>
 #include <Engine/Terrain.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -324,6 +325,7 @@ void registerBuiltins() {
         "Motion");
     registerPostProcessComponents();
     registerTerrainComponents();
+    registerFoliageComponents();
 }
 
 }   // namespace

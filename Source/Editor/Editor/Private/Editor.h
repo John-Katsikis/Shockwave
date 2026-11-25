@@ -593,6 +593,7 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    double m_windSeconds = 0.0;   // foliage wind's clock (W2a)
     bool m_showEffects = true;
     // Asset residency (ResidencyPanel.cpp, docs/AssetResidency.md): what Play's levels hold
     // and what the next one needs. Before m_runtimeLevels, which holds a lease on it.

@@ -3,6 +3,7 @@
 #include "Player.h"
 
 #include <Engine/Levels.h>
+#include <Engine/Foliage.h>
 #include <Engine/Terrain.h>
 
 #include <Assets/AssetFolder.h>
@@ -224,6 +225,15 @@ int Player::check(const std::vector<std::string>& importProblems) {
         // collider without its Terrain, a material that isn't there.
         for (const std::string& problem :
              shockwave::terrainProblems(world, engine().assets(), [&](std::string_view asset) -> std::string {
+                 const shockwave::AssetFolder::File* file = m_assets ? m_assets->find(asset) : nullptr;
+                 if (!file) return "there's no such file in Content";
+                 return file->error;
+             }))
+            problems.push_back(shown + ": " + problem);
+        // Foliage (W2a): a file that doesn't load (bytes not a multiple of 24, a type the
+        // header doesn't have) or a type whose model isn't loaded.
+        for (const std::string& problem :
+             shockwave::foliageProblems(world, engine().assets(), [&](std::string_view asset) -> std::string {
                  const shockwave::AssetFolder::File* file = m_assets ? m_assets->find(asset) : nullptr;
                  if (!file) return "there's no such file in Content";
                  return file->error;

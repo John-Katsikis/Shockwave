@@ -58,6 +58,14 @@ struct RenderInstanceKey {
 // A ModelRenderer's part: the node, then which of its meshes.
 constexpr uint32_t modelPartKey(uint32_t node, uint32_t mesh) { return (node << 8) | (mesh & 0xFF); }
 
+// Foliage (W2a): density 0..1 draws that share of the instances (0: none and no draw calls);
+// distance 0.5..1.5 scales every foliage type's distance.
+struct FoliageSettings {
+    float density = 1.0f;
+    float distance = 1.0f;
+    bool operator==(const FoliageSettings&) const = default;
+};
+
 // A reference grid on the ground plane (y = 0), drawn into the scene with depth testing,
 // for editors and debug views. Lines fade out towards fadeDistance from the camera.
 struct GridSettings {
@@ -253,6 +261,9 @@ struct DrawMaterial {
     // Decal receiver layers (G08, Renderer/Decals.h): the bits decals' receiverMask must
     // share to land on this surface. 0 takes no decals; blended surfaces never take them.
     uint32_t decalLayers = 1;
+    // Wind (W2a, foliage): metres of sway per metre above the mesh's origin, along (1, 0,
+    // 0.3), with the renderer's wind time (Renderer::setWindTime). 0: still, exactly as before.
+    float wind = 0.0f;
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of

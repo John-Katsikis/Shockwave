@@ -129,6 +129,7 @@ struct Renderer::State {
     BloomQuality bloomQuality = BloomQuality::High;
     float bloomScale = 1.0f;
     LodSettings lodSettings;
+    std::atomic<float> foliageDensity{1.0f}, foliageDistance{1.0f};
     uint32_t anisotropy = 16;
     MaterialQuality materialQuality = MaterialQuality::High;
     std::atomic<bool> bakedLighting{true};
@@ -862,6 +863,27 @@ void Renderer::drawSkinnedMesh(
     }
     m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material, key);
 }
+void Renderer::setFoliageSettings(const FoliageSettings& settings) {
+    m->foliageDensity.store(std::clamp(settings.density, 0.0f, 1.0f), std::memory_order_relaxed);
+    m->foliageDistance.store(std::clamp(settings.distance, 0.5f, 1.5f), std::memory_order_relaxed);
+}
+FoliageSettings Renderer::foliageSettings() const {
+    return {m->foliageDensity.load(std::memory_order_relaxed), m->foliageDistance.load(std::memory_order_relaxed)};
+}
+void Renderer::drawMeshInstances(
+    MeshHandle mesh, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material, RenderInstanceKey first, int lodLevel, std::span<const uint32_t> parts) {
+    if (transforms.empty() || (!parts.empty() && parts.size() != transforms.size())) return;
+    if (first.valid()) first.meshGeneration = m->meshGeneration(mesh);
+    if (material.indirect && !m->bakedLighting.load(std::memory_order_relaxed)) {
+        DrawMaterial environment = material;
+        environment.indirect = nullptr;
+        m->backend->drawMeshInstances(mesh, transforms, texture, tint, environment, first, lodLevel, parts);
+        return;
+    }
+    m->backend->drawMeshInstances(mesh, transforms, texture, tint, material, first, lodLevel, parts);
+}
+void Renderer::setWindTime(float seconds) { m->backend->setWindTime(seconds); }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
 void Renderer::drawParticles(const ParticleDrawList& particles) {
     if (!particles.batches.empty()) m->backend->drawParticles(particles);

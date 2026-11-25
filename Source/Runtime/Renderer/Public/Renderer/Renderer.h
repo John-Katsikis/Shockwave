@@ -194,6 +194,10 @@ public:
     void setLodSettings(const LodSettings& settings);
     const LodSettings& lodSettings() const;
     LodStats lodStats() const;   // last frame's
+    // The player's foliage_density and foliage_distance (W2a), which the engine reads when
+    // it chooses foliage to draw. Kept until changed. Main thread.
+    void setFoliageSettings(const FoliageSettings& settings);
+    FoliageSettings foliageSettings() const;
 
     // Per-frame commands, called from Application::onRender.
     void setClearColor(const Color& color);
@@ -223,6 +227,20 @@ public:
     void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture = {},
         const glm::vec4& tint = glm::vec4(1.0f), const DrawMaterial& material = {}, RenderInstanceKey key = {});
+    // Many copies of one mesh with one material (W2a, foliage): one call instead of one per
+    // copy, which is what makes tens of thousands of blades of grass affordable. Each copy
+    // is its own entry in the frame's draw table (so they batch, cull and shadow like any
+    // draw), but the material is worked out once. Instance i's key is first with part + i,
+    // so temporal effects follow each copy; with parts (one per transform) it is part +
+    // parts[i] instead, for a set that skips some copies but keeps each one's key. lodLevel:
+    // -1 picks each copy's level by distance; 0 or more draws that level (a large number:
+    // the simplest). Same threads as drawMesh; transforms and parts are read before it returns.
+    void drawMeshInstances(
+        MeshHandle mesh, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, RenderInstanceKey first, int lodLevel = -1, std::span<const uint32_t> parts = {});
+    // Seconds on the game's clock for DrawMaterial::wind, once a frame before its draws; the
+    // previous frame's value moves motion vectors.
+    void setWindTime(float seconds);
     // Kept until changed. Same thread as setCamera.
     void setGrid(const GridSettings& grid);
     // Particle geometry for this frame (Renderer/Particles.h), drawn into the HDR scene

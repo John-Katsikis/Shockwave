@@ -4,6 +4,7 @@
 #include <Engine/BakedLighting.h>
 #include <Engine/Camera.h>
 #include <Engine/Decals.h>
+#include <Engine/Foliage.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/Pose.h>
 #include <Engine/Terrain.h>
@@ -319,6 +320,9 @@ void renderWorld(
                 renderer.drawMesh(chunk.mesh, placed, texture, baseColor, each, instanceKey(world, e, c));
             }
         });
+
+    // Foliage (W2a): instanced cells within each type's distance and in view.
+    if (assets && world.count<Foliage>() > 0) drawFoliage(world, renderer, *assets, include);
 
     // Decals (G08): every enabled one, with its box where the hierarchy puts it this frame.
     // The renderer picks which to draw within the player's decals_quality budget.

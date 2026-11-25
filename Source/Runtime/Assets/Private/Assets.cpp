@@ -187,6 +187,29 @@ std::vector<std::string> Assets::terrains() const {
     return result;
 }
 
+void Assets::addFoliage(std::string name, std::shared_ptr<const FoliageData> foliage) {
+    std::unique_lock lock(m_mutex);
+    for (auto& [key, value] : m_foliage)
+        if (key == name) {
+            value = std::move(foliage);
+            return;
+        }
+    if (foliage) m_foliage.emplace_back(std::move(name), std::move(foliage));
+}
+std::shared_ptr<const FoliageData> Assets::foliage(std::string_view name) const {
+    std::shared_lock lock(m_mutex);
+    for (const auto& [key, value] : m_foliage)
+        if (key == name) return value;
+    return nullptr;
+}
+std::vector<std::string> Assets::foliages() const {
+    std::shared_lock lock(m_mutex);
+    std::vector<std::string> result;
+    for (const auto& [name, value] : m_foliage)
+        if (value) result.push_back(name);
+    return result;
+}
+
 void Assets::addAudioClip(std::string name, std::shared_ptr<const AudioClip> clip) {
     std::unique_lock lock(m_mutex);
     for (auto& [key, value] : m_audio)

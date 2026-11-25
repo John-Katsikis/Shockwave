@@ -150,6 +150,7 @@ void registerEngineAssetProviders() {
     registerAssetPathField("BakedLighting", "reflections", AssetKind::Reflections, false);
     registerAssetPathField("PostProcessVolume", "profile", AssetKind::PostProcess);
     registerAssetPathField("Terrain", "asset", AssetKind::Terrain);
+    registerAssetPathField("Foliage", "asset", AssetKind::Foliage);
     // Scenes and prefabs: what their fields name. A mesh, texture or model without an
     // extension is a built-in name.
     registerAssetProvider("scene", {".swscene", ".swprefab"}, [](AssetReader& r, std::string& error) {

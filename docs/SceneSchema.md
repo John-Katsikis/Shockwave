@@ -523,6 +523,13 @@ No fields; the component's presence is what matters.
 | `visible` | 1 or 0 (true/false also accepted) | `1` |
 | `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
 
+#### Foliage
+
+| Field | Value | Default |
+|---|---|---|
+| `asset` | quoted text | `""` |
+| `visible` | 1 or 0 (true/false also accepted) | `1` |
+
 ### UI
 
 #### UIDocument

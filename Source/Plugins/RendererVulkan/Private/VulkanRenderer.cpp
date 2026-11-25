@@ -135,6 +135,14 @@ void VulkanRenderer::drawMesh(
     m_impl->drawMesh(mesh, transform, texture, tint, material, key);
 }
 void VulkanRenderer::setMeshSkin(MeshHandle id, std::span<const VertexSkin> skin) { m_impl->setMeshSkin(id, skin); }
+void VulkanRenderer::drawMeshInstances(
+    MeshHandle mesh, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material, const RenderInstanceKey& first, int lodLevel, std::span<const uint32_t> parts) {
+    m_impl->drawMeshInstances(mesh, transforms, texture, tint, material, first, lodLevel, parts);
+}
+
+void VulkanRenderer::setWindTime(float seconds) { m_impl->setWindTime(seconds); }
+
 void VulkanRenderer::drawSkinnedMesh(
     MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
     const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) {

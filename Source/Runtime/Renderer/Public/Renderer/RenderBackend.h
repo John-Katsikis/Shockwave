@@ -125,6 +125,14 @@ public:
     virtual void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material, const RenderInstanceKey& key) = 0;
+    // Renderer::drawMeshInstances: many copies of one mesh and material (W2a). Instance i's
+    // key is first with part + parts[i] (part + i when parts is empty). lodLevel: -1 picks
+    // by distance, else that level (clamped).
+    virtual void drawMeshInstances(
+        MeshHandle, std::span<const glm::mat4>, TextureHandle, const glm::vec4&, const DrawMaterial&,
+        const RenderInstanceKey&, int, std::span<const uint32_t>) {}
+    // Renderer::setWindTime.
+    virtual void setWindTime(float) {}
     virtual void addLight(const LightDesc& light) = 0;
     // This frame's particles (Renderer/Particles.h); copy what you need before returning.
     virtual void drawParticles(const ParticleDrawList& particles) = 0;

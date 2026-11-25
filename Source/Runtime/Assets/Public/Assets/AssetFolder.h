@@ -40,7 +40,7 @@ class TextureCompressor;
 // Main thread only.
 class AssetFolder {
 public:
-    enum class Kind { Texture, Model, Audio, Material, Other, Terrain };
+    enum class Kind { Texture, Model, Audio, Material, Other, Terrain, Foliage };
     // A texture file decoded another way for a material slot: as linear data (a normal map
     // or mask kept as a plain image), or with mipmaps that keep a masked material's alpha
     // coverage. The file's own texture stays as it is for everything else.

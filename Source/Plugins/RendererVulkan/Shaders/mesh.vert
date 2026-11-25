@@ -39,12 +39,20 @@ void main() {
     // Stored as an address: MoltenVK (macOS) reads references kept inside buffers as null.
     Vertex v = VertexBuffer(draw.vertexBuffer).vertices[gl_VertexIndex];
 
-    gl_Position = draw.mvp * vec4(v.position, 1.0);
+    // Wind (W2a): the sway, worked out in the world and taken back into the mesh's space.
+    vec3 position = v.position;
+    mat3 toModel = transpose(mat3(draw.normalMatrix));   // inverse(mat3(model))
+    if (draw.wind > 0.0)
+        position += toModel * windOffset(draw.wind, v.position.y, (draw.model * vec4(v.position, 1.0)).xyz, draw.windPhase);
+    gl_Position = draw.mvp * vec4(position, 1.0);
     vPreviousClip = vec4(0.0);
     if (draw.history != 0u) {
         vec3 previous = v.position;
         if (draw.previousVertexBuffer != uvec2(0u))
             previous = VertexBuffer(draw.previousVertexBuffer).vertices[gl_VertexIndex].position;
+        if (draw.wind > 0.0)
+            previous += toModel * windOffset(draw.wind, previous.y, (draw.model * vec4(previous, 1.0)).xyz,
+                                             draw.previousWindPhase);
         vPreviousClip = draw.previousMvp * vec4(previous, 1.0);
     }
     vNormal = mat3(draw.normalMatrix) * v.normal;
@@ -65,7 +73,7 @@ void main() {
     if (draw.indirectSource == kIndirectLightmap) vLightmapUv = LightmapUvBuffer(draw.lightmapUvBuffer).lightmapUv[gl_VertexIndex];
     vTexture = draw.textureIndex;
     vAlphaCutoff = draw.alphaCutoff;
-    vWorldPosition = (draw.model * vec4(v.position, 1.0)).xyz;
+    vWorldPosition = (draw.model * vec4(position, 1.0)).xyz;
     vRoughnessMetallic = vec2(draw.roughness, draw.metallic);
     vEmissive = draw.emissive;
     // A mirroring transform flips which way the bitangent points.

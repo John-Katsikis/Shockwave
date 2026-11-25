@@ -1,5 +1,6 @@
 // The asset dependency graph: see Assets/AssetGraph.h and docs/AssetResidency.md.
 #include <Assets/AssetGraph.h>
+#include <Assets/FoliageData.h>
 #include <Assets/TerrainData.h>
 
 #include <Assets/AudioClip.h>
@@ -95,6 +96,7 @@ const char* assetKindName(AssetKind kind) {
     case AssetKind::Lut: return "lut";
     case AssetKind::Builtin: return "builtin";
     case AssetKind::Terrain: return "terrain";
+    case AssetKind::Foliage: return "foliage";
     }
     return "file";
 }
@@ -116,6 +118,7 @@ AssetKind assetKindOf(std::string_view path) {
     if (ext == ".swpostprocess") return AssetKind::PostProcess;
     if (ext == ".cube") return AssetKind::Lut;
     if (ext == ".swterrain") return AssetKind::Terrain;
+    if (ext == ".swfoliage") return AssetKind::Foliage;
     const fs::path p{std::string(path)};
     if (isAudioFile(p)) return AssetKind::Audio;
     if (isImageFile(p) || ext == ".ktx2") return AssetKind::Texture;
@@ -549,6 +552,15 @@ void registerBuiltinProviders() {
                     r.content(
                         terrain.layers[i].material, "layer " + std::to_string(i) + " material", 0, AssetKind::Material);
         }
+        return true;
+    });
+    // Foliage (W2a): its instances file and each type's model.
+    registerAssetProvider("foliage", {".swfoliage"}, [](AssetReader& r, std::string& error) {
+        FoliageData foliage;
+        if (!parseFoliage(r.text(), foliage, error)) return false;
+        r.content(foliage.instancesFile, "instances", 0, AssetKind::Other);
+        for (size_t i = 0; i < foliage.types.size(); ++i)
+            r.content(foliage.types[i].model, "type " + std::to_string(i) + " model", 0, AssetKind::Model);
         return true;
     });
     // Baked lighting and reflections: the generated files the manifest vouches for. The

@@ -24,7 +24,7 @@ namespace shockwave {
 
 // Bump when a plugin-facing interface changes (RenderBackend, GameModule, the engine
 // classes game code uses), so an engine refuses plugins built against an older one.
-inline constexpr uint32_t kPluginAbiVersion = 25;   // 25: terrain shading family and layers (W1b)
+inline constexpr uint32_t kPluginAbiVersion = 26;   // 26: drawMeshInstances and wind (W2a)
 
 struct PluginDesc {
     uint32_t abiVersion = kPluginAbiVersion;

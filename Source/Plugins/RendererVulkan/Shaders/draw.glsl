@@ -187,13 +187,23 @@ struct DrawData {
     mat4 previousMvp;
     uvec2 previousVertexBuffer;
     uint history;
-    uint pad;
+    float wind;   // W2a: metres of sway per metre above the origin; 0: still
     uvec2 shading;   // a ShadingBuffer (A07-A09); 0: standard without a coat
+    float windPhase;   // W2a: wind time * rate, this frame...
+    float previousWindPhase;   // ...and last (motion vectors)
+    uvec2 pad2;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {
     DrawData draws[];
 };
+
+// Wind (W2a, foliage): where a vertex sways to, in the world, at model-space height y and
+// world position world. Roots (y 0) stay still. Must match mesh.vert and shadow.vert's use.
+const vec3 kWindDirection = vec3(1.0, 0.0, 0.3);
+vec3 windOffset(float wind, float y, vec3 world, float phase) {
+    return kWindDirection * (wind * max(y, 0.0) * sin(phase + world.x * 0.35 + world.z * 0.27));
+}
 
 // Both UV sets of a vertex, with the draw's uvScale (MeshRenderer tiling) applied.
 vec4 vertexUvs(DrawData draw, Vertex v, uint index) {

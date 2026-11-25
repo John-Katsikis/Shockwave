@@ -107,8 +107,10 @@ struct DrawData {
     glm::mat4 previousMvp;
     VkDeviceAddress previousVertexBuffer;
     uint32_t history;
-    uint32_t pad;
+    float wind;   // W2a: DrawMaterial::wind; 0: still
     VkDeviceAddress shading;   // A07-A09: this draw's ShadingData; 0: standard without a coat
+    float windPhase, previousWindPhase;   // W2a: wind time * rate, this frame and last
+    uint32_t pad2[2];
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
@@ -117,7 +119,8 @@ static_assert(
         offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
         offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 &&
         offsetof(DrawData, previousMvp) == 448 && offsetof(DrawData, previousVertexBuffer) == 512 &&
-        offsetof(DrawData, history) == 520 && offsetof(DrawData, shading) == 528 && sizeof(DrawData) == 536,
+        offsetof(DrawData, history) == 520 && offsetof(DrawData, wind) == 524 && offsetof(DrawData, shading) == 528 &&
+        offsetof(DrawData, windPhase) == 536 && sizeof(DrawData) == 552,
     "DrawData must match the shader's scalar layout");
 constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
                    kIndirectProbes = 2u;   // DrawData::indirectSource
@@ -1005,6 +1008,8 @@ struct VulkanRenderer::Impl {
     // The level of detail to draw a mesh with: its first index and count. scale: the
     // draw's largest axis scale; center: its bounding sphere's centre in the world.
     void pickLod(const Mesh& mesh, float scale, const glm::vec4& bounds, DrawCommand& command) const;
+    // Draws level (0: the full mesh; clamped to the simplest there is).
+    void useLod(const Mesh& mesh, uint32_t level, DrawCommand& command) const;
     bool formatSampleable(VkFormat format) const;
 
     // ---- Per-frame --------------------------------------------------------------------
@@ -1013,6 +1018,32 @@ struct VulkanRenderer::Impl {
     void drawMesh(
         MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints = {});
+    // W2a: many copies of one mesh and material; the material is worked out once.
+    void drawMeshInstances(
+        MeshHandle handle, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, const RenderInstanceKey& first, int lodLevel, std::span<const uint32_t> parts);
+    void setWindTime(float seconds);
+    // A draw worked out but not yet in a draw list, with the table entries it points at.
+    struct PreparedDraw {
+        DrawCommand command;
+        LayerData layer{};
+        ProbeData probe{};
+        ShadingData shade{};
+        TerrainShadingData terrain{};
+        bool shaded = false, terrainLayers = false;
+    };
+    // False when the mesh isn't ready or the transform is degenerate. A skinned draw's
+    // joints are cleared when the mesh has no skin.
+    bool prepareDraw(
+        MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4>& joints,
+        PreparedDraw& prepared);
+    // Puts commands in this thread's draw list, all pointing at prepared's table entries.
+    void submitDraws(
+        const PreparedDraw& prepared, std::span<DrawCommand> commands, uint32_t mesh,
+        std::span<const glm::mat4> joints);
+    std::atomic<float> windTime{0.0f}, previousWindTime{0.0f};
+    static constexpr float kWindRate = 1.7f;   // radians a second (shaders: mesh.vert, shadow.vert)
 
     void clearDrawLists();
 

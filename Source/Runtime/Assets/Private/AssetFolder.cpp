@@ -525,6 +525,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                      : isAudioFile(f.path)                        ? Kind::Audio
                      : isMaterialFile(f.path)                     ? Kind::Material
                      : isTerrainFile(f.path)                      ? Kind::Terrain
+                     : isFoliageFile(f.path)                      ? Kind::Foliage
                                                                   : Kind::Other;
             f.bytes = it->file_size(ec);
             f.modified = it->last_write_time(ec);
@@ -550,6 +551,7 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         std::vector<float> coverage;   // per model texture: modelCoverageCutoffs
         std::shared_ptr<MaterialFile> material;
         std::shared_ptr<TerrainData> terrain;
+        std::shared_ptr<FoliageData> foliage;
         uint64_t cacheKey = 0;   // a texture file's, from its bytes
         uint64_t compressedFileBytes = 0;
         MeshOptimiseReport meshes;
@@ -709,6 +711,15 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
                 }
                 job.terrain = std::make_shared<TerrainData>();
                 readTerrain(f.path, m_root, *job.terrain, job.error);
+            } else if (f.kind == Kind::Foliage) {
+                // The instances file is a dependency even while it's missing.
+                std::ifstream in(f.path, std::ios::binary);
+                const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                FoliageData header;
+                std::string ignored;
+                if (parseFoliage(text, header, ignored)) job.dependencies.push_back(m_root / header.instancesFile);
+                job.foliage = std::make_shared<FoliageData>();
+                readFoliage(f.path, m_root, *job.foliage, job.error);
             } else if (f.kind == Kind::Model)
                 loadModel(f.path, job.model, job.error, &job.dependencies, job.settings.fbxImporter);
             else
@@ -795,6 +806,8 @@ std::vector<AssetFolder::Change> AssetFolder::refresh(bool force) {
         if (job.error.empty()) {
             if (f.kind == Kind::Audio) {
                 m_assets.addAudioClip(f.name, std::make_shared<const AudioClip>(std::move(job.audio)));
+            } else if (f.kind == Kind::Foliage) {
+                m_assets.addFoliage(f.name, std::move(job.foliage));   // nothing on the GPU
             } else if (f.kind == Kind::Material) {
                 f.materialFile = std::move(job.material);   // resolved below, with everything else
                 f.materialParseFailed = false;
@@ -1065,6 +1078,7 @@ void AssetFolder::unloadFile(File& f) {
             if (m_renderer) releaseTerrain(*m_renderer, *terrain);
         }
         break;
+    case Kind::Foliage: m_assets.addFoliage(f.name, nullptr); break;
     case Kind::Other: return;
     }
     f.imported = false;

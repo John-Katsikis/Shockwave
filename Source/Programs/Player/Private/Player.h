@@ -381,6 +381,9 @@ int postProcessInfo(const fs::path& profile, const fs::path& json);
 // that holds output.
 int terrainInfo(const fs::path& file, const fs::path& json);
 int terrainImport(const fs::path& heights, const fs::path& output, float spacing, float low, float high);
+// W2a: --foliage-info prints a .swfoliage's types with their instances and cells (and writes
+// them as JSON), no project needed (docs/Foliage.md).
+int foliageInfo(const fs::path& file, const fs::path& json);
 int lutExportNeutral(uint32_t size, const fs::path& output);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
@@ -632,6 +635,7 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    double m_windSeconds = 0.0;   // foliage wind's clock (W2a)
     int m_framesSeen = 0;   // for --inject-device-lost
     // What levels hold resident and the graph that says what they need (docs/AssetResidency.md);
     // before m_levels, which holds a lease on it.

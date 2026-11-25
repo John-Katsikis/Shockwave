@@ -39,6 +39,9 @@ player --postprocess-info file.swpostprocess [--json file]
                                     applied, and its LUT (docs/PostProcess.md)
 player --terrain-info file.swterrain [--json file]
                                     a terrain's points, size, heights and chunks (docs/Terrain.md)
+player --foliage-info file.swfoliage [--json file]
+                                    a foliage file's types, instances per type and cells
+                                    (docs/Foliage.md)
 player --terrain-import heights.png|heights.r16 --output terrain/name.swterrain
        [--spacing metres] [--height-range low high]
                                     make a terrain from a 16-bit heightmap

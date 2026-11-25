@@ -71,6 +71,7 @@ missing--postprocess-schema: --postprocess-schema
 missing--postprocess-info: --postprocess-info
 missing--terrain-info: --terrain-info
 missing--terrain-import: --terrain-import
+missing--foliage-info: --foliage-info
 missing--spacing: --spacing
 missing--height-range: --height-range
 missing--height-range-2: --height-range 0
@@ -194,6 +195,7 @@ run-input-schema: --input-schema -
 run-preferences-schema: --preferences-schema -
 run-lut-neutral: --lut-export-neutral 17 -
 run-terrain-info: --terrain-info {SOURCE}/Tests/fixtures/graphics/Content/terrain/hills.swterrain
+run-foliage-info: --foliage-info {SOURCE}/Tests/fixtures/graphics/Content/foliage/meadow.swfoliage
 run-terrain-import: --terrain-import {SOURCE}/Tests/fixtures/graphics/Content/terrain/hills.r16 --output {TEMP}/Content/terrain/copy.swterrain --spacing 2 --height-range 0 60
 run-check: --check --project {SOURCE}/Games/ShippingDemo --renderer null
 run-levels: --levels --project {SOURCE}/Games/ShippingDemo --renderer null

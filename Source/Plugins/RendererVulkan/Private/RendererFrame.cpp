@@ -7,16 +7,21 @@
 
 namespace shockwave {
 
-void VulkanRenderer::Impl::drawMesh(
+bool VulkanRenderer::Impl::prepareDraw(
     MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
-    const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints) {
-    if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
+    const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4>& joints,
+    PreparedDraw& prepared) {
+    if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return false;
     const float determinant = glm::determinant(transform);
-    if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) return;
+    if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) return false;
     const Mesh& mesh = meshes[handle.id];
 
     // The per-draw math runs here, on whichever thread submits the draw.
-    DrawCommand command;
+    DrawCommand& command = prepared.command;
+    LayerData& layer = prepared.layer;
+    ProbeData& probe = prepared.probe;
+    ShadingData& shade = prepared.shade;
+    TerrainShadingData& terrain = prepared.terrain;
     command.data.mvp = viewProjection * transform;
     command.data.model = transform;
     command.data.normalMatrix = glm::transpose(glm::inverse(transform));
@@ -54,7 +59,6 @@ void VulkanRenderer::Impl::drawMesh(
                              : 0u;
     command.data.layers = 0;
     // Detail and second layers (A02); material_quality low leaves the detail out.
-    LayerData layer{};
     const MaterialLayers* layers = material.layers;
     const bool detail = layers && layers->detail && materialDetail.load(std::memory_order_relaxed);
     if (layers && (detail || layers->layer)) {
@@ -105,7 +109,6 @@ void VulkanRenderer::Impl::drawMesh(
     command.data.lightmapTexture = 0;
     command.data.indirectSource = kIndirectEnvironment;
     command.data.probes = 0;
-    ProbeData probe{};
     if (const IndirectLighting* indirect = material.indirect) {
         if (indirect->source == IndirectLighting::Source::Lightmap && mesh.lightmapUvAddress && indirect->lightmap.id) {
             command.data.indirectSource = kIndirectLightmap;
@@ -132,13 +135,11 @@ void VulkanRenderer::Impl::drawMesh(
          glm::dot(glm::vec3(transform[2]), glm::vec3(transform[2]))}));
     // Shading families and coats (A07-A09): glass becomes see-through here.
     command.data.shading = 0;
-    ShadingData shade{};
-    const bool shaded = material.shading && fillShading(material, scale, command, shade, vertexTangents);
+    prepared.shaded = material.shading && fillShading(material, scale, command, shade, vertexTangents);
+    const bool shaded = prepared.shaded;
     // Painted terrain (W1b): its layers in a table of their own.
-    TerrainShadingData terrain{};
-    const bool terrainLayers =
-        shaded && material.shading->family == ShadingFamily::Terrain && material.shading->terrain;
-    if (terrainLayers) fillTerrainShading(*material.shading->terrain, terrain);
+    prepared.terrainLayers = shaded && material.shading->family == ShadingFamily::Terrain && material.shading->terrain;
+    if (prepared.terrainLayers) fillTerrainShading(*material.shading->terrain, terrain);
     if (!mesh.skinAddress) joints = {};
     const glm::vec4 bounds = joints.empty() ? mesh.bounds : skinnedBounds(mesh, joints);
     command.bounds = glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(bounds), 1.0f)), bounds.w * scale);
@@ -152,28 +153,46 @@ void VulkanRenderer::Impl::drawMesh(
     command.data.previousMvp = glm::mat4(1.0f);
     command.data.previousVertexBuffer = 0;
     command.data.history = 0;
-    command.data.pad = 0;
+    // W2a: wind sways the vertices; its phase is the frame's, last frame's for motion.
+    command.data.wind = std::max(material.wind, 0.0f);
+    command.data.windPhase = windTime.load(std::memory_order_relaxed) * kWindRate;
+    command.data.previousWindPhase = previousWindTime.load(std::memory_order_relaxed) * kWindRate;
+    command.data.pad2[0] = command.data.pad2[1] = 0;
+    return true;
+}
 
+void VulkanRenderer::Impl::submitDraws(
+    const PreparedDraw& prepared, std::span<DrawCommand> commands, uint32_t mesh, std::span<const glm::mat4> joints) {
     const uint32_t thread = JobSystem::threadIndex();
     auto add = [&](DrawList& list, uint32_t index) {
-        command.skinList = index;   // the list it's in, for its layers too
-        if (layer.flags) {
-            command.layers = static_cast<uint32_t>(list.layers.size());
-            list.layers.push_back(layer);
+        // One entry each in the list's tables, however many draws share it: each draw gets
+        // its own copy when the frame's tables are filled.
+        uint32_t layers = kNoLayers, probes = kNoLayers, shading = kNoLayers, terrain = kNoLayers;
+        if (prepared.layer.flags) {
+            layers = static_cast<uint32_t>(list.layers.size());
+            list.layers.push_back(prepared.layer);
         }
-        if (command.data.indirectSource == kIndirectProbes) {
-            command.probes = static_cast<uint32_t>(list.probes.size());
-            list.probes.push_back(probe);
+        if (prepared.command.data.indirectSource == kIndirectProbes) {
+            probes = static_cast<uint32_t>(list.probes.size());
+            list.probes.push_back(prepared.probe);
         }
-        if (shaded) {
-            command.shading = static_cast<uint32_t>(list.shading.size());
-            list.shading.push_back(shade);
+        if (prepared.shaded) {
+            shading = static_cast<uint32_t>(list.shading.size());
+            list.shading.push_back(prepared.shade);
         }
-        if (terrainLayers) {
-            command.terrain = static_cast<uint32_t>(list.terrain.size());
-            list.terrain.push_back(terrain);
+        if (prepared.terrainLayers) {
+            terrain = static_cast<uint32_t>(list.terrain.size());
+            list.terrain.push_back(prepared.terrain);
         }
-        addDraw(list, index, command, handle.id, joints);
+        list.commands.reserve(list.commands.size() + commands.size());
+        for (DrawCommand& command : commands) {
+            command.skinList = index;   // the list it's in, for its layers too
+            command.layers = layers;
+            command.probes = probes;
+            command.shading = shading;
+            command.terrain = terrain;
+            addDraw(list, index, command, mesh, joints);
+        }
     };
     if (thread < drawLists.size()) {
         add(drawLists[thread], thread);
@@ -181,6 +200,98 @@ void VulkanRenderer::Impl::drawMesh(
         std::lock_guard lock(foreignDrawMutex);
         add(foreignDraws, static_cast<uint32_t>(drawLists.size()));
     }
+}
+
+void VulkanRenderer::Impl::drawMesh(
+    MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints) {
+    PreparedDraw prepared;
+    if (!prepareDraw(handle, transform, texture, tint, material, key, joints, prepared)) return;
+    submitDraws(prepared, {&prepared.command, 1}, handle.id, joints);
+}
+
+void VulkanRenderer::Impl::drawMeshInstances(
+    MeshHandle handle, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material, const RenderInstanceKey& first, int lodLevel, std::span<const uint32_t> parts) {
+    if (transforms.empty()) return;
+    if (!parts.empty() && parts.size() != transforms.size()) return;
+    // The material, once, from the first copy; then each copy's own placement.
+    std::span<const glm::mat4> none;
+    PreparedDraw prepared;
+    size_t start = 0;
+    while (start < transforms.size() &&
+           !prepareDraw(handle, transforms[start], texture, tint, material, first, none, prepared)) {
+        if (handle.id >= kMaxMeshes || !meshReady[handle.id].load(std::memory_order_acquire)) return;
+        ++start;   // a degenerate transform: try the next
+    }
+    if (start == transforms.size()) return;
+    const Mesh& mesh = meshes[handle.id];
+    const DrawCommand& model = prepared.command;
+    // Straight into this thread's draw list (one copy per instance; the shaders read only the
+    // normal matrix's 3x3 part, so that's all that's inverted).
+    auto fill = [&](DrawList& list, uint32_t index) {
+        DrawCommand shared = model;
+        shared.skinList = index;
+        if (prepared.layer.flags) {
+            shared.layers = static_cast<uint32_t>(list.layers.size());
+            list.layers.push_back(prepared.layer);
+        }
+        if (prepared.command.data.indirectSource == kIndirectProbes) {
+            shared.probes = static_cast<uint32_t>(list.probes.size());
+            list.probes.push_back(prepared.probe);
+        }
+        if (prepared.shaded) {
+            shared.shading = static_cast<uint32_t>(list.shading.size());
+            list.shading.push_back(prepared.shade);
+        }
+        if (prepared.terrainLayers) {
+            shared.terrain = static_cast<uint32_t>(list.terrain.size());
+            list.terrain.push_back(prepared.terrain);
+        }
+        shared.data.tint = tint;
+        shared.indexBuffer = mesh.indices.buffer;
+        shared.firstIndex = 0;
+        shared.indexCount = mesh.indexCount;
+        shared.fullIndexCount = 0;
+        shared.key = first;
+        list.commands.reserve(list.commands.size() + (transforms.size() - start));
+        for (size_t i = start; i < transforms.size(); ++i) {
+            const glm::mat4& transform = transforms[i];
+            const glm::mat3 axes(transform);
+            const float determinant = glm::determinant(axes);
+            if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12f) continue;
+            DrawCommand& command = list.commands.emplace_back(shared);
+            command.data.mvp = viewProjection * transform;
+            command.data.model = transform;
+            command.data.normalMatrix = glm::mat4(glm::transpose(glm::inverse(axes)));
+            command.mirrored = determinant < 0;
+            const glm::vec4 center = command.data.mvp[3];
+            command.depth = center.w != 0 ? center.z / center.w : 0;
+            const float scale = std::sqrt(
+                std::max({glm::dot(axes[0], axes[0]), glm::dot(axes[1], axes[1]), glm::dot(axes[2], axes[2])}));
+            command.bounds =
+                glm::vec4(glm::vec3(transform * glm::vec4(glm::vec3(mesh.bounds), 1.0f)), mesh.bounds.w * scale);
+            if (lodLevel < 0 && mesh.lodCount > 0)
+                pickLod(mesh, scale, command.bounds, command);
+            else if (lodLevel >= 0)
+                useLod(mesh, uint32_t(lodLevel), command);
+            command.visible = viewFrustum.intersects(command.bounds);
+            command.data.reflections = pickReflections(command.bounds);
+            command.key.part = first.part + (parts.empty() ? static_cast<uint32_t>(i) : parts[i]);
+        }
+    };
+    const uint32_t thread = JobSystem::threadIndex();
+    if (thread < drawLists.size()) {
+        fill(drawLists[thread], thread);
+    } else {
+        std::lock_guard lock(foreignDrawMutex);
+        fill(foreignDraws, static_cast<uint32_t>(drawLists.size()));
+    }
+}
+
+void VulkanRenderer::Impl::setWindTime(float seconds) {
+    previousWindTime.store(windTime.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    windTime.store(seconds, std::memory_order_relaxed);
 }
 
 void VulkanRenderer::Impl::clearDrawLists() {

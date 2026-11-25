@@ -64,6 +64,11 @@ public:
     void drawSkinnedMesh(
         MeshHandle mesh, const glm::mat4& transform, std::span<const glm::mat4> joints, TextureHandle texture,
         const glm::vec4& tint, const DrawMaterial& material, const RenderInstanceKey& key) override;
+    void drawMeshInstances(
+        MeshHandle mesh, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, const RenderInstanceKey& first, int lodLevel,
+        std::span<const uint32_t> parts) override;
+    void setWindTime(float seconds) override;
 
     void setGrid(const GridSettings& grid) override;
     void setLighting(const LightingDesc& lighting) override;

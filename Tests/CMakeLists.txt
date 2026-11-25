@@ -109,6 +109,18 @@ if(TARGET game_shippingdemo)
     set_tests_properties(terrain_flow PROPERTIES
         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS integration)
 endif()
+# Foliage in a real game (W2a, Tests/FoliageCheck.cmake): the meadow in Reactor Run's
+# training level through --check and its dependencies, and --check catching broken foliage.
+if(TARGET game_shippingdemo)
+    add_test(NAME foliage_check COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DGAME=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/FoliageCheck
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/FoliageCheck.cmake)
+    set_tests_properties(foliage_check PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS integration)
+endif()
 # player --perf-run on Reactor Run (two laps of the tour, null renderer) and the gate
 # reading its records (Tests/PerformanceCheck.cmake). It proves the accounting, never the
 # speed: CI machines aren't release hardware.
@@ -594,6 +606,13 @@ target_link_libraries(terrain_test PRIVATE Shockwave::Engine)
 shockwave_warnings(terrain_test)
 add_test(NAME terrain COMMAND terrain_test)
 set_tests_properties(terrain PROPERTIES TIMEOUT 60 LABELS unit)
+
+# Foliage (W2a): the .swfoliage format, instances, cells, density and fade.
+add_executable(foliage_test FoliageTest.cpp)
+target_link_libraries(foliage_test PRIVATE Shockwave::Engine)
+shockwave_warnings(foliage_test)
+add_test(NAME foliage COMMAND foliage_test)
+set_tests_properties(foliage PROPERTIES TIMEOUT 60 LABELS unit)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -671,6 +690,23 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTerrainCheck.cmake)
     set_tests_properties(graphics_terrain_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Foliage (W2a): 20,000 instances in under 200 calls, density 0 as no foliage, fixed-step
+    # runs alike, still under TAA without wind; and a timing run of its CPU submission.
+    add_test(NAME graphics_foliage_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFoliage
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFoliageCheck.cmake)
+    set_tests_properties(graphics_foliage_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    add_test(NAME graphics_foliage_timing COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFoliageTiming
+        -DMODE=timing
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFoliageCheck.cmake)
+    set_tests_properties(graphics_foliage_timing PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS "gpu;timing" RUN_SERIAL TRUE)
     # Clustered lighting (G11): the same pixels as brute force (overflow, TAA, glass, past
     # cluster_far), the report on and off, auto by light count, and the cluster view.
     add_test(NAME graphics_clusters_render COMMAND ${CMAKE_COMMAND}

@@ -3210,6 +3210,89 @@ Sets the entity's Environment tonemapper.
 - In `target` Entity, default self
 - In `tonemapper` Int, options 0=ACES; 1=AgX; 2=Reinhard; 3=None, required
 
+### Component.Foliage.Add
+
+Gives the entity a Foliage with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Foliage.Get
+
+Every field of the entity's Foliage; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `asset` String
+- Out `visible` Bool
+
+### Component.Foliage.Get.asset
+
+The entity's Foliage asset.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `asset` String
+
+### Component.Foliage.Get.visible
+
+The entity's Foliage visible.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `visible` Bool
+
+### Component.Foliage.Has
+
+The entity has a Foliage.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.Foliage.Remove
+
+Takes the Foliage off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Foliage.Set
+
+Sets the fields given (connected or written) of the entity's Foliage; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String
+- In `visible` Bool
+
+### Component.Foliage.Set.asset
+
+Sets the entity's Foliage asset.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String, required
+
+### Component.Foliage.Set.visible
+
+Sets the entity's Foliage visible.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `visible` Bool, required
+
 ### Component.LevelExit.Add
 
 Gives the entity a LevelExit with default values, if it has none.

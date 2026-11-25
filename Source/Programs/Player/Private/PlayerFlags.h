@@ -61,6 +61,7 @@ struct ParseState {
     std::filesystem::path postProcessSchema, postProcessInfo, lutNeutral;   // A05/A06 tools, no project
     uint32_t lutNeutralSize = 0;
     std::filesystem::path terrainInfo, terrainImport;   // --terrain-info, --terrain-import (W1a)
+    std::filesystem::path foliageInfo;   // --foliage-info (W2a)
     float terrainSpacing = 1.0f;   // --spacing
     float terrainLow = 0.0f, terrainHigh = 100.0f;   // --height-range
     std::filesystem::path lightingSchema, lightingExport, lightingImport;   // need no project

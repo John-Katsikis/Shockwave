@@ -492,6 +492,9 @@ void Player::onRender(shockwave::Renderer& renderer, double alpha) {
     m_bakedLighting.update(m_world, engine().assets(), renderer, now - m_bakedLightingTime);
     m_bakedLightingTime = now;
     if (m_reflectionCapture && driveReflectionCapture(renderer)) return;
+    // Wind (W2a) sways on the frames' clock, so a fixed-step run sways the same each time.
+    m_windSeconds += m_frameDt;
+    renderer.setWindTime(float(m_windSeconds));
     shockwave::renderWorld(m_world, renderer, engine().jobs(), alpha, &engine().assets(), &m_bakedLighting);
     if (m_postProcess) shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     m_effects->render(renderer);

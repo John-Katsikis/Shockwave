@@ -34,6 +34,12 @@ public:
 
     void setClearColor(const Color&) override {}
     void setCamera(const glm::mat4&, const glm::mat4&) override {}
+    void drawMeshInstances(
+        MeshHandle, std::span<const glm::mat4> transforms, TextureHandle, const glm::vec4&, const DrawMaterial&,
+        const RenderInstanceKey& first, int, std::span<const uint32_t>) override {
+        m_draws.fetch_add(static_cast<uint32_t>(transforms.size()), std::memory_order_relaxed);
+        if (!first.valid()) m_unkeyed.fetch_add(static_cast<uint32_t>(transforms.size()), std::memory_order_relaxed);
+    }
     void drawMesh(
         MeshHandle, const glm::mat4&, TextureHandle, const glm::vec4&, const DrawMaterial&,
         const RenderInstanceKey& key) override {

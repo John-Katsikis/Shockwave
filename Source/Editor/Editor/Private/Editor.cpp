@@ -379,6 +379,9 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
             return;   // this frame is one of a probe's faces
         finishReflectionCapture();
     }
+    // Foliage sways (W2a) only while playing, like everything else that moves on its own.
+    if (playState() == PlayState::Playing) m_windSeconds += m_frameDt;
+    renderer.setWindTime(float(m_windSeconds));
     shockwave::renderWorld(
         m_world, renderer, engine().jobs(), playState() == PlayState::Playing ? alpha : 1.0, &engine().assets(),
         &m_bakedLighting);
