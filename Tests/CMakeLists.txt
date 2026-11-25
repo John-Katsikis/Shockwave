@@ -1033,6 +1033,18 @@ add_test(NAME foliage_paint_editor COMMAND ${CMAKE_COMMAND}
 set_tests_properties(foliage_paint_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 300 LABELS gpu)
 endif()
+# The Material graph window (W4b, Tests/MaterialGraphEditorCheck.cmake): add a node, compile
+# in the background, a broken node's problem on it, undo and save. Draws its interface: gpu.
+if(TARGET editor)
+add_test(NAME material_graph_editor COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/graphics
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/MaterialGraphEditor
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/MaterialGraphEditorCheck.cmake)
+set_tests_properties(material_graph_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
 # The editor's Player Settings previews (S08): the game's text in French at 1.5x, from the
 # command line, and nothing written into the project. Draws its interface: gpu.
 if(TARGET game_shippingdemo AND TARGET editor)

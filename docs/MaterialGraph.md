@@ -85,6 +85,27 @@ The graphics setting `material_graphs` (default true) turns graphs off: every gr
 material draws as its plain material, exactly as without its `graph` record, and no graph
 pipelines are built. It's in the Graphics window and every tier.
 
+## The editor
+
+Window > Material graph, or double-click a `.swmatgraph` in Content (the Material window's
+Edit graph button opens a material's graph). It's a node editor like the Circuits window:
+
+- Right-click the background, or drop a wire on empty space, to add a node (search by name
+  or what it does). Drag between pins to wire them; a wire into the Surface node is an
+  `output` line. Delete removes the selection; right-click a node to rename it.
+- An input with no wire takes a number typed on the node (`pin=number`); optional inputs
+  show `default` until you set one. Constants and params pick float to vec4, with a colour
+  picker for three and four numbers; texture nodes pick a file and whether it's data.
+- Every edit is checked straight away, and each problem shows in red on its node and in the
+  Problems list. Half a second after the last edit the shader compiles on a background
+  thread, into the shader cache; while it compiles, and whenever it fails, the last working
+  shader stays.
+- **Preview** draws a sphere with that shader in the viewport, in the scene's own light,
+  placed in front of the camera (Move it in front of the camera puts it there again). It's
+  never part of the scene, and it's not drawn while looking through the scene's camera.
+- Save (Ctrl+S) writes the canonical file with `# layout` lines, and the materials that use
+  the graph reload with it. Undo and redo cover every edit.
+
 ## Tools
 
 ```sh
@@ -110,3 +131,8 @@ are mapped back to the node whose line they're on.
   false` draws exactly the plain material, the lava graph glows and `graph_param glow 0 0 0`
   takes it away, two fixed-step runs are identical, and the report counts the draws.
 - `player_cli`: `--material-graph` on a broken graph, `--dump`, the schema.
+- `material_graph_editor` (GPU, Tests/MaterialGraphEditorCheck.cmake): `editor
+  --material-graph-test` adds a constant wired to roughness with the window's own code, waits
+  for the background compile, checks a broken node's problem lands on it while the shader
+  stays, undoes, saves, and the saved file has the node, its output and its layout line; the
+  preview sphere draws with the graph (the graphics report's graph draws).

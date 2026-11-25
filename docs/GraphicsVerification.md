@@ -1148,6 +1148,27 @@ them, with a warning past 64.
 Not done: graphs on families other than standard; graph normals and opacity in the depth
 prepass, shadows and screen-space effects (they see the material's own); vertex offsets.
 
+## W4b: the material graph editor
+
+Window > Material graph (docs/MaterialGraph.md#the-editor): a node editor on imgui-node-editor
+like the Circuits window, with a Surface node for the outputs, numbers on unwired inputs,
+problems shown on their node, a background compile half a second after the last edit that keeps
+the last working shader, a preview sphere in the viewport, undo and redo, and saving with
+`# layout` lines. Opened from the Window menu, a double-click in Content, or the Material
+window's Edit graph button.
+
+| Check | Result |
+|---|---|
+| `material_graph_editor` (`editor --material-graph-test`) | adds a constant wired to roughness, the background compile makes a new shader, an unwired `add` shows its problem on that node and leaves the shader alone, undo removes it, the saved file is canonical with the node, its output and its layout line, `player --material-graph` accepts it, and the preview sphere draws with the graph (1 or more graph draws in a scene with none) |
+| Screenshot (Xvfb, the lava graph) | the window lists the graph, "Read from the cache in 1 ms", the glow param and no problems; every node and wire of the lava graph is drawn |
+
+Switchable off: the window does nothing until opened; the preview sphere has its own checkbox and
+isn't drawn while looking through the scene camera; with `material_graphs false` it draws plain.
+
+Not done: the preview is a sphere in the viewport rather than its own picture (the renderer
+draws one view per frame; asked Yianni which they prefer), and the editor has no copy and paste
+of nodes yet.
+
 ## Known limits
 
 - The overhaul's frame times were all measured on llvmpipe, a CPU renderer. Timings on

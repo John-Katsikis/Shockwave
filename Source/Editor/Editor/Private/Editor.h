@@ -101,6 +101,11 @@ struct EditorOptions {
     // first Foliage with its first type, then checks undo, redo and save; exit 1 on failure.
     bool foliageStroke = false;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
+    std::string materialGraphOnStart;   // --material-graph: open it in the Material graph window
+    // --material-graph-test (tests, docs/MaterialGraph.md#the-editor): with the window's own
+    // code, add a node to the graph --material-graph opened, wait for the background compile,
+    // check a broken node's problem lands on it, undo, save and read the file back; exit 1 on failure.
+    bool materialGraphTest = false;
 };
 
 // The Shockwave Editor: projects, scenes and a live viewport in a docked Dear ImGui UI.
@@ -358,6 +363,17 @@ private:
     shockwave::MaterialFile m_materialEdit;
     std::string m_materialLoadError;
     bool m_showCircuits = false;
+    // MaterialGraphPanel.cpp: the Material graph node editor (W4b, docs/MaterialGraph.md).
+    void drawMaterialGraphWindow();
+    void openMaterialGraph(const std::string& path);   // inside Content
+    std::string newMaterialGraph(const std::string& folder);   // makes and opens one; its path, or ""
+    bool saveMaterialGraph();
+    void updateMaterialGraph();   // every frame: the background compile
+    void renderMaterialGraphPreview(shockwave::Renderer& renderer);
+    void releaseMaterialGraphPreview();
+    void runMaterialGraphTest();   // --material-graph-test
+    bool m_showMaterialGraph = false;
+    std::shared_ptr<struct MaterialGraphEditorState> m_materialGraphEditor;
     bool m_showNetwork = false;
     // TerrainPanel.cpp: Window > Terrain (W1a, docs/Terrain.md). Create a terrain, sculpt it
     // with brushes in the viewport, import heights and save. Strokes keep their own undo

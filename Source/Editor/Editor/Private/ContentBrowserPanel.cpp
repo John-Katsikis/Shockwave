@@ -584,7 +584,7 @@ void Editor::drawContentItems() {
             case TileKind::Prefab: editPrefab(tile.name); break;
             case TileKind::Circuit: openCircuit(tile.name); break;
             case TileKind::Material: openMaterial(tile.name); break;
-            case TileKind::MaterialGraph: break;
+            case TileKind::MaterialGraph: openMaterialGraph(tile.name); break;
             case TileKind::Other: break;
             }
         }
@@ -657,6 +657,7 @@ void Editor::drawContentItems() {
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;
             case TileKind::MaterialGraph:
+                if (ImGui::MenuItem("Edit")) openMaterialGraph(tile.name);
                 if (ImGui::MenuItem("Open in text editor"))
                     SDL_OpenURL(("file://" + fs::absolute(tile.path).generic_string()).c_str());
                 break;

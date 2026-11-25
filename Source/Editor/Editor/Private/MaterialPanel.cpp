@@ -383,6 +383,7 @@ void Editor::drawMaterialWindow() {
         }
         ImGui::SetItemTooltip("Drop a material graph from Content here. Empty keeps the parent's graph, if any");
         const std::string graph = !edit.graph.empty() ? edit.graph : asset && !asset->fallback ? asset->desc.graph : "";
+        if (!graph.empty() && gui::button("Edit graph")) openMaterialGraph(graph);
         // The graph's params, read again when its file changes.
         static std::string cachedPath;
         static fs::file_time_type cachedTime{};

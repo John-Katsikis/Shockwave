@@ -221,6 +221,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Save Games", nullptr, &m_showSaveGames);
             ImGui::MenuItem("Player Settings", nullptr, &m_showPlayerSettings);
             ImGui::MenuItem("Circuits", nullptr, &m_showCircuits);
+            ImGui::MenuItem("Material graph", nullptr, &m_showMaterialGraph);
             ImGui::MenuItem("Network", nullptr, &m_showNetwork);
             ImGui::MenuItem("Material", nullptr, &m_showMaterial);
             ImGui::MenuItem("Lighting", nullptr, &m_showLighting);

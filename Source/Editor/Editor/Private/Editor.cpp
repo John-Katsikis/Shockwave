@@ -130,6 +130,7 @@ void Editor::onStart() {
     }
     if (m_hasProject && m_options.playOnStart) play();
     if (m_hasProject && !m_options.circuitOnStart.empty()) openCircuit(m_options.circuitOnStart);
+    if (m_hasProject && !m_options.materialGraphOnStart.empty()) openMaterialGraph(m_options.materialGraphOnStart);
 }
 
 void Editor::onShutdown() {
@@ -145,6 +146,7 @@ void Editor::onShutdown() {
     if (m_gameInstance) m_gameInstance->shutdown();
     m_gameUI.reset();
     m_navOverlay.release(engine().renderer());
+    releaseMaterialGraphPreview();
     m_bakedLighting.release();
     m_reflections.release();
     m_effects.reset();
@@ -259,6 +261,7 @@ void Editor::onGui() {
     if (m_showSaveGames) drawSaveGamesWindow();
     if (m_showPlayerSettings) drawPlayerSettingsWindow();
     if (m_showCircuits) drawCircuitsWindow();
+    if (m_showMaterialGraph) drawMaterialGraphWindow();
     if (m_showNetwork) drawNetworkWindow();
     if (m_showMaterial) drawMaterialWindow();
     if (m_showLighting || m_lightingBake || m_reflectionCapture) drawLightingWindow();
@@ -344,6 +347,8 @@ void Editor::onFrame(double dt) {
     if (m_options.levelAuthoring) runLevelAuthoring();
     if (m_options.foliageStroke) runFoliageStroke();
     if (m_options.packageRelease) runPackageRelease();
+    updateMaterialGraph();
+    if (m_options.materialGraphTest) runMaterialGraphTest();
     if (session()) session()->frame(dt);
     updatePlayerSettings(dt);
     updateGameUI(dt);
@@ -389,6 +394,7 @@ void Editor::onRender(shockwave::Renderer& renderer, double alpha) {
         &m_bakedLighting);
     shockwave::updatePostProcess(m_world, renderer, *m_postProcess, float(m_frameDt));
     renderNavigation(renderer);
+    renderMaterialGraphPreview(renderer);
     m_effects->render(renderer);
     if (m_showGameUI) m_gameUI->render(renderer);   // the viewport shows the game's UI too
 }
