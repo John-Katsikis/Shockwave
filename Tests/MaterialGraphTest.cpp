@@ -345,10 +345,18 @@ void folderChecks(Engine& engine) {
         check(cached.ok && cached.fromCache && cached.spirv.size() > 100, "it's in the cache: " + cached.error);
         const GraphShaderResult none = materialGraphShader(code, root / "elsewhere", false);
         check(!none.ok && contains(none.error, "isn't in the package"), "a package doesn't compile: " + none.error);
+#if defined(_WIN32)
+        _putenv_s("SHOCKWAVE_GLSLANG", "none");
+#else
         setenv("SHOCKWAVE_GLSLANG", "none", 1);
+#endif
         const GraphShaderResult off = materialGraphShader(code, root / "elsewhere");
         check(!off.ok && contains(off.error, "needs glslangValidator"), "no compiler: " + off.error);
+#if defined(_WIN32)
+        _putenv_s("SHOCKWAVE_GLSLANG", "");
+#else
         unsetenv("SHOCKWAVE_GLSLANG");
+#endif
 
         // Editing the graph swaps the shader; the old one is freed once nothing uses it.
         lava.reset();
