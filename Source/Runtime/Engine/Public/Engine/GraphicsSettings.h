@@ -66,6 +66,18 @@ struct GraphicsSettings {
     TransmissionQuality transmissionQuality = TransmissionQuality::Medium;
     SkinQuality skinQuality = SkinQuality::High;
     HairQuality hairQuality = HairQuality::High;
+    // Painted terrain (W1b): high blends every layer at a pixel; low only its two heaviest,
+    // without their normal maps.
+    TerrainQuality terrainQuality = TerrainQuality::High;
+    // Water (W3): high refracts, adds foam and mixes two ripple samples; low none of those.
+    WaterQuality waterQuality = WaterQuality::High;
+    // Material graphs (W4): off draws graph materials as their plain standard material, with
+    // no graph pipelines built.
+    bool materialGraphs = true;
+    // Foliage (W2a): the share of instances drawn (0 draws none and makes no draw calls) and
+    // a scale on every type's distance.
+    float foliageDensity = 1;   // 0..1
+    float foliageDistance = 1;   // 0.5..1.5
     // Screen effects (V1-V4): small shadows where things touch, reflections of what's on
     // screen, motion blur and the scene's depth of field. Off by default except depth of
     // field, which is the scene's look like colour grading; each off has no pass or memory.

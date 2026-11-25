@@ -8,7 +8,8 @@
 namespace shockwave {
 
 struct Collider {
-    enum class Shape : int { Box, Sphere, Capsule, ConvexModel, TriangleModel };
+    // Terrain: the entity's Terrain component's heights (W1a); Static bodies only.
+    enum class Shape : int { Box, Sphere, Capsule, ConvexModel, TriangleModel, Terrain };
     Shape shape = Shape::Box;
     glm::vec3 halfExtents{0.5f};
     float radius = 0.5f;

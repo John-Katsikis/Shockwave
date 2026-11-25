@@ -1,0 +1,4 @@
+# A flat colour for the painted terrain fixture (W1b): one layer of terrain/layers.swterrain.
+swmaterial 1
+base_color 0.8 0.1 0.08 1
+roughness 0.8

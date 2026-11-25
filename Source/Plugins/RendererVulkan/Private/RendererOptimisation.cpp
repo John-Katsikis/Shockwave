@@ -59,6 +59,11 @@ void VulkanRenderer::Impl::pickLod(const Mesh& mesh, float scale, const glm::vec
             }
         }
     }
+    useLod(mesh, level, command);
+}
+
+void VulkanRenderer::Impl::useLod(const Mesh& mesh, uint32_t level, DrawCommand& command) const {
+    level = std::min(level, mesh.lodCount);
     if (level > 0) {
         const MeshLod& lod = mesh.lods[level - 1];
         command.indexBuffer = mesh.lodIndices.buffer;

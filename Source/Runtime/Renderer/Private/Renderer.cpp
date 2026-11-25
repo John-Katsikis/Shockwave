@@ -53,7 +53,7 @@ const char* materialSlotName(MaterialSlot slot) {
     constexpr const char* names[] = {"base_color", "normal",           "metallic_roughness", "emissive",
                                      "occlusion",  "detail_color",     "detail_normal",      "detail_mask",
                                      "layer_mask", "layer_base_color", "layer_normal",       "layer_metallic_roughness",
-                                     "clearcoat",  "clearcoat_normal", "transmission"};
+                                     "clearcoat",  "clearcoat_normal", "transmission",       "water_normal"};
     static_assert(std::size(names) == kAllMaterialSlots);
     return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kAllMaterialSlots - 1)];
 }
@@ -129,6 +129,7 @@ struct Renderer::State {
     BloomQuality bloomQuality = BloomQuality::High;
     float bloomScale = 1.0f;
     LodSettings lodSettings;
+    std::atomic<float> foliageDensity{1.0f}, foliageDistance{1.0f};
     uint32_t anisotropy = 16;
     MaterialQuality materialQuality = MaterialQuality::High;
     std::atomic<bool> bakedLighting{true};
@@ -181,8 +182,9 @@ struct Renderer::State {
     }
 
     // CPU copies for replaying into a new backend (swappable only), ordered by id.
-    std::mutex journalMutex;
+    mutable std::mutex journalMutex;
     std::map<uint32_t, std::pair<std::vector<MeshLod>, std::vector<uint32_t>>> meshLods;
+    std::map<uint32_t, std::vector<uint32_t>> surfaceShaders;   // W4: id to SPIR-V, under journalMutex
     std::map<uint32_t, MeshData> meshes;
     std::map<uint32_t, std::vector<VertexSkin>> skins;   // skinned meshes' weights
 
@@ -402,6 +404,7 @@ struct Renderer::State {
         {
             std::lock_guard lock(journalMutex);
             for (const auto& [id, lods] : meshLods) backend->setMeshLods({id}, lods.first, lods.second);
+            for (const auto& [id, spirv] : surfaceShaders) backend->createSurfaceShader({id}, spirv);
         }
         backend->setLocalReflections(localReflections);
         backend->setDecalQuality(decalQuality);
@@ -751,6 +754,34 @@ SamplerHandle Renderer::sampler(const SamplerDesc& wanted) {
     m->samplers.push_back(desc);
     return handle;
 }
+SurfaceShaderHandle Renderer::createSurfaceShader(std::span<const uint32_t> spirv) {
+    if (spirv.empty() || spirv[0] != 0x07230203u) throw std::runtime_error("createSurfaceShader: that isn't SPIR-V");
+    std::shared_lock swap(m->swapMutex);
+    uint32_t id = 0;
+    {
+        std::lock_guard lock(m->journalMutex);
+        for (id = 1; id < kMaxSurfaceShaders && m->surfaceShaders.count(id); ++id) {}
+        if (id >= kMaxSurfaceShaders)
+            throw std::runtime_error(
+                "more than " + std::to_string(kMaxSurfaceShaders - 1) + " material graph shaders at once");
+        m->surfaceShaders[id].assign(spirv.begin(), spirv.end());
+    }
+    m->backend->createSurfaceShader({id}, spirv);
+    return {id};
+}
+void Renderer::destroySurfaceShader(SurfaceShaderHandle shader) {
+    if (!shader.id) return;
+    std::shared_lock swap(m->swapMutex);
+    {
+        std::lock_guard lock(m->journalMutex);
+        if (!m->surfaceShaders.erase(shader.id)) return;
+    }
+    m->backend->destroySurfaceShader(shader);
+}
+size_t Renderer::surfaceShaderCount() const {
+    std::lock_guard lock(m->journalMutex);
+    return m->surfaceShaders.size();
+}
 SamplerDesc Renderer::samplerDesc(SamplerHandle sampler) const {
     std::lock_guard lock(m->samplerMutex);
     return sampler.id < m->samplers.size() ? m->samplers[sampler.id] : SamplerDesc{};
@@ -862,6 +893,27 @@ void Renderer::drawSkinnedMesh(
     }
     m->backend->drawSkinnedMesh(mesh, transform, joints, texture, tint, material, key);
 }
+void Renderer::setFoliageSettings(const FoliageSettings& settings) {
+    m->foliageDensity.store(std::clamp(settings.density, 0.0f, 1.0f), std::memory_order_relaxed);
+    m->foliageDistance.store(std::clamp(settings.distance, 0.5f, 1.5f), std::memory_order_relaxed);
+}
+FoliageSettings Renderer::foliageSettings() const {
+    return {m->foliageDensity.load(std::memory_order_relaxed), m->foliageDistance.load(std::memory_order_relaxed)};
+}
+void Renderer::drawMeshInstances(
+    MeshHandle mesh, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+    const DrawMaterial& material, RenderInstanceKey first, int lodLevel, std::span<const uint32_t> parts) {
+    if (transforms.empty() || (!parts.empty() && parts.size() != transforms.size())) return;
+    if (first.valid()) first.meshGeneration = m->meshGeneration(mesh);
+    if (material.indirect && !m->bakedLighting.load(std::memory_order_relaxed)) {
+        DrawMaterial environment = material;
+        environment.indirect = nullptr;
+        m->backend->drawMeshInstances(mesh, transforms, texture, tint, environment, first, lodLevel, parts);
+        return;
+    }
+    m->backend->drawMeshInstances(mesh, transforms, texture, tint, material, first, lodLevel, parts);
+}
+void Renderer::setWindTime(float seconds) { m->backend->setWindTime(seconds); }
 void Renderer::addLight(const LightDesc& light) { m->backend->addLight(light); }
 void Renderer::drawParticles(const ParticleDrawList& particles) {
     if (!particles.batches.empty()) m->backend->drawParticles(particles);

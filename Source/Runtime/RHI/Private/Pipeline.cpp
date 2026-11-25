@@ -40,10 +40,24 @@ VkShaderModule loadShaderModule(VkDevice device, const std::string& path) {
     return module;
 }
 
+namespace {
+VkShaderModule shaderModule(VkDevice device, const std::vector<uint32_t>& code) {
+    VkShaderModuleCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info.codeSize = code.size() * sizeof(uint32_t);
+    info.pCode = code.data();
+    VkShaderModule module = VK_NULL_HANDLE;
+    check(vkCreateShaderModule(device, &info, nullptr, &module), "vkCreateShaderModule");
+    return module;
+}
+}   // namespace
+
 VkPipeline createGraphicsPipeline(VkDevice device, const GraphicsPipelineDesc& desc) {
     VkShaderModule vert = loadShaderModule(device, desc.vertexShader);
     // No fragment shader: depth only, the fastest way to fill a shadow map.
-    VkShaderModule frag = desc.fragmentShader.empty() ? VK_NULL_HANDLE : loadShaderModule(device, desc.fragmentShader);
+    VkShaderModule frag = desc.fragmentCode             ? shaderModule(device, *desc.fragmentCode)
+                          : desc.fragmentShader.empty() ? VK_NULL_HANDLE
+                                                        : loadShaderModule(device, desc.fragmentShader);
 
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

@@ -2,7 +2,8 @@
 
 Every `.swmaterial` has a `family` ([MaterialSchema.md](MaterialSchema.md)). Most
 surfaces are `standard`, glTF's metallic-roughness, and three more cover what it can't:
-`transmission` for glass, `skin` for faces and `hair_card` for hair. Each family reads
+`transmission` for glass, `skin` for faces, `hair_card` for hair and `water` for lakes and
+rivers ([Water.md](Water.md)). Each family reads
 its own group of values; a value from another family's group does nothing, and `player
 --check` and the Material window say so. Everything here is switchable off from the
 graphics settings ([Graphics.md](Graphics.md)), and every setting off has an exact,
@@ -135,6 +136,7 @@ There is no eye family. An eye combines the families: a clear-coated standard (o
 | `transmission_quality` | simplified blended glass | *transmission background copy* and *scene (see-through)* | the copy with mips (about 1.33x the scene colour) |
 | `skin_quality` | skin as opaque standard | *skin*, two blurs, a composite | three targets, 20 bytes a pixel |
 | `hair_quality` | the round highlight | none | none |
+| `water_quality` | low: straight through, no foam, one ripple sample | none (water shares glass's pass and copy) | none |
 
 The copy and the skin targets are made the first frame that needs them and freed 300
 frames after the last one, or as soon as the setting goes off. Their pipelines are

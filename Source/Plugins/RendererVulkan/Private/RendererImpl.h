@@ -107,8 +107,10 @@ struct DrawData {
     glm::mat4 previousMvp;
     VkDeviceAddress previousVertexBuffer;
     uint32_t history;
-    uint32_t pad;
+    float wind;   // W2a: DrawMaterial::wind; 0: still
     VkDeviceAddress shading;   // A07-A09: this draw's ShadingData; 0: standard without a coat
+    float windPhase, previousWindPhase;   // W2a: wind time * rate, this frame and last
+    uint32_t pad2[2];
 };
 static_assert(
     offsetof(DrawData, vertexBuffer) == 216 && offsetof(DrawData, emissive) == 240 &&
@@ -117,7 +119,8 @@ static_assert(
         offsetof(DrawData, lightmapUvBuffer) == 416 && offsetof(DrawData, indirectSource) == 428 &&
         offsetof(DrawData, probes) == 432 && offsetof(DrawData, reflections) == 440 &&
         offsetof(DrawData, previousMvp) == 448 && offsetof(DrawData, previousVertexBuffer) == 512 &&
-        offsetof(DrawData, history) == 520 && offsetof(DrawData, shading) == 528 && sizeof(DrawData) == 536,
+        offsetof(DrawData, history) == 520 && offsetof(DrawData, wind) == 524 && offsetof(DrawData, shading) == 528 &&
+        offsetof(DrawData, windPhase) == 536 && sizeof(DrawData) == 552,
     "DrawData must match the shader's scalar layout");
 constexpr uint32_t kIndirectEnvironment = 0u, kIndirectLightmap = 1u,
                    kIndirectProbes = 2u;   // DrawData::indirectSource
@@ -154,7 +157,7 @@ constexpr uint32_t kNoLayers = 0xFFFFFFFFu;
 // ShadingData in shaders/draw.glsl.
 constexpr uint32_t kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u, kShadingThin = 4u, kShadingAnisotropic = 8u,
                    kShadingSkinDiffusion = 16u, kShadingRefract = 32u, kShadingRoughTaps = 64u,
-                   kShadingSimplifiedGlass = 128u;
+                   kShadingSimplifiedGlass = 128u, kShadingWaterLow = 256u;
 struct ShadingData {
     uint32_t family;   // ShadingFamily
     uint32_t flags;
@@ -166,13 +169,57 @@ struct ShadingData {
     glm::vec3 skinRadius;   // metres, times the strength
     float skinMaxPixels;
     uint32_t skinReceiver;
-    float pad[3];
+    float pad;
+    VkDeviceAddress terrain;   // family terrain: its TerrainShadingData (W1b); 0: none
+    glm::vec3 waterShallow;   // family water (W3)
+    float waterDepthFade;
+    glm::vec3 waterDeep;
+    float waterClarity;
+    float waterInverseRippleScale, waterRippleSpeed, waterFoamDistance;
+    uint32_t waterNormalTexture;   // bindless slot; 0: flat
+    VkDeviceAddress graph;   // a material graph's GraphShadingData (W4); 0: none
     SlotBinding slots[kShadingSlots];
 };
 static_assert(
     offsetof(ShadingData, absorption) == 48 && offsetof(ShadingData, skinRadius) == 64 &&
-        offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, slots) == 96 && sizeof(ShadingData) == 168,
+        offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, terrain) == 88 &&
+        offsetof(ShadingData, waterShallow) == 96 && offsetof(ShadingData, waterNormalTexture) == 140 &&
+        offsetof(ShadingData, graph) == 144 && offsetof(ShadingData, slots) == 152 && sizeof(ShadingData) == 248,
     "ShadingData must match the shader's scalar layout");
+
+// A material graph's values (W4), in a table of its own pointed at by ShadingData::graph.
+// Must match GraphShadingData in shaders/draw.glsl.
+struct GraphShadingData {
+    glm::vec4 params[16];
+    uint32_t textures[16];
+    uint32_t samplers[16];
+};
+static_assert(
+    sizeof(GraphShadingData) == 384 && kGraphSlots == 16, "GraphShadingData must match the shader's scalar layout");
+
+// A painted terrain draw's layers (W1b, Renderer/Shading.h TerrainShading), in a table of its
+// own, pointed at by ShadingData::terrain. Must match TerrainShadingData in shaders/draw.glsl.
+constexpr uint32_t kTerrainLow = 1u;   // terrain_quality low: two heaviest layers, no normal maps
+struct TerrainLayerData {
+    uint32_t baseColor, normal, metallicRoughness;   // bindless slots; 0: white (normal: none)
+    uint32_t sampler;
+    glm::vec4 baseColorFactor;
+    float roughness, metallic, normalScale;
+    float inverseUvMetres;
+};
+struct TerrainShadingData {
+    uint32_t weights;   // bindless slot of the RGBA8 weights
+    uint32_t layers;   // bit i: layer i is sampled
+    uint32_t flags;   // kTerrain*
+    uint32_t weightsSampler;
+    glm::vec2 weightScale, weightOffset;   // weights uv = world XZ * scale + offset
+    glm::vec2 corner;   // world XZ of the terrain's corner, where layer UVs start
+    glm::vec2 pad2;
+    TerrainLayerData layer[kTerrainLayerCount];
+};
+static_assert(
+    sizeof(TerrainLayerData) == 48 && offsetof(TerrainShadingData, layer) == 48 && sizeof(TerrainShadingData) == 240,
+    "TerrainShadingData must match the shader's scalar layout");
 // The skin blur's per-receiver spread (shaders/skin.frag), receiver ids 1..255.
 struct SkinProfile {
     glm::vec3 radius;   // metres per channel
@@ -410,6 +457,12 @@ struct DrawCommand {
     uint32_t probes = kNoLayers;
     // Draws with a shading family or a coat (A07-A09): which ShadingData in the same DrawList.
     uint32_t shading = kNoLayers;
+    // Painted terrain draws (W1b): which TerrainShadingData in the same DrawList.
+    uint32_t terrain = kNoLayers;
+    // Material graph draws (W4): which GraphShadingData in the same DrawList, and the
+    // graph's shader (0: the engine's own), whose pipelines it's drawn with.
+    uint32_t graph = kNoLayers;
+    uint32_t surfaceShader = 0;
     bool doubleSided = false, blend = false, mirrored = false, castShadows = true;
     // Glass (drawn see-through: blend is set too), and skin that may diffuse (A07b, A08).
     bool transmission = false, skinDiffusion = false;
@@ -515,6 +568,8 @@ struct alignas(64) DrawList {
     std::vector<LayerData> layers;
     std::vector<ProbeData> probes;
     std::vector<ShadingData> shading;
+    std::vector<TerrainShadingData> terrain;
+    std::vector<GraphShadingData> graphs;
 };
 
 // Must match the push constants in shaders/skinning.comp.
@@ -602,6 +657,14 @@ struct VulkanRenderer::Impl {
         ShadingData* shadingData = nullptr;
         VkDeviceAddress shadingAddress = 0;
         uint32_t shadingCapacity = 0;
+        vk::Buffer terrainBuffer;   // this frame's TerrainShadingData (W1b), persistently mapped
+        TerrainShadingData* terrainData = nullptr;
+        VkDeviceAddress terrainAddress = 0;
+        uint32_t terrainCapacity = 0;
+        vk::Buffer graphBuffer;   // this frame's GraphShadingData (W4), persistently mapped
+        GraphShadingData* graphData = nullptr;
+        VkDeviceAddress graphAddress = 0;
+        uint32_t graphCapacity = 0;
         vk::Buffer probeBuffer;   // this frame's ProbeData, persistently mapped
         ProbeData* probeData = nullptr;
         VkDeviceAddress probeAddress = 0;
@@ -972,6 +1035,8 @@ struct VulkanRenderer::Impl {
     // The level of detail to draw a mesh with: its first index and count. scale: the
     // draw's largest axis scale; center: its bounding sphere's centre in the world.
     void pickLod(const Mesh& mesh, float scale, const glm::vec4& bounds, DrawCommand& command) const;
+    // Draws level (0: the full mesh; clamped to the simplest there is).
+    void useLod(const Mesh& mesh, uint32_t level, DrawCommand& command) const;
     bool formatSampleable(VkFormat format) const;
 
     // ---- Per-frame --------------------------------------------------------------------
@@ -980,6 +1045,33 @@ struct VulkanRenderer::Impl {
     void drawMesh(
         MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4> joints = {});
+    // W2a: many copies of one mesh and material; the material is worked out once.
+    void drawMeshInstances(
+        MeshHandle handle, std::span<const glm::mat4> transforms, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, const RenderInstanceKey& first, int lodLevel, std::span<const uint32_t> parts);
+    void setWindTime(float seconds);
+    // A draw worked out but not yet in a draw list, with the table entries it points at.
+    struct PreparedDraw {
+        DrawCommand command;
+        LayerData layer{};
+        ProbeData probe{};
+        ShadingData shade{};
+        TerrainShadingData terrain{};
+        GraphShadingData graph{};
+        bool shaded = false, terrainLayers = false, graphed = false;
+    };
+    // False when the mesh isn't ready or the transform is degenerate. A skinned draw's
+    // joints are cleared when the mesh has no skin.
+    bool prepareDraw(
+        MeshHandle handle, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
+        const DrawMaterial& material, const RenderInstanceKey& key, std::span<const glm::mat4>& joints,
+        PreparedDraw& prepared);
+    // Puts commands in this thread's draw list, all pointing at prepared's table entries.
+    void submitDraws(
+        const PreparedDraw& prepared, std::span<DrawCommand> commands, uint32_t mesh,
+        std::span<const glm::mat4> joints);
+    std::atomic<float> windTime{0.0f}, previousWindTime{0.0f};
+    static constexpr float kWindRate = 1.7f;   // radians a second (shaders: mesh.vert, shadow.vert)
 
     void clearDrawLists();
 
@@ -1529,6 +1621,27 @@ struct VulkanRenderer::Impl {
     std::atomic<TransmissionQuality> shadingTransmission{TransmissionQuality::Medium};
     std::atomic<SkinQuality> shadingSkin{SkinQuality::High};
     std::atomic<HairQuality> shadingHair{HairQuality::High};
+    std::atomic<TerrainQuality> shadingTerrain{TerrainQuality::High};
+    std::atomic<WaterQuality> shadingWater{WaterQuality::High};
+    std::atomic<bool> shadingGraphs{true};
+    // Material graphs' shaders (W4, RendererMaterialGraphs.cpp): each one's SPIR-V and its
+    // pipelines, built as they're first needed (graphPipelineIndex). Main thread.
+    static constexpr uint32_t kGraphPipelines = 20;   // 4 solid, 8 mesh, 8 depth EQUAL
+    struct SurfaceShader {
+        std::vector<uint32_t> spirv;
+        std::array<VkPipeline, kGraphPipelines> pipelines{};
+    };
+    std::array<SurfaceShader, kMaxSurfaceShaders> surfaceShaders;
+    void createSurfaceShader(SurfaceShaderHandle handle, std::span<const uint32_t> spirv);
+    void destroySurfaceShader(SurfaceShaderHandle handle);
+    void destroySurfaceShaders();   // shutdown
+    // Which of a graph's pipelines a draw uses: as meshPipelineFor, or over the prepass.
+    static uint32_t graphPipelineIndex(const DrawCommand& draw, bool depthEqual);
+    // Builds the pipelines this frame's graph draws need, before they're sorted by pipeline.
+    void ensureGraphPipelines(std::span<const DrawCommand> draws);
+    void buildGraphPipeline(SurfaceShader& shader, uint32_t index);
+    void fillGraphShading(const MaterialGraphShading& graph, GraphShadingData& out);
+    void ensureGraphCapacity(Frame& f, uint32_t count);
     ShadingStats lastShadingStats;
     std::array<VkPipeline, 4> transmissionPipelines{};   // + 1 double-sided, + 2 mirrored
     std::array<VkPipeline, 8> skinPipelines{};   // indexed by prepassIndex
@@ -1564,6 +1677,9 @@ struct VulkanRenderer::Impl {
     bool fillShading(
         const DrawMaterial& material, float scale, DrawCommand& command, ShadingData& out,
         const std::function<bool(const TextureBinding&)>& vertexTangents);
+    // drawMesh, family terrain: the draw's TerrainShadingData.
+    void fillTerrainShading(const TerrainShading& terrain, TerrainShadingData& out);
+    void ensureTerrainCapacity(Frame& f, uint32_t count);
     // prepareDraws, after sorting: decides the passes and finishes the draws' ShadingData.
     void prepareShading(Frame& f);
     void ensureShadingCapacity(Frame& f, uint32_t count);

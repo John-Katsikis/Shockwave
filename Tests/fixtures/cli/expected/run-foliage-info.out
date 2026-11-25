@@ -1,0 +1,3 @@
+foliage/meadow.swfoliage: 20000 instances in 128 cells of 16 m, 2 types (instances file foliage/meadow.instances)
+  type 0 models/grass-tuft.glb: 18000 instances in 64 cells, drawn to 70 m (thinning over the last 20 m), shadows off, wind 0.15
+  type 1 models/pebble.glb: 2000 instances in 64 cells, drawn to 50 m (thinning over the last 10 m), shadows on, wind 0

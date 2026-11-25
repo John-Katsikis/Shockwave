@@ -10,6 +10,7 @@
 #include <Core/Profile.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/Terrain.h>
 
 #include <DetourCommon.h>
 #include <DetourNavMesh.h>
@@ -109,13 +110,14 @@ const Shape& unitSphere() {
 // ---- Which entities a bake reads ---------------------------------------------------------
 
 struct Source {
-    enum class Kind { Box, Sphere, Capsule, Mesh, Model };
+    enum class Kind { Box, Sphere, Capsule, Mesh, Model, Terrain };
     Entity entity;
     Kind kind = Kind::Box;
     glm::mat4 matrix{1.0f};
     const Collider* collider = nullptr;
     std::shared_ptr<const MeshData> mesh;
     std::shared_ptr<const ModelAsset> model;
+    std::shared_ptr<const TerrainData> terrain;
     std::string assetName;
     bool walkable = true;
 };
@@ -141,7 +143,8 @@ void forEachSource(const World& world, const Assets* assets, const NavMeshSettin
         const Collider* collider = world.get<Collider>(e);
         const MeshRenderer* meshRenderer = world.get<MeshRenderer>(e);
         const ModelRenderer* modelRenderer = world.get<ModelRenderer>(e);
-        if (!collider && !meshRenderer && !modelRenderer) return;
+        const Terrain* terrainComponent = world.get<Terrain>(e);
+        if (!collider && !meshRenderer && !modelRenderer && !terrainComponent) return;
         if (moving(world, e)) return;
         const bool force = modifier && modifier->mode == NavModifier::Mode::Walkable;
         const bool useColliders = force || settings.geometry != NavMeshSettings::Geometry::RenderMeshes;
@@ -168,6 +171,17 @@ void forEachSource(const World& world, const Assets* assets, const NavMeshSettin
                         found = true;
                     }
                     break;
+                case Collider::Shape::Terrain:
+                    // Placed by its position only, like physics does (W1a).
+                    if (const Terrain* terrain = world.get<Terrain>(e); terrain && assets)
+                        if (const auto asset = assets->terrain(terrain->asset); asset && asset->data) {
+                            source.kind = Source::Kind::Terrain;
+                            source.terrain = asset->data;
+                            source.assetName = terrain->asset;
+                            source.matrix = glm::translate(glm::mat4(1.0f), glm::vec3(source.matrix[3]));
+                            found = true;
+                        }
+                    break;
                 }
             }
         }
@@ -180,6 +194,14 @@ void forEachSource(const World& world, const Assets* assets, const NavMeshSettin
                     found = true;
                 }
             }
+            if (!found && terrainComponent && terrainComponent->visible)
+                if (const auto asset = assets->terrain(terrainComponent->asset); asset && asset->data) {
+                    source.kind = Source::Kind::Terrain;
+                    source.terrain = asset->data;
+                    source.assetName = terrainComponent->asset;
+                    source.matrix = glm::translate(glm::mat4(1.0f), glm::vec3(source.matrix[3]));
+                    found = true;
+                }
             if (!found && modelRenderer && modelRenderer->visible) {
                 source.model = assets->model(modelRenderer->model);
                 if (source.model) {
@@ -670,6 +692,12 @@ uint64_t navInputHash(const World& world, const Assets* assets, const NavMeshSet
             const Bounds b = computeBounds(*s.mesh);
             h.add(b.min), h.add(b.max);
         }
+        if (s.terrain) {
+            h.add(s.terrain->samples), h.add(s.terrain->spacing), h.add(s.terrain->low), h.add(s.terrain->high);
+            uint64_t heights = 1469598103934665603ull;   // FNV-1a over the heights
+            for (const uint16_t v : s.terrain->heights) heights = (heights ^ v) * 1099511628211ull;
+            h.add(heights);
+        }
         if (s.model) h.add(s.model->data.triangles), h.add(s.model->data.bounds.min), h.add(s.model->data.bounds.max);
     });
     return h.value;
@@ -709,6 +737,17 @@ NavGeometry collectNavGeometry(const World& world, const Assets* assets, const N
                 for (uint32_t index : node.meshes)
                     appendMesh(out, s.matrix * node.world, s.model->data.meshes[index].data, s.walkable);
             break;
+        case Source::Kind::Terrain: {
+            // Two triangles per quad at every 2nd point: plenty for walkable slopes.
+            thread_local std::vector<glm::vec3> vertices;
+            thread_local std::vector<uint32_t> indices;
+            vertices.clear();
+            indices.clear();
+            terrainTriangles(*s.terrain, 2, vertices, indices);
+            appendTriangles(
+                out, s.matrix, vertices.data(), vertices.size(), indices.data(), nullptr, indices.size(), s.walkable);
+            break;
+        }
         }
     });
     if (!out.vertices.empty()) {

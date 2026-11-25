@@ -5,10 +5,13 @@
 #include "Player.h"
 
 #include <Assets/AssetFolder.h>
+#include <Assets/AssetGraph.h>
 #include <Assets/Image.h>
 #include <Assets/ImportSettings.h>
 #include <Assets/Material.h>
+#include <Assets/MaterialGraph.h>
 #include <Assets/Model.h>
+#include <Assets/ShaderCompiler.h>
 #include <Assets/TextureCompression.h>
 #include <Engine/Components.h>
 #include <Projects/Project.h>
@@ -172,14 +175,15 @@ fs::path contentRoot(const fs::path& asset) {
 // A07-A09: the family, what it draws as at each quality, and what that costs.
 std::string shadingJson(const shockwave::MaterialDesc& desc) {
     using namespace shockwave;
-    const char* families[] = {"standard", "skin", "hair_card", "transmission"};
-    std::string out = "{\"family\": " + jsonQuote(families[std::clamp(desc.params.family, 0, 3)]);
+    const char* families[] = {"standard", "skin", "hair_card", "transmission", "water"};
+    std::string out = "{\"family\": " + jsonQuote(families[std::clamp(desc.params.family, 0, 4)]);
     const ShadingSettings defaults;
     ShadingSettings off;
     off.clearcoat = false;
     off.transmission = TransmissionQuality::Off;
     off.skin = SkinQuality::Off;
     off.hair = HairQuality::Low;
+    off.water = WaterQuality::Low;
     ShadingSettings low = off;
     low.clearcoat = true;
     low.transmission = TransmissionQuality::Low;
@@ -341,6 +345,135 @@ int textureInfo(const fs::path& asset, const fs::path& json) {
     return 0;
 }
 
+namespace {
+// Where a graph file's compiled shader goes: its project's Saved/Cache/Shaders, or beside it.
+fs::path graphCacheFolder(const fs::path& file) {
+    const fs::path root = contentRoot(file);
+    if (const auto manifest = shockwave::findProjectFile(file)) {
+        shockwave::Project project;
+        std::string ignored;
+        if (shockwave::loadProject(*manifest, project, ignored) &&
+            fs::absolute(project.assetFolder) == fs::absolute(root))
+            return project.statePath() / "Cache" / "Shaders";
+    }
+    return root / "Saved" / "Cache" / "Shaders";
+}
+// A graph read, checked and compiled (or read from the cache).
+struct GraphCheck {
+    std::string error;   // empty: it compiles
+    shockwave::MaterialGraph graph;
+    shockwave::MaterialGraphCode code;
+    shockwave::GraphShaderResult shader;
+};
+GraphCheck checkGraph(const fs::path& file, const fs::path& cache, bool compile) {
+    GraphCheck c;
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        c.error = "can't open it";
+        return c;
+    }
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<shockwave::MaterialGraphError> errors;
+    if (!shockwave::parseMaterialGraph(text, c.graph, c.error)) return c;
+    if (!shockwave::compileMaterialGraph(c.graph, c.code, errors)) {
+        c.error = shockwave::materialGraphErrorText(errors);
+        return c;
+    }
+    if (!compile) return c;
+    c.shader = shockwave::materialGraphShader(c.code, cache);
+    if (!c.shader.ok) c.error = c.shader.error;
+    return c;
+}
+}   // namespace
+
+int materialGraphInfo(const fs::path& file, bool dump, const fs::path& json) {
+    const GraphCheck c = checkGraph(file, graphCacheFolder(file), true);
+    if (dump) {
+        if (!c.code.glsl.empty()) std::fputs(shockwave::materialGraphShaderSource(c.code).c_str(), stdout);
+        if (!c.error.empty()) std::fprintf(stderr, "%s: %s\n", file.generic_string().c_str(), c.error.c_str());
+        return c.error.empty() ? 0 : 1;
+    }
+    std::string out = "{\"graph\": " + jsonQuote(file.generic_string()) +
+                      ", \"ok\": " + (c.error.empty() ? "true" : "false") + ", \"error\": " + jsonQuote(c.error) +
+                      ",\n \"nodes\": " + std::to_string(c.graph.nodes.size()) + ", \"outputs\": [";
+    for (size_t i = 0; i < c.graph.outputs.size(); ++i) out += (i ? ", " : "") + jsonQuote(c.graph.outputs[i].surface);
+    out += "], \"normal\": " + std::string(c.code.normal ? "true" : "false") + ",\n \"params\": [";
+    for (size_t i = 0; i < c.code.params.size(); ++i) {
+        const auto& p = c.code.params[i];
+        out += std::string(i ? ", " : "") + "{\"name\": " + jsonQuote(p.name) +
+               ", \"components\": " + std::to_string(p.components) + ", \"default\": [";
+        for (int k = 0; k < p.components; ++k) out += (k ? ", " : "") + number(p.value[k]);
+        out += "]}";
+    }
+    out += "],\n \"textures\": [";
+    for (size_t i = 0; i < c.code.textures.size(); ++i)
+        out += std::string(i ? ", " : "") + "{\"asset\": " + jsonQuote(c.code.textures[i].asset) +
+               ", \"color_space\": " + jsonQuote(c.code.textures[i].linear ? "linear" : "srgb") + "}";
+    out += "],\n \"shader\": {\"file\": " + jsonQuote(c.shader.file.generic_string()) +
+           ", \"from_cache\": " + (c.shader.fromCache ? "true" : "false") +
+           ", \"words\": " + std::to_string(c.shader.spirv.size()) + "}}\n";
+    write(json, out);
+    return c.error.empty() ? 0 : 1;
+}
+
+int materialGraphSchema(const fs::path& file) {
+    const std::string schema = shockwave::materialGraphSchemaMarkdown();
+    if (file == "-") {
+        std::fputs(schema.c_str(), stdout);
+        return 0;
+    }
+    write(file, schema);
+    return 0;
+}
+
+// How many material graphs one scene loads before --check warns (W4): each is compiled
+// once and read from the cache after that, but each has its own pipelines to build while
+// the level loads.
+constexpr size_t kGraphsPerLevelWarning = 64;
+
+void Player::checkMaterialGraphs(std::vector<std::string>& problems) {
+    const fs::path content = m_project.assetFolder;
+    const fs::path cache = m_assets ? m_assets->shaderCacheFolder() : m_project.statePath() / "Cache" / "Shaders";
+    const std::string folder = m_project.relative(content) + "/";
+    std::vector<fs::path> files;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(content, ec))
+        if (entry.is_regular_file(ec) && entry.path().extension() == ".swmatgraph") files.push_back(entry.path());
+    std::sort(files.begin(), files.end());
+    for (const fs::path& file : files) {
+        const std::string shown = folder + file.lexically_relative(content).generic_string();
+        const GraphCheck c = checkGraph(file, cache, true);
+        if (!c.error.empty()) {
+            problems.push_back(shown + ": " + c.error);
+            continue;
+        }
+        char line[256];
+        std::snprintf(
+            line, sizeof(line), "ok %s (%zu nodes, %s in %.0f ms)", shown.c_str(), c.graph.nodes.size(),
+            c.shader.fromCache ? "read from the cache" : "compiled", c.shader.milliseconds);
+        std::puts(line);
+    }
+}
+
+void Player::reportGraphsPerScene(const std::vector<fs::path>& scenes) {
+    shockwave::AssetGraph& graph = assetGraph();
+    for (const fs::path& scene : scenes) {
+        const std::string id = graph.idFor(fs::absolute(scene));
+        if (id.empty()) continue;
+        size_t graphs = 0;
+        for (const std::string& asset : graph.closure(id))
+            graphs += shockwave::assetKindOf(asset) == shockwave::AssetKind::MaterialGraph;
+        if (graphs > kGraphsPerLevelWarning)
+            std::printf(
+                "warning %s: loads %zu material graphs (more than %zu): each one's pipelines are built while it loads, "
+                "so loading takes longer\n",
+                m_project.relative(scene).c_str(), graphs, kGraphsPerLevelWarning);
+        else if (graphs)
+            std::printf(
+                "ok %s: %zu material graph%s\n", m_project.relative(scene).c_str(), graphs, graphs == 1 ? "" : "s");
+    }
+}
+
 int materialSchema(const fs::path& file) {
     const std::string schema = shockwave::materialSchemaMarkdown();
     if (file == "-") {
@@ -370,6 +503,24 @@ void Player::checkMaterialOverrides(
                     " doesn't have (renamed in the modelling tool?)");
         }
     });
+    // Water (W3) draws over the glass pass's copy of the scene: with transmission_quality off
+    // there's no copy, and it's a blended stand-in without depth, refraction or foam.
+    if (m_tool.graphics.transmissionQuality != shockwave::TransmissionQuality::Off) return;
+    auto isWater = [&](shockwave::MaterialHandle handle) {
+        const auto material = handle.id ? engine().assets().material(handle) : nullptr;
+        return material && material->desc.params.family == int(shockwave::MaterialFamily::Water);
+    };
+    size_t water = 0;
+    world.each<const shockwave::MeshRenderer>(
+        [&](shockwave::Entity, const shockwave::MeshRenderer& mesh) { water += isWater(mesh.material); });
+    world.each<const shockwave::ModelRenderer>([&](shockwave::Entity, const shockwave::ModelRenderer& renderer) {
+        for (const auto& o : renderer.materials) water += isWater(o.material);
+    });
+    if (water)
+        std::printf(
+            "warning %s: %zu water surface%s, but transmission_quality is off, so water draws as a blended stand-in "
+            "(no depth colour, refraction or foam)\n",
+            shownScene.c_str(), water, water == 1 ? "" : "s");
 }
 
 // A material that doesn't resolve was already reported, as a failed import.

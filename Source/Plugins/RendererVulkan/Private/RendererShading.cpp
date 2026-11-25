@@ -21,6 +21,8 @@
 // their setting is turned off or nothing has needed them for kIdleFrames frames.
 #include "RendererImpl.h"
 
+#include <bit>
+
 namespace shockwave {
 
 namespace {
@@ -56,6 +58,9 @@ void VulkanRenderer::Impl::setShadingSettings(const ShadingSettings& settings) {
     shadingTransmission.store(settings.transmission, std::memory_order_relaxed);
     shadingSkin.store(settings.skin, std::memory_order_relaxed);
     shadingHair.store(settings.hair, std::memory_order_relaxed);
+    shadingTerrain.store(settings.terrain, std::memory_order_relaxed);
+    shadingWater.store(settings.water, std::memory_order_relaxed);
+    shadingGraphs.store(settings.materialGraphs, std::memory_order_relaxed);
 }
 
 bool VulkanRenderer::Impl::fillShading(
@@ -115,6 +120,37 @@ bool VulkanRenderer::Impl::fillShading(
         out.hairDirection = s.hairDirection == 0 ? 0u : 1u;
         any = true;
         break;
+    case ShadingFamily::Water:
+        // W3: see-through like glass, over the same copy of the scene (and, off, the same
+        // blended stand-in); it reads the scene's depth behind it for its depth.
+        command.blend = true;
+        command.transmission = true;
+        command.castShadows = false;
+        out.waterShallow = glm::clamp(s.waterShallowColor, glm::vec3(0.0f), glm::vec3(1.0f));
+        out.waterDeep = glm::clamp(s.waterDeepColor, glm::vec3(0.0f), glm::vec3(1.0f));
+        out.waterDepthFade = std::clamp(s.waterDepthFade, 0.1f, 100.0f);
+        out.waterClarity = std::clamp(s.waterClarity, 0.1f, 100.0f);
+        out.waterInverseRippleScale = 1.0f / std::clamp(s.waterRippleScale, 0.1f, 100.0f);
+        out.waterRippleSpeed = std::clamp(s.waterRippleSpeed, 0.0f, 10.0f);
+        out.waterFoamDistance = std::clamp(s.waterFoamDistance, 0.0f, 5.0f);
+        out.waterNormalTexture = slot(s.waterNormalTexture);
+        if (shadingWater.load(std::memory_order_relaxed) == WaterQuality::Low) out.flags |= kShadingWaterLow;
+        any = true;
+        break;
+    case ShadingFamily::Terrain:
+        // The layers go in a table of their own (fillTerrainShading); without them the draw
+        // is its standard material.
+        if (!s.terrain) out.family = static_cast<uint32_t>(ShadingFamily::Standard);
+        any = s.terrain != nullptr;
+        break;
+    }
+    // A material graph (W4), standard family only: its own shader, its values pointed at
+    // from here (fillGraphShading). Off, or without the shader, the plain material.
+    if (s.graph && s.family == ShadingFamily::Standard && s.graph->shader.id &&
+        s.graph->shader.id < kMaxSurfaceShaders && !surfaceShaders[s.graph->shader.id].spirv.empty() &&
+        shadingGraphs.load(std::memory_order_relaxed)) {
+        command.surfaceShader = s.graph->shader.id;
+        any = true;
     }
     for (size_t i = 0; i < kShadingSlots; ++i) {
         const TextureBinding& b = s.bindings[i];
@@ -125,6 +161,50 @@ bool VulkanRenderer::Impl::fillShading(
         o.samplerAndSet = samplerSlot(b.sampler) | (b.uvSet == 1 ? kSlotUvSet1 : 0u);
     }
     return any;
+}
+
+void VulkanRenderer::Impl::fillTerrainShading(const TerrainShading& t, TerrainShadingData& out) {
+    out = {};
+    out.weights = textureSlot(t.weights.id);
+    out.weightsSampler = samplerSlot(t.weightsSampler);
+    out.layers = t.layers & ((1u << kTerrainLayerCount) - 1u);
+    if (shadingTerrain.load(std::memory_order_relaxed) == TerrainQuality::Low) out.flags |= kTerrainLow;
+    // One texel per point: point i's centre is at (i + 0.5) / samples.
+    const float samples = static_cast<float>(std::max(t.samples, 2u));
+    const float spacing = std::max(t.spacing, 1e-4f);
+    out.weightScale = glm::vec2(1.0f / (spacing * samples));
+    out.weightOffset = glm::vec2(0.5f / samples) - t.corner * out.weightScale;
+    out.corner = t.corner;
+    auto slot = [&](TextureHandle h) { return h.id ? textureSlot(h.id) : 0u; };
+    for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+        const TerrainLayerShading& l = t.layer[i];
+        TerrainLayerData& o = out.layer[i];
+        o.baseColor = textureSlot(l.baseColorTexture.id);
+        o.normal = slot(l.normalTexture);
+        o.metallicRoughness = textureSlot(l.metallicRoughnessTexture.id);
+        o.sampler = samplerSlot(l.sampler);
+        o.baseColorFactor = l.baseColor;
+        o.roughness = l.roughness;
+        o.metallic = l.metallic;
+        o.normalScale = l.normalScale;
+        o.inverseUvMetres = 1.0f / std::max(l.uvMetres, 0.01f);
+    }
+}
+
+void VulkanRenderer::Impl::ensureTerrainCapacity(Frame& f, uint32_t count) {
+    if (count <= f.terrainCapacity) return;
+    uint32_t capacity = std::max<uint32_t>(f.terrainCapacity, 64);
+    while (capacity < count) capacity *= 2;
+    if (f.terrainBuffer.buffer)
+        vmaDestroyBuffer(context->allocator(), f.terrainBuffer.buffer, f.terrainBuffer.allocation);
+    VmaAllocationInfo info{};
+    f.terrainBuffer = createBuffer(
+        capacity * sizeof(TerrainShadingData),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, &info);
+    f.terrainData = static_cast<TerrainShadingData*>(info.pMappedData);
+    f.terrainAddress = bufferAddress(f.terrainBuffer.buffer);
+    f.terrainCapacity = capacity;
 }
 
 void VulkanRenderer::Impl::ensureShadingCapacity(Frame& f, uint32_t count) {
@@ -210,7 +290,11 @@ void VulkanRenderer::Impl::prepareShading(Frame& f) {
         if (draw.transmission) {
             if (!transmissionThisFrame)
                 d.flags = (d.flags & ~(kShadingRefract | kShadingRoughTaps)) | kShadingSimplifiedGlass;
-            if (counted) (transmissionThisFrame ? stats.transmissionDraws : stats.simplifiedGlassDraws) += 1;
+            const bool water = d.family == uint32_t(ShadingFamily::Water);
+            if (counted && water)
+                (transmissionThisFrame ? stats.waterDraws : stats.simplifiedWaterDraws) += 1;
+            else if (counted)
+                (transmissionThisFrame ? stats.transmissionDraws : stats.simplifiedGlassDraws) += 1;
         }
         const bool diffuses = draw.skinDiffusion && skinThisFrame && draw.visible;
         draw.skinDiffusion = diffuses;   // from here on: drawn in the skin pass
@@ -224,7 +308,14 @@ void VulkanRenderer::Impl::prepareShading(Frame& f) {
             stats.skinDraws += diffuses;
             stats.coatDraws += (d.flags & kShadingCoat) != 0;
             stats.hairDraws += d.family == uint32_t(ShadingFamily::HairCard);
+            stats.graphDraws += draw.surfaceShader != 0;
             stats.anisotropicHair |= (d.flags & kShadingAnisotropic) != 0;
+            if (draw.terrain != kNoLayers) {
+                const TerrainShadingData& t = f.terrainData[draw.terrain];
+                stats.terrainDraws += 1;
+                stats.terrainLayers += static_cast<uint32_t>(std::popcount(t.layers));
+                stats.terrainLowDraws += (t.flags & kTerrainLow) != 0;
+            }
         }
     }
     stats.transmissionPass = transmissionThisFrame;

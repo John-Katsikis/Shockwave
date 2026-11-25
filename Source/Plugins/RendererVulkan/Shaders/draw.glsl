@@ -81,9 +81,9 @@ const uint kDetailColor = 0u, kDetailNormal = 1u, kDetailMask = 2u, kLayerMaskSl
 const uint kLayerBaseColor = 4u, kLayerNormal = 5u, kLayerMetallicRoughness = 6u;
 
 // A draw's shading family (A07-A09, Renderer/Shading.h): clearcoat, transmission, skin,
-// hair cards. Must match ShadingData in RendererImpl.h.
+// hair cards, water. Must match ShadingData in RendererImpl.h.
 struct ShadingData {
-    uint family;   // 0 standard, 1 skin, 2 hair card, 3 transmission
+    uint family;   // 0 standard, 1 skin, 2 hair card, 3 transmission, 4 terrain, 5 water
     uint flags;   // kShading*
     float clearcoat;
     float clearcoatRoughness;   // perceptual
@@ -100,11 +100,31 @@ struct ShadingData {
     vec3 skinRadius;   // metres per channel, times the strength
     float skinMaxPixels;
     uint skinReceiver;   // 1..255 in the skin pass; 0: none
-    float pad0, pad1, pad2;
-    SlotBinding slots[3];   // MaterialSlot::Clearcoat onwards
+    float pad0;
+    uvec2 terrain;   // family terrain (W1b): a TerrainShadingBuffer; 0: none
+    vec3 waterShallow;   // family water (W3): the body's colour, shallow to deep
+    float waterDepthFade;   // metres
+    vec3 waterDeep;
+    float waterClarity;   // metres
+    float waterInverseRippleScale;   // repeats a metre
+    float waterRippleSpeed;   // metres a second
+    float waterFoamDistance;   // metres; 0: none
+    uint waterNormalTexture;   // bindless slot; 0: flat
+    uvec2 graph;   // a material graph's GraphShadingBuffer (W4); 0: none
+    SlotBinding slots[4];   // MaterialSlot::Clearcoat onwards
 };
 layout(buffer_reference, scalar) readonly buffer ShadingBuffer {
     ShadingData shading;
+};
+// A material graph's values (W4, Assets/MaterialGraph.h): its params, then its textures and
+// their samplers (bindless slots). Must match GraphShadingData in RendererImpl.h.
+struct GraphShadingData {
+    vec4 params[16];
+    uint textures[16];
+    uint samplers[16];
+};
+layout(buffer_reference, scalar) readonly buffer GraphShadingBuffer {
+    GraphShadingData graph;
 };
 // ShadingData::flags
 const uint kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u;
@@ -114,8 +134,42 @@ const uint kShadingSkinDiffusion = 16u;   // skin: the scene leaves its diffuse 
 const uint kShadingRefract = 32u;   // transmission medium and high: solid glass bends the background
 const uint kShadingRoughTaps = 64u;   // transmission high: four more taps for rough glass
 const uint kShadingSimplifiedGlass = 128u;   // transmission off (or no pass this frame): blended stand-in
+const uint kShadingWaterLow = 256u;   // water_quality low: no refraction or foam, one ripple sample
 // ShadingData::slots
-const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u;
+const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u, kWaterNormalSlot = 3u;
+// ShadingData::family
+const uint kFamilyStandard = 0u, kFamilySkin = 1u, kFamilyHairCard = 2u, kFamilyTransmission = 3u, kFamilyTerrain = 4u,
+           kFamilyWater = 5u;
+
+// A painted terrain draw's layers (W1b, Renderer/Shading.h). Must match TerrainShadingData
+// in RendererImpl.h.
+struct TerrainLayerData {
+    uint baseColor;   // bindless slots; 0: white (normal: none)
+    uint normal;
+    uint metallicRoughness;
+    uint layerSampler;   // a material sampler, for all three
+    vec4 baseColorFactor;
+    float roughness;
+    float metallic;
+    float normalScale;
+    float inverseUvMetres;
+};
+struct TerrainShadingData {
+    uint weights;   // bindless slot of the RGBA8 weights, one texel per terrain point
+    uint layers;   // bit i: layer i is sampled in this draw
+    uint flags;   // kTerrain*
+    uint weightsSampler;   // a material sampler, clamped at the edges
+    vec2 weightScale;   // weights uv = world XZ * weightScale + weightOffset
+    vec2 weightOffset;
+    vec2 corner;   // world XZ of the terrain's corner, where the layers' UVs start
+    vec2 pad2;
+    TerrainLayerData layer[4];
+};
+layout(buffer_reference, scalar) readonly buffer TerrainShadingBuffer {
+    TerrainShadingData terrain;
+};
+// TerrainShadingData::flags
+const uint kTerrainLow = 1u;   // terrain_quality low: the two heaviest layers, no normal maps
 
 // One entry per draw in the frame's draw table. Must match DrawData in RendererImpl.h.
 struct DrawData {
@@ -154,13 +208,23 @@ struct DrawData {
     mat4 previousMvp;
     uvec2 previousVertexBuffer;
     uint history;
-    uint pad;
+    float wind;   // W2a: metres of sway per metre above the origin; 0: still
     uvec2 shading;   // a ShadingBuffer (A07-A09); 0: standard without a coat
+    float windPhase;   // W2a: wind time * rate, this frame...
+    float previousWindPhase;   // ...and last (motion vectors)
+    uvec2 pad2;
 };
 
 layout(buffer_reference, scalar) readonly buffer DrawBuffer {
     DrawData draws[];
 };
+
+// Wind (W2a, foliage): where a vertex sways to, in the world, at model-space height y and
+// world position world. Roots (y 0) stay still. Must match mesh.vert and shadow.vert's use.
+const vec3 kWindDirection = vec3(1.0, 0.0, 0.3);
+vec3 windOffset(float wind, float y, vec3 world, float phase) {
+    return kWindDirection * (wind * max(y, 0.0) * sin(phase + world.x * 0.35 + world.z * 0.27));
+}
 
 // Both UV sets of a vertex, with the draw's uvScale (MeshRenderer tiling) applied.
 vec4 vertexUvs(DrawData draw, Vertex v, uint index) {

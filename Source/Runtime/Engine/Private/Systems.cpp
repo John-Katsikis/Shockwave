@@ -4,11 +4,14 @@
 #include <Engine/BakedLighting.h>
 #include <Engine/Camera.h>
 #include <Engine/Decals.h>
+#include <Engine/Foliage.h>
 #include <Engine/Hierarchy.h>
 #include <Engine/Pose.h>
+#include <Engine/Terrain.h>
 #include <Renderer/Renderer.h>
 
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -249,6 +252,77 @@ void renderWorld(
                 }
             },
             64);
+
+    // Terrains (W1a): one draw per chunk; the renderer picks each chunk's detail level by
+    // distance (lod_error_pixels), like model levels. Only the entity's position counts.
+    if (assets && world.count<Terrain>() > 0)
+        world.each<const Transform, const Terrain>([&](Entity e, const Transform&, const Terrain& terrain) {
+            if (!terrain.visible || terrain.asset.empty() || (include && !include(world, e))) return;
+            const auto asset = assets->terrain(terrain.asset);
+            if (!asset || !asset->data) return;
+            const glm::mat4 placed = glm::translate(glm::mat4(1.0f), glm::vec3(worldMatrix(world, e)[3]));
+            DrawMaterial options;
+            TextureHandle texture{};
+            glm::vec4 baseColor{0.55f, 0.55f, 0.5f, 1.0f};
+            if (!asset->data->material.empty())
+                if (const auto material = assets->material(assets->findMaterial(asset->data->material))) {
+                    options = material->draw;
+                    texture = material->baseColorTexture;
+                    baseColor = material->baseColor;
+                }
+            // Painted (W1b): up to four layers blended by the weights, in the terrain family.
+            TerrainShading layered;
+            MaterialShading family;
+            const bool painted = asset->data->painted() && asset->weights.id != 0;
+            if (painted) {
+                options = DrawMaterial{};
+                texture = TextureHandle{};
+                baseColor = glm::vec4(1.0f);
+                layered.weights = asset->weights;
+                SamplerDesc clamped;
+                clamped.wrapU = clamped.wrapV = TextureWrap::Clamp;
+                layered.weightsSampler = renderer.sampler(clamped);
+                layered.corner = glm::vec2(placed[3].x, placed[3].z);
+                layered.spacing = asset->data->spacing;
+                layered.samples = asset->data->samples;
+                for (uint32_t i = 0; i < kTerrainLayerCount; ++i) {
+                    const TerrainLayer& source = asset->data->layers[i];
+                    TerrainLayerShading& l = layered.layer[i];
+                    l.uvMetres = source.uvMetres;
+                    l.baseColor = glm::vec4(0.55f, 0.55f, 0.5f, 1.0f);   // the default surface
+                    if (!source.used || source.material.empty()) continue;
+                    if (const auto m = assets->material(assets->findMaterial(source.material))) {
+                        l.baseColorTexture = m->baseColorTexture;
+                        l.normalTexture = m->draw.normalTexture;
+                        l.metallicRoughnessTexture = m->draw.metallicRoughnessTexture;
+                        l.sampler = m->draw.bindings[size_t(MaterialSlot::BaseColor)].sampler;
+                        l.baseColor = m->baseColor;
+                        l.roughness = m->draw.roughness;
+                        l.metallic = m->draw.metallic;
+                        l.normalScale = m->draw.normalScale;
+                    }
+                }
+                family.family = ShadingFamily::Terrain;
+                family.terrain = &layered;
+                options.shading = &family;
+            }
+            options.castShadows = terrain.castShadows;
+            options.decalLayers = decalLayers(e);
+            IndirectLighting probe;
+            for (uint32_t c = 0; c < asset->chunks.size(); ++c) {
+                const TerrainChunk& chunk = asset->chunks[c];
+                if (!chunk.mesh.valid()) continue;
+                layered.layers = chunk.layers;
+                DrawMaterial each = options;
+                const glm::vec3 centre =
+                    glm::vec3(placed * glm::vec4((chunk.bounds.min + chunk.bounds.max) * 0.5f, 1.0f));
+                each.indirect = probeLit(e, centre, probe) ? &probe : nullptr;
+                renderer.drawMesh(chunk.mesh, placed, texture, baseColor, each, instanceKey(world, e, c));
+            }
+        });
+
+    // Foliage (W2a): instanced cells within each type's distance and in view.
+    if (assets && world.count<Foliage>() > 0) drawFoliage(world, renderer, *assets, include);
 
     // Decals (G08): every enabled one, with its box where the hierarchy puts it this frame.
     // The renderer picks which to draw within the player's decals_quality budget.

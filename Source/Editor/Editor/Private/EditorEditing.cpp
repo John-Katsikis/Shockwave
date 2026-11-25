@@ -192,6 +192,15 @@ Entity Editor::createEntity(CreateKind kind, Entity parent) {
     case CreateKind::Cube: addMesh("Cube", "cube", 0.5f); break;
     case CreateKind::Sphere: addMesh("Sphere", "sphere", 0.5f); break;
     case CreateKind::Plane: addMesh("Plane", "plane", 0.0f); break;
+    case CreateKind::WaterPlane: {
+        // W3: 10 m across, with the built-in water material; water casts no shadow.
+        addMesh("Water", "plane", 0.0f);
+        m_world.get<Transform>(e)->scale = glm::vec3(10.0f, 1.0f, 10.0f);
+        MeshRenderer* renderer = m_world.get<MeshRenderer>(e);
+        renderer->material = assets.findMaterial("water");
+        renderer->castShadows = false;
+        break;
+    }
     case CreateKind::Camera: {
         // Starts out seeing what the viewport sees.
         m_world.add<Name>(e, {uniqueName("Camera")});
@@ -482,24 +491,54 @@ void Editor::pushUndo(shockwave::World before) {
     if (playing()) return;   // play-mode changes are thrown away on Stop anyway
     constexpr size_t kMaxUndo = 200;
     m_undo.push_back(std::move(before));
-    if (m_undo.size() > kMaxUndo) m_undo.erase(m_undo.begin());
+    m_undoOrder.push_back(UndoKind::World);
+    if (m_undo.size() > kMaxUndo) {
+        m_undo.erase(m_undo.begin());
+        const auto oldest = std::find(m_undoOrder.begin(), m_undoOrder.end(), UndoKind::World);
+        if (oldest != m_undoOrder.end()) m_undoOrder.erase(oldest);
+    }
     m_redo.clear();
+    m_terrainRedo.clear();
+    m_foliageRedo.clear();
+    m_redoOrder.clear();
     m_dirty = true;
 }
 
+// One journal orders world snapshots and terrain strokes (W1a), so Ctrl+Z undoes whichever
+// happened last.
 void Editor::undo() {
-    if (m_undo.empty() || playing()) return;
-    m_redo.push_back(std::move(m_world));
-    m_world = std::move(m_undo.back());
-    m_undo.pop_back();
+    if (m_undoOrder.empty() || playing()) return;
+    const UndoKind kind = m_undoOrder.back();
+    m_undoOrder.pop_back();
+    if (kind == UndoKind::Terrain) {
+        stepTerrainUndo(false);
+    } else if (kind == UndoKind::Foliage) {
+        stepFoliageUndo(false);
+    } else {
+        if (m_undo.empty()) return;
+        m_redo.push_back(std::move(m_world));
+        m_world = std::move(m_undo.back());
+        m_undo.pop_back();
+    }
+    m_redoOrder.push_back(kind);
     m_dirty = true;
 }
 
 void Editor::redo() {
-    if (m_redo.empty() || playing()) return;
-    m_undo.push_back(std::move(m_world));
-    m_world = std::move(m_redo.back());
-    m_redo.pop_back();
+    if (m_redoOrder.empty() || playing()) return;
+    const UndoKind kind = m_redoOrder.back();
+    m_redoOrder.pop_back();
+    if (kind == UndoKind::Terrain) {
+        stepTerrainUndo(true);
+    } else if (kind == UndoKind::Foliage) {
+        stepFoliageUndo(true);
+    } else {
+        if (m_redo.empty()) return;
+        m_undo.push_back(std::move(m_world));
+        m_world = std::move(m_redo.back());
+        m_redo.pop_back();
+    }
+    m_undoOrder.push_back(kind);
     m_dirty = true;
 }
 

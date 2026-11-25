@@ -375,9 +375,23 @@ int effectInfo(const fs::path& effect, const fs::path& json);
 // identity .cube of 17, 33 or 65 entries a side.
 int postProcessSchema(const fs::path& file);
 int postProcessInfo(const fs::path& profile, const fs::path& json);
+// W1a terrain tools, no project needed (docs/Terrain.md). --terrain-info prints a terrain's
+// samples, size, height range, chunks and problems (and writes them as JSON); --terrain-import
+// makes a .swterrain and its heights from a 16-bit PNG or .r16, inside the Content folder
+// that holds output.
+int terrainInfo(const fs::path& file, const fs::path& json);
+int terrainImport(const fs::path& heights, const fs::path& output, float spacing, float low, float high);
+// W2a: --foliage-info prints a .swfoliage's types with their instances and cells (and writes
+// them as JSON), no project needed (docs/Foliage.md).
+int foliageInfo(const fs::path& file, const fs::path& json);
 int lutExportNeutral(uint32_t size, const fs::path& output);
 // --material-schema: the .swmaterial reference, docs/MaterialSchema.md ("-": stdout).
 int materialSchema(const fs::path& file);
+// --material-graph <file.swmatgraph> [--dump] and --material-graph-schema (W4,
+// docs/MaterialGraph.md): checks and compiles a graph (into its project's
+// Saved/Cache/Shaders), reporting its params, textures and errors; --dump prints its GLSL.
+int materialGraphInfo(const fs::path& file, bool dump, const fs::path& json);
+int materialGraphSchema(const fs::path& file);
 int textureInfo(const fs::path& asset, const fs::path& json);
 // Baked lighting payloads (PlayerLighting.cpp), no project needed: --lighting-schema writes
 // docs/LightingSchema.md ("-": stdout); --lighting-export turns a .ktx2 lightmap, .swbake
@@ -499,6 +513,11 @@ private:
     // reported those that don't), and its warnings are printed without failing the check.
     void checkMaterialOverrides(shockwave::World& world, const std::string& scene, std::vector<std::string>& problems);
     void checkMaterialFiles();
+    // --check for material graphs (W4): every .swmatgraph in Content compiles (into
+    // Saved/Cache/Shaders, which the asset graph then finds); then, per scene, how many
+    // graphs it loads, with a warning past kGraphsPerLevelWarning.
+    void checkMaterialGraphs(std::vector<std::string>& problems);
+    void reportGraphsPerScene(const std::vector<fs::path>& scenes);
     // --check for colour grading, exposure and fog (PlayerPostProcess.cpp, A05/A06): each
     // PostProcessVolume's profile and LUT resolve, then every .swpostprocess in Content.
     void checkPostProcessVolumes(
@@ -626,6 +645,7 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    double m_windSeconds = 0.0;   // foliage wind's clock (W2a)
     int m_framesSeen = 0;   // for --inject-device-lost
     // What levels hold resident and the graph that says what they need (docs/AssetResidency.md);
     // before m_levels, which holds a lease on it.

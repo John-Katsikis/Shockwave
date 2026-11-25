@@ -112,6 +112,11 @@ public:
     // A02: Low leaves DrawMaterial::layers' detail out of later draws.
     virtual void setMaterialQuality(MaterialQuality) {}
     virtual LodStats lodStats() const { return {}; }
+    // A material graph's fragment shader (W4): SPIR-V of mesh.glsl with the graph spliced in.
+    // Main thread, between frames. A backend without them draws graph materials as their
+    // standard material.
+    virtual void createSurfaceShader(SurfaceShaderHandle, std::span<const uint32_t> /*spirv*/) {}
+    virtual void destroySurfaceShader(SurfaceShaderHandle) {}
 
     // ---- Per frame ----
     virtual void setClearColor(const Color& color) = 0;
@@ -125,6 +130,14 @@ public:
     virtual void drawMesh(
         MeshHandle mesh, const glm::mat4& transform, TextureHandle texture, const glm::vec4& tint,
         const DrawMaterial& material, const RenderInstanceKey& key) = 0;
+    // Renderer::drawMeshInstances: many copies of one mesh and material (W2a). Instance i's
+    // key is first with part + parts[i] (part + i when parts is empty). lodLevel: -1 picks
+    // by distance, else that level (clamped).
+    virtual void drawMeshInstances(
+        MeshHandle, std::span<const glm::mat4>, TextureHandle, const glm::vec4&, const DrawMaterial&,
+        const RenderInstanceKey&, int, std::span<const uint32_t>) {}
+    // Renderer::setWindTime.
+    virtual void setWindTime(float) {}
     virtual void addLight(const LightDesc& light) = 0;
     // This frame's particles (Renderer/Particles.h); copy what you need before returning.
     virtual void drawParticles(const ParticleDrawList& particles) = 0;

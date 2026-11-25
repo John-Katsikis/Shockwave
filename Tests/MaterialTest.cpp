@@ -299,6 +299,58 @@ void resolveChecks() {
             !materialFamilyUses(int(MaterialFamily::Skin), "clearcoat") &&
             materialFamilyUses(int(MaterialFamily::Skin), "surface"),
         "family groups");
+
+    // Water (W3): its keys parse, a child inherits them, other families refuse them.
+    files.materials["lake.swmaterial"] =
+        "swmaterial 1\nfamily water\nwater_shallow_color 0.2 0.5 0.45\nwater_deep_color 0 0.05 0.1\n"
+        "water_depth_fade 3\nwater_clarity 2.5\ntexture water_normal \"textures/ripples.png\"\n"
+        "water_ripple_scale 4\nwater_ripple_speed 0.5\nwater_foam_distance 0.3\n";
+    files.materials["pond.swmaterial"] = "swmaterial 1\nparent \"lake.swmaterial\"\nwater_clarity 1\n";
+    check(
+        resolveMaterial("pond.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            desc.params.family == int(MaterialFamily::Water) && (desc.features & kMaterialWater) &&
+            !(desc.features & kMaterialAlphaBlend) && desc.warnings.empty(),
+        "water feature, inherited: " + error + (desc.warnings.empty() ? "" : " / " + desc.warnings[0]));
+    check(
+        near(desc.params.waterShallowColor, glm::vec3(0.2f, 0.5f, 0.45f)) &&
+            near(desc.params.waterDeepColor, glm::vec3(0.0f, 0.05f, 0.1f)) && near(desc.params.waterDepthFade, 3.0f) &&
+            near(desc.params.waterClarity, 1.0f) && near(desc.params.waterRippleScale, 4.0f) &&
+            near(desc.params.waterRippleSpeed, 0.5f) && near(desc.params.waterFoamDistance, 0.3f) &&
+            desc.slots[size_t(MaterialSlot::WaterNormal)].texture.asset == "textures/ripples.png",
+        "water values inherited, the child's clarity over the parent's");
+    check(
+        materialEffectiveShading(desc, all) == "water (high)" &&
+            materialEffectiveShading(desc, off).find("simplified water") != std::string::npos &&
+            !materialShadingCost(desc, all).empty() && materialShadingCost(desc, off).empty(),
+        "water quality and cost: " + materialEffectiveShading(desc, all));
+    {
+        MaterialAsset drawn;
+        drawn.desc = desc;
+        std::array<TextureHandle, kAllMaterialSlots> textures{};
+        textures[size_t(MaterialSlot::WaterNormal)] = TextureHandle{7};
+        buildDrawMaterial(drawn, textures, {});
+        check(
+            drawn.draw.shading == &drawn.shading && drawn.shading.family == ShadingFamily::Water && !drawn.draw.blend &&
+                near(drawn.shading.waterClarity, 1.0f) &&
+                near(drawn.shading.waterDeepColor, glm::vec3(0.0f, 0.05f, 0.1f)) &&
+                drawn.shading.waterNormalTexture.id == 7,
+            "water draws as the renderer's water family");
+    }
+    files.materials["wet-rock.swmaterial"] = "swmaterial 1\nwater_clarity 2\n";
+    check(
+        resolveMaterial("wet-rock.swmaterial", files.lookup(), desc, error) == MaterialProblem::None &&
+            desc.warnings.size() == 1 && desc.warnings[0].find("water values") != std::string::npos &&
+            !(desc.features & kMaterialWater),
+        "water values on another family warn and do nothing");
+    files.materials["bad-water.swmaterial"] = "swmaterial 1\nfamily water\nwater_clarity 0\n";
+    check(
+        resolveMaterial("bad-water.swmaterial", files.lookup(), desc, error) == MaterialProblem::File,
+        "water_clarity below 0.1 is refused");
+    check(
+        materialFamilyUses(int(MaterialFamily::Water), "water") &&
+            !materialFamilyUses(int(MaterialFamily::Standard), "water") &&
+            !materialFamilyUses(int(MaterialFamily::Water), "transmission"),
+        "water's group");
 }
 
 void shadingChecks() {

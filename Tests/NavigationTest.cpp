@@ -4,7 +4,9 @@
 #include <Navigation/Navigation.h>
 
 #include <Core/Jobs.h>
+#include <Assets/Assets.h>
 #include <Engine/Components.h>
+#include <Engine/Terrain.h>
 #include <GameFramework/GameInstance.h>
 #include <GameFramework/PlaySession.h>
 
@@ -222,6 +224,50 @@ void noNavigation(JobSystem& jobs) {
 
 }   // namespace
 
+// Terrain (W1a): a flat terrain with a steep ridge across it, open at one end. The path
+// across goes round the ridge's end instead of over it.
+void terrainPaths(JobSystem& jobs) {
+    Assets assets;
+    auto data = std::make_shared<TerrainData>(flatTerrain(65, 0.5f, 0.0f, 10.0f, 0.0f));
+    for (uint32_t z = 30; z <= 34; ++z)
+        for (uint32_t x = 0; x <= 48; ++x) data->heights[z * 65 + x] = data->value(3.0f);
+    auto asset = std::make_shared<TerrainAsset>();
+    asset->data = data;
+    assets.addTerrain("terrain/ridge.swterrain", asset);
+    World world;
+    const Entity ground = world.create();
+    world.add<Transform>(ground, {glm::vec3(-16.0f, 0.0f, -16.0f)});
+    world.add<Terrain>(ground, {"terrain/ridge.swterrain"});
+    Collider shape;
+    shape.shape = Collider::Shape::Terrain;
+    world.add<Collider>(ground, shape);
+    const Entity settingsEntity = world.create();
+    NavMeshSettings settings;
+    settings.tileSize = 32;
+    world.add<NavMeshSettings>(settingsEntity, settings);
+    std::string error;
+    const NavGeometry geometry = collectNavGeometry(world, &assets, settings);
+    check(geometry.sources == 1 && !geometry.triangles.empty(), "the terrain is a navigation source");
+    // Two triangles per quad at every 2nd point: 32 x 32 quads.
+    check(geometry.triangles.size() == size_t(32 * 32 * 2 * 3), "terrain triangles at every 2nd point");
+    auto mesh = bakeNavMesh(geometry, settings, jobs, error);
+    check(mesh != nullptr, "bake: " + error);
+    std::vector<glm::vec3> path;
+    bool partial = true;
+    check(mesh->findPath({-8, 0, -4}, {-8, 0, 4}, path, &partial), "a path across the terrain is found");
+    check(!partial, "the path is complete");
+    check(pathLength(path) > 30.0f, "the path goes round the ridge, not over it");
+    for (const glm::vec3& p : path) check(p.y < 1.0f, "the path stays off the steep ridge");
+    // Raising the terrain changes the navigation input.
+    const uint64_t before = navInputHash(world, &assets, settings);
+    auto raised = std::make_shared<TerrainData>(*data);
+    raised->heights[0] = raised->value(1.0f);
+    auto next = std::make_shared<TerrainAsset>();
+    next->data = raised;
+    assets.addTerrain("terrain/ridge.swterrain", next);
+    check(navInputHash(world, &assets, settings) != before, "sculpting a terrain changes the input hash");
+}
+
 int main() {
     try {
         registerNavigationComponents();
@@ -230,6 +276,7 @@ int main() {
         hashesAndFiles(jobs);
         agentsWalk(jobs);
         noNavigation(jobs);
+        terrainPaths(jobs);
     } catch (const std::exception& e) {
         std::cerr << "navigation test failed: " << e.what() << '\n';
         return 1;

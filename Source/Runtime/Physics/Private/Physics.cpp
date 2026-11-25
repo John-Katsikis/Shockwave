@@ -5,6 +5,7 @@
 #include <Assets/Assets.h>
 #include <Engine/Components.h>
 #include <Engine/Hierarchy.h>
+#include <Engine/Terrain.h>
 
 #include <Jolt/Jolt.h>
 
@@ -23,6 +24,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -219,6 +221,7 @@ struct PhysicsWorld::Impl {
         CharacterController controller;
         Pose placed;
         std::shared_ptr<const ModelAsset> model;
+        std::shared_ptr<const TerrainData> terrain;   // a Terrain collider's heights
         std::string error;
     };
     std::unordered_map<uint64_t, Entry> entries;
@@ -406,6 +409,14 @@ struct PhysicsWorld::Impl {
             }
             break;
         }
+        case Collider::Shape::Terrain: {
+            if (!e.terrain)
+                throw std::runtime_error("Terrain collider requires a Terrain component with a loaded asset");
+            if (e.rigid.motion != RigidBody::Motion::Static)
+                throw std::runtime_error("Terrain colliders must be Static");
+            result = terrainShape(*e.terrain);
+            break;
+        }
         default: throw std::runtime_error("Unknown collider shape");
         }
         if (glm::length(c.offset) > 0)
@@ -413,6 +424,22 @@ struct PhysicsWorld::Impl {
                 JPH::RotatedTranslatedShapeSettings(vec(c.offset * e.placed.scale), JPH::Quat::sIdentity(), result)
                     .Create());
         return result;
+    }
+    // Jolt's height field wants a sample count that's a multiple of its block size (and at
+    // least two blocks; HeightFieldShape.h). Terrains have 2^n + 1 points, so the data is
+    // padded to the next multiple of 4 with "no collision" samples: the padding adds no
+    // ground past the terrain's edge.
+    static JPH::RefConst<JPH::Shape> terrainShape(const TerrainData& t) {
+        constexpr uint32_t block = 4;
+        const uint32_t n = t.samples, padded = (n + block - 1) / block * block;
+        std::vector<float> samples(size_t(padded) * padded, JPH::HeightFieldShapeConstants::cNoCollisionValue);
+        for (uint32_t z = 0; z < n; ++z)
+            for (uint32_t x = 0; x < n; ++x) samples[size_t(z) * padded + x] = t.at(x, z);
+        JPH::HeightFieldShapeSettings settings(
+            samples.data(), JPH::Vec3::sZero(), JPH::Vec3(t.spacing, 1.0f, t.spacing), padded);
+        settings.mBlockSize = block;
+        settings.mBitsPerSample = 16;
+        return checked(settings.Create());
     }
     void create(Entry& e) {
         filterValid(category(e).first, category(e).second);
@@ -514,6 +541,13 @@ struct PhysicsWorld::Impl {
                 if (assets)
                     if (const auto* instance = world.get<ModelRenderer>(id))
                         candidate.model = assets->model(instance->model);
+                // A terrain is placed by its position only (W1a): never rotated or scaled.
+                if (collider && collider->shape == Collider::Shape::Terrain) {
+                    candidate.placed.rotation = glm::quat(1, 0, 0, 0);
+                    candidate.placed.scale = glm::vec3(1.0f);
+                    if (const auto* terrain = world.get<Terrain>(id); terrain && assets)
+                        if (const auto asset = assets->terrain(terrain->asset)) candidate.terrain = asset->data;
+                }
             } catch (const std::exception& ex) {
                 candidate.error = ex.what();
                 candidate.invalidPlacement = true;
@@ -524,7 +558,7 @@ struct PhysicsWorld::Impl {
                 it->second.collider != candidate.collider || !rigidConfig(it->second.rigid, candidate.rigid) ||
                 !characterConfig(it->second.controller, candidate.controller) ||
                 !near(it->second.placed.scale, candidate.placed.scale) || it->second.model != candidate.model ||
-                it->second.invalidPlacement != candidate.invalidPlacement ||
+                it->second.terrain != candidate.terrain || it->second.invalidPlacement != candidate.invalidPlacement ||
                 (!candidate.error.empty() && it->second.error != candidate.error);
             if (rebuild) {
                 if (it != entries.end()) {

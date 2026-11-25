@@ -22,7 +22,10 @@ void main() {
     DrawData draw = pc.drawBuffer.draws[gl_InstanceIndex];
     // Stored as an address: MoltenVK (macOS) reads references kept inside buffers as null.
     Vertex v = VertexBuffer(draw.vertexBuffer).vertices[gl_VertexIndex];
-    gl_Position = pc.viewProjection * (draw.model * vec4(v.position, 1.0));
+    vec4 world = draw.model * vec4(v.position, 1.0);
+    // Wind (W2a): the same sway as mesh.vert, so shadows follow what's drawn.
+    if (draw.wind > 0.0) world.xyz += windOffset(draw.wind, v.position.y, world.xyz, draw.windPhase);
+    gl_Position = pc.viewProjection * world;
     vUvs = vertexUvs(draw, v, gl_VertexIndex);
     vAlpha = v.color.a * draw.tint.a;
     vDraw = gl_InstanceIndex;

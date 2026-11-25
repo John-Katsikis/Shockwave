@@ -3,6 +3,8 @@
 #include <Assets/Material.h>
 #include <Assets/Model.h>
 #include <Assets/AudioClip.h>
+#include <Assets/FoliageData.h>
+#include <Assets/TerrainData.h>
 #include <Renderer/Mesh.h>
 #include <Renderer/Renderer.h>
 
@@ -27,6 +29,16 @@ public:
     void addAudioClip(std::string name, std::shared_ptr<const AudioClip> clip);
     std::shared_ptr<const AudioClip> audioClip(std::string_view name) const;
     std::vector<std::string> audioClips() const;
+
+    // Terrains (.swterrain, W1a) by their Content path. Replacing one (a reload, or a sculpt
+    // stroke in the editor) reaches every Terrain component on the next frame; null removes it.
+    void addTerrain(std::string name, std::shared_ptr<const TerrainAsset> terrain);
+    std::shared_ptr<const TerrainAsset> terrain(std::string_view name) const;
+    std::vector<std::string> terrains() const;
+    // Foliage (.swfoliage, W2a) by its Content path, sorted into cells; null removes it.
+    void addFoliage(std::string name, std::shared_ptr<const FoliageData> foliage);
+    std::shared_ptr<const FoliageData> foliage(std::string_view name) const;
+    std::vector<std::string> foliages() const;
 
     Assets();   // "white" (the built-in texture) is always there
 
@@ -74,6 +86,8 @@ private:
     mutable std::shared_mutex m_mutex;
     std::vector<std::pair<std::string, std::shared_ptr<const AudioClip>>> m_audio;
     std::vector<std::pair<std::string, std::shared_ptr<const ModelAsset>>> m_models;
+    std::vector<std::pair<std::string, std::shared_ptr<const TerrainAsset>>> m_terrains;
+    std::vector<std::pair<std::string, std::shared_ptr<const FoliageData>>> m_foliage;
     std::vector<std::pair<std::string, std::shared_ptr<const MaterialAsset>>> m_materials;
     std::vector<std::pair<std::string, MeshHandle>> m_meshes;
     std::vector<std::shared_ptr<const MeshData>> m_meshData;   // parallel to m_meshes

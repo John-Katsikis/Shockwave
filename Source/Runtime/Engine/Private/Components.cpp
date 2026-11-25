@@ -4,6 +4,8 @@
 
 #include <Engine/PostProcess.h>
 #include <Engine/Prefab.h>
+#include <Engine/Foliage.h>
+#include <Engine/Terrain.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -130,7 +132,8 @@ void registerBuiltins() {
     registerComponent<Collider>(
         "Collider",
         {
-            enumField("shape", &Collider::shape, {"Box", "Sphere", "Capsule", "Convex model", "Triangle model"}),
+            enumField(
+                "shape", &Collider::shape, {"Box", "Sphere", "Capsule", "Convex model", "Triangle model", "Terrain"}),
             field("half_extents", &Collider::halfExtents, 0.02f, 0.001f, 10000.0f),
             field("radius", &Collider::radius, 0.02f, 0.001f, 10000.0f),
             field("half_height", &Collider::halfHeight, 0.02f, 0.001f, 10000.0f),
@@ -321,6 +324,8 @@ void registerBuiltins() {
         },
         "Motion");
     registerPostProcessComponents();
+    registerTerrainComponents();
+    registerFoliageComponents();
 }
 
 }   // namespace

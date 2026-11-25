@@ -121,6 +121,8 @@ void Editor::closeProject() {
     m_selection.clear();
     m_undo.clear();
     m_redo.clear();
+    clearTerrainUndo();
+    clearFoliageUndo();
     m_dirty = false;
     m_scenes.clear();
 }

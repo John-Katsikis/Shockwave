@@ -59,6 +59,9 @@ enum class AssetKind : uint8_t {
     PostProcess,
     Lut,
     Builtin,   // a mesh or texture made in code
+    Terrain,   // a .swterrain header (W1a)
+    Foliage,   // a .swfoliage header (W2a)
+    MaterialGraph,   // a .swmatgraph (W4)
 };
 const char* assetKindName(AssetKind kind);   // "scene", "texture", ...
 // By extension, lowercase or not: ".swscene" is a Scene, ".png" a Texture. Other if unknown.

@@ -3,6 +3,8 @@
 #include "Player.h"
 
 #include <Engine/Levels.h>
+#include <Engine/Foliage.h>
+#include <Engine/Terrain.h>
 
 #include <Assets/AssetFolder.h>
 #include <Assets/BuiltinAssets.h>
@@ -219,6 +221,24 @@ int Player::check(const std::vector<std::string>& importProblems) {
             else if (decal.receiverMask == 0)
                 std::printf("warning %sreceiver_mask 0 lands on nothing\n", where.c_str());
         });
+        // Terrains (W1a): heights that don't load, a rotated or scaled terrain, a Terrain
+        // collider without its Terrain, a material that isn't there.
+        for (const std::string& problem :
+             shockwave::terrainProblems(world, engine().assets(), [&](std::string_view asset) -> std::string {
+                 const shockwave::AssetFolder::File* file = m_assets ? m_assets->find(asset) : nullptr;
+                 if (!file) return "there's no such file in Content";
+                 return file->error;
+             }))
+            problems.push_back(shown + ": " + problem);
+        // Foliage (W2a): a file that doesn't load (bytes not a multiple of 24, a type the
+        // header doesn't have) or a type whose model isn't loaded.
+        for (const std::string& problem :
+             shockwave::foliageProblems(world, engine().assets(), [&](std::string_view asset) -> std::string {
+                 const shockwave::AssetFolder::File* file = m_assets ? m_assets->find(asset) : nullptr;
+                 if (!file) return "there's no such file in Content";
+                 return file->error;
+             }))
+            problems.push_back(shown + ": " + problem);
         checkLighting(world, shown, problems);
         checkAnimators(world, scene.string(), problems);
         settle(ProblemKind::Content);
@@ -297,7 +317,12 @@ int Player::check(const std::vector<std::string>& importProblems) {
     settle(ProblemKind::Circuit);
     // What everything checked reaches, file by file (docs/AssetResidency.md): references
     // that don't resolve, wrong case, paths leaving the project, cycles.
+    // Material graphs first (W4): compiling them fills the shader cache the graph's
+    // dependencies point at.
+    if (!onlySaves) checkMaterialGraphs(problems);
+    settle(ProblemKind::Content);
     if (!onlySaves) checkAssetGraph(scenes, problems);
+    if (!onlySaves) reportGraphsPerScene(scenes);
     // Save games: they must read back the way a load would, entity handles and all.
     for (const fs::path& file : saves) {
         const std::string shown = m_project.relative(file);

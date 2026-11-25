@@ -3,6 +3,7 @@
 #include <RHI/Common.h>
 
 #include <string>
+#include <vector>
 
 namespace shockwave::vk {
 
@@ -25,6 +26,8 @@ struct GraphicsPipelineDesc {
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     std::string vertexShader;   // path to .spv
     std::string fragmentShader;   // path to .spv; empty: none (depth only)
+    // SPIR-V words in place of fragmentShader (a material graph's shader, W4); may be null.
+    const std::vector<uint32_t>* fragmentCode = nullptr;
     // Specialization constants for the fragment shader (variants of one shader); may be null.
     const VkSpecializationInfo* fragmentSpecialization = nullptr;
     VkFormat colorFormat = VK_FORMAT_UNDEFINED;

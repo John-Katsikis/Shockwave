@@ -1,10 +1,14 @@
 // The asset dependency graph: see Assets/AssetGraph.h and docs/AssetResidency.md.
 #include <Assets/AssetGraph.h>
+#include <Assets/FoliageData.h>
+#include <Assets/TerrainData.h>
 
 #include <Assets/AudioClip.h>
 #include <Assets/Image.h>
 #include <Assets/LightingData.h>
 #include <Assets/Material.h>
+#include <Assets/MaterialGraph.h>
+#include <Assets/ShaderCompiler.h>
 #include <Assets/Model.h>
 #include <Assets/ReflectionData.h>
 #include <Assets/TextureCompression.h>
@@ -93,6 +97,9 @@ const char* assetKindName(AssetKind kind) {
     case AssetKind::PostProcess: return "post process";
     case AssetKind::Lut: return "lut";
     case AssetKind::Builtin: return "builtin";
+    case AssetKind::Terrain: return "terrain";
+    case AssetKind::Foliage: return "foliage";
+    case AssetKind::MaterialGraph: return "material graph";
     }
     return "file";
 }
@@ -113,6 +120,9 @@ AssetKind assetKindOf(std::string_view path) {
     if (ext == ".swreflection") return AssetKind::Reflections;
     if (ext == ".swpostprocess") return AssetKind::PostProcess;
     if (ext == ".cube") return AssetKind::Lut;
+    if (ext == ".swterrain") return AssetKind::Terrain;
+    if (ext == ".swfoliage") return AssetKind::Foliage;
+    if (ext == ".swmatgraph") return AssetKind::MaterialGraph;
     const fs::path p{std::string(path)};
     if (isAudioFile(p)) return AssetKind::Audio;
     if (isImageFile(p) || ext == ".ktx2") return AssetKind::Texture;
@@ -513,10 +523,34 @@ void registerBuiltinProviders() {
         MaterialFile file;
         if (!parseMaterial(r.text(), file, error)) return false;
         if (!file.parent.empty()) r.content(file.parent, "parent");
+        if (!file.graph.empty()) r.content(file.graph, "graph", 0, AssetKind::MaterialGraph);
         for (size_t slot = 0; slot < file.slots.size(); ++slot) {
             const MaterialSlotOverride& o = file.slots[slot];
             if (o.hasTexture && !o.texture.empty())
                 r.named(o.texture, AssetKind::Texture, std::string(materialSlotName(MaterialSlot(slot))) + " texture");
+        }
+        return true;
+    });
+    // A material graph (W4): the textures its nodes read, and its compiled shader in the
+    // project's Saved/Cache/Shaders, which a packaged game reads instead of compiling (so a
+    // graph nobody has compiled since it changed fails --check and the cook).
+    registerAssetProvider("material graph", {".swmatgraph"}, [](AssetReader& r, std::string& error) {
+        MaterialGraph graph;
+        if (!parseMaterialGraph(r.text(), graph, error)) return false;
+        MaterialGraphCode code;
+        std::vector<MaterialGraphError> errors;
+        if (!compileMaterialGraph(graph, code, errors)) {
+            error = materialGraphErrorText(errors);
+            return false;
+        }
+        for (const MaterialGraphNode& node : graph.nodes)
+            if (node.type == "texture" && !node.text.empty())
+                r.content(node.text, "node '" + node.id + "'", node.line, AssetKind::Texture);
+        if (const uint64_t engine = engineSurfaceShaderHash()) {
+            const uint64_t hash = materialGraphHash(materialGraphShaderSource(code), engine);
+            r.id(
+                "Saved/Cache/Shaders/" + materialGraphShaderFile({}, hash).generic_string(), "compiled shader", 0,
+                AssetKind::Other);
         }
         return true;
     });
@@ -533,6 +567,30 @@ void registerBuiltinProviders() {
                 }
             return true;
         });
+    // A terrain: its heights file and its material, or (painted) its weights and layers' materials.
+    registerAssetProvider("terrain", {".swterrain"}, [](AssetReader& r, std::string& error) {
+        TerrainData terrain;
+        if (!parseTerrain(r.text(), terrain, error)) return false;
+        r.content(terrain.heightsFile, "heights", 0, AssetKind::Other);
+        if (!terrain.material.empty()) r.content(terrain.material, "material", 0, AssetKind::Material);
+        if (terrain.painted()) {
+            r.content(terrain.weightsFile, "weights", 0, AssetKind::Other);
+            for (uint32_t i = 0; i < kTerrainLayerCount; ++i)
+                if (terrain.layers[i].used && !terrain.layers[i].material.empty())
+                    r.content(
+                        terrain.layers[i].material, "layer " + std::to_string(i) + " material", 0, AssetKind::Material);
+        }
+        return true;
+    });
+    // Foliage (W2a): its instances file and each type's model.
+    registerAssetProvider("foliage", {".swfoliage"}, [](AssetReader& r, std::string& error) {
+        FoliageData foliage;
+        if (!parseFoliage(r.text(), foliage, error)) return false;
+        r.content(foliage.instancesFile, "instances", 0, AssetKind::Other);
+        for (size_t i = 0; i < foliage.types.size(); ++i)
+            r.content(foliage.types[i].model, "type " + std::to_string(i) + " model", 0, AssetKind::Model);
+        return true;
+    });
     // Baked lighting and reflections: the generated files the manifest vouches for. The
     // manifest's scene line points back at the scene; that's provenance, not a use.
     registerAssetProvider("lighting", {".swlighting"}, [](AssetReader& r, std::string& error) {

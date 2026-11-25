@@ -134,6 +134,10 @@ that's off costs nothing: no pass in the frame graph, no CPU work, no GPU memory
 - `hair_quality`: `low` or `high` (the default). High draws hair cards' highlight as a
   band across the strands; low draws an ordinary round one. Low uses low.
   Scenes without glass, skin or hair cost nothing for any of these.
+- `terrain_quality`: `low` or `high` (the default). Painted terrain (docs/Terrain.md):
+  high blends every layer a spot has, with their normal maps; low blends only the two
+  heaviest and leaves out their normal maps, which only shows where three or more layers
+  mix. Low and Medium use low. Terrains with one material are drawn the same either way.
 - `contact_shadows`: `off` or `on`. A short ray march through the depth buffer towards
   the sun adds the small shadows its shadow map is too coarse for: under feet, along
   fences, where objects touch the floor (docs/Shadows.md, *Contact shadows*). It needs the

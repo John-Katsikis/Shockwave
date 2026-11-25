@@ -58,6 +58,14 @@ struct RenderInstanceKey {
 // A ModelRenderer's part: the node, then which of its meshes.
 constexpr uint32_t modelPartKey(uint32_t node, uint32_t mesh) { return (node << 8) | (mesh & 0xFF); }
 
+// Foliage (W2a): density 0..1 draws that share of the instances (0: none and no draw calls);
+// distance 0.5..1.5 scales every foliage type's distance.
+struct FoliageSettings {
+    float density = 1.0f;
+    float distance = 1.0f;
+    bool operator==(const FoliageSettings&) const = default;
+};
+
 // A reference grid on the ground plane (y = 0), drawn into the scene with depth testing,
 // for editors and debug views. Lines fade out towards fadeDistance from the camera.
 struct GridSettings {
@@ -92,6 +100,13 @@ struct SamplerHandle {
     bool operator==(const SamplerHandle&) const = default;
 };
 inline constexpr uint32_t kMaxSamplers = 64;   // distinct SamplerDescs, the default included
+// A material graph's compiled fragment shader (W4, Renderer::createSurfaceShader). 0: none,
+// the engine's own surface shader.
+struct SurfaceShaderHandle {
+    uint32_t id = 0;
+    bool operator==(const SurfaceShaderHandle&) const = default;
+};
+inline constexpr uint32_t kMaxSurfaceShaders = 256;
 
 // glTF's KHR_texture_transform: uv' = offset + R(rotation) * (scale * uv), rotating about
 // the UV origin, with R = [cos sin; -sin cos] as glTF defines it.
@@ -123,13 +138,14 @@ enum class MaterialSlot : uint8_t {
     Clearcoat,
     ClearcoatNormal,
     Transmission,
+    WaterNormal,
     Count
 };
 inline constexpr size_t kMaterialSlots = 5;   // base color .. occlusion
 inline constexpr size_t kAllMaterialSlots = size_t(MaterialSlot::Count);
 inline constexpr size_t kLayerSlots = 7;   // detail color .. layer metallic-roughness
-// Then clearcoat, clearcoat normal and transmission: Renderer/Shading.h's kShadingSlots.
-const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "transmission"
+// Then clearcoat, clearcoat normal, transmission and water normal: Renderer/Shading.h's kShadingSlots.
+const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "water_normal"
 // How one slot reads its texture: which UV set, transformed how, sampled how.
 struct TextureBinding {
     uint32_t uvSet = 0;   // 0: TEXCOORD_0, 1: TEXCOORD_1 (Vertex::uv, then MeshData::uv1)
@@ -253,6 +269,9 @@ struct DrawMaterial {
     // Decal receiver layers (G08, Renderer/Decals.h): the bits decals' receiverMask must
     // share to land on this surface. 0 takes no decals; blended surfaces never take them.
     uint32_t decalLayers = 1;
+    // Wind (W2a, foliage): metres of sway per metre above the mesh's origin, along (1, 0,
+    // 0.3), with the renderer's wind time (Renderer::setWindTime). 0: still, exactly as before.
+    float wind = 0.0f;
 };
 
 // A light for this frame, in world space. See the Light component for the meaning of

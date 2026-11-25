@@ -1,0 +1,12 @@
+swfoliage 1
+instances "foliage/meadow.instances"
+type "models/grass-tuft.glb"
+  distance 70
+  fade 20
+  shadows false
+  wind 0
+type "models/pebble.glb"
+  distance 50
+  fade 10
+  shadows true
+  wind 0

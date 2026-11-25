@@ -17,6 +17,8 @@ const char* shadingFamilyName(ShadingFamily family) {
     case ShadingFamily::Skin: return "skin";
     case ShadingFamily::HairCard: return "hair_card";
     case ShadingFamily::Transmission: return "transmission";
+    case ShadingFamily::Terrain: return "terrain";
+    case ShadingFamily::Water: return "water";
     }
     return "standard";
 }
@@ -41,6 +43,9 @@ const char* skinQualityName(SkinQuality quality) {
 }
 
 const char* hairQualityName(HairQuality quality) { return quality == HairQuality::High ? "high" : "low"; }
+
+const char* terrainQualityName(TerrainQuality quality) { return quality == TerrainQuality::High ? "high" : "low"; }
+const char* waterQualityName(WaterQuality quality) { return quality == WaterQuality::High ? "high" : "low"; }
 
 uint32_t skinBlurTaps(SkinQuality quality) {
     return quality == SkinQuality::High ? 13u : quality == SkinQuality::Low ? 7u : 0u;

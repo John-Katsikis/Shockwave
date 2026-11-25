@@ -149,8 +149,10 @@ void registerEngineAssetProviders() {
     registerAssetPathField("BakedLighting", "asset", AssetKind::Lighting, false);
     registerAssetPathField("BakedLighting", "reflections", AssetKind::Reflections, false);
     registerAssetPathField("PostProcessVolume", "profile", AssetKind::PostProcess);
-    // Scenes and prefabs: what their fields name. A mesh, texture or model without an
-    // extension is a built-in name.
+    registerAssetPathField("Terrain", "asset", AssetKind::Terrain);
+    registerAssetPathField("Foliage", "asset", AssetKind::Foliage);
+    // Scenes and prefabs: what their fields name. A mesh, texture, model or material without
+    // an extension is a built-in name.
     registerAssetProvider("scene", {".swscene", ".swprefab"}, [](AssetReader& r, std::string& error) {
         std::vector<SceneAssetReference> refs;
         const bool ok = sceneAssetReferences(r.text(), r.id(), refs, error);
@@ -162,6 +164,14 @@ void registerEngineAssetProviders() {
                 if (ref.value != "white") r.named(ref.value, AssetKind::Texture, via, ref.line);
                 break;
             case FieldType::Model: r.named(ref.value, AssetKind::Model, via, ref.line); break;
+            case FieldType::Material:
+                // "water" (W3) is the built-in water material; the rest are .swmaterial files.
+                if (ref.value.find('.') == std::string::npos) {
+                    r.named(ref.value, AssetKind::Builtin, via, ref.line);
+                    break;
+                }
+                r.content(ref.value, via, ref.line, ref.kind, ref.required);
+                break;
             default: r.content(ref.value, via, ref.line, ref.kind, ref.required); break;
             }
         }

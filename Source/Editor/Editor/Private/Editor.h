@@ -25,6 +25,7 @@
 #include <Animation/AnimationWorld.h>
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
+#include <Physics/Physics.h>
 #include <Projects/Project.h>
 #include <SteamServices/SteamServices.h>
 
@@ -57,6 +58,7 @@ inline constexpr const char* kUIDocumentPayload = "SW_UI_DOCUMENT";
 inline constexpr const char* kPrefabPayload = "SW_PREFAB";   // path inside Content
 inline constexpr const char* kCircuitPayload = "SW_CIRCUIT";   // path inside Content
 inline constexpr const char* kMaterialPayload = "SW_MATERIAL";   // path inside Content
+inline constexpr const char* kMaterialGraphPayload = "SW_MATERIAL_GRAPH";   // path inside Content (W4)
 // Labels for shockwave::ShadowQuality, indexed by its value.
 inline constexpr const char* kShadowQualityNames[] = {"Off", "Low", "Medium", "High", "Ultra"};
 
@@ -95,7 +97,15 @@ struct EditorOptions {
     // --package-release (tests, docs/Cooking.md#in-the-editor): Build > Package game with
     // Release ticked, pressed once; prints the result and exits 1 if it failed.
     bool packageRelease = false;
+    // --foliage-stroke (tests, docs/Foliage.md#painting): paints one stroke on the scene's
+    // first Foliage with its first type, then checks undo, redo and save; exit 1 on failure.
+    bool foliageStroke = false;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
+    std::string materialGraphOnStart;   // --material-graph: open it in the Material graph window
+    // --material-graph-test (tests, docs/MaterialGraph.md#the-editor): with the window's own
+    // code, add a node to the graph --material-graph opened, wait for the background compile,
+    // check a broken node's problem lands on it, undo, save and read the file back; exit 1 on failure.
+    bool materialGraphTest = false;
 };
 
 // The Shockwave Editor: projects, scenes and a live viewport in a docked Dear ImGui UI.
@@ -159,7 +169,18 @@ private:
         std::string text;
     };
     enum class ContentRoot { Assets, Scenes, Engine };
-    enum class CreateKind { Empty, Cube, Sphere, Plane, Camera, Environment, DirectionalLight, PointLight, SpotLight };
+    enum class CreateKind {
+        Empty,
+        Cube,
+        Sphere,
+        Plane,
+        WaterPlane,
+        Camera,
+        Environment,
+        DirectionalLight,
+        PointLight,
+        SpotLight
+    };
 
     // ---- Projects (Editor.cpp) ----
     bool openProject(const std::filesystem::path& path, const std::filesystem::path& sceneToOpen = {});
@@ -342,7 +363,117 @@ private:
     shockwave::MaterialFile m_materialEdit;
     std::string m_materialLoadError;
     bool m_showCircuits = false;
+    // MaterialGraphPanel.cpp: the Material graph node editor (W4b, docs/MaterialGraph.md).
+    void drawMaterialGraphWindow();
+    void openMaterialGraph(const std::string& path);   // inside Content
+    std::string newMaterialGraph(const std::string& folder);   // makes and opens one; its path, or ""
+    bool saveMaterialGraph();
+    void updateMaterialGraph();   // every frame: the background compile
+    void renderMaterialGraphPreview(shockwave::Renderer& renderer);
+    void releaseMaterialGraphPreview();
+    void runMaterialGraphTest();   // --material-graph-test
+    bool m_showMaterialGraph = false;
+    std::shared_ptr<struct MaterialGraphEditorState> m_materialGraphEditor;
     bool m_showNetwork = false;
+    // TerrainPanel.cpp: Window > Terrain (W1a, docs/Terrain.md). Create a terrain, sculpt it
+    // with brushes in the viewport, import heights and save. Strokes keep their own undo
+    // steps beside the world snapshots (m_undoOrder says which came last).
+    void drawTerrainWindow();
+    // Each frame the viewport is drawn: the brush circle under the mouse, and the stroke
+    // while the left button is down. True when the brush has the mouse (no click-select).
+    bool updateTerrainBrush(const ImVec2& pos, const ImVec2& size, bool hovered);
+    shockwave::Entity createTerrain();
+    bool saveTerrains();   // every terrain with unsaved strokes; false if any failed
+    void clearTerrainUndo();
+    void stepTerrainUndo(bool redo);
+    // The terrain asset the panel works on: the selected entity's, else the scene's first.
+    shockwave::Entity terrainTarget() const;
+    // changed: shockwave::TerrainChange bits (heights, weights).
+    void publishTerrain(
+        const std::string& asset, std::shared_ptr<const shockwave::TerrainData> data, glm::ivec4 rect,
+        uint32_t changed = shockwave::kTerrainHeightsChanged);
+    // A whole-terrain change (an import, a layer added or removed) as one undo step.
+    void commitTerrainChange(
+        const std::string& asset, const shockwave::TerrainData& before, std::shared_ptr<shockwave::TerrainData> after,
+        glm::ivec4 rect, uint32_t changed);
+    struct TerrainTool {
+        bool open = false;
+        int brush = -1;   // -1: none, else shockwave::TerrainBrush
+        float radius = 10.0f, strength = 0.5f;
+        int falloff = 0;   // shockwave::TerrainFalloff
+        int newSamples = 2;   // 65 << n, + 1
+        float newSpacing = 1.0f, newLow = 0.0f, newHigh = 100.0f;
+        char newName[128] = "terrain/terrain";
+        char importPath[512] = "";
+        // Painted layers (W1b): the layer Paint raises, and the next layer's material.
+        int paintLayer = 0;
+        char newLayerMaterial[256] = "";
+        float newLayerUvMetres = 4.0f;
+        // The stroke under way: its asset, the heights before it, what it has touched so far.
+        bool stroking = false;
+        std::string strokeAsset;
+        std::shared_ptr<const shockwave::TerrainData> strokeBefore;
+        glm::ivec4 strokeRect{1, 1, 0, 0};
+        float flattenTo = 0.0f;
+        std::map<std::string, std::shared_ptr<shockwave::TerrainData>> working;   // edited copies
+        std::vector<std::string> unsaved;
+        std::vector<shockwave::MeshHandle> retired, retiring;   // chunk meshes to destroy next frame
+        std::string status;
+    } m_terrain;
+    // FoliagePanel.cpp: Window > Foliage (W2b, docs/Foliage.md). Create a foliage asset, add
+    // and tune its types, and paint or erase instances in the viewport. Strokes keep undo
+    // steps in the same journal as terrain strokes.
+    void drawFoliageWindow();
+    // Each viewport frame: the brush circle, and the stroke while the left button is down.
+    // True when the brush has the mouse.
+    bool updateFoliageBrush(const ImVec2& pos, const ImVec2& size, bool hovered);
+    shockwave::Entity foliageTarget() const;   // the selected Foliage, else the scene's first
+    shockwave::Entity createFoliage();
+    bool saveFoliage();   // every foliage with unsaved edits; false if any failed
+    void clearFoliageUndo();
+    void stepFoliageUndo(bool redo);
+    // A stroke, without the mouse (the brush and --foliage-stroke use these): begin on the
+    // target's asset, dab at a point in its space, end (one undo step if anything changed).
+    bool beginFoliageStroke(shockwave::Entity target);
+    void foliageDab(glm::vec2 centre);
+    void endFoliageStroke();
+    // Publishes edited foliage (sorted, renumbered) to the asset registry.
+    void publishFoliage(const std::string& asset, std::shared_ptr<const shockwave::FoliageData> data);
+    // A header change (a type added or edited) as one undo step.
+    void
+    commitFoliageChange(const std::string& asset, const shockwave::FoliageData& before, shockwave::FoliageData after);
+    // Terrain heights changed in rect (points): instances standing on the old ground move
+    // onto the new (called by publishTerrain).
+    void redropFoliageOnTerrain(
+        const std::string& terrainAsset, const shockwave::TerrainData& before, const shockwave::TerrainData& after,
+        glm::ivec4 rect);
+    // The scene's colliders, for dropping painted instances onto the ground: a copy of the
+    // world with its own physics, rebuilt at each stroke's start.
+    void rebuildFoliageGround();
+    bool foliageGroundAt(glm::vec3 from, glm::vec3& point, glm::vec3& normal) const;
+    void runFoliageStroke();   // --foliage-stroke
+    struct FoliageTool {
+        bool open = false;
+        int brush = -1;   // -1 none, 0 Paint, 1 Erase
+        float radius = 4.0f, density = 2.0f;   // metres, instances per square metre
+        int type = 0;
+        char newName[128] = "foliage/foliage";
+        char newTypeModel[256] = "";
+        bool stroking = false;
+        std::string strokeAsset;
+        shockwave::Entity strokeEntity;
+        std::shared_ptr<const shockwave::FoliageData> strokeBefore;
+        std::shared_ptr<shockwave::FoliageData> working;
+        uint32_t seed = 1, dabs = 0;
+        std::unique_ptr<shockwave::World> groundWorld;
+        std::unique_ptr<shockwave::PhysicsWorld> ground;
+        std::vector<std::string> unsaved;
+        std::string status;
+    } m_foliage;
+    enum class UndoKind { World, Terrain, Foliage };
+    std::vector<UndoKind> m_undoOrder, m_redoOrder;
+    std::vector<shockwave::TerrainEdit> m_terrainUndo, m_terrainRedo;
+    std::vector<shockwave::FoliageEdit> m_foliageUndo, m_foliageRedo;
     // EditorLighting.cpp: Window > Lighting, the scene's bake (G05, G06; docs/Lighting.md).
     // Bakes a copy of the scene on a thread, so editing carries on; cancelled when the
     // project or scene changes, or the editor closes.
@@ -545,6 +676,7 @@ private:
     // Postprocess profiles and LUTs (A05, A06), and the last frame's time for adaptation.
     std::unique_ptr<shockwave::PostProcessLibrary> m_postProcess;
     double m_frameDt = 1.0 / 60.0;
+    double m_windSeconds = 0.0;   // foliage wind's clock (W2a)
     bool m_showEffects = true;
     // Asset residency (ResidencyPanel.cpp, docs/AssetResidency.md): what Play's levels hold
     // and what the next one needs. Before m_runtimeLevels, which holds a lease on it.

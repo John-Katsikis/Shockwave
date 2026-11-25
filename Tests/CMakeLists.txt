@@ -97,6 +97,30 @@ if(TARGET game_shippingdemo)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/ReleaseTierCheck.cmake)
     set_tests_properties(release_tier_cli PROPERTIES TIMEOUT 300 LABELS integration)
 endif()
+# Terrain in a real game (W1a, Tests/TerrainFlowCheck.cmake): Reactor Run's training level
+# with a terrain added, through --check, its dependencies and the game's whole-run flow.
+if(TARGET game_shippingdemo)
+    add_test(NAME terrain_flow COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DGAME=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DTERRAIN=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics/Content/terrain
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/TerrainFlow
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/TerrainFlowCheck.cmake)
+    set_tests_properties(terrain_flow PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS integration)
+endif()
+# Foliage in a real game (W2a, Tests/FoliageCheck.cmake): the meadow in Reactor Run's
+# training level through --check and its dependencies, and --check catching broken foliage.
+if(TARGET game_shippingdemo)
+    add_test(NAME foliage_check COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DGAME=${CMAKE_SOURCE_DIR}/Games/ShippingDemo
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/FoliageCheck
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/FoliageCheck.cmake)
+    set_tests_properties(foliage_check PROPERTIES
+        ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS integration)
+endif()
 # player --perf-run on Reactor Run (two laps of the tour, null renderer) and the gate
 # reading its records (Tests/PerformanceCheck.cmake). It proves the accounting, never the
 # speed: CI machines aren't release hardware.
@@ -576,6 +600,19 @@ foreach(effect contact_shadows screen_reflections motion_blur depth_of_field)
     add_test(NAME ${effect} COMMAND screen_effects_test ${effect})
     set_tests_properties(${effect} PROPERTIES TIMEOUT 60 LABELS unit)
 endforeach()
+# Terrain (W1a): the .swterrain format, heights, chunks, brushes, undo and importing.
+add_executable(terrain_test TerrainTest.cpp)
+target_link_libraries(terrain_test PRIVATE Shockwave::Engine)
+shockwave_warnings(terrain_test)
+add_test(NAME terrain COMMAND terrain_test)
+set_tests_properties(terrain PROPERTIES TIMEOUT 60 LABELS unit)
+
+# Foliage (W2a): the .swfoliage format, instances, cells, density and fade.
+add_executable(foliage_test FoliageTest.cpp)
+target_link_libraries(foliage_test PRIVATE Shockwave::Engine)
+shockwave_warnings(foliage_test)
+add_test(NAME foliage COMMAND foliage_test)
+set_tests_properties(foliage PROPERTIES TIMEOUT 60 LABELS unit)
 # Material assets (A02): parser, inheritance, shading math, coverage mipmaps, scene
 # fields, and hot reload on the null renderer.
 add_executable(material_test MaterialTest.cpp)
@@ -584,6 +621,14 @@ shockwave_warnings(material_test)
 shockwave_link_plugins(material_test)
 add_test(NAME materials COMMAND material_test)
 set_tests_properties(materials PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 30 LABELS unit)
+# Material graphs (W4): the .swmatgraph format, its checks and GLSL, .swmaterial's graph
+# records, and an AssetFolder compiling and loading one on the null renderer.
+add_executable(material_graph_test MaterialGraphTest.cpp)
+target_link_libraries(material_graph_test PRIVATE Shockwave::Engine)
+shockwave_warnings(material_graph_test)
+shockwave_link_plugins(material_graph_test)
+add_test(NAME material_graph COMMAND material_graph_test)
+set_tests_properties(material_graph PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 120 LABELS unit)
 if(TARGET game_arena)
     add_test(NAME graphics_cli COMMAND ${CMAKE_COMMAND}
         -DPLAYER=$<TARGET_FILE:player>
@@ -614,7 +659,7 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFixturesCheck.cmake)
     # Every fixture scene: about 860 s alone on llvmpipe with the screen-effects scenes.
     set_tests_properties(graphics_fixtures_render PROPERTIES
-                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 1200 LABELS gpu)
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 1800 LABELS gpu)
     # Pipeline warm-up and the fallback tier's pictures (S10 part 2).
     set(release_tier_demo "")
     if(TARGET game_shippingdemo)
@@ -645,6 +690,31 @@ if(TARGET game_sample)
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsScreenEffectsCheck.cmake)
     set_tests_properties(graphics_screen_effects_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Terrain (W1a): deterministic, no cracks between chunks at different detail, the report.
+    add_test(NAME graphics_terrain_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsTerrain
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsTerrainCheck.cmake)
+    set_tests_properties(graphics_terrain_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    # Foliage (W2a): 20,000 instances in under 200 calls, density 0 as no foliage, fixed-step
+    # runs alike, still under TAA without wind; and a timing run of its CPU submission.
+    add_test(NAME graphics_foliage_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFoliage
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFoliageCheck.cmake)
+    set_tests_properties(graphics_foliage_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 420 LABELS gpu)
+    add_test(NAME graphics_foliage_timing COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsFoliageTiming
+        -DMODE=timing
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsFoliageCheck.cmake)
+    set_tests_properties(graphics_foliage_timing PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 300 LABELS "gpu;timing" RUN_SERIAL TRUE)
     # Clustered lighting (G11): the same pixels as brute force (overflow, TAA, glass, past
     # cluster_far), the report on and off, auto by light count, and the cluster view.
     add_test(NAME graphics_clusters_render COMMAND ${CMAKE_COMMAND}
@@ -681,6 +751,15 @@ if(TARGET game_sample)
         -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsShading
         -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsShadingCheck.cmake)
     set_tests_properties(graphics_shading_render PROPERTIES
+                         ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
+    # Material graphs (W4): a forwarding graph matches its standard material, off is exactly
+    # the plain material, a glowing graph and its param, the report's counts.
+    add_test(NAME graphics_material_graph_render COMMAND ${CMAKE_COMMAND}
+        -DPLAYER=$<TARGET_FILE:player>
+        -DFIXTURE=${CMAKE_SOURCE_DIR}/Tests/fixtures/graphics
+        -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/GraphicsMaterialGraph
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/GraphicsMaterialGraphCheck.cmake)
+    set_tests_properties(graphics_material_graph_render PROPERTIES
                          ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy" TIMEOUT 600 LABELS gpu)
     # Batching, occlusion culling and indirect drawing (G12): the same pictures with each on
     # and off, and the report's counts.
@@ -940,6 +1019,30 @@ add_test(NAME level_lifetime_editor COMMAND ${CMAKE_COMMAND}
     -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/LevelCycles
     -P ${CMAKE_CURRENT_SOURCE_DIR}/LevelCyclesCheck.cmake)
 set_tests_properties(level_lifetime_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
+# Foliage painting in the editor (W2b, Tests/FoliagePaintCheck.cmake): one stroke, undo,
+# redo, erase and save through the Foliage window's code. Draws its interface: gpu.
+if(TARGET editor)
+add_test(NAME foliage_paint_editor COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/graphics
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/FoliagePaint
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/FoliagePaintCheck.cmake)
+set_tests_properties(foliage_paint_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
+                     TIMEOUT 300 LABELS gpu)
+endif()
+# The Material graph window (W4b, Tests/MaterialGraphEditorCheck.cmake): add a node, compile
+# in the background, a broken node's problem on it, undo and save. Draws its interface: gpu.
+if(TARGET editor)
+add_test(NAME material_graph_editor COMMAND ${CMAKE_COMMAND}
+    -DEDITOR=$<TARGET_FILE:editor>
+    -DPLAYER=$<TARGET_FILE:player>
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/graphics
+    -DTEMP=${CMAKE_CURRENT_BINARY_DIR}/MaterialGraphEditor
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/MaterialGraphEditorCheck.cmake)
+set_tests_properties(material_graph_editor PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen;SDL_AUDIO_DRIVER=dummy"
                      TIMEOUT 300 LABELS gpu)
 endif()
 # The editor's Player Settings previews (S08): the game's text in French at 1.5x, from the

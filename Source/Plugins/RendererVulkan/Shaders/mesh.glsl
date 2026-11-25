@@ -273,6 +273,20 @@ vec3 mappedNormal(vec3 n, uint map, SlotBinding binding, bool derivative, float 
     return normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
 }
 
+// A painted terrain's layer normal (W1b): the layer's map read at uv, in the vertex tangents'
+// frame (terrain tangents follow +X, like the layers' u). len as mappedNormal.
+vec3 terrainLayerNormal(vec3 n, TerrainLayerData l, vec2 uv, out float len) {
+    len = 1.0;
+    vec3 t, b;
+    if (l.normal == 0u || !tangentFrame(n, uv, false, t, b)) return n;
+    vec3 m = texture(sampler2D(textures[nonuniformEXT(l.normal)], materialSamplers[nonuniformEXT(l.layerSampler)]), uv).xyz * 2.0 - 1.0;
+    float filtered = textureQueryLod(
+        sampler2D(textures[nonuniformEXT(l.normal)], materialSamplers[nonuniformEXT(l.layerSampler)]), uv).y;
+    len = mix(1.0, min(length(m) / 0.996, 1.0), clamp(filtered, 0.0, 1.0));
+    m.xy *= l.normalScale;
+    return normalize(t * m.x + b * m.y + n * max(m.z, 1e-3));
+}
+
 // The surface normal, tilted by the normal map (tangent space, glTF's convention: green
 // points up the texture), not yet turned around for back faces. len as mappedNormal.
 vec3 surfaceNormal(out float len) {
@@ -422,6 +436,21 @@ vec3 clusterHeat(uint lights) {
     return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
 }
 
+#ifdef MATERIAL_GRAPH
+// A material graph (W4, docs/MaterialGraph.md): what it fills in of the standard surface.
+// The generated shader defines materialGraphSurface after this file.
+struct MaterialGraphSurface {
+    vec3 baseColor;
+    float opacity;
+    vec3 normal;   // tangent space
+    float roughness;
+    float metallic;
+    vec3 emissive;
+    float occlusion;
+};
+void materialGraphSurface(GraphShadingData g, float graphTime, vec3 graphView, inout MaterialGraphSurface s);
+#endif
+
 void main() {
     SlotBinding baseBinding = pc.drawBuffer.draws[vDraw].slots[kBaseColor];
     vec4 albedo = sampleSlot(vTexture, baseBinding, slotUv(baseBinding, vUvs)) * vColor;
@@ -450,6 +479,156 @@ void main() {
     vec3 n = surfaceNormal(normalLength);
     vec2 roughnessMetallic = vRoughnessMetallic;
     if (vMaps.y != 0u) roughnessMetallic *= sampleMap(vMaps.y, kMetallicRoughness).gb;   // glTF: green roughness, blue metallic
+
+    // @material_graph: a material graph's pipelines (W4) fill in the standard surface here,
+    // from what the material gave it so far. Lighting and everything after are unchanged.
+    bool graphSurface = false;
+    vec3 graphEmissive = vec3(0.0);
+    float graphOcclusion = 1.0;
+#ifdef MATERIAL_GRAPH
+    if (shadingAddress != uvec2(0u) && sh.graph != uvec2(0u)) {
+        MaterialGraphSurface gs;
+        gs.baseColor = albedo.rgb;
+        gs.opacity = albedo.a;
+        gs.normal = vec3(0.0, 0.0, 1.0);
+        gs.roughness = roughnessMetallic.x;
+        gs.metallic = roughnessMetallic.y;
+        gs.emissive = vEmissive;
+        gs.occlusion = 1.0;
+        float graphTime = pc.drawBuffer.draws[vDraw].windPhase * (1.0 / 1.7);   // the frame clock (kWindRate)
+        materialGraphSurface(GraphShadingBuffer(sh.graph).graph, graphTime,
+            normalize(frame.cameraPosition - vWorldPosition), gs);
+        albedo = vec4(gs.baseColor, gs.opacity);
+        roughnessMetallic = vec2(gs.roughness, gs.metallic);
+#ifdef MATERIAL_GRAPH_NORMAL
+        vec3 geometric = normalize(vNormal);
+        vec3 gt, gb;
+        bool derivative = (pc.drawBuffer.draws[vDraw].flags & kDerivativeTangents) != 0u;
+        if (tangentFrame(geometric, vUvs.xy, derivative, gt, gb))
+            n = normalize(gt * gs.normal.x + gb * gs.normal.y + geometric * max(gs.normal.z, 1e-3));
+        normalLength = 1.0;
+#endif
+        graphSurface = true;
+        graphEmissive = gs.emissive;
+        graphOcclusion = gs.occlusion;
+    }
+#endif
+
+    // Painted terrain (W1b): up to four layers blended by the weights texture, in place of
+    // the material's colour, roughness, metallic and normal. Layers the draw's chunk doesn't
+    // use, and layers under 1% at this pixel, aren't sampled; low keeps the two heaviest and
+    // leaves out their normal maps.
+    vec4 terrainWeights = vec4(0.0);
+    if (family == kFamilyTerrain && sh.terrain != uvec2(0u)) {
+        TerrainShadingBuffer tb = TerrainShadingBuffer(sh.terrain);
+        uint used = tb.terrain.layers;
+        bool low = (tb.terrain.flags & kTerrainLow) != 0u;
+        vec2 xz = vWorldPosition.xz;
+        vec4 w = texture(sampler2D(textures[nonuniformEXT(tb.terrain.weights)],
+            materialSamplers[nonuniformEXT(tb.terrain.weightsSampler)]), xz * tb.terrain.weightScale + tb.terrain.weightOffset);
+        for (uint i = 0u; i < 4u; ++i)
+            if ((used & (1u << i)) == 0u || w[i] <= 0.01) w[i] = 0.0;
+        if (low) {
+            // The two heaviest (ties to the lower layer), the rest dropped.
+            uint first = 0u;
+            for (uint i = 1u; i < 4u; ++i) if (w[i] > w[first]) first = i;
+            uint second = first == 0u ? 1u : 0u;
+            for (uint i = 0u; i < 4u; ++i) if (i != first && w[i] > w[second]) second = i;
+            for (uint i = 0u; i < 4u; ++i) if (i != first && i != second) w[i] = 0.0;
+        }
+        float total = w.x + w.y + w.z + w.w;
+        if (total <= 0.0) {
+            // Nothing above 1% here: the first layer the draw uses.
+            uint first = findLSB(max(used, 1u));
+            w = vec4(0.0);
+            w[first] = 1.0;
+            total = 1.0;
+        }
+        w /= total;
+        terrainWeights = w;
+        vec3 geometric = normalize(vNormal);
+        vec3 color = vec3(0.0), normalSum = vec3(0.0);
+        vec2 rm = vec2(0.0);
+        float lengthSum = 0.0;
+        for (uint i = 0u; i < 4u; ++i) {
+            if (w[i] <= 0.0) continue;
+            TerrainLayerData l = tb.terrain.layer[i];
+            vec2 uv = (xz - tb.terrain.corner) * l.inverseUvMetres;
+            uint s = l.layerSampler;
+            color += w[i] * texture(sampler2D(textures[nonuniformEXT(l.baseColor)], materialSamplers[nonuniformEXT(s)]), uv).rgb *
+                     l.baseColorFactor.rgb;
+            rm += w[i] * vec2(l.roughness, l.metallic) *
+                  texture(sampler2D(textures[nonuniformEXT(l.metallicRoughness)], materialSamplers[nonuniformEXT(s)]), uv).gb;
+            float len = 1.0;
+            vec3 ln = low ? geometric : terrainLayerNormal(geometric, l, uv, len);
+            normalSum += w[i] * ln;
+            lengthSum += w[i] * len;
+        }
+        albedo.rgb = color * vColor.rgb;
+        roughnessMetallic = rm;
+        float normalSumLength = length(normalSum);
+        n = normalSumLength > 1e-6 ? normalSum / normalSumLength : geometric;
+        normalLength = lengthSum;
+    }
+
+    // Water (W3, docs/Water.md): ripples from its normal map tiled over the world and
+    // drifting with the frame clock; its depth along the view ray, from the scene's depth
+    // behind it (the transmission pass); from those its body colour, how much of the bottom
+    // shows, and foam along the shore. A smooth dielectric (F0 0.02) that reflects like any
+    // other surface. Without the transmission pass it's a blended stand-in: the halfway
+    // colour, mostly opaque, no depth and no foam.
+    float waterShare = 0.0, waterFoam = 0.0;   // body colour's share over the bottom; foam
+    vec3 waterRipple = vec3(0.0);   // the ripples' tilt, for refraction
+    if (family == kFamilyWater) {
+        bool low = (shadingFlags & kShadingWaterLow) != 0u;
+        bool simplified = (shadingFlags & kShadingSimplifiedGlass) != 0u || !kTransmissionPass;
+        vec3 geometric = normalize(vNormal);
+        n = geometric;
+        normalLength = 1.0;
+        float foamBreak = 1.0;
+        if (sh.waterNormalTexture != 0u) {
+            // The frame clock (Renderer::setWindTime), from the wind's phase (kWindRate 1.7).
+            float travel = pc.drawBuffer.draws[vDraw].windPhase * (1.0 / 1.7) * sh.waterRippleSpeed *
+                           sh.waterInverseRippleScale;
+            vec2 xz = vWorldPosition.xz * sh.waterInverseRippleScale;
+            SlotBinding binding = sh.slots[kWaterNormalSlot];
+            vec4 first = sampleSlot(sh.waterNormalTexture, binding, xz + normalize(vec2(1.0, 0.3)) * travel);
+            vec3 m = first.xyz * 2.0 - 1.0;
+            foamBreak = first.b;
+            if (!low) {
+                vec4 second = sampleSlot(
+                    sh.waterNormalTexture, binding, xz + vec2(0.37, 0.61) + normalize(vec2(-0.4, 1.0)) * travel);
+                m += second.xyz * 2.0 - 1.0;
+                foamBreak = 0.5 * (first.b + second.b);
+            }
+            m.z = max(m.z, 1e-3);
+            m = normalize(m);
+            // The map's u along world +X, v along world +Z, on whichever way the surface faces.
+            vec3 t = vec3(1.0, 0.0, 0.0) - geometric * geometric.x;
+            t = dot(t, t) > 1e-6 ? normalize(t) : normalize(cross(geometric, vec3(0.0, 0.0, 1.0)));
+            vec3 b = cross(t, geometric);
+            n = normalize(t * m.x + b * m.y + geometric * m.z);
+            waterRipple = n - geometric;
+        }
+        if (simplified) {
+            albedo = vec4(mix(sh.waterShallow, sh.waterDeep, 0.5), 0.85);
+        } else {
+            // The water's depth: from its surface to the opaque scene behind, along the view ray.
+            float depth = 1e4;   // over the background: endlessly deep
+            vec2 own = gl_FragCoord.xy / frame.renderSize;
+            float behind = texelFetch(sampler2D(textures[frame.sceneDepth], linearSampler),
+                clamp(ivec2(gl_FragCoord.xy), ivec2(0), ivec2(frame.renderSize) - 1), 0).r;
+            vec3 behindView;
+            if (viewPositionFromDepth(own, behind, frame.inverseProjection, behindView))
+                depth = max(length(behindView) - length((frame.view * vec4(vWorldPosition, 1.0)).xyz), 0.0);
+            vec3 body = mix(sh.waterShallow, sh.waterDeep, clamp(depth / sh.waterDepthFade, 0.0, 1.0));
+            waterShare = clamp(depth / sh.waterClarity, 0.0, 1.0);
+            if (!low && sh.waterFoamDistance > 0.0)
+                waterFoam = (1.0 - clamp(depth / sh.waterFoamDistance, 0.0, 1.0)) * clamp(foamBreak * 4.0 - 3.0, 0.0, 1.0);
+            albedo = vec4(mix(body * waterShare, vec3(0.9), waterFoam), 1.0);
+        }
+        roughnessMetallic = vec2(0.05, 0.0);
+    }
 
     // Detail and second layers (A02): mixed into the surface before a single evaluation of
     // the lighting. Alpha, emission and occlusion stay the first layer's.
@@ -541,7 +720,8 @@ void main() {
     if (frame.debugView == 13u && !kTransmissionPass) {
         // Transmission (A07b): the glass's own colours come from the transmission pass;
         // simplified glass (off) is magenta, everything else dimmed.
-        outColor = family == 3u ? vec4(0.8, 0.2, 0.8, 1.0) : vec4(albedo.rgb * 0.2, 1.0);
+        outColor = family == 3u ? vec4(0.8, 0.2, 0.8, 1.0)
+                   : family == kFamilyWater ? vec4(0.6, 0.2, 0.9, 1.0) : vec4(albedo.rgb * 0.2, 1.0);
         return;
     }
     if (frame.debugView == 14u) {
@@ -553,6 +733,12 @@ void main() {
         if (family == 1u) shown = (shadingFlags & kShadingSkinDiffusion) != 0u ? vec3(1.0, 0.5, 0.25) : vec3(0.45, 0.25, 0.1);
         if (family == 2u) shown = (shadingFlags & kShadingAnisotropic) != 0u ? vec3(0.2, 1.0, 1.0) : vec3(0.2, 0.3, 1.0);
         if (family == 3u) shown = kTransmissionPass ? vec3(0.2, 1.0, 0.3) : vec3(0.8, 0.2, 0.8);
+        // Water (W3): blue through the transmission pass, purple as the blended stand-in.
+        if (family == kFamilyWater) shown = kTransmissionPass ? vec3(0.1, 0.45, 1.0) : vec3(0.6, 0.2, 0.9);
+        // Painted terrain (W1b): each layer's share, layer 0 red, 1 green, 2 blue, 3 yellow.
+        if (family == kFamilyTerrain)
+            shown = terrainWeights.x * vec3(1.0, 0.0, 0.0) + terrainWeights.y * vec3(0.0, 1.0, 0.0) +
+                    terrainWeights.z * vec3(0.0, 0.0, 1.0) + terrainWeights.w * vec3(1.0, 1.0, 0.0);
         outColor = vec4(shown, 1.0);
         return;
     }
@@ -589,6 +775,7 @@ void main() {
     }
     vec3 emissive = vEmissive;
     if (vMaps.z != 0u) emissive *= sampleMap(vMaps.z, kEmissive).rgb;
+    if (graphSurface) emissive = graphEmissive;
     if (frame.debugView == 1u) { outColor = vec4(albedo.rgb + emissive, albedo.a); return; }
     if (frame.debugView == 6u) { outColor = vec4(surroundingsIrradiance(n), 1.0); return; }
     if (frame.debugView == 2u) { outColor = vec4(n * 0.5 + 0.5, 1.0); return; }
@@ -636,6 +823,7 @@ void main() {
         float r = (sh.ior - 1.0) / (sh.ior + 1.0);
         dielectricF0 = r * r;
     }
+    if (family == kFamilyWater) dielectricF0 = 0.02;   // IOR 1.33
     vec3 f0 = mix(vec3(dielectricF0), albedo.rgb, metallic);
     vec3 diffuseColor = albedo.rgb * (1.0 - metallic);
     // Glass passes on what it doesn't diffuse (the transmission pass adds it below).
@@ -718,6 +906,7 @@ void main() {
     // scattering energy compensation of Fdez-Aguera 2019 so rough metals don't lose light.
     // The occlusion map only darkens this: direct light has shadows of its own.
     float occlusion = vMaps.w != 0u ? 1.0 + vMapScales.y * (sampleMap(vMaps.w, kOcclusion).r - 1.0) : 1.0;
+    if (graphSurface) occlusion = clamp(graphOcclusion, 0.0, 1.0);
     const float tableTexel = 1.0 / 128.0;   // kBrdfTableSize; clamped so lookups never wrap
     vec2 brdf = textureLod(
         sampler2D(textures[frame.brdfTable], linearSampler),
@@ -866,6 +1055,26 @@ void main() {
         // Absorbed along the way: exactly attenuation_color after attenuation_distance.
         transmitted *= transmittedWeight * exp(-sh.absorption * thicknessWorld);
     }
+    if (kTransmissionPass && family == kFamilyWater && (shadingFlags & kShadingSimplifiedGlass) == 0u) {
+        // Water (W3): the bottom, through what the body colour and the foam leave, bent by
+        // the ripples on high; where the bent spot has something nearer than the water
+        // (a post standing in it), straight down instead, so nothing above smears into it.
+        transmittedWeight = max(1.0 - singleScatter - multiScatter, vec3(0.0)) * (1.0 - waterShare) * (1.0 - waterFoam);
+        vec2 own = gl_FragCoord.xy / frame.renderSize;
+        vec2 uv = own;
+        vec2 texel = 1.0 / frame.renderSize;
+        if ((shadingFlags & kShadingWaterLow) == 0u && dot(waterRipple, waterRipple) > 0.0) {
+            vec2 bent = clamp(own + waterRipple.xz * 0.02, texel * 0.5, 1.0 - texel * 0.5);
+            float behind = texelFetch(sampler2D(textures[frame.sceneDepth], linearSampler),
+                clamp(ivec2(bent * frame.renderSize), ivec2(0), ivec2(frame.renderSize) - 1), 0).r;
+            if (behind <= gl_FragCoord.z) uv = bent;   // reverse-Z: greater is nearer
+            else transmissionFallback = 2u;
+        }
+        transmitted = textureLod(sampler2D(textures[frame.transmissionBackground], linearSampler),
+            clamp(uv, texel * 0.5, 1.0 - texel * 0.5), 0.0).rgb * transmittedWeight;
+    }
+    bool seeThrough = kTransmissionPass && (family == 3u || (family == kFamilyWater &&
+                                                             (shadingFlags & kShadingSimplifiedGlass) == 0u));
 
     if (frame.debugView == 4u) {
         // Which sun cascade each pixel reads: red, green, blue, yellow from near to far.
@@ -873,11 +1082,11 @@ void main() {
         if (cascade < 4u) light *= tints[cascade];
     }
     vec3 radiance = light + emissive;
-    if (kTransmissionPass && family == 3u && frame.debugView == 13u) {
+    if (seeThrough && frame.debugView == 13u) {
         // Where the light through the glass came from: green the scene behind, red the
         // environment (off screen), blue straight through (something in front was there).
         const vec3 fallbacks[3] = vec3[](vec3(0.2, 1.0, 0.3), vec3(1.0, 0.25, 0.2), vec3(0.25, 0.4, 1.0));
-        outColor = vec4(fallbacks[transmissionFallback] * (0.5 + 0.5 * transmission), 1.0);
+        outColor = vec4(fallbacks[transmissionFallback] * (family == 3u ? 0.5 + 0.5 * transmission : 1.0), 1.0);
         return;
     }
     // Fog (A06): S + T L. Blended surfaces blend this over the fogged scene behind them,
@@ -887,7 +1096,7 @@ void main() {
     if (frame.fogMode != kFogNone && (frame.debugView == 0u || frame.debugView == 12u)) {
         vec4 fog = sceneFog(frame, gl_FragCoord.xy, vWorldPosition);
         if (frame.debugView == 12u) { outColor = vec4(vec3(fog.a), 1.0); return; }
-        if (kTransmissionPass && family == 3u) {
+        if (seeThrough) {
             outColor = vec4(fog.rgb * (1.0 - transmittedWeight) + fog.a * radiance + transmitted, 1.0);
             return;
         }
@@ -896,7 +1105,7 @@ void main() {
         outColor = vec4(1.0);
         return;
     }
-    if (kTransmissionPass && family == 3u) {
+    if (seeThrough) {
         outColor = vec4(radiance + transmitted, 1.0);
         return;
     }

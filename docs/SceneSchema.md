@@ -351,7 +351,7 @@ No fields; the component's presence is what matters.
 
 | Field | Value | Default |
 |---|---|---|
-| `shape` | one of: Box, Sphere, Capsule, "Convex model", "Triangle model" (or its number, counting from 0) | `Box` |
+| `shape` | one of: Box, Sphere, Capsule, "Convex model", "Triangle model", Terrain (or its number, counting from 0) | `Box` |
 | `half_extents` | x y z; range 0.001 to 10000 | `0.5 0.5 0.5` |
 | `radius` | number; range 0.001 to 10000 | `0.5` |
 | `half_height` | number; range 0.001 to 10000 | `0.5` |
@@ -515,6 +515,21 @@ No fields; the component's presence is what matters.
 | `blend_distance` | number; range 0 to 1000 | `1` |
 | `weight` | number; range 0 to 1 | `1` |
 
+#### Terrain
+
+| Field | Value | Default |
+|---|---|---|
+| `asset` | quoted text | `""` |
+| `visible` | 1 or 0 (true/false also accepted) | `1` |
+| `cast_shadows` | 1 or 0 (true/false also accepted) | `1` |
+
+#### Foliage
+
+| Field | Value | Default |
+|---|---|---|
+| `asset` | quoted text | `""` |
+| `visible` | 1 or 0 (true/false also accepted) | `1` |
+
 ### UI
 
 #### UIDocument
@@ -544,6 +559,7 @@ Names a scene can use, built-in and from this project's asset folder.
 - `checker`
 - `panel`
 - `grid`
+- `water-ripples`
 - `Effects/Texture/LaserMain01.png`
 - `Effects/Texture/Particle01.png`
 - `Effects/Texture/Particle02.png`
@@ -559,7 +575,7 @@ Names a scene can use, built-in and from this project's asset folder.
 
 ### Materials (MeshRenderer.material, ModelRenderer.materials)
 
-None.
+- `water`
 
 ### Audio clips (AudioSource.clip)
 

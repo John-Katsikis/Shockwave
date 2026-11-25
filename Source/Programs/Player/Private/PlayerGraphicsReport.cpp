@@ -4,7 +4,10 @@
 
 #include "Player.h"
 
+#include <Assets/AssetFolder.h>
 #include <Engine/GraphicsBudget.h>
+#include <Engine/Foliage.h>
+#include <Engine/Terrain.h>
 
 #include <Renderer/Renderer.h>
 
@@ -95,16 +98,19 @@ std::string postProcessJson(const shockwave::PostProcessSettings& s, const shock
 
 // Character and specialized shading (A07-A09) in the last frame.
 std::string shadingJson(const shockwave::ShadingSettings& s, const shockwave::ShadingStats& p) {
-    char text[640];
+    char text[768];
     std::snprintf(
         text, sizeof(text),
         "{\"clearcoat\": %s, \"transmission_quality\": \"%s\", \"skin_quality\": \"%s\", \"hair_quality\": \"%s\", "
+        "\"water_quality\": \"%s\", "
         "\"coat_draws\": %u, \"transmission_draws\": %u, \"simplified_glass_draws\": %u, \"skin_draws\": %u, "
-        "\"hair_draws\": %u, \"anisotropic_hair\": %s, \"transmission_pass\": %s, \"skin_pass\": %s, "
+        "\"hair_draws\": %u, \"anisotropic_hair\": %s, \"water_draws\": %u, \"simplified_water_draws\": %u, "
+        "\"transmission_pass\": %s, \"skin_pass\": %s, "
         "\"transmission_bytes\": %llu, \"skin_bytes\": %llu}",
         s.clearcoat ? "true" : "false", shockwave::transmissionQualityName(s.transmission),
-        shockwave::skinQualityName(s.skin), shockwave::hairQualityName(s.hair), p.coatDraws, p.transmissionDraws,
-        p.simplifiedGlassDraws, p.skinDraws, p.hairDraws, p.anisotropicHair ? "true" : "false",
+        shockwave::skinQualityName(s.skin), shockwave::hairQualityName(s.hair), shockwave::waterQualityName(s.water),
+        p.coatDraws, p.transmissionDraws, p.simplifiedGlassDraws, p.skinDraws, p.hairDraws,
+        p.anisotropicHair ? "true" : "false", p.waterDraws, p.simplifiedWaterDraws,
         p.transmissionPass ? "true" : "false", p.skinPass ? "true" : "false",
         static_cast<unsigned long long>(p.transmissionBytes), static_cast<unsigned long long>(p.skinBytes));
     return text;
@@ -218,6 +224,34 @@ void Player::graphicsReport() {
         residency.reduced, residency.textures, residency.pending, mib(residency.residentBytes),
         mib(residency.fullBytes));
 
+    // Terrains (W1a): how many, the chunks they submit, and what levels of detail saved.
+    uint32_t terrains = 0, terrainChunks = 0;
+    m_world.each<const shockwave::Terrain>([&](shockwave::Entity, const shockwave::Terrain& t) {
+        const auto asset = t.visible ? engine().assets().terrain(t.asset) : nullptr;
+        if (!asset) return;
+        ++terrains;
+        terrainChunks += static_cast<uint32_t>(asset->chunks.size());
+    });
+    const shockwave::LodStats lod = renderer.lodStats();
+    const shockwave::ShadingStats shadingStats = renderer.shadingStats();
+    if (terrains)
+        std::printf(
+            "\nterrain: %u terrain%s, %u chunks submitted; %u draws used a simpler level; %u painted draws sampled %u "
+            "layers (terrain_quality %s)\n",
+            terrains, terrains == 1 ? "" : "s", terrainChunks, lod.reducedDraws, shadingStats.terrainDraws,
+            shadingStats.terrainLayers, shockwave::terrainQualityName(renderer.shadingSettings().terrain));
+
+    // Foliage (W2a): what the last frame chose and submitted.
+    const shockwave::FoliageStats& foliage = shockwave::lastFoliageStats();
+    const shockwave::FoliageSettings foliageSettings = renderer.foliageSettings();
+    if (foliage.foliages)
+        std::printf(
+            "\nfoliage: %u foliage%s, %u of %u instances drawn from %u of %u cells in range, %u calls, %.3f ms to "
+            "submit (foliage_density %g, foliage_distance %g)\n",
+            foliage.foliages, foliage.foliages == 1 ? "" : "s", foliage.instancesDrawn, foliage.instances,
+            foliage.cellsDrawn, foliage.cells, foliage.calls, foliage.submitMs, double(foliageSettings.density),
+            double(foliageSettings.distance));
+
     if (m_tool.benchmarkJson.empty()) return;
     std::ostringstream json;
     json << "{\n  \"renderer\": " << quoted(caps.backend) << ",\n  \"device\": " << quoted(caps.device)
@@ -264,6 +298,23 @@ void Player::graphicsReport() {
          << ", \"budgeted_bytes\": " << shockwave::budgetedMemoryBytes(memory)
          << ", \"turned_down\": " << graphics.budgetDrops().size()
          << ", \"over_budget\": " << (graphics.overBudget() ? "true" : "false") << "}"
+         << ",\n  \"terrain\": {\"terrains\": " << terrains << ", \"chunks\": " << terrainChunks
+         << ", \"lod_reduced_draws\": " << lod.reducedDraws << ", \"triangles\": " << lod.triangles
+         << ", \"full_triangles\": " << lod.fullTriangles << ", \"painted_draws\": " << shadingStats.terrainDraws
+         << ", \"layers_sampled\": " << shadingStats.terrainLayers
+         << ", \"low_quality_draws\": " << shadingStats.terrainLowDraws
+         << ", \"terrain_quality\": " << quoted(shockwave::terrainQualityName(renderer.shadingSettings().terrain))
+         << "}" << ",\n  \"foliage\": {\"foliages\": " << foliage.foliages << ", \"cells\": " << foliage.cells
+         << ", \"cells_drawn\": " << foliage.cellsDrawn << ", \"instances\": " << foliage.instances
+         << ", \"instances_drawn\": " << foliage.instancesDrawn << ", \"calls\": " << foliage.calls
+         << ", \"submit_ms\": " << foliage.submitMs << ", \"density\": " << foliageSettings.density
+         << ", \"distance\": " << foliageSettings.distance << "}"
+         << ",\n  \"material_graphs\": {\"enabled\": " << (renderer.shadingSettings().materialGraphs ? "true" : "false")
+         << ", \"shaders\": " << renderer.surfaceShaderCount() << ", \"draws\": " << shadingStats.graphDraws
+         << ", \"compiled\": " << (m_assets ? m_assets->graphStats().compiled : 0)
+         << ", \"from_cache\": " << (m_assets ? m_assets->graphStats().fromCache : 0)
+         << ", \"load_ms\": " << (m_assets ? m_assets->graphStats().milliseconds : 0.0)
+         << ", \"errors\": " << (m_assets ? m_assets->graphStats().errors.size() : 0) << "}"
          << ",\n  \"unkeyed_draws\": " << renderer.unkeyedDraws() << ",\n  \"draws\": " << renderer.drawCount()
          << ",\n  \"frame_graph\": " << quoted(renderer.frameGraph()) << "\n}\n";
     std::ofstream out(m_tool.benchmarkJson, std::ios::trunc);

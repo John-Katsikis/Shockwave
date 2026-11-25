@@ -711,7 +711,34 @@ private:
                                     std::to_string(m_result.leftOut) + " other project files left out");
         }
         content += gatherTextureCache(items, to);
+        content += gatherShaderCache(items, to);
         log(LogLevel::Info, "Game files: " + std::to_string(content));
+    }
+
+    // Material graphs' compiled shaders from Saved/Cache/Shaders (W4, docs/MaterialGraph.md):
+    // a packaged game never compiles them. A release package ships the ones its cook names
+    // (each graph requires its own, so a missing one has already stopped packaging above);
+    // otherwise every one there.
+    size_t gatherShaderCache(std::vector<CopyItem>& items, const fs::path& to) {
+        const fs::path cache = m_project.statePath() / "Cache" / "Shaders";
+        const std::string prefix = "Saved/Cache/Shaders/";
+        size_t count = 0;
+        std::error_code ec;
+        if (m_options.release) {
+            for (const CookAsset& asset : m_cook.assets) {
+                if (asset.id.rfind(prefix, 0) != 0) continue;
+                add(items, m_project.root / fs::path(std::u8string(asset.id.begin(), asset.id.end())),
+                    to / fs::path(std::u8string(asset.id.begin(), asset.id.end())));
+                ++count;
+            }
+            return count;
+        }
+        for (const auto& entry : fs::directory_iterator(cache, ec)) {
+            if (entry.path().extension() != ".spv" || !entry.is_regular_file(ec)) continue;
+            add(items, entry.path(), to / entry.path().lexically_relative(m_project.root));
+            ++count;
+        }
+        return count;
     }
 
     // The compressed textures from Saved/Cache/Textures (compressTextures). Cache files are

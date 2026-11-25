@@ -182,6 +182,47 @@ void addGraphicsFlags(std::vector<Flag>& flags) {
         return {};
     });
 
+    add(flags, {"--terrain-info"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.terrainInfo = a.next();
+
+        return {};
+    });
+
+    add(flags, {"--foliage-info"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.foliageInfo = a.next();
+
+        return {};
+    });
+
+    add(flags, {"--terrain-import"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.terrainImport = a.next();
+
+        return {};
+    });
+
+    add(flags, {"--spacing"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        const std::string value = a.next();
+        const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), s.terrainSpacing);
+        if (ec != std::errc{} || end != value.data() + value.size() || !(s.terrainSpacing >= 0.1f) ||
+            !(s.terrainSpacing <= 100.0f))
+            throw player::UsageError("--spacing takes metres between terrain points, 0.1 to 100");
+
+        return {};
+    });
+
+    add(flags, {"--height-range"}, 2, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        const std::string low = a.next(), high = a.next();
+        const auto [lowEnd, lowEc] = std::from_chars(low.data(), low.data() + low.size(), s.terrainLow);
+        const auto [highEnd, highEc] = std::from_chars(high.data(), high.data() + high.size(), s.terrainHigh);
+        if (lowEc != std::errc{} || highEc != std::errc{} || lowEnd != low.data() + low.size() ||
+            highEnd != high.data() + high.size() || !std::isfinite(s.terrainLow) || !std::isfinite(s.terrainHigh) ||
+            std::abs(s.terrainLow) > 100000.0f || std::abs(s.terrainHigh) > 100000.0f ||
+            !(s.terrainHigh > s.terrainLow))
+            throw player::UsageError("--height-range takes the lowest and highest metres, low below high");
+
+        return {};
+    });
+
     add(flags, {"--lut-export-neutral"}, 2, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
         s.lutNeutralSize = uint32_t(wholeNumber(a.next(), 65, "--lut-export-neutral"));
         s.lutNeutral = a.next();
@@ -192,6 +233,18 @@ void addGraphicsFlags(std::vector<Flag>& flags) {
     add(flags, {"--effect-info"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
         s.effectInfo = a.next();
 
+        return {};
+    });
+
+    add(flags, {"--material-graph"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.materialGraph = a.next();
+        if (s.materialGraph.extension() != ".swmatgraph")
+            throw player::UsageError("--material-graph takes a .swmatgraph file");
+        return {};
+    });
+
+    add(flags, {"--material-graph-schema"}, 1, [](ParseState& s, FlagArgs& a) -> std::optional<int> {
+        s.materialGraphSchema = a.next();
         return {};
     });
 
