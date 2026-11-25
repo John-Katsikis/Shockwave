@@ -15,10 +15,13 @@ foreach(part ShippingDemo.swproject Config Content Scenes)
     file(COPY "${GAME}/${part}" DESTINATION "${TEMP}/game")
 endforeach()
 set(content "${TEMP}/game/Content")
-file(COPY "${FIXTURE}/Content/foliage/meadow.swfoliage" "${FIXTURE}/Content/foliage/meadow.instances"
-     DESTINATION "${content}/foliage")
-file(COPY "${FIXTURE}/Content/models/grass-tuft.glb" "${FIXTURE}/Content/models/pebble.glb"
-     DESTINATION "${content}/models")
+# The models go beside the foliage: Reactor Run has a Content/Models folder, and on a disk
+# that ignores case a second "models" would land in it, spelled differently from the paths.
+file(COPY "${FIXTURE}/Content/foliage/meadow.instances" "${FIXTURE}/Content/models/grass-tuft.glb"
+     "${FIXTURE}/Content/models/pebble.glb" DESTINATION "${content}/foliage")
+file(READ "${FIXTURE}/Content/foliage/meadow.swfoliage" header)
+string(REPLACE "\"models/" "\"foliage/" header "${header}")
+file(WRITE "${content}/foliage/meadow.swfoliage" "${header}")
 file(APPEND "${TEMP}/game/Scenes/training.swscene" "
 entity \"Meadow\"
   Transform
@@ -41,13 +44,12 @@ endfunction()
 check(TRUE "" "")
 execute_process(COMMAND "${PLAYER}" --project "${TEMP}/game/ShippingDemo.swproject" --asset-dependencies
     --scene "${TEMP}/game/Scenes/training.swscene" RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err)
-foreach(file foliage/meadow.swfoliage foliage/meadow.instances models/grass-tuft.glb models/pebble.glb)
+foreach(file foliage/meadow.swfoliage foliage/meadow.instances foliage/grass-tuft.glb foliage/pebble.glb)
     if(NOT out MATCHES "${file}")
         message(FATAL_ERROR "the training level's dependencies don't list ${file}:\n${out}\n${err}")
     endif()
 endforeach()
 
-file(READ "${FIXTURE}/Content/foliage/meadow.swfoliage" header)
 # 24 bytes an instance: one byte more is broken.
 file(WRITE "${content}/foliage/meadow.instances" "0123456789012345678901234")
 check(FALSE "not a multiple of 24" "an instances file of 25 bytes")
@@ -57,7 +59,7 @@ file(COPY_FILE "${FIXTURE}/Broken/type-7.instances" "${content}/foliage/meadow.i
 check(FALSE "instance 0 is type 7" "an instance of a type the header doesn't have")
 # A type whose model isn't in Content.
 file(COPY "${FIXTURE}/Content/foliage/meadow.instances" DESTINATION "${content}/foliage")
-string(REPLACE "models/pebble.glb" "models/boulder.glb" missing "${header}")
+string(REPLACE "foliage/pebble.glb" "foliage/boulder.glb" missing "${header}")
 file(WRITE "${content}/foliage/meadow.swfoliage" "${missing}")
-check(FALSE "type 1's model models/boulder.glb isn't loaded" "a type whose model is missing")
+check(FALSE "type 1's model foliage/boulder.glb isn't loaded" "a type whose model is missing")
 message(STATUS "foliage: Reactor Run's training level with a meadow checks; --check catches each broken foliage")
