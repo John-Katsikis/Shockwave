@@ -69,6 +69,8 @@ struct GraphicsSettings {
     // Painted terrain (W1b): high blends every layer at a pixel; low only its two heaviest,
     // without their normal maps.
     TerrainQuality terrainQuality = TerrainQuality::High;
+    // Water (W3): high refracts, adds foam and mixes two ripple samples; low none of those.
+    WaterQuality waterQuality = WaterQuality::High;
     // Foliage (W2a): the share of instances drawn (0 draws none and makes no draw calls) and
     // a scale on every type's distance.
     float foliageDensity = 1;   // 0..1

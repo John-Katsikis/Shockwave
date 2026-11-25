@@ -559,6 +559,7 @@ Names a scene can use, built-in and from this project's asset folder.
 - `checker`
 - `panel`
 - `grid`
+- `water-ripples`
 - `Effects/Texture/LaserMain01.png`
 - `Effects/Texture/Particle01.png`
 - `Effects/Texture/Particle02.png`
@@ -574,7 +575,7 @@ Names a scene can use, built-in and from this project's asset folder.
 
 ### Materials (MeshRenderer.material, ModelRenderer.materials)
 
-None.
+- `water`
 
 ### Audio clips (AudioSource.clip)
 

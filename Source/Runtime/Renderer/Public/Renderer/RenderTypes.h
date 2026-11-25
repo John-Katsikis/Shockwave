@@ -131,13 +131,14 @@ enum class MaterialSlot : uint8_t {
     Clearcoat,
     ClearcoatNormal,
     Transmission,
+    WaterNormal,
     Count
 };
 inline constexpr size_t kMaterialSlots = 5;   // base color .. occlusion
 inline constexpr size_t kAllMaterialSlots = size_t(MaterialSlot::Count);
 inline constexpr size_t kLayerSlots = 7;   // detail color .. layer metallic-roughness
-// Then clearcoat, clearcoat normal and transmission: Renderer/Shading.h's kShadingSlots.
-const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "transmission"
+// Then clearcoat, clearcoat normal, transmission and water normal: Renderer/Shading.h's kShadingSlots.
+const char* materialSlotName(MaterialSlot slot);   // "base_color", "normal", ..., "water_normal"
 // How one slot reads its texture: which UV set, transformed how, sampled how.
 struct TextureBinding {
     uint32_t uvSet = 0;   // 0: TEXCOORD_0, 1: TEXCOORD_1 (Vertex::uv, then MeshData::uv1)

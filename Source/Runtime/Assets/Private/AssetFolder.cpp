@@ -28,7 +28,8 @@ namespace {
 void warmPipelinesFor(Renderer& renderer, const DrawMaterial& material) {
     if (!material.shading) return;
     PipelineNeeds needs;
-    needs.transmission = material.shading->family == ShadingFamily::Transmission;
+    needs.transmission =
+        material.shading->family == ShadingFamily::Transmission || material.shading->family == ShadingFamily::Water;
     needs.skin = material.shading->family == ShadingFamily::Skin;
     if (needs.transmission || needs.skin) renderer.warmPipelines(needs);
 }

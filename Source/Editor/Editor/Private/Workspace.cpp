@@ -64,6 +64,8 @@ void Editor::drawCreateMenuItems(Entity parent) {
     if (ImGui::MenuItem("Cube")) createEntity(CreateKind::Cube, parent);
     if (ImGui::MenuItem("Sphere")) createEntity(CreateKind::Sphere, parent);
     if (ImGui::MenuItem("Plane")) createEntity(CreateKind::Plane, parent);
+    if (ImGui::MenuItem("Water plane")) createEntity(CreateKind::WaterPlane, parent);
+    ImGui::SetItemTooltip("A 10 m plane with the built-in water material (docs/Water.md)");
     ImGui::SeparatorText("Scene");
     if (ImGui::MenuItem("Camera")) createEntity(CreateKind::Camera, parent);
     if (ImGui::BeginMenu("Light")) {

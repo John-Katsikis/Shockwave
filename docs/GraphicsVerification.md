@@ -1078,6 +1078,39 @@ Not done: removing types, painting several types at once, a brush that follows c
 moved since the stroke began, and an editor test of the terrain re-drop (the rule itself is
 unit tested).
 
+## W3: water
+
+Water is a material family (docs/Water.md): a see-through surface drawn in the glass pass
+over the copy of the scene, reading the scene's depth behind it for its colour, clarity
+and shoreline foam, rippled by a normal map drifting with the frame clock, reflecting with
+F0 0.02. A scene without water is untouched; `transmission_quality off` draws a blended
+stand-in with no pass and no memory.
+
+- **Contract.** `family water` and its eight values (`water_*`, `texture water_normal`) in
+  `Assets/Material.h`, the `water` group refused on other families; `ShadingFamily::Water`
+  and `MaterialShading`'s water fields in `Renderer/Shading.h`; `water_quality` low/high in
+  the graphics settings. The `materials` unit test parses, inherits and refuses the values
+  and checks the draw material the renderer gets.
+- **Built in.** The `water` material (with its `water-ripples` map) and the editor's
+  Hierarchy Create > Water plane.
+- **GPU check.** `graphics_shading_render`, scene `shading-water` (Tools/water.py): the
+  deep area is closer to `water_deep_color` and the shallow one to `water_shallow_color`;
+  the shoreline strip is brighter than open water (221 vs 185 levels) and not on low (192);
+  around the post's waterline the rippled water differs 3.8 RMSE from water without ripples
+  (8.9 with the nearer-surface guard taken out); two fixed-step runs are identical; low
+  differs; the built-in material draws; with transmission off there's no pass or memory and
+  one stand-in draw, and `--check` warns about it.
+
+Deviations from the plan: the plan made water in view run the surface prepass for the
+depth behind it; the see-through pass already has the scene's depth bound read-only and
+sampled (glass reads it for its foreground guard), so no prepass is forced. The built-in
+material is named `water`, not `builtin:materials/water.swmaterial`: a name with an
+extension is a Content file to the asset graph, so the built-in follows the built-in
+meshes' naming. Water isn't in screen-space reflections, which only opaque surfaces have.
+
+Not done (as planned): waves that move the mesh, buoyancy, swimming, an underwater view,
+waterfalls.
+
 ## Known limits
 
 - The overhaul's frame times were all measured on llvmpipe, a CPU renderer. Timings on

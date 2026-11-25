@@ -286,10 +286,10 @@ void Editor::drawMaterialWindow() {
     }
 
     // Values, by group, in schema order.
-    const std::pair<const char*, const char*> groups[] = {{"surface", "Surface"},     {"alpha", "Alpha"},
-                                                          {"detail", "Detail layer"}, {"layer", "Second layer"},
-                                                          {"clearcoat", "Clearcoat"}, {"transmission", "Transmission"},
-                                                          {"skin", "Skin"},           {"hair", "Hair"}};
+    const std::pair<const char*, const char*> groups[] = {
+        {"surface", "Surface"},    {"alpha", "Alpha"},         {"detail", "Detail layer"},
+        {"layer", "Second layer"}, {"clearcoat", "Clearcoat"}, {"transmission", "Transmission"},
+        {"skin", "Skin"},          {"hair", "Hair"},           {"water", "Water"}};
     // The family's own groups only (docs/Shading.md): another family's values do nothing.
     const int family = edit.isSet("family") ? edit.values.family : effective.family;
     for (const auto& [group, title] : groups) {

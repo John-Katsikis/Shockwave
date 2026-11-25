@@ -38,10 +38,11 @@ struct MaterialHandle {
     bool operator==(const MaterialHandle&) const = default;
 };
 
-// Shading families (A07-A09, docs/Shading.md), in ShadingFamily's order: standard (glTF
-// metallic-roughness, optionally with a clearcoat), skin, hair cards and transmission.
+// Shading families (A07-A09, W3, docs/Shading.md), in the file's order: standard (glTF
+// metallic-roughness, optionally with a clearcoat), skin, hair cards, transmission and water.
 // Terrain (W1b) is never in a .swmaterial: a painted terrain sets it on its own draws.
-enum class MaterialFamily : int { Standard, Skin, HairCard, Transmission, Terrain };
+// ShadingFamily has the same first four; buildDrawMaterial maps water to its own value.
+enum class MaterialFamily : int { Standard, Skin, HairCard, Transmission, Water, Terrain };
 enum class MaterialAlpha : int { Opaque, Mask, Blend };
 // Which channel of a mask texture is read.
 enum class MaskChannel : int { R, G, B, A };
@@ -94,6 +95,14 @@ struct MaterialParams {
     // Hair cards (A09), family hair_card.
     float hairAnisotropy = 0.8f;
     int hairDirection = 1;   // 0 u, 1 v: root to tip
+    // Water (W3), family water.
+    glm::vec3 waterShallowColor{0.1f, 0.4f, 0.4f};
+    glm::vec3 waterDeepColor{0.02f, 0.08f, 0.12f};
+    float waterDepthFade = 4.0f;   // metres
+    float waterClarity = 6.0f;   // metres
+    float waterRippleScale = 3.0f;   // metres per repeat
+    float waterRippleSpeed = 0.3f;   // metres a second
+    float waterFoamDistance = 0.4f;   // metres
     bool operator==(const MaterialParams&) const = default;
 };
 
@@ -106,7 +115,7 @@ struct MaterialParamInfo {
     size_t offset;   // in MaterialParams
     float min, max;   // per component; min == max: any finite value
     std::vector<const char*> options;   // Enum: the names, in value order
-    const char* group;   // "surface", "alpha", "detail", "layer", "clearcoat", "transmission", "skin", "hair"
+    const char* group;   // "surface", "alpha", "detail", "layer", "clearcoat", "transmission", "skin", "hair", "water"
     const char* description;
 };
 const std::vector<MaterialParamInfo>& materialParams();
@@ -185,8 +194,9 @@ enum MaterialFeature : uint32_t {
     kMaterialTransmission = 1u << 8,   // transmission with transmission above 0 (or its texture)
     kMaterialSkin = 1u << 9,
     kMaterialHairCard = 1u << 10,
+    kMaterialWater = 1u << 11,
 };
-inline constexpr uint32_t kMaterialFeatureCount = 11;
+inline constexpr uint32_t kMaterialFeatureCount = 12;
 const char* materialFeatureName(uint32_t feature);   // "alpha_mask", ...
 struct MaterialDesc {
     MaterialParams params;

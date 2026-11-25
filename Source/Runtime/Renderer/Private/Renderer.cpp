@@ -53,7 +53,7 @@ const char* materialSlotName(MaterialSlot slot) {
     constexpr const char* names[] = {"base_color", "normal",           "metallic_roughness", "emissive",
                                      "occlusion",  "detail_color",     "detail_normal",      "detail_mask",
                                      "layer_mask", "layer_base_color", "layer_normal",       "layer_metallic_roughness",
-                                     "clearcoat",  "clearcoat_normal", "transmission"};
+                                     "clearcoat",  "clearcoat_normal", "transmission",       "water_normal"};
     static_assert(std::size(names) == kAllMaterialSlots);
     return names[std::min<uint32_t>(static_cast<uint32_t>(slot), kAllMaterialSlots - 1)];
 }

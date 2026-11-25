@@ -366,6 +366,11 @@ std::vector<EffectiveSetting> VulkanRenderer::Impl::effectiveSettings() const {
             detail, sizeof(detail), "last frame %u painted terrain draws sampling %u layers", st.terrainDraws,
             st.terrainLayers);
         settings.push_back({"terrain_quality", terrainQualityName(terrain), terrainQualityName(terrain), "", detail});
+        const WaterQuality water = shadingWater.load(std::memory_order_relaxed);
+        std::snprintf(
+            detail, sizeof(detail), "last frame %u water draws through the transmission pass, %u simplified",
+            st.waterDraws, st.simplifiedWaterDraws);
+        settings.push_back({"water_quality", waterQualityName(water), waterQualityName(water), "", detail});
     }
 
     // Drawing (G12): what last frame merged and culled.

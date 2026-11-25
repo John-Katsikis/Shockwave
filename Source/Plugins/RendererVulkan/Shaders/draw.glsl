@@ -81,9 +81,9 @@ const uint kDetailColor = 0u, kDetailNormal = 1u, kDetailMask = 2u, kLayerMaskSl
 const uint kLayerBaseColor = 4u, kLayerNormal = 5u, kLayerMetallicRoughness = 6u;
 
 // A draw's shading family (A07-A09, Renderer/Shading.h): clearcoat, transmission, skin,
-// hair cards. Must match ShadingData in RendererImpl.h.
+// hair cards, water. Must match ShadingData in RendererImpl.h.
 struct ShadingData {
-    uint family;   // 0 standard, 1 skin, 2 hair card, 3 transmission
+    uint family;   // 0 standard, 1 skin, 2 hair card, 3 transmission, 4 terrain, 5 water
     uint flags;   // kShading*
     float clearcoat;
     float clearcoatRoughness;   // perceptual
@@ -102,7 +102,15 @@ struct ShadingData {
     uint skinReceiver;   // 1..255 in the skin pass; 0: none
     float pad0;
     uvec2 terrain;   // family terrain (W1b): a TerrainShadingBuffer; 0: none
-    SlotBinding slots[3];   // MaterialSlot::Clearcoat onwards
+    vec3 waterShallow;   // family water (W3): the body's colour, shallow to deep
+    float waterDepthFade;   // metres
+    vec3 waterDeep;
+    float waterClarity;   // metres
+    float waterInverseRippleScale;   // repeats a metre
+    float waterRippleSpeed;   // metres a second
+    float waterFoamDistance;   // metres; 0: none
+    uint waterNormalTexture;   // bindless slot; 0: flat
+    SlotBinding slots[4];   // MaterialSlot::Clearcoat onwards
 };
 layout(buffer_reference, scalar) readonly buffer ShadingBuffer {
     ShadingData shading;
@@ -115,10 +123,12 @@ const uint kShadingSkinDiffusion = 16u;   // skin: the scene leaves its diffuse 
 const uint kShadingRefract = 32u;   // transmission medium and high: solid glass bends the background
 const uint kShadingRoughTaps = 64u;   // transmission high: four more taps for rough glass
 const uint kShadingSimplifiedGlass = 128u;   // transmission off (or no pass this frame): blended stand-in
+const uint kShadingWaterLow = 256u;   // water_quality low: no refraction or foam, one ripple sample
 // ShadingData::slots
-const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u;
+const uint kClearcoatSlot = 0u, kClearcoatNormalSlot = 1u, kTransmissionSlot = 2u, kWaterNormalSlot = 3u;
 // ShadingData::family
-const uint kFamilyStandard = 0u, kFamilySkin = 1u, kFamilyHairCard = 2u, kFamilyTransmission = 3u, kFamilyTerrain = 4u;
+const uint kFamilyStandard = 0u, kFamilySkin = 1u, kFamilyHairCard = 2u, kFamilyTransmission = 3u, kFamilyTerrain = 4u,
+           kFamilyWater = 5u;
 
 // A painted terrain draw's layers (W1b, Renderer/Shading.h). Must match TerrainShadingData
 // in RendererImpl.h.

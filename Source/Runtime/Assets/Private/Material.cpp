@@ -29,11 +29,11 @@ const std::vector<MaterialParamInfo> kParams = {
      SW_PARAM(family),
      0,
      0,
-     {"standard", "skin", "hair_card", "transmission"},
+     {"standard", "skin", "hair_card", "transmission", "water"},
      "surface",
      "Shading family (docs/Shading.md): standard is glTF's metallic-roughness (with an optional clearcoat); skin "
      "diffuses its light under the surface; hair_card stretches the highlight along the strands; transmission is "
-     "glass and other see-through dielectrics"},
+     "glass and other see-through dielectrics; water is a lake or river surface (docs/Water.md)"},
     {"base_color",
      MaterialValueType::Color4,
      SW_PARAM(baseColor),
@@ -285,6 +285,62 @@ const std::vector<MaterialParamInfo> kParams = {
      {"u", "v"},
      "hair",
      "Which way the strands run on the card's texture, root to tip: u (left to right) or v (top to bottom)"},
+    {"water_shallow_color",
+     MaterialValueType::Color3,
+     SW_PARAM(waterShallowColor),
+     0,
+     1,
+     {},
+     "water",
+     "family water: the water's colour where the bottom is close"},
+    {"water_deep_color",
+     MaterialValueType::Color3,
+     SW_PARAM(waterDeepColor),
+     0,
+     1,
+     {},
+     "water",
+     "The colour where it's deep"},
+    {"water_depth_fade",
+     MaterialValueType::Float,
+     SW_PARAM(waterDepthFade),
+     0.1f,
+     100,
+     {},
+     "water",
+     "Metres of water over which the shallow colour becomes the deep one"},
+    {"water_clarity",
+     MaterialValueType::Float,
+     SW_PARAM(waterClarity),
+     0.1f,
+     100,
+     {},
+     "water",
+     "Metres you can see through before the bottom disappears into the water's colour"},
+    {"water_ripple_scale",
+     MaterialValueType::Float,
+     SW_PARAM(waterRippleScale),
+     0.1f,
+     100,
+     {},
+     "water",
+     "Metres per repeat of the water_normal ripple map, tiled over the world"},
+    {"water_ripple_speed",
+     MaterialValueType::Float,
+     SW_PARAM(waterRippleSpeed),
+     0,
+     10,
+     {},
+     "water",
+     "Metres a second the ripples drift"},
+    {"water_foam_distance",
+     MaterialValueType::Float,
+     SW_PARAM(waterFoamDistance),
+     0,
+     5,
+     {},
+     "water",
+     "Metres of water depth over which the shoreline foam fades out; 0 none"},
 };
 #undef SW_PARAM
 static_assert(sizeof(int) == 4);
@@ -306,6 +362,9 @@ const std::array<MaterialSlotInfo, kAllMaterialSlots> kSlots = {{
     {MaterialSlot::Clearcoat, false, false, "clearcoat", "Red scales clearcoat, green clearcoat_roughness (glTF's)"},
     {MaterialSlot::ClearcoatNormal, false, true, "clearcoat", "The coat's own normals"},
     {MaterialSlot::Transmission, false, false, "transmission", "Red scales transmission, green thickness"},
+    {MaterialSlot::WaterNormal, false, true, "water",
+     "Ripple normals, tiled over the world every water_ripple_scale metres (its UVs aren't used); blue breaks up "
+     "the foam"},
 }};
 
 template <class T>
@@ -561,8 +620,8 @@ bool parseMaterial(std::string_view text, MaterialFile& out, std::string& error)
             return fail(
                 key.text + " needs a slot: base_color, normal, metallic_roughness, emissive, occlusion, "
                            "detail_color, detail_normal, detail_mask, layer_mask, layer_base_color, "
-                           "layer_normal, layer_metallic_roughness, clearcoat, clearcoat_normal or "
-                           "transmission");
+                           "layer_normal, layer_metallic_roughness, clearcoat, clearcoat_normal, transmission or "
+                           "water_normal");
         const std::string kind = key.text == "clear_texture" ? "texture" : key.text;
         if (!records.insert(kind + " " + tokens[1].text).second)
             return fail(
@@ -803,7 +862,9 @@ std::string materialSchemaMarkdown() {
            "| `transmission` | surface, transmission | `transmission_quality off`: simplified see-through glass, "
            "blended, tinted by base_color |\n"
            "| `skin` | surface, skin | `skin_quality off`: the opaque skin surface, no diffusion pass or memory |\n"
-           "| `hair_card` | surface, hair | `hair_quality low`: the round (isotropic) highlight |\n\n"
+           "| `hair_card` | surface, hair | `hair_quality low`: the round (isotropic) highlight |\n"
+           "| `water` | water (and emissive, normal-free surface values) | `water_quality low`: no refraction or foam, "
+           "one ripple sample; `transmission_quality off`: a blended stand-in |\n\n"
            "Transmission draws its own see-through, so it ignores `alpha_mode blend` (mask still\n"
            "cuts out). `transmission 0` draws exactly as standard. Eyes are made of these: an opaque\n"
            "iris and sclera (standard, optionally coated) under a thin transmission cornea.\n";
@@ -825,6 +886,7 @@ const char* materialFeatureName(uint32_t feature) {
     case kMaterialTransmission: return "transmission";
     case kMaterialSkin: return "skin";
     case kMaterialHairCard: return "hair_card";
+    case kMaterialWater: return "water";
     }
     return "unknown";
 }
@@ -854,6 +916,10 @@ uint32_t materialFeatures(const MaterialDesc& desc) {
         break;
     case MaterialFamily::Skin: features |= kMaterialSkin; break;
     case MaterialFamily::HairCard: features |= kMaterialHairCard; break;
+    case MaterialFamily::Water:
+        features |= kMaterialWater;
+        features &= ~kMaterialAlphaBlend;   // it draws its own see-through
+        break;
     case MaterialFamily::Terrain: break;   // never parsed from a .swmaterial
     }
     return features;
@@ -864,6 +930,7 @@ bool materialFamilyUses(int family, std::string_view group) {
     if (group == "transmission") return family == int(MaterialFamily::Transmission);
     if (group == "skin") return family == int(MaterialFamily::Skin);
     if (group == "hair") return family == int(MaterialFamily::HairCard);
+    if (group == "water") return family == int(MaterialFamily::Water);
     return true;
 }
 
@@ -882,6 +949,10 @@ std::string materialEffectiveShading(const MaterialDesc& desc, const ShadingSett
             return "skin without diffusion (opaque)";
         return std::string("skin with diffusion (") + skinQualityName(settings.skin) + ")";
     }
+    if (f & kMaterialWater) {
+        if (settings.transmission == TransmissionQuality::Off) return "simplified water (transmission_quality off)";
+        return std::string("water (") + waterQualityName(settings.water) + ")";
+    }
     if (f & kMaterialHairCard) {
         const bool anisotropic = settings.hair == HairQuality::High && desc.params.hairAnisotropy != 0.0f;
         return anisotropic ? "hair card, anisotropic highlight" : "hair card, round highlight";
@@ -893,6 +964,9 @@ std::string materialShadingCost(const MaterialDesc& desc, const ShadingSettings&
     const uint32_t f = desc.features;
     if ((f & kMaterialTransmission) && settings.transmission != TransmissionQuality::Off)
         return "transmission pass; a copy of the opaque scene with mips (about 1.33x the scene colour's memory)";
+    if ((f & kMaterialWater) && settings.transmission != TransmissionQuality::Off)
+        return "transmission pass (shared with glass); a copy of the opaque scene with mips (about 1.33x the scene "
+               "colour's memory)";
     if ((f & kMaterialSkin) && settings.skin != SkinQuality::Off && desc.params.skinStrength > 0.0f)
         return "skin pass and two blurs; three skin targets (20 bytes a pixel), only while skin is on screen";
     return {};
@@ -1098,8 +1172,8 @@ resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDes
     if (p.layerMask >= int(LayerMaskSource::VertexR) && has(MaterialSlot::LayerMask))
         desc.warnings.push_back("layer_mask reads the vertex colours, so the layer_mask texture is unused");
     // Another family's values (A07-A09).
-    const char* family = kParams[0].options[size_t(std::clamp(p.family, 0, 3))];
-    for (const char* group : {"clearcoat", "transmission", "skin", "hair"}) {
+    const char* family = kParams[0].options[size_t(std::clamp(p.family, 0, 4))];
+    for (const char* group : {"clearcoat", "transmission", "skin", "hair", "water"}) {
         if (materialFamilyUses(p.family, group)) continue;
         const bool set = std::any_of(files.begin(), files.end(), [&](const auto& f) {
             for (size_t i = 0; i < kParams.size(); ++i)
@@ -1125,6 +1199,13 @@ resolveMaterial(std::string_view name, const MaterialLookup& lookup, MaterialDes
         if (p.attenuationDistance > 0.0f && p.attenuationColor == glm::vec3(1.0f))
             desc.warnings.push_back("attenuation_distance is set but attenuation_color is white, so nothing is "
                                     "absorbed");
+    }
+    if (p.family == int(MaterialFamily::Water)) {
+        if (p.alphaMode == int(MaterialAlpha::Blend))
+            desc.warnings.push_back("family water draws its own see-through, so alpha_mode blend is ignored");
+        if (p.waterRippleSpeed > 0.0f && !has(MaterialSlot::WaterNormal))
+            desc.warnings.push_back("water_ripple_speed is set but there's no water_normal texture, so the surface "
+                                    "is flat and nothing drifts");
     }
     if (p.family == int(MaterialFamily::Skin) && p.alphaMode == int(MaterialAlpha::Blend))
         desc.warnings.push_back("skin diffusion needs opaque or masked skin; blended skin draws without it");
@@ -1198,7 +1279,8 @@ void buildDrawMaterial(
     // Shading families (A07-A09). Standard without a coat draws exactly as before.
     MaterialShading& sh = asset.shading;
     sh = {};
-    sh.family = ShadingFamily(std::clamp(p.family, 0, 3));
+    sh.family =
+        p.family == int(MaterialFamily::Water) ? ShadingFamily::Water : ShadingFamily(std::clamp(p.family, 0, 3));
     if (sh.family == ShadingFamily::Standard && (features & kMaterialClearcoat)) {
         sh.clearcoat = p.clearcoat;
         sh.clearcoatRoughness = p.clearcoatRoughness;
@@ -1226,6 +1308,17 @@ void buildDrawMaterial(
     if (sh.family == ShadingFamily::HairCard) {
         sh.hairAnisotropy = p.hairAnisotropy;
         sh.hairDirection = uint32_t(p.hairDirection);
+    }
+    if (sh.family == ShadingFamily::Water) {
+        sh.waterShallowColor = p.waterShallowColor;
+        sh.waterDeepColor = p.waterDeepColor;
+        sh.waterDepthFade = p.waterDepthFade;
+        sh.waterClarity = p.waterClarity;
+        sh.waterRippleScale = p.waterRippleScale;
+        sh.waterRippleSpeed = p.waterRippleSpeed;
+        sh.waterFoamDistance = p.waterFoamDistance;
+        sh.waterNormalTexture = texture(MaterialSlot::WaterNormal);
+        d.blend = false;   // the renderer draws it see-through itself
     }
     for (size_t slot = 0; slot < kShadingSlots; ++slot)
         sh.bindings[slot] = binding(MaterialSlot(kMaterialSlots + kLayerSlots + slot));

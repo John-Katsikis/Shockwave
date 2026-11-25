@@ -64,6 +64,7 @@ const std::vector<const char*> kTransmissionChoices = {"off", "low", "medium", "
 const std::vector<const char*> kSkinChoices = {"off", "low", "high"};
 const std::vector<const char*> kHairChoices = {"low", "high"};
 const std::vector<const char*> kTerrainChoices = {"low", "high"};
+const std::vector<const char*> kWaterChoices = {"low", "high"};
 const std::vector<const char*> kContactShadowChoices = {"off", "on"};
 const std::vector<const char*> kReflectionChoices = {"off", "low", "medium", "high"};
 
@@ -379,6 +380,18 @@ std::vector<GraphicsSettingInfo> makeInfo() {
              return false;
          }});
     info.push_back(
+        {"water_quality", "Water", "Quality",
+         "Water surfaces (family water). High bends what's under the surface with the ripples, adds foam along the "
+         "shore and mixes two ripple layers; low looks straight down through the water with one ripple layer and no "
+         "foam. Neither needs a pass or memory beyond the glass pass's copy of the scene.",
+         "low, high", kWaterChoices, GraphicsApply::Uniform, true,
+         [](const S& s) { return std::string(waterQualityName(s.waterQuality)); },
+         [](S& s, const std::string& v, std::string& error) {
+             if (choice(kWaterChoices, v, s.waterQuality)) return true;
+             error = "water_quality must be " + list(kWaterChoices);
+             return false;
+         }});
+    info.push_back(
         {"foliage_density",
          "Foliage density",
          "Quality",
@@ -614,6 +627,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.skinQuality = SkinQuality::Off;
         base.hairQuality = HairQuality::Low;
         base.terrainQuality = TerrainQuality::Low;
+        base.waterQuality = WaterQuality::Low;
         base.foliageDensity = 0.4f;
         base.contactShadows = ContactShadows::Off;
         base.reflectionsQuality = ScreenReflections::Off;
@@ -639,6 +653,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.skinQuality = SkinQuality::Low;
         base.hairQuality = HairQuality::High;
         base.terrainQuality = TerrainQuality::Low;
+        base.waterQuality = WaterQuality::Low;
         base.foliageDensity = 0.7f;
         base.contactShadows = ContactShadows::Off;
         base.reflectionsQuality = ScreenReflections::Off;
@@ -664,6 +679,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
         base.terrainQuality = TerrainQuality::High;
+        base.waterQuality = WaterQuality::High;
         base.foliageDensity = 1;
         base.contactShadows = ContactShadows::On;
         base.reflectionsQuality = ScreenReflections::Medium;
@@ -689,6 +705,7 @@ GraphicsSettings graphicsPreset(GraphicsPreset preset, GraphicsSettings base) {
         base.skinQuality = SkinQuality::High;
         base.hairQuality = HairQuality::High;
         base.terrainQuality = TerrainQuality::High;
+        base.waterQuality = WaterQuality::High;
         base.foliageDensity = 1;
         base.contactShadows = ContactShadows::On;
         base.reflectionsQuality = ScreenReflections::High;
@@ -883,6 +900,7 @@ GraphicsSettings Graphics::running() const {
     s.skinQuality = shading.skin;
     s.hairQuality = shading.hair;
     s.terrainQuality = shading.terrain;
+    s.waterQuality = shading.water;
     const FoliageSettings foliage = r.foliageSettings();
     s.foliageDensity = foliage.density;
     s.foliageDistance = foliage.distance;
@@ -971,8 +989,9 @@ void Graphics::push(const GraphicsSettings& s, const GraphicsSettings& previous)
         r.setScreenEffectsSettings({s.contactShadows, s.reflectionsQuality, s.motionBlur});
     if (s.clearcoat != previous.clearcoat || s.transmissionQuality != previous.transmissionQuality ||
         s.skinQuality != previous.skinQuality || s.hairQuality != previous.hairQuality ||
-        s.terrainQuality != previous.terrainQuality)
-        r.setShadingSettings({s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality, s.terrainQuality});
+        s.terrainQuality != previous.terrainQuality || s.waterQuality != previous.waterQuality)
+        r.setShadingSettings(
+            {s.clearcoat, s.transmissionQuality, s.skinQuality, s.hairQuality, s.terrainQuality, s.waterQuality});
     if (s.foliageDensity != previous.foliageDensity || s.foliageDistance != previous.foliageDistance)
         r.setFoliageSettings({s.foliageDensity, s.foliageDistance});
     if (s.instancing != previous.instancing || s.occlusionCulling != previous.occlusionCulling)

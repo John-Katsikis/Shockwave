@@ -6,7 +6,10 @@
 #   - skin_quality off renders exactly skin without diffusion; diffusion changes the sphere,
 #     not the sky, and moves light rather than making it;
 #   - hair_quality high changes the highlight on the cards;
-#   - each setting off has no pass and no memory, and scenes without these materials never do.
+#   - each setting off has no pass and no memory, and scenes without these materials never do;
+#   - water (W3): shallow and deep areas take their colours, the shoreline foams (not on
+#     water_quality low), the post above it doesn't smear into it, runs repeat, and with
+#     transmission off it's a blended stand-in with no pass, which --check warns about.
 cmake_policy(SET CMP0054 NEW)   # quoted strings in if() are never variables
 file(MAKE_DIRECTORY "${TEMP}")
 function(render scene name)
@@ -196,4 +199,97 @@ report(shading-hair hair-low --graphics-set hair_quality=low)
 string(JSON round GET "${json}" shading anisotropic_hair)
 if(NOT anisotropic OR round)
     message(FATAL_ERROR "hair_quality doesn't switch the anisotropic highlight (high ${anisotropic}, low ${round})")
+endif()
+
+# ---- Water (W3, docs/Water.md) ----
+# Sand sloping down under a lake (Tools/water.py): shallow near the shore, deep far off, a
+# white foam strip where the sand meets the surface and a red post standing in the water.
+set(deep_area "0.35,0.36,0.2,0.04")
+set(shallow_area "0.15,0.5,0.25,0.06")
+set(shore_strip "0.2,0.635,0.4,0.02")
+set(post_waterline "0.575,0.478,0.025,0.028")   # where the post meets the surface
+# The material's colours in sRGB levels: shallow 0.1 0.6 0.5, deep 0.01 0.03 0.12.
+set(shallow_srgb 89 203 188)
+set(deep_srgb 25 48 97)
+function(distance_squared rgb reference out)
+    set(sum 0)
+    foreach(i 0 1 2)
+        list(GET rgb ${i} a)
+        list(GET reference ${i} b)
+        math(EXPR sum "${sum} + (${a} - ${b}) * (${a} - ${b})")
+    endforeach()
+    set(${out} ${sum} PARENT_SCOPE)
+endfunction()
+render(shading-water water-high)
+render(shading-water water-again)
+render(shading-water-flat water-flat)
+render(shading-water water-low --graphics-set water_quality=low)
+render(shading-water water-off --graphics-set transmission_quality=off)
+render(shading-water-none water-none)
+render(shading-water-builtin water-builtin)
+foreach(area deep shallow)
+    mean(water-high "${${area}_area}" rgb)
+    distance_squared("${rgb}" "${shallow_srgb}" to_shallow)
+    distance_squared("${rgb}" "${deep_srgb}" to_deep)
+    message(STATUS "water: the ${area} area is ${rgb} (squared distance ${to_shallow} to shallow, ${to_deep} to deep)")
+    if(area STREQUAL "deep" AND NOT to_deep LESS to_shallow)
+        message(FATAL_ERROR "deep water isn't closer to water_deep_color: ${rgb}")
+    endif()
+    if(area STREQUAL "shallow" AND NOT to_shallow LESS to_deep)
+        message(FATAL_ERROR "shallow water isn't closer to water_shallow_color: ${rgb}")
+    endif()
+endforeach()
+mean_luma(water-high "${shore_strip}" shore)
+mean_luma(water-high "${shallow_area}" open)
+mean_luma(water-low "${shore_strip}" shore_low)
+message(STATUS "water: shoreline ${shore}, open shallow water ${open}, shoreline on low ${shore_low}")
+if(NOT shore GREATER open)
+    message(FATAL_ERROR "the shoreline foam isn't brighter than open water (${shore} vs ${open})")
+endif()
+math(EXPR foam_margin "${shore_low} + 10")
+if(NOT shore GREATER foam_margin)
+    message(FATAL_ERROR "water_quality low still has foam: shoreline ${shore_low} on low, ${shore} on high")
+endif()
+# Refraction mustn't pull the post above the surface into the water: around its waterline
+# the rippled water stays close to the same water without ripples (offset 0). Without the
+# guard against nearer surfaces it's about 9 here; with it about 4.
+rmse(water-high water-flat "${post_waterline}" smear)
+message(STATUS "water: the post's waterline differs ${smear} from unbent water")
+less_than("${smear}" "6" 1000 smear_ok)
+if(NOT smear_ok)
+    message(FATAL_ERROR "the post above the water smears into it: RMSE ${smear} from the unbent water")
+endif()
+identical(water-again water-high "two fixed-step runs of the water differ")
+rmse(water-low water-high "0,0.3,1,0.4" low_change)
+rmse(water-builtin water-none "0.2,0.4,0.6,0.25" builtin_change)
+message(STATUS "water: low changes it by ${low_change}; the built-in water material by ${builtin_change}")
+if(low_change LESS 1)
+    message(FATAL_ERROR "water_quality low doesn't change the water (RMSE ${low_change})")
+endif()
+if(builtin_change LESS 1)
+    message(FATAL_ERROR "the built-in water material draws nothing (RMSE ${builtin_change} from no water)")
+endif()
+report(shading-water water-report)
+string(JSON graph GET "${json}" frame_graph)
+string(JSON draws GET "${json}" shading water_draws)
+if(NOT graph MATCHES "transmission background copy" OR NOT draws EQUAL 1)
+    message(FATAL_ERROR "water isn't drawn through the transmission pass (${draws} draws):\n${graph}")
+endif()
+report(shading-water water-off-report --graphics-set transmission_quality=off)
+string(JSON graph GET "${json}" frame_graph)
+string(JSON bytes GET "${json}" memory categories transmission bytes)
+string(JSON simplified GET "${json}" shading simplified_water_draws)
+if(graph MATCHES "transmission" OR NOT bytes EQUAL 0 OR NOT simplified EQUAL 1)
+    message(FATAL_ERROR "transmission_quality off: water still has a pass or memory (${bytes} bytes, ${simplified} simplified):\n${graph}")
+endif()
+rmse(water-off water-none "${deep_area}" stand_in)
+if(stand_in LESS 1)
+    message(FATAL_ERROR "with transmission off the water's blended stand-in draws nothing")
+endif()
+# --check warns about water with transmission off, which turns it into the stand-in.
+execute_process(COMMAND "${PLAYER}" --project "${FIXTURE}/Graphics.swproject" --no-user-graphics --check
+    "${FIXTURE}/Scenes/shading-water.swscene" --graphics-set transmission_quality=off
+    RESULT_VARIABLE result OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT out MATCHES "1 water surface, but transmission_quality is off")
+    message(FATAL_ERROR "--check doesn't warn about water with transmission off:\n${out}\n${err}")
 endif()

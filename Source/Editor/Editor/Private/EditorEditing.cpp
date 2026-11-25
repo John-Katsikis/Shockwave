@@ -192,6 +192,15 @@ Entity Editor::createEntity(CreateKind kind, Entity parent) {
     case CreateKind::Cube: addMesh("Cube", "cube", 0.5f); break;
     case CreateKind::Sphere: addMesh("Sphere", "sphere", 0.5f); break;
     case CreateKind::Plane: addMesh("Plane", "plane", 0.0f); break;
+    case CreateKind::WaterPlane: {
+        // W3: 10 m across, with the built-in water material; water casts no shadow.
+        addMesh("Water", "plane", 0.0f);
+        m_world.get<Transform>(e)->scale = glm::vec3(10.0f, 1.0f, 10.0f);
+        MeshRenderer* renderer = m_world.get<MeshRenderer>(e);
+        renderer->material = assets.findMaterial("water");
+        renderer->castShadows = false;
+        break;
+    }
     case CreateKind::Camera: {
         // Starts out seeing what the viewport sees.
         m_world.add<Name>(e, {uniqueName("Camera")});

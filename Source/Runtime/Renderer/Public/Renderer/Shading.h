@@ -16,8 +16,9 @@ namespace shockwave {
 
 // A material's shading family (.swmaterial "family"). Standard can add a clearcoat.
 // Terrain (W1b) is a painted terrain's draws: up to four layers blended by a weights texture.
-enum class ShadingFamily : uint32_t { Standard, Skin, HairCard, Transmission, Terrain };
-const char* shadingFamilyName(ShadingFamily family);   // "standard", "skin", "hair_card", "transmission", "terrain"
+// Water (W3) is a see-through surface drawn over the copy of the scene, like transmission.
+enum class ShadingFamily : uint32_t { Standard, Skin, HairCard, Transmission, Terrain, Water };
+const char* shadingFamilyName(ShadingFamily family);   // "standard", ..., "terrain", "water"
 
 // ---- Settings (GraphicsSettings: clearcoat, transmission_quality, skin_quality, hair_quality) ----
 // Transmission: off draws glass as simplified see-through blended glass (never invisible
@@ -36,12 +37,17 @@ const char* hairQualityName(HairQuality quality);
 // without the layers' normal maps.
 enum class TerrainQuality : uint32_t { Low, High };
 const char* terrainQualityName(TerrainQuality quality);
+// Water (W3): high refracts, adds shoreline foam and mixes two ripple samples; low looks
+// straight through with one ripple sample and no foam. Neither has a pass or memory of its own.
+enum class WaterQuality : uint32_t { Low, High };
+const char* waterQualityName(WaterQuality quality);
 struct ShadingSettings {
     bool clearcoat = true;   // off: coated materials draw as their base (standard) material
     TransmissionQuality transmission = TransmissionQuality::Medium;
     SkinQuality skin = SkinQuality::High;
     HairQuality hair = HairQuality::High;
     TerrainQuality terrain = TerrainQuality::High;
+    WaterQuality water = WaterQuality::High;
     bool operator==(const ShadingSettings&) const = default;
 };
 // The pipelines content needs that aren't built when the renderer starts (S10): glass and
@@ -79,7 +85,7 @@ struct TerrainShading {
 
 // What a material's family adds to DrawMaterial (MaterialShading lives with the material
 // asset; DrawMaterial::shading points at it during the draw call).
-inline constexpr size_t kShadingSlots = 3;   // MaterialSlot::Clearcoat onwards
+inline constexpr size_t kShadingSlots = 4;   // MaterialSlot::Clearcoat onwards
 struct MaterialShading {
     ShadingFamily family = ShadingFamily::Standard;
     // Clearcoat (A07a): a dielectric coat (IOR 1.5) over the base. 0: none.
@@ -103,6 +109,15 @@ struct MaterialShading {
     // Hair cards (A09): anisotropic GGX along the strands.
     float hairAnisotropy = 0.8f;   // -1..1; 0 is isotropic, positive a band across the strands
     uint32_t hairDirection = 1;   // root to tip: 0 along +u, 1 along +v (down the texture)
+    // Water (W3): the body's colour from shallow to deep, how clear it is, ripples and foam.
+    glm::vec3 waterShallowColor{0.1f, 0.4f, 0.4f};
+    glm::vec3 waterDeepColor{0.02f, 0.08f, 0.12f};
+    float waterDepthFade = 4.0f;   // metres from shallow to deep
+    float waterClarity = 6.0f;   // metres seen through before the bottom is gone
+    float waterRippleScale = 3.0f;   // metres per repeat of the ripple map
+    float waterRippleSpeed = 0.3f;   // metres a second
+    float waterFoamDistance = 0.4f;   // metres of depth where the foam fades out
+    TextureHandle waterNormalTexture;   // 0: a flat surface
     std::array<TextureBinding, kShadingSlots> bindings{};
     // Family Terrain: the layers. Read during the draw call only, like DrawMaterial::shading.
     const TerrainShading* terrain = nullptr;
@@ -158,6 +173,8 @@ struct ShadingStats {
     uint32_t terrainDraws = 0;   // painted terrain chunks (W1b)
     uint32_t terrainLayers = 0;   // the layers those draws sample, summed
     uint32_t terrainLowDraws = 0;   // of them, drawn with terrain_quality low
+    uint32_t waterDraws = 0;   // water through the transmission pass (W3)
+    uint32_t simplifiedWaterDraws = 0;   // water without it: a blended stand-in
     bool transmissionPass = false, skinPass = false;
     uint64_t transmissionBytes = 0, skinBytes = 0;
 };

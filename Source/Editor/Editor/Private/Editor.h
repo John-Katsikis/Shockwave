@@ -163,7 +163,18 @@ private:
         std::string text;
     };
     enum class ContentRoot { Assets, Scenes, Engine };
-    enum class CreateKind { Empty, Cube, Sphere, Plane, Camera, Environment, DirectionalLight, PointLight, SpotLight };
+    enum class CreateKind {
+        Empty,
+        Cube,
+        Sphere,
+        Plane,
+        WaterPlane,
+        Camera,
+        Environment,
+        DirectionalLight,
+        PointLight,
+        SpotLight
+    };
 
     // ---- Projects (Editor.cpp) ----
     bool openProject(const std::filesystem::path& path, const std::filesystem::path& sceneToOpen = {});

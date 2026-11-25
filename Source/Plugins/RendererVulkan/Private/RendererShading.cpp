@@ -59,6 +59,7 @@ void VulkanRenderer::Impl::setShadingSettings(const ShadingSettings& settings) {
     shadingSkin.store(settings.skin, std::memory_order_relaxed);
     shadingHair.store(settings.hair, std::memory_order_relaxed);
     shadingTerrain.store(settings.terrain, std::memory_order_relaxed);
+    shadingWater.store(settings.water, std::memory_order_relaxed);
 }
 
 bool VulkanRenderer::Impl::fillShading(
@@ -116,6 +117,23 @@ bool VulkanRenderer::Impl::fillShading(
         // stretches along its tangent, the strand direction, so the sign flips here.
         out.hairAnisotropy = -std::clamp(s.hairAnisotropy, -1.0f, 1.0f);
         out.hairDirection = s.hairDirection == 0 ? 0u : 1u;
+        any = true;
+        break;
+    case ShadingFamily::Water:
+        // W3: see-through like glass, over the same copy of the scene (and, off, the same
+        // blended stand-in); it reads the scene's depth behind it for its depth.
+        command.blend = true;
+        command.transmission = true;
+        command.castShadows = false;
+        out.waterShallow = glm::clamp(s.waterShallowColor, glm::vec3(0.0f), glm::vec3(1.0f));
+        out.waterDeep = glm::clamp(s.waterDeepColor, glm::vec3(0.0f), glm::vec3(1.0f));
+        out.waterDepthFade = std::clamp(s.waterDepthFade, 0.1f, 100.0f);
+        out.waterClarity = std::clamp(s.waterClarity, 0.1f, 100.0f);
+        out.waterInverseRippleScale = 1.0f / std::clamp(s.waterRippleScale, 0.1f, 100.0f);
+        out.waterRippleSpeed = std::clamp(s.waterRippleSpeed, 0.0f, 10.0f);
+        out.waterFoamDistance = std::clamp(s.waterFoamDistance, 0.0f, 5.0f);
+        out.waterNormalTexture = slot(s.waterNormalTexture);
+        if (shadingWater.load(std::memory_order_relaxed) == WaterQuality::Low) out.flags |= kShadingWaterLow;
         any = true;
         break;
     case ShadingFamily::Terrain:
@@ -263,7 +281,11 @@ void VulkanRenderer::Impl::prepareShading(Frame& f) {
         if (draw.transmission) {
             if (!transmissionThisFrame)
                 d.flags = (d.flags & ~(kShadingRefract | kShadingRoughTaps)) | kShadingSimplifiedGlass;
-            if (counted) (transmissionThisFrame ? stats.transmissionDraws : stats.simplifiedGlassDraws) += 1;
+            const bool water = d.family == uint32_t(ShadingFamily::Water);
+            if (counted && water)
+                (transmissionThisFrame ? stats.waterDraws : stats.simplifiedWaterDraws) += 1;
+            else if (counted)
+                (transmissionThisFrame ? stats.transmissionDraws : stats.simplifiedGlassDraws) += 1;
         }
         const bool diffuses = draw.skinDiffusion && skinThisFrame && draw.visible;
         draw.skinDiffusion = diffuses;   // from here on: drawn in the skin pass

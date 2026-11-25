@@ -522,6 +522,65 @@ void main() {
         normalLength = lengthSum;
     }
 
+    // Water (W3, docs/Water.md): ripples from its normal map tiled over the world and
+    // drifting with the frame clock; its depth along the view ray, from the scene's depth
+    // behind it (the transmission pass); from those its body colour, how much of the bottom
+    // shows, and foam along the shore. A smooth dielectric (F0 0.02) that reflects like any
+    // other surface. Without the transmission pass it's a blended stand-in: the halfway
+    // colour, mostly opaque, no depth and no foam.
+    float waterShare = 0.0, waterFoam = 0.0;   // body colour's share over the bottom; foam
+    vec3 waterRipple = vec3(0.0);   // the ripples' tilt, for refraction
+    if (family == kFamilyWater) {
+        bool low = (shadingFlags & kShadingWaterLow) != 0u;
+        bool simplified = (shadingFlags & kShadingSimplifiedGlass) != 0u || !kTransmissionPass;
+        vec3 geometric = normalize(vNormal);
+        n = geometric;
+        normalLength = 1.0;
+        float foamBreak = 1.0;
+        if (sh.waterNormalTexture != 0u) {
+            // The frame clock (Renderer::setWindTime), from the wind's phase (kWindRate 1.7).
+            float travel = pc.drawBuffer.draws[vDraw].windPhase * (1.0 / 1.7) * sh.waterRippleSpeed *
+                           sh.waterInverseRippleScale;
+            vec2 xz = vWorldPosition.xz * sh.waterInverseRippleScale;
+            SlotBinding binding = sh.slots[kWaterNormalSlot];
+            vec4 first = sampleSlot(sh.waterNormalTexture, binding, xz + normalize(vec2(1.0, 0.3)) * travel);
+            vec3 m = first.xyz * 2.0 - 1.0;
+            foamBreak = first.b;
+            if (!low) {
+                vec4 second = sampleSlot(
+                    sh.waterNormalTexture, binding, xz + vec2(0.37, 0.61) + normalize(vec2(-0.4, 1.0)) * travel);
+                m += second.xyz * 2.0 - 1.0;
+                foamBreak = 0.5 * (first.b + second.b);
+            }
+            m.z = max(m.z, 1e-3);
+            m = normalize(m);
+            // The map's u along world +X, v along world +Z, on whichever way the surface faces.
+            vec3 t = vec3(1.0, 0.0, 0.0) - geometric * geometric.x;
+            t = dot(t, t) > 1e-6 ? normalize(t) : normalize(cross(geometric, vec3(0.0, 0.0, 1.0)));
+            vec3 b = cross(t, geometric);
+            n = normalize(t * m.x + b * m.y + geometric * m.z);
+            waterRipple = n - geometric;
+        }
+        if (simplified) {
+            albedo = vec4(mix(sh.waterShallow, sh.waterDeep, 0.5), 0.85);
+        } else {
+            // The water's depth: from its surface to the opaque scene behind, along the view ray.
+            float depth = 1e4;   // over the background: endlessly deep
+            vec2 own = gl_FragCoord.xy / frame.renderSize;
+            float behind = texelFetch(sampler2D(textures[frame.sceneDepth], linearSampler),
+                clamp(ivec2(gl_FragCoord.xy), ivec2(0), ivec2(frame.renderSize) - 1), 0).r;
+            vec3 behindView;
+            if (viewPositionFromDepth(own, behind, frame.inverseProjection, behindView))
+                depth = max(length(behindView) - length((frame.view * vec4(vWorldPosition, 1.0)).xyz), 0.0);
+            vec3 body = mix(sh.waterShallow, sh.waterDeep, clamp(depth / sh.waterDepthFade, 0.0, 1.0));
+            waterShare = clamp(depth / sh.waterClarity, 0.0, 1.0);
+            if (!low && sh.waterFoamDistance > 0.0)
+                waterFoam = (1.0 - clamp(depth / sh.waterFoamDistance, 0.0, 1.0)) * clamp(foamBreak * 4.0 - 3.0, 0.0, 1.0);
+            albedo = vec4(mix(body * waterShare, vec3(0.9), waterFoam), 1.0);
+        }
+        roughnessMetallic = vec2(0.05, 0.0);
+    }
+
     // Detail and second layers (A02): mixed into the surface before a single evaluation of
     // the lighting. Alpha, emission and occlusion stay the first layer's.
     uvec2 layerAddress = pc.drawBuffer.draws[vDraw].layers;
@@ -612,7 +671,8 @@ void main() {
     if (frame.debugView == 13u && !kTransmissionPass) {
         // Transmission (A07b): the glass's own colours come from the transmission pass;
         // simplified glass (off) is magenta, everything else dimmed.
-        outColor = family == 3u ? vec4(0.8, 0.2, 0.8, 1.0) : vec4(albedo.rgb * 0.2, 1.0);
+        outColor = family == 3u ? vec4(0.8, 0.2, 0.8, 1.0)
+                   : family == kFamilyWater ? vec4(0.6, 0.2, 0.9, 1.0) : vec4(albedo.rgb * 0.2, 1.0);
         return;
     }
     if (frame.debugView == 14u) {
@@ -624,6 +684,8 @@ void main() {
         if (family == 1u) shown = (shadingFlags & kShadingSkinDiffusion) != 0u ? vec3(1.0, 0.5, 0.25) : vec3(0.45, 0.25, 0.1);
         if (family == 2u) shown = (shadingFlags & kShadingAnisotropic) != 0u ? vec3(0.2, 1.0, 1.0) : vec3(0.2, 0.3, 1.0);
         if (family == 3u) shown = kTransmissionPass ? vec3(0.2, 1.0, 0.3) : vec3(0.8, 0.2, 0.8);
+        // Water (W3): blue through the transmission pass, purple as the blended stand-in.
+        if (family == kFamilyWater) shown = kTransmissionPass ? vec3(0.1, 0.45, 1.0) : vec3(0.6, 0.2, 0.9);
         // Painted terrain (W1b): each layer's share, layer 0 red, 1 green, 2 blue, 3 yellow.
         if (family == kFamilyTerrain)
             shown = terrainWeights.x * vec3(1.0, 0.0, 0.0) + terrainWeights.y * vec3(0.0, 1.0, 0.0) +
@@ -711,6 +773,7 @@ void main() {
         float r = (sh.ior - 1.0) / (sh.ior + 1.0);
         dielectricF0 = r * r;
     }
+    if (family == kFamilyWater) dielectricF0 = 0.02;   // IOR 1.33
     vec3 f0 = mix(vec3(dielectricF0), albedo.rgb, metallic);
     vec3 diffuseColor = albedo.rgb * (1.0 - metallic);
     // Glass passes on what it doesn't diffuse (the transmission pass adds it below).
@@ -941,6 +1004,26 @@ void main() {
         // Absorbed along the way: exactly attenuation_color after attenuation_distance.
         transmitted *= transmittedWeight * exp(-sh.absorption * thicknessWorld);
     }
+    if (kTransmissionPass && family == kFamilyWater && (shadingFlags & kShadingSimplifiedGlass) == 0u) {
+        // Water (W3): the bottom, through what the body colour and the foam leave, bent by
+        // the ripples on high; where the bent spot has something nearer than the water
+        // (a post standing in it), straight down instead, so nothing above smears into it.
+        transmittedWeight = max(1.0 - singleScatter - multiScatter, vec3(0.0)) * (1.0 - waterShare) * (1.0 - waterFoam);
+        vec2 own = gl_FragCoord.xy / frame.renderSize;
+        vec2 uv = own;
+        vec2 texel = 1.0 / frame.renderSize;
+        if ((shadingFlags & kShadingWaterLow) == 0u && dot(waterRipple, waterRipple) > 0.0) {
+            vec2 bent = clamp(own + waterRipple.xz * 0.02, texel * 0.5, 1.0 - texel * 0.5);
+            float behind = texelFetch(sampler2D(textures[frame.sceneDepth], linearSampler),
+                clamp(ivec2(bent * frame.renderSize), ivec2(0), ivec2(frame.renderSize) - 1), 0).r;
+            if (behind <= gl_FragCoord.z) uv = bent;   // reverse-Z: greater is nearer
+            else transmissionFallback = 2u;
+        }
+        transmitted = textureLod(sampler2D(textures[frame.transmissionBackground], linearSampler),
+            clamp(uv, texel * 0.5, 1.0 - texel * 0.5), 0.0).rgb * transmittedWeight;
+    }
+    bool seeThrough = kTransmissionPass && (family == 3u || (family == kFamilyWater &&
+                                                             (shadingFlags & kShadingSimplifiedGlass) == 0u));
 
     if (frame.debugView == 4u) {
         // Which sun cascade each pixel reads: red, green, blue, yellow from near to far.
@@ -948,11 +1031,11 @@ void main() {
         if (cascade < 4u) light *= tints[cascade];
     }
     vec3 radiance = light + emissive;
-    if (kTransmissionPass && family == 3u && frame.debugView == 13u) {
+    if (seeThrough && frame.debugView == 13u) {
         // Where the light through the glass came from: green the scene behind, red the
         // environment (off screen), blue straight through (something in front was there).
         const vec3 fallbacks[3] = vec3[](vec3(0.2, 1.0, 0.3), vec3(1.0, 0.25, 0.2), vec3(0.25, 0.4, 1.0));
-        outColor = vec4(fallbacks[transmissionFallback] * (0.5 + 0.5 * transmission), 1.0);
+        outColor = vec4(fallbacks[transmissionFallback] * (family == 3u ? 0.5 + 0.5 * transmission : 1.0), 1.0);
         return;
     }
     // Fog (A06): S + T L. Blended surfaces blend this over the fogged scene behind them,
@@ -962,7 +1045,7 @@ void main() {
     if (frame.fogMode != kFogNone && (frame.debugView == 0u || frame.debugView == 12u)) {
         vec4 fog = sceneFog(frame, gl_FragCoord.xy, vWorldPosition);
         if (frame.debugView == 12u) { outColor = vec4(vec3(fog.a), 1.0); return; }
-        if (kTransmissionPass && family == 3u) {
+        if (seeThrough) {
             outColor = vec4(fog.rgb * (1.0 - transmittedWeight) + fog.a * radiance + transmitted, 1.0);
             return;
         }
@@ -971,7 +1054,7 @@ void main() {
         outColor = vec4(1.0);
         return;
     }
-    if (kTransmissionPass && family == 3u) {
+    if (seeThrough) {
         outColor = vec4(radiance + transmitted, 1.0);
         return;
     }

@@ -157,7 +157,7 @@ constexpr uint32_t kNoLayers = 0xFFFFFFFFu;
 // ShadingData in shaders/draw.glsl.
 constexpr uint32_t kShadingCoat = 1u, kShadingCoatDerivativeTangents = 2u, kShadingThin = 4u, kShadingAnisotropic = 8u,
                    kShadingSkinDiffusion = 16u, kShadingRefract = 32u, kShadingRoughTaps = 64u,
-                   kShadingSimplifiedGlass = 128u;
+                   kShadingSimplifiedGlass = 128u, kShadingWaterLow = 256u;
 struct ShadingData {
     uint32_t family;   // ShadingFamily
     uint32_t flags;
@@ -171,12 +171,19 @@ struct ShadingData {
     uint32_t skinReceiver;
     float pad;
     VkDeviceAddress terrain;   // family terrain: its TerrainShadingData (W1b); 0: none
+    glm::vec3 waterShallow;   // family water (W3)
+    float waterDepthFade;
+    glm::vec3 waterDeep;
+    float waterClarity;
+    float waterInverseRippleScale, waterRippleSpeed, waterFoamDistance;
+    uint32_t waterNormalTexture;   // bindless slot; 0: flat
     SlotBinding slots[kShadingSlots];
 };
 static_assert(
     offsetof(ShadingData, absorption) == 48 && offsetof(ShadingData, skinRadius) == 64 &&
         offsetof(ShadingData, skinReceiver) == 80 && offsetof(ShadingData, terrain) == 88 &&
-        offsetof(ShadingData, slots) == 96 && sizeof(ShadingData) == 168,
+        offsetof(ShadingData, waterShallow) == 96 && offsetof(ShadingData, waterNormalTexture) == 140 &&
+        offsetof(ShadingData, slots) == 144 && sizeof(ShadingData) == 240,
     "ShadingData must match the shader's scalar layout");
 
 // A painted terrain draw's layers (W1b, Renderer/Shading.h TerrainShading), in a table of its
@@ -1594,6 +1601,7 @@ struct VulkanRenderer::Impl {
     std::atomic<SkinQuality> shadingSkin{SkinQuality::High};
     std::atomic<HairQuality> shadingHair{HairQuality::High};
     std::atomic<TerrainQuality> shadingTerrain{TerrainQuality::High};
+    std::atomic<WaterQuality> shadingWater{WaterQuality::High};
     ShadingStats lastShadingStats;
     std::array<VkPipeline, 4> transmissionPipelines{};   // + 1 double-sided, + 2 mirrored
     std::array<VkPipeline, 8> skinPipelines{};   // indexed by prepassIndex

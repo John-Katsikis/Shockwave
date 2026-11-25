@@ -172,14 +172,15 @@ fs::path contentRoot(const fs::path& asset) {
 // A07-A09: the family, what it draws as at each quality, and what that costs.
 std::string shadingJson(const shockwave::MaterialDesc& desc) {
     using namespace shockwave;
-    const char* families[] = {"standard", "skin", "hair_card", "transmission"};
-    std::string out = "{\"family\": " + jsonQuote(families[std::clamp(desc.params.family, 0, 3)]);
+    const char* families[] = {"standard", "skin", "hair_card", "transmission", "water"};
+    std::string out = "{\"family\": " + jsonQuote(families[std::clamp(desc.params.family, 0, 4)]);
     const ShadingSettings defaults;
     ShadingSettings off;
     off.clearcoat = false;
     off.transmission = TransmissionQuality::Off;
     off.skin = SkinQuality::Off;
     off.hair = HairQuality::Low;
+    off.water = WaterQuality::Low;
     ShadingSettings low = off;
     low.clearcoat = true;
     low.transmission = TransmissionQuality::Low;
@@ -370,6 +371,24 @@ void Player::checkMaterialOverrides(
                     " doesn't have (renamed in the modelling tool?)");
         }
     });
+    // Water (W3) draws over the glass pass's copy of the scene: with transmission_quality off
+    // there's no copy, and it's a blended stand-in without depth, refraction or foam.
+    if (m_tool.graphics.transmissionQuality != shockwave::TransmissionQuality::Off) return;
+    auto isWater = [&](shockwave::MaterialHandle handle) {
+        const auto material = handle.id ? engine().assets().material(handle) : nullptr;
+        return material && material->desc.params.family == int(shockwave::MaterialFamily::Water);
+    };
+    size_t water = 0;
+    world.each<const shockwave::MeshRenderer>(
+        [&](shockwave::Entity, const shockwave::MeshRenderer& mesh) { water += isWater(mesh.material); });
+    world.each<const shockwave::ModelRenderer>([&](shockwave::Entity, const shockwave::ModelRenderer& renderer) {
+        for (const auto& o : renderer.materials) water += isWater(o.material);
+    });
+    if (water)
+        std::printf(
+            "warning %s: %zu water surface%s, but transmission_quality is off, so water draws as a blended stand-in "
+            "(no depth colour, refraction or foam)\n",
+            shownScene.c_str(), water, water == 1 ? "" : "s");
 }
 
 // A material that doesn't resolve was already reported, as a failed import.

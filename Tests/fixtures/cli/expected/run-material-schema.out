@@ -24,7 +24,7 @@ the reason in the editor and `player --check`.
 
 | Key | Values | Default | Range | Meaning |
 |---|---|---|---|---|
-| `family` | `standard`, `skin`, `hair_card`, `transmission` | standard | - | Shading family (docs/Shading.md): standard is glTF's metallic-roughness (with an optional clearcoat); skin diffuses its light under the surface; hair_card stretches the highlight along the strands; transmission is glass and other see-through dielectrics |
+| `family` | `standard`, `skin`, `hair_card`, `transmission`, `water` | standard | - | Shading family (docs/Shading.md): standard is glTF's metallic-roughness (with an optional clearcoat); skin diffuses its light under the surface; hair_card stretches the highlight along the strands; transmission is glass and other see-through dielectrics; water is a lake or river surface (docs/Water.md) |
 | `base_color` | r g b a | 1 1 1 1 | 0..1 | Linear RGB and alpha, multiplying the base_color texture |
 | `metallic` | number | 0 | 0..1 | 0 plastic, wood, stone .. 1 bare metal; multiplies the metallic_roughness texture's blue |
 | `roughness` | number | 0.5 | 0..1 | Perceptual roughness (not smoothness): 0 mirror .. 1 matte; multiplies the texture's green. 0 is kept as written; the shader never goes below 0.03 |
@@ -59,6 +59,13 @@ the reason in the editor and `player --check`.
 | `skin_max_pixels` | number | 24 | 1..64 | The spread's largest radius on screen, in pixels, however close the camera gets |
 | `hair_anisotropy` | number | 0.8 | -1..1 | family hair_card: how much the highlight stretches across the strands, 0 round .. 1 a thin band (the look of hair); negative stretches it along them instead |
 | `hair_direction` | `u`, `v` | v | - | Which way the strands run on the card's texture, root to tip: u (left to right) or v (top to bottom) |
+| `water_shallow_color` | r g b | 0.1 0.4 0.4 | 0..1 | family water: the water's colour where the bottom is close |
+| `water_deep_color` | r g b | 0.02 0.08 0.12 | 0..1 | The colour where it's deep |
+| `water_depth_fade` | number | 4 | 0.1..100 | Metres of water over which the shallow colour becomes the deep one |
+| `water_clarity` | number | 6 | 0.1..100 | Metres you can see through before the bottom disappears into the water's colour |
+| `water_ripple_scale` | number | 3 | 0.1..100 | Metres per repeat of the water_normal ripple map, tiled over the world |
+| `water_ripple_speed` | number | 0.3 | 0..10 | Metres a second the ripples drift |
+| `water_foam_distance` | number | 0.4 | 0..5 | Metres of water depth over which the shoreline foam fades out; 0 none |
 
 ## Texture slots
 
@@ -87,6 +94,7 @@ the reason in the editor and `player --check`.
 | `clearcoat` | data (linear) | Red scales clearcoat, green clearcoat_roughness (glTF's) |
 | `clearcoat_normal` | data (linear) | The coat's own normals |
 | `transmission` | data (linear) | Red scales transmission, green thickness |
+| `water_normal` | data (linear) | Ripple normals, tiled over the world every water_ripple_scale metres (its UVs aren't used); blue breaks up the foam |
 
 A texture is decoded the way its slot says, whatever another material does with the same
 image: one used as colour by one material and as data by another is kept twice.
@@ -111,6 +119,7 @@ nothing (`player --check` warns). The graphics settings can turn each one down o
 | `transmission` | surface, transmission | `transmission_quality off`: simplified see-through glass, blended, tinted by base_color |
 | `skin` | surface, skin | `skin_quality off`: the opaque skin surface, no diffusion pass or memory |
 | `hair_card` | surface, hair | `hair_quality low`: the round (isotropic) highlight |
+| `water` | water (and emissive, normal-free surface values) | `water_quality low`: no refraction or foam, one ripple sample; `transmission_quality off`: a blended stand-in |
 
 Transmission draws its own see-through, so it ignores `alpha_mode blend` (mask still
 cuts out). `transmission 0` draws exactly as standard. Eyes are made of these: an opaque
