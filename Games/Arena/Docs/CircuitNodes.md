@@ -2188,7 +2188,7 @@ Sets the fields given (connected or written) of the entity's Collider; the rest 
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model
+- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model; 5=Terrain
 - In `half_extents` Vec3
 - In `radius` Float
 - In `half_height` Float
@@ -2253,7 +2253,7 @@ Sets the entity's Collider shape.
 - Exec in: `exec`
 - Exec out: `then`
 - In `target` Entity, default self
-- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model, required
+- In `shape` Int, options 0=Box; 1=Sphere; 2=Capsule; 3=Convex model; 4=Triangle model; 5=Terrain, required
 
 ### Component.Decal.Add
 
@@ -6269,6 +6269,109 @@ Sets the entity's Spin speed.
 - Exec out: `then`
 - In `target` Entity, default self
 - In `speed` Float, required
+
+### Component.Terrain.Add
+
+Gives the entity a Terrain with default values, if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Terrain.Get
+
+Every field of the entity's Terrain; found is false when it has none.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `found` Bool
+- Out `asset` String
+- Out `visible` Bool
+- Out `cast_shadows` Bool
+
+### Component.Terrain.Get.asset
+
+The entity's Terrain asset.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `asset` String
+
+### Component.Terrain.Get.cast_shadows
+
+The entity's Terrain cast_shadows.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `cast_shadows` Bool
+
+### Component.Terrain.Get.visible
+
+The entity's Terrain visible.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `visible` Bool
+
+### Component.Terrain.Has
+
+The entity has a Terrain.
+
+- Changes: presentation
+- In `target` Entity, default self
+- Out `result` Bool
+
+### Component.Terrain.Remove
+
+Takes the Terrain off the entity.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+
+### Component.Terrain.Set
+
+Sets the fields given (connected or written) of the entity's Terrain; the rest stay as they are. Nothing happens if it has none.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String
+- In `visible` Bool
+- In `cast_shadows` Bool
+
+### Component.Terrain.Set.asset
+
+Sets the entity's Terrain asset.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `asset` String, required
+
+### Component.Terrain.Set.cast_shadows
+
+Sets the entity's Terrain cast_shadows.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `cast_shadows` Bool, required
+
+### Component.Terrain.Set.visible
+
+Sets the entity's Terrain visible.
+
+- Changes: authority
+- Exec in: `exec`
+- Exec out: `then`
+- In `target` Entity, default self
+- In `visible` Bool, required
 
 ### Component.Transform.Add
 
