@@ -49,9 +49,14 @@ void Editor::publishTerrain(
     shockwave::Assets& assets = engine().assets();
     const auto previous = assets.terrain(asset);
     if (!previous) return;
+    const std::shared_ptr<const TerrainData> before = previous->data;
     auto next =
         shockwave::updateTerrain(engine().renderer(), *previous, std::move(data), rect, m_terrain.retired, changed);
+    const std::shared_ptr<const TerrainData> after = next->data;
     assets.addTerrain(asset, std::move(next));
+    // Foliage standing on the old ground follows it (W2b).
+    if ((changed & shockwave::kTerrainHeightsChanged) && before && after && rect.x <= rect.z)
+        redropFoliageOnTerrain(asset, *before, *after, rect);
 }
 
 void Editor::commitTerrainChange(

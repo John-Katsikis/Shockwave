@@ -164,7 +164,9 @@ void Editor::drawViewport() {
 
     drawViewportOverlay(pos, size);
     // A terrain brush (W1a) takes the left button while it's over a terrain.
-    const bool sculpting = !gameView && updateTerrainBrush(pos, size, imageHovered);
+    // A foliage brush (W2b) likewise, over any ground.
+    bool sculpting = !gameView && updateTerrainBrush(pos, size, imageHovered);
+    if (!gameView && updateFoliageBrush(pos, size, imageHovered)) sculpting = true;
 
     // Click to select (Ctrl toggles, Shift adds). Clicks on the overlay, gizmo or view
     // cube don't count.

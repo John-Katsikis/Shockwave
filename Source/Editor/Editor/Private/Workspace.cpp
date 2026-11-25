@@ -223,6 +223,7 @@ void Editor::drawMenuBar() {
             ImGui::MenuItem("Material", nullptr, &m_showMaterial);
             ImGui::MenuItem("Lighting", nullptr, &m_showLighting);
             ImGui::MenuItem("Terrain", nullptr, &m_terrain.open);
+            ImGui::MenuItem("Foliage", nullptr, &m_foliage.open);
             ImGui::SetItemTooltip("Create, sculpt and import heightmap terrain (docs/Terrain.md)");
             ImGui::Separator();
             if (ImGui::MenuItem("Reset layout")) m_resetLayout = true;

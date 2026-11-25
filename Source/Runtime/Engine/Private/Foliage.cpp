@@ -224,11 +224,13 @@ void drawFoliage(
             for (size_t b = from; b < to; ++b) {
                 const Batch& batch = batches[b];
                 const bool placedNode = batch.node->world != glm::mat4(1.0f);
+                const bool placedEntity = entity != glm::mat4(1.0f);
                 transforms.clear();
                 parts.clear();
                 for (size_t k = batch.begin; k < batch.end; ++k) {
                     const uint32_t i = (*batch.kept)[k];
-                    const glm::mat4 m = entity * foliageMatrix(foliage->instances[i]);
+                    const glm::mat4 own = foliageMatrix(foliage->instances[i]);
+                    const glm::mat4 m = placedEntity ? entity * own : own;
                     transforms.push_back(placedNode ? m * batch.node->world : m);
                     parts.push_back(i & 0xFFFFFFu);
                 }

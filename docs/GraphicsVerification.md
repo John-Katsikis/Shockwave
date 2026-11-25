@@ -1052,6 +1052,32 @@ as one), baked probe lighting for instances, skinned meshes in foliage models, g
 submission runs on one thread: shared across the job system it was slower on the 4-core
 test machine with llvmpipe busy on the other cores.
 
+## W2b: foliage painting
+
+The editor's Window > Foliage (docs/Foliage.md, "Painting"): create a foliage asset, add and
+tune types, Paint and Erase brushes with a density, one undo step per stroke in the shared
+journal, and instances re-dropped when terrain is sculpted under them. Nothing changes at
+run time: a painted foliage draws exactly as W2a, and a level without one is untouched.
+
+- **Contract.** `Assets/FoliageData.h`: `swfoliage 2` (per-type `max_slope`, `scale_min`,
+  `scale_max`), `scatterFoliage`, `eraseFoliage`, `redropFoliage`, `FoliageEdit` with
+  `makeFoliageEdit` and `applyFoliageEdit`, and a total sort order with `renumberFoliage`
+  so the editor's instances are what the saved file reads back as. The `foliage` unit test's
+  `version2`, `scatter`, `erase`, `undo` and `redrop` parts cover them: the same seed gives
+  the same instances, density 2 in a 10 m circle adds 628 within 10%, 60-degree ground is
+  skipped at max slope 45 and painted at 70, erase leaves other types alone, undo and redo
+  of paint then erase give back each state exactly.
+- **Editor.** `FoliagePanel.cpp`; strokes drop instances through a physics copy of the
+  scene (`PhysicsWorld::raycast` straight down). `UndoKind::Foliage` beside terrain strokes.
+  Save scene saves foliage too.
+- **Smoke test.** `foliage_paint_editor`: `editor --foliage-stroke` on a flat collider
+  painted 143 instances in three 4 m dabs at 2 per square metre, erased 23, and every undo,
+  redo and the save agreed; `--foliage-info` reads the 143 back.
+
+Not done: removing types, painting several types at once, a brush that follows colliders
+moved since the stroke began, and an editor test of the terrain re-drop (the rule itself is
+unit tested).
+
 ## Known limits
 
 - The overhaul's frame times were all measured on llvmpipe, a CPU renderer. Timings on

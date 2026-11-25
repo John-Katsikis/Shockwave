@@ -11,8 +11,8 @@ Foliage is two files in Content and one component:
 - A `Foliage` component on an entity (category Rendering), naming the `.swfoliage`. The
   instances' positions are relative to the entity's world transform.
 
-Painting foliage in the editor comes in W2b; until then the files are written by tools
-(`writeFoliage` in `Assets/FoliageData.h`) or scripts, such as the fixture generator
+Foliage is painted in the editor's **Window > Foliage** (below), or written by tools
+(`writeFoliage` in `Assets/FoliageData.h`) and scripts, such as the fixture generator
 `Tests/fixtures/graphics/Tools/foliage.py`.
 
 ## The .swfoliage format
@@ -28,7 +28,20 @@ type "models/grass.glb"                  # type 0; the indented keys under it ar
 type "models/rock.glb"                   # type 1, with the defaults
 ```
 
-The first line is `swfoliage 1`; `#` starts a comment. `instances` is required, and there
+Version 2, which the editor writes, adds three keys per type for painting:
+
+```
+swfoliage 2
+...
+type "models/grass.glb"
+  ...
+  max_slope 45                           # degrees: Paint skips steeper ground (0 to 90)
+  scale_min 0.8                          # Paint picks each new instance's scale between
+  scale_max 1.2                          # these (0.01 to 100)
+```
+
+The first line is `swfoliage 1` or `swfoliage 2`; `#` starts a comment. The version 2 keys
+in a version 1 file are an error. `instances` is required, and there
 can be up to 256 types. An unknown key, a key given twice for one type, a value out of range
 or a fade longer than its distance is an error naming its line.
 
@@ -70,6 +83,41 @@ depth passes sway the same way, and motion vectors use the previous frame's time
 is the game's frame clock (`Renderer::setWindTime`), so a `--fixed-step` run sways the same
 every time; the editor sways foliage only while playing.
 
+## Painting
+
+**Window > Foliage** works on the selected entity's Foliage, else the scene's first.
+
+- **Create**: a name (a Content path) and, optionally, the first type's model. It writes an
+  empty `.swfoliage` and `.instances` and adds an entity with a Foliage component.
+- **Types**: pick the type the brushes use; under each, its distance, fade, wind, max slope,
+  scale range and shadows, shown straight away and undone as one step per edit. **Add type**
+  takes a model's Content path. Types can't be removed yet.
+- **Paint** scatters the chosen type in the circle under the mouse, up to **Density**
+  instances per square metre (0.01 to 20): it counts what's already there and adds only
+  what's missing, so going over a spot again doesn't pile up. Each new instance gets a point
+  spread evenly over the circle from a seeded sequence, drops straight down onto whatever
+  collides below it (terrain or any collider), and is skipped where the ground is steeper
+  than the type's max slope; its yaw is random and its scale between scale_min and
+  scale_max.
+- **Erase** removes the chosen type's instances in the circle.
+
+Each stroke is one undo step, in the same journal as scene edits and terrain strokes, so
+Ctrl+Z undoes whichever came last. Undo matches instances by value. **Save foliage** (and
+Save scene) writes every edited foliage.
+
+When terrain is sculpted under foliage, the instances inside the changed area that stood
+on the old ground (within 5 cm) move onto the new height. Instances above the ground, such
+as ones painted on a rock, stay where they are.
+
+The editor keeps instances sorted (by type, cell, then their values) and numbers their
+random values from that order, which is the order it saves them in, so reading the file back
+gives exactly what was drawn. Erasing renumbers the instances after the gap, so with
+`foliage_density` below 1 a different subset of them may be drawn afterwards.
+
+`editor --foliage-stroke` (tests) paints one stroke on the scene's first Foliage with the
+window's code, undoes and redoes it, erases part of it and undoes that, then saves, and exits
+1 if any step disagrees.
+
 ## Settings
 
 - `foliage_density` 0 to 1 (presets: Low 0.4, Medium 0.7, High and Ultra 1): the share of
@@ -95,7 +143,9 @@ the CPU time spent choosing and submitting them (`submit_ms`), and the two setti
 
 ## Not done
 
-- Painting and erasing in the editor (W2b).
+- Removing a type in the editor, and painting several types at once.
+- The editor drops instances through a physics copy of the scene made when a stroke starts
+  or a brush is picked; a collider moved since shows up at the next stroke.
 - Per-instance fade distance: fade is worked out per 16 m cell, so a cell thins out as one.
 - Instances aren't lit by baked probes, and skinned meshes in a foliage model are skipped.
 - The wind is one direction and strength for every type; there are no gusts.

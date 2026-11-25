@@ -490,6 +490,7 @@ void Editor::pushUndo(shockwave::World before) {
     }
     m_redo.clear();
     m_terrainRedo.clear();
+    m_foliageRedo.clear();
     m_redoOrder.clear();
     m_dirty = true;
 }
@@ -502,6 +503,8 @@ void Editor::undo() {
     m_undoOrder.pop_back();
     if (kind == UndoKind::Terrain) {
         stepTerrainUndo(false);
+    } else if (kind == UndoKind::Foliage) {
+        stepFoliageUndo(false);
     } else {
         if (m_undo.empty()) return;
         m_redo.push_back(std::move(m_world));
@@ -518,6 +521,8 @@ void Editor::redo() {
     m_redoOrder.pop_back();
     if (kind == UndoKind::Terrain) {
         stepTerrainUndo(true);
+    } else if (kind == UndoKind::Foliage) {
+        stepFoliageUndo(true);
     } else {
         if (m_redo.empty()) return;
         m_undo.push_back(std::move(m_world));

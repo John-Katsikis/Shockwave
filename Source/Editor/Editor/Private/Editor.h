@@ -25,6 +25,7 @@
 #include <Animation/AnimationWorld.h>
 #include <GameUI/GameUI.h>
 #include <Navigation/Navigation.h>
+#include <Physics/Physics.h>
 #include <Projects/Project.h>
 #include <SteamServices/SteamServices.h>
 
@@ -95,6 +96,9 @@ struct EditorOptions {
     // --package-release (tests, docs/Cooking.md#in-the-editor): Build > Package game with
     // Release ticked, pressed once; prints the result and exits 1 if it failed.
     bool packageRelease = false;
+    // --foliage-stroke (tests, docs/Foliage.md#painting): paints one stroke on the scene's
+    // first Foliage with its first type, then checks undo, redo and save; exit 1 on failure.
+    bool foliageStroke = false;
     std::string circuitOnStart;   // --circuit: open it in the Circuits window (screenshots)
 };
 
@@ -388,9 +392,60 @@ private:
         std::vector<shockwave::MeshHandle> retired, retiring;   // chunk meshes to destroy next frame
         std::string status;
     } m_terrain;
-    enum class UndoKind { World, Terrain };
+    // FoliagePanel.cpp: Window > Foliage (W2b, docs/Foliage.md). Create a foliage asset, add
+    // and tune its types, and paint or erase instances in the viewport. Strokes keep undo
+    // steps in the same journal as terrain strokes.
+    void drawFoliageWindow();
+    // Each viewport frame: the brush circle, and the stroke while the left button is down.
+    // True when the brush has the mouse.
+    bool updateFoliageBrush(const ImVec2& pos, const ImVec2& size, bool hovered);
+    shockwave::Entity foliageTarget() const;   // the selected Foliage, else the scene's first
+    shockwave::Entity createFoliage();
+    bool saveFoliage();   // every foliage with unsaved edits; false if any failed
+    void clearFoliageUndo();
+    void stepFoliageUndo(bool redo);
+    // A stroke, without the mouse (the brush and --foliage-stroke use these): begin on the
+    // target's asset, dab at a point in its space, end (one undo step if anything changed).
+    bool beginFoliageStroke(shockwave::Entity target);
+    void foliageDab(glm::vec2 centre);
+    void endFoliageStroke();
+    // Publishes edited foliage (sorted, renumbered) to the asset registry.
+    void publishFoliage(const std::string& asset, std::shared_ptr<const shockwave::FoliageData> data);
+    // A header change (a type added or edited) as one undo step.
+    void
+    commitFoliageChange(const std::string& asset, const shockwave::FoliageData& before, shockwave::FoliageData after);
+    // Terrain heights changed in rect (points): instances standing on the old ground move
+    // onto the new (called by publishTerrain).
+    void redropFoliageOnTerrain(
+        const std::string& terrainAsset, const shockwave::TerrainData& before, const shockwave::TerrainData& after,
+        glm::ivec4 rect);
+    // The scene's colliders, for dropping painted instances onto the ground: a copy of the
+    // world with its own physics, rebuilt at each stroke's start.
+    void rebuildFoliageGround();
+    bool foliageGroundAt(glm::vec3 from, glm::vec3& point, glm::vec3& normal) const;
+    void runFoliageStroke();   // --foliage-stroke
+    struct FoliageTool {
+        bool open = false;
+        int brush = -1;   // -1 none, 0 Paint, 1 Erase
+        float radius = 4.0f, density = 2.0f;   // metres, instances per square metre
+        int type = 0;
+        char newName[128] = "foliage/foliage";
+        char newTypeModel[256] = "";
+        bool stroking = false;
+        std::string strokeAsset;
+        shockwave::Entity strokeEntity;
+        std::shared_ptr<const shockwave::FoliageData> strokeBefore;
+        std::shared_ptr<shockwave::FoliageData> working;
+        uint32_t seed = 1, dabs = 0;
+        std::unique_ptr<shockwave::World> groundWorld;
+        std::unique_ptr<shockwave::PhysicsWorld> ground;
+        std::vector<std::string> unsaved;
+        std::string status;
+    } m_foliage;
+    enum class UndoKind { World, Terrain, Foliage };
     std::vector<UndoKind> m_undoOrder, m_redoOrder;
     std::vector<shockwave::TerrainEdit> m_terrainUndo, m_terrainRedo;
+    std::vector<shockwave::FoliageEdit> m_foliageUndo, m_foliageRedo;
     // EditorLighting.cpp: Window > Lighting, the scene's bake (G05, G06; docs/Lighting.md).
     // Bakes a copy of the scene on a thread, so editing carries on; cancelled when the
     // project or scene changes, or the editor closes.

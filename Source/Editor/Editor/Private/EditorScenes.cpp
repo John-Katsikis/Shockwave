@@ -55,6 +55,7 @@ void Editor::newScene(SceneTemplate kind) {
     m_undo.clear();
     m_redo.clear();
     clearTerrainUndo();
+    clearFoliageUndo();
     select(kNullEntity);
     m_dirty = false;
     m_viewThroughCamera = false;
@@ -95,6 +96,7 @@ bool Editor::openScene(const fs::path& path) {
     m_undo.clear();
     m_redo.clear();
     clearTerrainUndo();
+    clearFoliageUndo();
     select(kNullEntity);
     m_dirty = false;
     m_viewThroughCamera = false;
@@ -147,6 +149,7 @@ bool Editor::saveSceneAs(fs::path path) {
         return false;
     }
     saveTerrains();   // sculpted terrains are part of the level (W1a)
+    saveFoliage();   // and painted foliage (W2b)
     if (prefab) shockwave::prefabs().reload(shockwave::prefabs().pathOf(path));   // copies follow
     fs::remove(oldAutosave, ec);
     m_scenePath = path;

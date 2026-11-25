@@ -114,7 +114,8 @@ bool parseFoliage(std::string_view text, FoliageData& foliage, std::string& erro
     int lineNumber = 0;
     bool header = false, seenInstances = false;
     struct Seen {
-        bool distance = false, fade = false, shadows = false, wind = false;
+        bool distance = false, fade = false, shadows = false, wind = false, maxSlope = false, scaleMin = false,
+             scaleMax = false;
     };
     std::vector<Seen> seen;
     std::vector<std::string> w;
@@ -146,8 +147,9 @@ bool parseFoliage(std::string_view text, FoliageData& foliage, std::string& erro
             return true;
         };
         if (!header) {
-            if (key != "swfoliage") return fail("the first line must be \"swfoliage 1\"");
-            if (w.size() != 2 || w[1] != "1") return fail("only swfoliage version 1 is known");
+            if (key != "swfoliage") return fail("the first line must be \"swfoliage 1\" or \"swfoliage 2\"");
+            if (w.size() != 2 || (w[1] != "1" && w[1] != "2")) return fail("only swfoliage versions 1 and 2 are known");
+            foliage.version = w[1] == "2" ? 2 : 1;
             header = true;
         } else if (key == "instances") {
             if (seenInstances) return fail("instances given twice");
@@ -183,13 +185,32 @@ bool parseFoliage(std::string_view text, FoliageData& foliage, std::string& erro
             if (count != 1 || !number(w[1], v)) return fail("wind needs one number");
             if (v < 0.0f || v > 1.0f) return fail("wind must be 0 to 1");
             foliage.types.back().wind = v;
+        } else if (key == "max_slope" || key == "scale_min" || key == "scale_max") {
+            if (foliage.version < 2) return fail(key + " needs swfoliage 2");
+            bool Seen::*flag = key == "max_slope"   ? &Seen::maxSlope
+                               : key == "scale_min" ? &Seen::scaleMin
+                                                    : &Seen::scaleMax;
+            if (!typeKey(flag)) return false;
+            float v = 0;
+            if (count != 1 || !number(w[1], v)) return fail(key + " needs one number");
+            FoliageType& type = foliage.types.back();
+            if (key == "max_slope") {
+                if (v < 0.0f || v > 90.0f) return fail("max_slope must be 0 to 90 degrees");
+                type.maxSlope = v;
+            } else {
+                if (v < 0.01f || v > 100.0f) return fail(key + " must be 0.01 to 100");
+                (key == "scale_min" ? type.scaleMin : type.scaleMax) = v;
+            }
         } else {
             return fail("unknown key " + key);
         }
         if (end == text.size()) break;
     }
     lineNumber = 0;
-    if (!header) return fail("empty: the first line must be \"swfoliage 1\"");
+    if (!header) return fail("empty: the first line must be \"swfoliage 1\" or \"swfoliage 2\"");
+    for (size_t i = 0; i < foliage.types.size(); ++i)
+        if (foliage.types[i].scaleMin > foliage.types[i].scaleMax)
+            return fail("type " + std::to_string(i) + "'s scale_min is above its scale_max");
     if (!seenInstances) return fail("instances is missing");
     for (size_t i = 0; i < foliage.types.size(); ++i)
         if (foliage.types[i].fade > foliage.types[i].distance)
@@ -198,7 +219,7 @@ bool parseFoliage(std::string_view text, FoliageData& foliage, std::string& erro
 }
 
 std::string foliageText(const FoliageData& f) {
-    std::string out = "swfoliage 1\n";
+    std::string out = "swfoliage " + std::to_string(f.version >= 2 ? 2 : 1) + "\n";
     out += "instances \"" + f.instancesFile + "\"\n";
     for (const FoliageType& t : f.types) {
         out += "type \"" + t.model + "\"\n";
@@ -206,6 +227,11 @@ std::string foliageText(const FoliageData& f) {
         out += "  fade " + formatFloat(t.fade) + "\n";
         out += std::string("  shadows ") + (t.shadows ? "true" : "false") + "\n";
         out += "  wind " + formatFloat(t.wind) + "\n";
+        if (f.version >= 2) {
+            out += "  max_slope " + formatFloat(t.maxSlope) + "\n";
+            out += "  scale_min " + formatFloat(t.scaleMin) + "\n";
+            out += "  scale_max " + formatFloat(t.scaleMax) + "\n";
+        }
     }
     return out;
 }
@@ -302,11 +328,14 @@ void sortFoliage(FoliageData& f) {
         return glm::ivec2(
             int(std::floor(in.position.x / kFoliageCellMetres)), int(std::floor(in.position.z / kFoliageCellMetres)));
     };
+    // A total order (type, cell, then the values themselves), so the same instances always
+    // end up in the same order, however they were added.
     std::stable_sort(f.instances.begin(), f.instances.end(), [&](const FoliageInstance& a, const FoliageInstance& b) {
         if (a.type != b.type) return a.type < b.type;
         const glm::ivec2 ca = cellOf(a), cb = cellOf(b);
         if (ca.y != cb.y) return ca.y < cb.y;
-        return ca.x < cb.x;
+        if (ca.x != cb.x) return ca.x < cb.x;
+        return foliageValueLess(a, b);
     });
     f.cells.clear();
     for (uint32_t i = 0; i < f.instances.size(); ++i) {
@@ -346,14 +375,164 @@ float foliageFade(float distance, float maxDistance, float fade) {
 }
 
 glm::mat4 foliageMatrix(const FoliageInstance& in) {
-    glm::mat4 m = glm::translate(glm::mat4(1.0f), in.position);
-    m = glm::rotate(m, in.yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-    return glm::scale(m, glm::vec3(in.scale));
+    // translate * rotate(yaw, +Y) * scale, written out: it runs for every instance drawn.
+    const float c = std::cos(in.yaw) * in.scale, s = std::sin(in.yaw) * in.scale;
+    return glm::mat4(
+        glm::vec4(c, 0.0f, -s, 0.0f), glm::vec4(0.0f, in.scale, 0.0f, 0.0f), glm::vec4(s, 0.0f, c, 0.0f),
+        glm::vec4(in.position, 1.0f));
 }
 
 float foliageCellDistance(const FoliageCell& cell, const glm::vec3& point) {
     const glm::vec3 nearest = glm::clamp(point, cell.bounds.min, cell.bounds.max);
     return glm::length(point - nearest);
+}
+
+bool foliageValueLess(const FoliageInstance& a, const FoliageInstance& b) {
+    if (a.type != b.type) return a.type < b.type;
+    if (a.position.z != b.position.z) return a.position.z < b.position.z;
+    if (a.position.x != b.position.x) return a.position.x < b.position.x;
+    if (a.position.y != b.position.y) return a.position.y < b.position.y;
+    if (a.yaw != b.yaw) return a.yaw < b.yaw;
+    return a.scale < b.scale;
+}
+
+bool foliageSameValue(const FoliageInstance& a, const FoliageInstance& b) {
+    return !foliageValueLess(a, b) && !foliageValueLess(b, a);
+}
+
+void renumberFoliage(FoliageData& f) {
+    for (uint32_t i = 0; i < f.instances.size(); ++i) f.instances[i].random = foliageRandom(i);
+}
+
+void finishFoliageEdit(FoliageData& f) {
+    if (f.version < 2) f.version = 2;
+    sortFoliage(f);
+    renumberFoliage(f);
+}
+
+namespace {
+
+// A small, fixed sequence (splitmix64): the same numbers for the same seed on every machine.
+struct Sequence {
+    uint64_t state;
+    explicit Sequence(uint64_t seed) : state(seed) {}
+    uint64_t next() {
+        uint64_t z = (state += 0x9e3779b97f4a7c15ull);
+        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+        z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+        return z ^ (z >> 31);
+    }
+    float unit() { return float(next() >> 40) / float(1ull << 24); }   // 0..1
+};
+
+bool insideCircle(const glm::vec3& p, glm::vec2 centre, float radius) {
+    const glm::vec2 d = glm::vec2(p.x, p.z) - centre;
+    return glm::dot(d, d) <= radius * radius;
+}
+
+}   // namespace
+
+size_t scatterFoliage(FoliageData& f, const FoliagePaint& paint, const FoliageGround& ground) {
+    if (paint.type >= f.types.size() || !(paint.radius > 0.0f) || !(paint.density > 0.0f) || !ground) return 0;
+    const FoliageType& type = f.types[paint.type];
+    size_t existing = 0;
+    for (const FoliageInstance& in : f.instances)
+        if (in.type == paint.type && insideCircle(in.position, paint.centre, paint.radius)) ++existing;
+    const double area = 3.14159265358979 * double(paint.radius) * double(paint.radius);
+    const auto target = static_cast<size_t>(std::llround(double(paint.density) * area));
+    if (target <= existing) return 0;
+    const size_t need = target - existing;
+    Sequence random(paint.seed);
+    const float cosLimit = std::cos(glm::radians(std::clamp(type.maxSlope, 0.0f, 90.0f)));
+    size_t added = 0;
+    for (size_t i = 0; i < need; ++i) {
+        // A point spread evenly over the disc.
+        const float r = paint.radius * std::sqrt(random.unit());
+        const float a = 6.2831853f * random.unit();
+        const float yaw = 6.2831853f * random.unit();
+        const float s = type.scaleMin + (type.scaleMax - type.scaleMin) * random.unit();
+        const glm::vec2 xz = paint.centre + r * glm::vec2(std::cos(a), std::sin(a));
+        glm::vec3 point, normal;
+        if (!ground(xz, point, normal)) continue;
+        const float length = glm::length(normal);
+        if (!(length > 0.0f) || normal.y / length < cosLimit - 1e-6f) continue;   // too steep
+        FoliageInstance in;
+        in.type = paint.type;
+        in.position = point;
+        in.yaw = yaw;
+        in.scale = s;
+        f.instances.push_back(in);
+        ++added;
+    }
+    return added;
+}
+
+size_t eraseFoliage(FoliageData& f, glm::vec2 centre, float radius, uint16_t type) {
+    const size_t before = f.instances.size();
+    std::erase_if(f.instances, [&](const FoliageInstance& in) {
+        return in.type == type && insideCircle(in.position, centre, radius);
+    });
+    return before - f.instances.size();
+}
+
+size_t redropFoliage(
+    FoliageData& f, glm::vec2 low, glm::vec2 high, const std::function<bool(glm::vec2, float&)>& before,
+    const std::function<bool(glm::vec2, float&)>& after, float tolerance) {
+    size_t moved = 0;
+    for (FoliageInstance& in : f.instances) {
+        if (in.position.x < low.x || in.position.x > high.x || in.position.z < low.y || in.position.z > high.y)
+            continue;
+        const glm::vec2 xz(in.position.x, in.position.z);
+        float was = 0.0f, now = 0.0f;
+        if (!before(xz, was) || std::abs(in.position.y - was) > tolerance || !after(xz, now)) continue;
+        if (in.position.y != now) {
+            in.position.y = now;
+            ++moved;
+        }
+    }
+    return moved;
+}
+
+FoliageEdit makeFoliageEdit(std::string asset, const FoliageData& before, const FoliageData& after) {
+    FoliageEdit edit;
+    edit.asset = std::move(asset);
+    std::vector<FoliageInstance> a = before.instances, b = after.instances;
+    std::sort(a.begin(), a.end(), foliageValueLess);
+    std::sort(b.begin(), b.end(), foliageValueLess);
+    std::set_difference(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(edit.removed), foliageValueLess);
+    std::set_difference(b.begin(), b.end(), a.begin(), a.end(), std::back_inserter(edit.added), foliageValueLess);
+    if (before.types != after.types || before.version != after.version || before.instancesFile != after.instancesFile) {
+        edit.layout = true;
+        edit.headerBefore = before;
+        edit.headerBefore.instances.clear();
+        edit.headerBefore.cells.clear();
+        edit.headerAfter = after;
+        edit.headerAfter.instances.clear();
+        edit.headerAfter.cells.clear();
+    }
+    return edit;
+}
+
+void applyFoliageEdit(FoliageData& f, const FoliageEdit& edit, bool redo) {
+    const std::vector<FoliageInstance>& gone = redo ? edit.removed : edit.added;
+    const std::vector<FoliageInstance>& back = redo ? edit.added : edit.removed;
+    if (edit.layout) {
+        const FoliageData& header = redo ? edit.headerAfter : edit.headerBefore;
+        f.types = header.types;
+        f.version = header.version;
+        f.instancesFile = header.instancesFile;
+    }
+    std::vector<FoliageInstance> sorted = f.instances;
+    std::sort(sorted.begin(), sorted.end(), foliageValueLess);
+    std::vector<FoliageInstance> kept;
+    kept.reserve(sorted.size() + back.size());
+    std::set_difference(
+        sorted.begin(), sorted.end(), gone.begin(), gone.end(), std::back_inserter(kept), foliageValueLess);
+    kept.insert(kept.end(), back.begin(), back.end());
+    f.instances = std::move(kept);
+    std::erase_if(f.instances, [&](const FoliageInstance& in) { return in.type >= f.types.size(); });
+    sortFoliage(f);
+    renumberFoliage(f);
 }
 
 }   // namespace shockwave

@@ -263,6 +263,7 @@ void Editor::onGui() {
     if (m_showMaterial) drawMaterialWindow();
     if (m_showLighting || m_lightingBake || m_reflectionCapture) drawLightingWindow();
     if (m_terrain.open) drawTerrainWindow();
+    if (m_foliage.open) drawFoliageWindow();
     if (m_showPreferences) drawPreferencesWindow();
     if (m_showProjectSettings) drawProjectSettingsWindow();
     m_package.draw(m_project);
@@ -341,6 +342,7 @@ void Editor::onFrame(double dt) {
     pollGameCode();   // between frames, before anything looks at the world
     if (m_options.levelCycles > 0) runLevelCycles();
     if (m_options.levelAuthoring) runLevelAuthoring();
+    if (m_options.foliageStroke) runFoliageStroke();
     if (m_options.packageRelease) runPackageRelease();
     if (session()) session()->frame(dt);
     updatePlayerSettings(dt);

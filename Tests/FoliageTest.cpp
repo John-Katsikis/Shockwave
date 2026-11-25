@@ -1,8 +1,10 @@
 // Foliage (W2a, docs/Foliage.md): the .swfoliage format and its errors, the 24-byte
-// instances, sorting into 16 m cells, the fixed random numbers, density and fade. No GPU.
+// instances, sorting into 16 m cells, the fixed random numbers, density and fade; and
+// painting (W2b): version 2 keys, scatter, erase, undo and re-dropping onto new ground. No GPU.
 #include <Assets/FoliageData.h>
 #include <Engine/Foliage.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -56,7 +58,7 @@ void format() {
     };
     const Bad bad[] = {
         {"", "empty"},
-        {"swfoliage 2\n", "line 1: only swfoliage version 1"},
+        {"swfoliage 3\n", "line 1: only swfoliage versions 1 and 2"},
         {"swterrain 1\n", "line 1: the first line must be"},
         {"swfoliage 1\ntype \"a.glb\"\n", "instances is missing"},
         {"swfoliage 1\ninstances \"a\"\ninstances \"b\"\n", "line 3: instances given twice"},
@@ -252,6 +254,194 @@ void fade() {
     check(subset && both.empty(), "density below the fade fraction keeps none (the kept numbers are above it)");
 }
 
+// ---- Painting (W2b) ----
+
+// Flat ground at height 2, tilted to 60 degrees where x > 50.
+bool testGround(glm::vec2 xz, glm::vec3& point, glm::vec3& normal) {
+    point = {xz.x, 2.0f, xz.y};
+    normal = xz.x > 50.0f ? glm::vec3(std::sin(1.0472f), std::cos(1.0472f), 0.0f) : glm::vec3(0, 1, 0);
+    return true;
+}
+
+FoliageData paintable() {
+    FoliageData f;
+    f.version = 2;
+    f.instancesFile = "foliage/painted.instances";
+    FoliageType grass;
+    grass.model = "models/grass.glb";
+    grass.scaleMin = 0.5f;
+    grass.scaleMax = 0.7f;
+    f.types.push_back(grass);
+    FoliageType rock;
+    rock.model = "models/rock.glb";
+    f.types.push_back(rock);
+    return f;
+}
+
+void version2() {
+    FoliageData f = paintable();
+    f.types[0].maxSlope = 30.0f;
+    std::string error;
+    FoliageData again;
+    check(parseFoliage(foliageText(f), again, error), "version 2 parses: " + error);
+    check(again.version == 2 && again.types == f.types, "version 2 round-trips its keys");
+    check(foliageText(again).rfind("swfoliage 2\n", 0) == 0, "written as swfoliage 2");
+    FoliageData x;
+    check(
+        !parseFoliage("swfoliage 1\ninstances \"a\"\ntype \"a.glb\"\n  max_slope 30\n", x, error) &&
+            error.find("line 4: max_slope needs swfoliage 2") != std::string::npos,
+        "max_slope in version 1 fails: " + error);
+    check(
+        !parseFoliage("swfoliage 2\ninstances \"a\"\ntype \"a.glb\"\n  scale_min 2\n  scale_max 1\n", x, error) &&
+            error.find("scale_min is above its scale_max") != std::string::npos,
+        "scale_min above scale_max fails: " + error);
+    check(
+        !parseFoliage("swfoliage 2\ninstances \"a\"\ntype \"a.glb\"\n  max_slope 95\n", x, error) &&
+            error.find("max_slope must be") != std::string::npos,
+        "max_slope out of range fails: " + error);
+}
+
+void scatter() {
+    FoliagePaint paint;
+    paint.centre = {0.0f, 0.0f};
+    paint.radius = 10.0f;
+    paint.density = 2.0f;
+    paint.seed = 42;
+    FoliageData a = paintable(), b = paintable();
+    const size_t added = scatterFoliage(a, paint, testGround);
+    scatterFoliage(b, paint, testGround);
+    check(a.instances == b.instances, "the same seed scatters the same instances");
+    const double expected = 2.0 * 3.14159265 * 100.0;
+    check(
+        std::abs(double(added) - expected) <= expected * 0.1,
+        "density 2 in a 10 m circle adds about 628, got " + std::to_string(added));
+    bool inside = true, ranged = true;
+    for (const FoliageInstance& in : a.instances) {
+        inside =
+            inside && glm::length(glm::vec2(in.position.x, in.position.z)) <= 10.0f + 1e-4f && in.position.y == 2.0f;
+        ranged = ranged && in.scale >= 0.5f && in.scale <= 0.7f && in.yaw >= 0.0f && in.yaw <= 6.2832f;
+    }
+    check(inside, "instances land inside the circle, on the ground");
+    check(ranged, "scales within scale_min..scale_max, yaw within a turn");
+    // Painting again over the same circle tops up to the density, no further.
+    paint.seed = 43;
+    check(scatterFoliage(a, paint, testGround) == 0, "a full circle takes no more");
+    FoliageData c = paintable();
+    paint.seed = 7;
+    scatterFoliage(c, paint, testGround);
+    check(c.instances != a.instances, "another seed scatters differently");
+
+    // Max slope: 60-degree ground with max_slope 45 takes none, with 70 takes them.
+    FoliageData steep = paintable();
+    paint.centre = {100.0f, 0.0f};
+    paint.type = 1;
+    steep.types[1].maxSlope = 45.0f;
+    check(scatterFoliage(steep, paint, testGround) == 0, "max_slope 45 skips 60-degree ground");
+    steep.types[1].maxSlope = 70.0f;
+    check(scatterFoliage(steep, paint, testGround) > 500, "max_slope 70 paints it");
+    // No ground: nothing.
+    FoliageData none = paintable();
+    check(
+        scatterFoliage(none, paint, [](glm::vec2, glm::vec3&, glm::vec3&) { return false; }) == 0,
+        "nothing where there's no ground");
+}
+
+void erase() {
+    FoliageData f = paintable();
+    FoliagePaint paint;
+    paint.radius = 10.0f;
+    paint.density = 1.0f;
+    scatterFoliage(f, paint, testGround);
+    paint.type = 1;
+    scatterFoliage(f, paint, testGround);
+    finishFoliageEdit(f);
+    const size_t rocks = std::count_if(f.instances.begin(), f.instances.end(), [](auto& in) { return in.type == 1; });
+    const size_t removed = eraseFoliage(f, {0.0f, 0.0f}, 5.0f, 0);
+    check(removed > 0, "erase removes the type's instances in the circle");
+    bool left = true;
+    size_t rocksAfter = 0;
+    for (const FoliageInstance& in : f.instances) {
+        if (in.type == 0) left = left && glm::length(glm::vec2(in.position.x, in.position.z)) > 5.0f;
+        rocksAfter += in.type == 1;
+    }
+    check(left, "no grass is left inside the circle");
+    check(rocksAfter == rocks, "other types are untouched");
+}
+
+void undo() {
+    FoliageData f = paintable();
+    FoliagePaint paint;
+    paint.radius = 6.0f;
+    scatterFoliage(f, paint, testGround);
+    finishFoliageEdit(f);
+    const FoliageData start = f;
+
+    // A paint stroke, then an erase stroke over part of it.
+    FoliageData painted = start;
+    paint.centre = {8.0f, 0.0f};
+    paint.seed = 9;
+    scatterFoliage(painted, paint, testGround);
+    finishFoliageEdit(painted);
+    const FoliageEdit stroke = makeFoliageEdit("foliage/painted.swfoliage", start, painted);
+    check(
+        stroke.removed.empty() && stroke.added.size() == painted.instances.size() - start.instances.size(),
+        "a paint stroke records what it added");
+    FoliageData erased = painted;
+    eraseFoliage(erased, {4.0f, 0.0f}, 3.0f, 0);
+    finishFoliageEdit(erased);
+    const FoliageEdit rub = makeFoliageEdit("foliage/painted.swfoliage", painted, erased);
+    check(
+        rub.added.empty() && rub.removed.size() == painted.instances.size() - erased.instances.size(),
+        "an erase stroke records what it removed");
+
+    FoliageData now = erased;
+    applyFoliageEdit(now, rub, false);
+    check(now.instances == painted.instances, "undoing the erase brings exactly the painted instances back");
+    applyFoliageEdit(now, stroke, false);
+    check(now.instances == start.instances, "undoing the paint gives back the start");
+    applyFoliageEdit(now, stroke, true);
+    applyFoliageEdit(now, rub, true);
+    check(now.instances == erased.instances, "redoing both gives the erased result");
+
+    // A type added is undone with the header.
+    FoliageData more = start;
+    more.types.push_back(FoliageType{"models/bush.glb"});
+    const FoliageEdit header = makeFoliageEdit("foliage/painted.swfoliage", start, more);
+    check(header.layout, "a type change is a header edit");
+    FoliageData back = more;
+    applyFoliageEdit(back, header, false);
+    check(back.types == start.types && back.instances == start.instances, "undo removes the added type");
+
+    // The order is the same however the instances were added, and matches a read back.
+    FoliageData shuffled = start;
+    std::reverse(shuffled.instances.begin(), shuffled.instances.end());
+    finishFoliageEdit(shuffled);
+    check(shuffled.instances == start.instances, "sorting doesn't depend on the order of adding");
+    std::vector<FoliageInstance> decoded;
+    std::string error;
+    check(
+        decodeFoliageInstances(encodeFoliageInstances(start.instances), start.types.size(), decoded, error) &&
+            decoded == start.instances,
+        "the renumbered instances are what the file reads back as");
+}
+
+void redrop() {
+    FoliageData f = paintable();
+    f.instances = {{0, {1.0f, 2.0f, 1.0f}}, {0, {3.0f, 5.0f, 1.0f}}, {0, {20.0f, 2.0f, 1.0f}}};
+    auto before = [](glm::vec2, float& y) {
+        y = 2.0f;
+        return true;
+    };
+    auto after = [](glm::vec2 xz, float& y) {
+        y = 2.0f + xz.x;
+        return true;
+    };
+    const size_t moved = redropFoliage(f, {0.0f, 0.0f}, {10.0f, 10.0f}, before, after);
+    check(moved == 1, "one instance stood on the changed ground, got " + std::to_string(moved));
+    check(f.instances[0].position.y == 3.0f, "it moves onto the new height");
+    check(f.instances[1].position.y == 5.0f, "one floating above the ground stays");
+    check(f.instances[2].position.y == 2.0f, "one outside the rectangle stays");
+}
 }   // namespace
 
 int main(int argc, char** argv) {
@@ -261,6 +451,11 @@ int main(int argc, char** argv) {
     if (which == "all" || which == "cells") cells();
     if (which == "all" || which == "density") density();
     if (which == "all" || which == "fade") fade();
+    if (which == "all" || which == "version2") version2();
+    if (which == "all" || which == "scatter") scatter();
+    if (which == "all" || which == "erase") erase();
+    if (which == "all" || which == "undo") undo();
+    if (which == "all" || which == "redrop") redrop();
     if (failures) std::fprintf(stderr, "%d failure(s)\n", failures);
     return failures ? 1 : 0;
 }

@@ -52,6 +52,7 @@ void Editor::unloadGameModule() {
     m_undo.clear();
     m_redo.clear();
     clearTerrainUndo();
+    clearFoliageUndo();
     m_editStart = {};
     m_selection.clear();
     m_gameModule.reset();
